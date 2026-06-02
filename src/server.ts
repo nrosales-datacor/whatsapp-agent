@@ -1,0 +1,88 @@
+import http from "node:http";
+import { verificarWebhook, firmaValida } from "./whatsapp/client";
+import { manejarWebhook } from "./handleWebhook";
+import { RepositorioEnMemoria } from "./booking/inMemoryRepository";
+import { RepositorioDrizzle } from "./booking/drizzleRepository";
+import { crearDb } from "./db/client";
+import type { Repositorio } from "./types";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Servidor del agente de WhatsApp (standalone, sin framework).
+// Si hay DATABASE_URL en el entorno → guarda en PostgreSQL (Drizzle).
+// Si no → usa el repositorio en memoria (ideal para probar; no persiste).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PORT = Number(process.env.PORT ?? 3000);
+const RUTA_WEBHOOK = "/webhook";
+
+const repo: Repositorio = process.env.DATABASE_URL
+  ? new RepositorioDrizzle(crearDb())
+  : new RepositorioEnMemoria();
+
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+
+  // Página simple para confirmar que está vivo.
+  if (url.pathname === "/") {
+    res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+    res.end("Agente de WhatsApp corriendo ✅");
+    return;
+  }
+
+  if (url.pathname !== RUTA_WEBHOOK) {
+    res.writeHead(404);
+    res.end("Not found");
+    return;
+  }
+
+  // 1) Verificación del webhook (Meta hace un GET al configurarlo).
+  if (req.method === "GET") {
+    const r = verificarWebhook(url.searchParams);
+    if (r.ok) {
+      res.writeHead(200, { "content-type": "text/plain" });
+      res.end(r.challenge ?? "");
+    } else {
+      res.writeHead(403);
+      res.end("Forbidden");
+    }
+    return;
+  }
+
+  // 2) Mensajes entrantes (POST).
+  if (req.method === "POST") {
+    const chunks: Buffer[] = [];
+    for await (const c of req) chunks.push(c as Buffer);
+    const raw = Buffer.concat(chunks).toString("utf8");
+
+    const firma = req.headers["x-hub-signature-256"];
+    if (!firmaValida(raw, typeof firma === "string" ? firma : null)) {
+      res.writeHead(401);
+      res.end("Invalid signature");
+      return;
+    }
+
+    let body: unknown;
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      res.writeHead(400);
+      res.end("Bad request");
+      return;
+    }
+
+    // Respondemos 200 rápido para que Meta no reintente; el LLM corre aparte.
+    res.writeHead(200, { "content-type": "text/plain" });
+    res.end("EVENT_RECEIVED");
+    manejarWebhook(body, repo).catch((e) => console.error("[server] manejarWebhook:", e));
+    return;
+  }
+
+  res.writeHead(405);
+  res.end("Method not allowed");
+});
+
+server.listen(PORT, () => {
+  const modo = process.env.DATABASE_URL ? "PostgreSQL (Drizzle)" : "memoria (no persiste)";
+  console.log(`Agente escuchando en http://localhost:${PORT}`);
+  console.log(`Webhook: http://localhost:${PORT}${RUTA_WEBHOOK}  ·  Almacenamiento: ${modo}`);
+});

@@ -1,0 +1,20 @@
+# Dependencias
+node_modules/
+.pnpm-store/
+
+# Variables de entorno (NUNCA subir secretos)
+.env
+.env.local
+.env.*.local
+
+# Build / salida
+dist/
+build/
+.next/
+.turbo/
+
+# Logs y temporales
+*.log
+npm-debug.log*
+.DS_Store
+coverage/
