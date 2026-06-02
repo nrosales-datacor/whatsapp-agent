@@ -1,3 +1,4 @@
+import "dotenv/config";
 import http from "node:http";
 import { verificarWebhook, firmaValida } from "./whatsapp/client";
 import { manejarWebhook } from "./handleWebhook";
