@@ -8,7 +8,13 @@ import { espaciosDisponibles } from "../booking/availability";
 const MODELO = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const MAX_PASOS = 4; // tope de iteraciones de tool-calling por mensaje
 
-const openai = new OpenAI(); // toma OPENAI_API_KEY del entorno
+// Inicialización perezosa: el server arranca aunque todavía no haya OPENAI_API_KEY;
+// solo se necesita cuando llega un mensaje real.
+let _openai: OpenAI | null = null;
+function getOpenAI(): OpenAI {
+  if (!_openai) _openai = new OpenAI(); // toma OPENAI_API_KEY del entorno
+  return _openai;
+}
 
 interface ContextoAgente {
   tenant: Tenant;
@@ -99,7 +105,7 @@ export async function correrAgente(
   ];
 
   for (let paso = 0; paso < MAX_PASOS; paso++) {
-    const res = await openai.chat.completions.create({
+    const res = await getOpenAI().chat.completions.create({
       model: MODELO,
       messages: mensajes,
       tools: TOOLS,
