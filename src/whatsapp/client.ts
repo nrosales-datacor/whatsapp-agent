@@ -85,3 +85,52 @@ export async function enviarTexto(tenant: Tenant, paraWa: string, texto: string)
     throw new Error(`Error enviando WhatsApp (${res.status}): ${detalle}`);
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5) Envío de un MENSAJE DE PLANTILLA (template).
+//    Necesario para iniciar conversación FUERA de la ventana de 24 h de Meta
+//    (caso típico: recordatorios de cita). La plantilla debe estar APROBADA
+//    en el WhatsApp Manager del negocio y sus variables {{1}}, {{2}}… se
+//    pasan en `parametros` (en orden).
+// ─────────────────────────────────────────────────────────────────────────────
+export async function enviarPlantilla(
+  tenant: Tenant,
+  paraWa: string,
+  nombrePlantilla: string,
+  idioma: string,
+  parametros: string[],
+): Promise<void> {
+  const token = tenant.accessToken ?? process.env.WHATSAPP_ACCESS_TOKEN;
+  if (!token) throw new Error("Falta access token de WhatsApp para el tenant " + tenant.id);
+
+  const url = `https://graph.facebook.com/${GRAPH_VERSION}/${tenant.phoneNumberId}/messages`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: paraWa,
+      type: "template",
+      template: {
+        name: nombrePlantilla,
+        language: { code: idioma },
+        components: parametros.length
+          ? [
+              {
+                type: "body",
+                parameters: parametros.map((texto) => ({ type: "text", text: texto })),
+              },
+            ]
+          : undefined,
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const detalle = await res.text();
+    throw new Error(`Error enviando plantilla WhatsApp (${res.status}): ${detalle}`);
+  }
+}

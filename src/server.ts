@@ -5,6 +5,8 @@ import { manejarWebhook } from "./handleWebhook";
 import { RepositorioEnMemoria } from "./booking/inMemoryRepository";
 import { RepositorioDrizzle } from "./booking/drizzleRepository";
 import { crearDb } from "./db/client";
+import { iniciarRecordatorios } from "./reminders/scheduler";
+import { calendarioConfigurado } from "./calendar/googleCalendar";
 import type { Repositorio } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -86,4 +88,8 @@ server.listen(PORT, () => {
   const modo = process.env.DATABASE_URL ? "PostgreSQL (Drizzle)" : "memoria (no persiste)";
   console.log(`Agente escuchando en http://localhost:${PORT}`);
   console.log(`Webhook: http://localhost:${PORT}${RUTA_WEBHOOK}  ·  Almacenamiento: ${modo}`);
+  console.log(`Google Calendar: ${calendarioConfigurado() ? "conectado ✅" : "no configurado (opcional)"}`);
+
+  // Recordatorios de cita por WhatsApp (día antes + mismo día).
+  iniciarRecordatorios(repo);
 });

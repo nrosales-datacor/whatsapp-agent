@@ -4,6 +4,7 @@ import type { MensajeConversacion, Repositorio, Tenant } from "../types";
 import { construirSystemPrompt } from "./systemPrompt";
 import { TOOLS } from "./tools";
 import { espaciosDisponibles } from "../booking/availability";
+import { calendarioConfigurado, crearEventoCita } from "../calendar/googleCalendar";
 
 const MODELO = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const MAX_PASOS = 4; // tope de iteraciones de tool-calling por mensaje
@@ -78,6 +79,18 @@ async function ejecutarTool(
       hora,
       placa: args.placa ? String(args.placa) : undefined,
     });
+
+    // Reflejar la cita en el Google Calendar del negocio (si está configurado).
+    // Si Google falla, la cita YA quedó guardada: no se bloquea la respuesta.
+    if (calendarioConfigurado()) {
+      try {
+        const eventId = await crearEventoCita(tenant, cita);
+        if (eventId) await repo.guardarGcalEventId(cita.id, eventId);
+      } catch (e) {
+        console.error(`[gcal] no se pudo crear el evento de la cita ${cita.id}:`, e);
+      }
+    }
+
     return JSON.stringify({ ok: true, cita });
   }
 

@@ -1,7 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { schema, waCitas, waConversaciones, waEventosCalidad, waMensajes } from "../db/schema";
-import type { Cita, Conversacion, MensajeConversacion, Repositorio } from "../types";
+import type { Cita, Conversacion, MensajeConversacion, Repositorio, TipoRecordatorio } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Repositorio Drizzle. Implementa la MISMA interfaz que el de memoria.
@@ -80,6 +80,9 @@ export class RepositorioDrizzle implements Repositorio {
       placa: r.placa ?? undefined,
       estado: r.estado as Cita["estado"],
       creadaEn: r.creadaEn.toISOString(),
+      gcalEventId: r.gcalEventId ?? undefined,
+      recordatorioDiaAntesEn: r.recordatorioDiaAntesEn ? r.recordatorioDiaAntesEn.toISOString() : null,
+      recordatorioMismoDiaEn: r.recordatorioMismoDiaEn ? r.recordatorioMismoDiaEn.toISOString() : null,
     }));
   }
 
@@ -109,6 +112,18 @@ export class RepositorioDrizzle implements Repositorio {
       estado: r.estado as Cita["estado"],
       creadaEn: r.creadaEn.toISOString(),
     };
+  }
+
+  async guardarGcalEventId(citaId: string, eventId: string): Promise<void> {
+    await this.db.update(waCitas).set({ gcalEventId: eventId }).where(eq(waCitas.id, citaId));
+  }
+
+  async marcarRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<void> {
+    const cambio =
+      tipo === "dia_antes"
+        ? { recordatorioDiaAntesEn: new Date() }
+        : { recordatorioMismoDiaEn: new Date() };
+    await this.db.update(waCitas).set(cambio).where(eq(waCitas.id, citaId));
   }
 
   async registrarCalidad(evento: {

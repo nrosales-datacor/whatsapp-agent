@@ -27,6 +27,8 @@ export async function manejarWebhook(body: unknown, repo: Repositorio): Promise<
     return;
   }
 
+  console.log(`[entrante] ${entrante.clienteWa}: "${entrante.texto.slice(0, 80)}"`);
+
   const conv = await repo.obtenerOConversacion(tenant.id, entrante.clienteWa);
   const primerContacto = !conv.optInEn;
 
@@ -74,6 +76,7 @@ export async function manejarWebhook(body: unknown, repo: Repositorio): Promise<
     });
 
     await enviarTexto(tenant, entrante.clienteWa, salida);
+    console.log(`[saliente] → ${entrante.clienteWa}: "${respuesta.slice(0, 80)}"${fueraDeAlcance ? " [fuera de alcance]" : ""}`);
 
     await repo.registrarCalidad({
       tenantId: tenant.id,

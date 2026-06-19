@@ -17,7 +17,7 @@ export const TOOLS: ChatCompletionTool[] = [
         type: "object",
         properties: {
           fecha: { type: "string", description: "Fecha a consultar en formato YYYY-MM-DD." },
-          servicioId: { type: "string", description: "id del pulido (ej: 'pulido_parabrisas', 'pulido_focos')." },
+          servicioId: { type: "string", description: "id del servicio con pulido (ej: 'lavado_pulido_sellador', 'pulido_sellador', 'pulido_focos')." },
         },
         required: ["fecha", "servicioId"],
         additionalProperties: false,
