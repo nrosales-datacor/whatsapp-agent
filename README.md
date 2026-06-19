@@ -41,9 +41,11 @@ WhatsApp → POST al webhook (src/server.ts)
              ▼
         runAgent.ts ──▶ OpenAI (gpt-4o-mini) + herramientas
              │              ├─ consultar_disponibilidad (pulidos)
-             │              └─ agendar_cita (pulidos)
+             │              └─ agendar_cita (pulidos) ──▶ Google Calendar (opcional)
              ▼
         Repositorio (memoria  ó  PostgreSQL/Drizzle)
+             ▲
+        reminders/scheduler.ts ── recordatorios por WhatsApp (día antes + mismo día)
 ```
 
 Regla de negocio: los **lavados son por orden de llegada** (sin cita); solo los
@@ -63,7 +65,50 @@ Regla de negocio: los **lavados son por orden de llegada** (sin cita); solo los
 | `src/booking/inMemoryRepository.ts` | Almacenamiento en memoria (default). |
 | `src/booking/drizzleRepository.ts` | Almacenamiento en PostgreSQL. |
 | `src/db/schema.ts` · `src/db/client.ts` | Tablas y cliente de base de datos. |
-| `src/whatsapp/client.ts` | Verificación, firma, parseo y envío a Meta. |
+| `src/whatsapp/client.ts` | Verificación, firma, parseo y envío a Meta (texto y plantillas). |
+| `src/calendar/googleCalendar.ts` | Crea el evento de cada cita en Google Calendar. |
+| `src/reminders/scheduler.ts` | Recordatorios por WhatsApp: día antes y mismo día. |
+
+## Google Calendar (opcional)
+
+Cada cita agendada se crea como evento en el calendario del negocio, con el
+**nombre y teléfono del cliente**, el servicio y la placa, más alertas para el
+negocio (1 día antes y 2 h antes).
+
+Setup (una vez, ~10 min):
+
+1. En [Google Cloud Console](https://console.cloud.google.com): creá un proyecto
+   y habilitá la **Google Calendar API**.
+2. Creá una **Service Account** (IAM y administración → Cuentas de servicio) y
+   descargá su llave JSON.
+3. En el Google Calendar del negocio → Configuración → *Compartir con
+   determinadas personas* → agregá el email de la service account con permiso
+   **"Hacer cambios en eventos"**.
+4. En `.env` llená `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY` (la
+   `private_key` del JSON, en una línea con `\n`) y `GOOGLE_CALENDAR_ID` (el ID
+   del calendario; para el principal es el propio gmail).
+
+Si las variables no están, la integración queda apagada y todo lo demás funciona.
+
+## Recordatorios de cita (automáticos)
+
+El servidor revisa las citas cada 5 min y envía por WhatsApp:
+
+- **Día antes**: a partir de las 17:00 del día anterior (`RECORDATORIO_DIA_ANTES_HORA`).
+- **Mismo día**: 2 horas antes de la cita (`RECORDATORIO_HORAS_ANTES`), nunca antes de las 6 am.
+
+Cada envío queda marcado en la cita para no duplicarse. Si el servidor estaba
+apagado a la hora del envío, lo manda al arrancar (si todavía tiene sentido).
+
+> ⚠️ **Ventana de 24 h de Meta**: fuera de las 24 h del último mensaje del
+> cliente, WhatsApp solo acepta **plantillas aprobadas**. Para producción, creá
+> en el WhatsApp Manager una plantilla (categoría *Utility*) con 3 variables —
+> `{{1}}` nombre, `{{2}}` servicio, `{{3}}` cuándo — y poné su nombre en
+> `WHATSAPP_TEMPLATE_RECORDATORIO`. Ejemplo de cuerpo:
+> *"¡Hola {{1}}! Te recordamos tu cita en Lavacar Rosales {{3}}: {{2}}. Si
+> necesitás reprogramar, escribinos por acá. ¡Te esperamos!"*
+> Sin plantilla configurada se intenta texto libre, que sirve para probar con
+> el número de prueba de Meta.
 
 ## Usar base de datos (opcional, para producción)
 

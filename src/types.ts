@@ -11,6 +11,11 @@ export interface Service {
   precio?: number;
   /** true => el precio se cotiza por vehículo (se muestra "se cotiza"). */
   precioVariable?: boolean;
+  /**
+   * Nota de precio a mostrar en lugar de "se cotiza" cuando el precio depende del
+   * vehículo pero SÍ está tabulado (ej: "según vehículo, ver tabla de parabrisas").
+   */
+  precioNota?: string;
   /** Duración estimada en minutos. Se usa para los espacios de agenda. */
   duracionMin: number;
   /** true => requiere cita (ej: pulidos). false/omitido => por orden de llegada. */
@@ -31,6 +36,8 @@ export interface KnowledgeBase {
   politicas: string[];
   /** Tabla de precios de servicios por orden de llegada (sin cita). Una línea c/u. */
   tarifas?: string[];
+  /** Tabla de precios de servicios de parabrisas (pulido / repelente / sellado). Una línea c/u. */
+  parabrisas?: string[];
 }
 
 /** Un negocio conectado al agente. */
@@ -66,7 +73,15 @@ export interface Cita {
   placa?: string;
   estado: EstadoCita;
   creadaEn: string; // ISO
+  /** id del evento creado en Google Calendar (si la integración está configurada). */
+  gcalEventId?: string;
+  /** Cuándo se envió el recordatorio del día antes (ISO). null/undefined = pendiente. */
+  recordatorioDiaAntesEn?: string | null;
+  /** Cuándo se envió el recordatorio del mismo día (ISO). null/undefined = pendiente. */
+  recordatorioMismoDiaEn?: string | null;
 }
+
+export type TipoRecordatorio = "dia_antes" | "mismo_dia";
 
 export interface MensajeConversacion {
   rol: "user" | "assistant";
@@ -92,6 +107,10 @@ export interface Repositorio {
 
   citasPorFecha(tenantId: string, fecha: string): Promise<Cita[]>;
   crearCita(cita: Omit<Cita, "id" | "creadaEn" | "estado">): Promise<Cita>;
+  /** Guarda el id del evento de Google Calendar asociado a la cita. */
+  guardarGcalEventId(citaId: string, eventId: string): Promise<void>;
+  /** Marca un recordatorio como enviado (para no mandarlo dos veces). */
+  marcarRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<void>;
 
   registrarCalidad(evento: {
     tenantId: string;

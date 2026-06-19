@@ -57,6 +57,10 @@ export const waCitas = pgTable(
     placa: text("placa"),
     estado: text("estado").notNull().default("agendada"),
     creadaEn: timestamp("creada_en", { withTimezone: true }).notNull().defaultNow(),
+    // Integración con Google Calendar y recordatorios por WhatsApp.
+    gcalEventId: text("gcal_event_id"),
+    recordatorioDiaAntesEn: timestamp("recordatorio_dia_antes_en", { withTimezone: true }),
+    recordatorioMismoDiaEn: timestamp("recordatorio_mismo_dia_en", { withTimezone: true }),
   },
   (t) => ({
     idxTenantFecha: index("wa_citas_tenant_fecha_idx").on(t.tenantId, t.fecha),

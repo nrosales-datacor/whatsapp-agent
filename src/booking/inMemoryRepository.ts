@@ -1,4 +1,4 @@
-import type { Cita, Conversacion, MensajeConversacion, Repositorio } from "../types";
+import type { Cita, Conversacion, MensajeConversacion, Repositorio, TipoRecordatorio } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Repositorio EN MEMORIA. Sirve para probar el agente YA, sin base de datos.
@@ -51,6 +51,19 @@ export class RepositorioEnMemoria implements Repositorio {
     };
     this.citas.push(nueva);
     return nueva;
+  }
+
+  async guardarGcalEventId(citaId: string, eventId: string): Promise<void> {
+    const c = this.citas.find((x) => x.id === citaId);
+    if (c) c.gcalEventId = eventId;
+  }
+
+  async marcarRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<void> {
+    const c = this.citas.find((x) => x.id === citaId);
+    if (!c) return;
+    const ahora = new Date().toISOString();
+    if (tipo === "dia_antes") c.recordatorioDiaAntesEn = ahora;
+    else c.recordatorioMismoDiaEn = ahora;
   }
 
   async registrarCalidad(evento: {
