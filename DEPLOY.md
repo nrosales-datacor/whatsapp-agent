@@ -182,6 +182,26 @@ pm2 logs whatsapp-bot
 
 ---
 
+## Datos reales de este deploy (ya hecho — 2026-06-19)
+
+Esto ya está corriendo. Quedó así, distinto del genérico de arriba en algunos puntos
+(por selyon):
+
+- **IP**: `157.230.190.60`
+- **Usuario SSH**: `sebastian` (solo con SSH key, sin password)
+- **Carpeta del proyecto**: `~/lavacar-whatsapp-bot` (⚠️ NO `~/whatsapp-agent` —
+  esa carpeta ya la usa selyon, es otro repo)
+- **Dominio**: `https://wabotlavacar.selyon.app` (no se usó DuckDNS — se aprovechó
+  que ya tenemos `selyon.app`; registro DNS tipo A en Cloudflare, proxy **gris**
+  /DNS-only, igual que `api.selyon.app`)
+- **Puerto interno**: `3001` (selyon sigue en `3000`, sin tocar)
+- **Proceso PM2**: `whatsapp-bot` (con `pm2 startup` ya configurado — systemd lo
+  reinicia solo si el droplet reboota)
+- **Repo privado → acceso del droplet**: deploy key dedicada de solo lectura
+  (`~/.ssh/deploy_whatsapp_lavacar` en el droplet, alias SSH `github.com-lavacar`
+  en `~/.ssh/config`), agregada en GitHub → Settings → Deploy keys de este repo.
+  No se tocó la deploy key que ya usa selyon (`~/.ssh/github_deploy`).
+
 ## Mantenimiento rápido
 
 | Acción | Comando |
@@ -189,11 +209,11 @@ pm2 logs whatsapp-bot
 | Ver estado | `pm2 status` |
 | Ver registros | `pm2 logs whatsapp-bot` |
 | Reiniciar | `pm2 restart whatsapp-bot` |
-| Actualizar el código | `git pull && npm install && pm2 restart whatsapp-bot` |
+| Actualizar el código | `cd ~/lavacar-whatsapp-bot && git pull && npm install && pm2 restart whatsapp-bot` |
 
 ## Si algo falla
 - El bot no arranca → `pm2 logs whatsapp-bot` (suele ser algo del `.env`).
-- No llega el HTTPS → revisá que DuckDNS apunte a la IP correcta y que el firewall
-  tenga abierto 80/443.
+- No llega el HTTPS → revisá que el registro A de `wabotlavacar.selyon.app` en
+  Cloudflare apunte a `157.230.190.60` y que el firewall tenga abierto 80/443.
 - El bot no responde por WhatsApp → repetí el paso 11 y revisá los logs.
 - Cualquier duda con nginx/selyon → mandá la salida de `sudo nginx -T` y te ayudamos.
