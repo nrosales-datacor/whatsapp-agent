@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer, boolean, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -21,6 +21,19 @@ export const waConversaciones = pgTable(
     clienteWa: text("cliente_wa").notNull(),
     optInEn: timestamp("opt_in_en", { withTimezone: true }),
     creadaEn: timestamp("creada_en", { withTimezone: true }).notNull().defaultNow(),
+    // Panel / bandeja humana.
+    modo: text("modo").notNull().default("bot"), // "bot" | "humano"
+    humanoEn: timestamp("humano_en", { withTimezone: true }),
+    // DEPRECADO: ya no se usa. El código calcula "sin leer" desde leido_hasta. Se deja
+    // la columna para que la migración sea ADITIVA (sin DROP, sin perder datos en prod);
+    // se puede eliminar más adelante con un `drizzle-kit generate` interactivo.
+    noLeidos: integer("no_leidos").notNull().default(0),
+    // Hasta cuándo leyó el operador. Los mensajes del cliente posteriores a esta
+    // marca cuentan como "sin leer". Reemplaza al contador no_leidos, que tenía una
+    // carrera (un reset en segundo plano pisaba un incremento concurrente).
+    leidoHasta: timestamp("leido_hasta", { withTimezone: true }),
+    // Notas privadas del negocio sobre este cliente (ficha / CRM).
+    notas: text("notas"),
   },
   (t) => ({
     uq: uniqueIndex("wa_conv_tenant_cliente_uq").on(t.tenantId, t.clienteWa),
@@ -34,13 +47,19 @@ export const waMensajes = pgTable(
     id: id(),
     conversacionId: text("conversacion_id")
       .notNull()
-      .references(() => waConversaciones.id),
+      .references(() => waConversaciones.id, { onDelete: "cascade" }),
     rol: text("rol").notNull(), // "user" | "assistant"
     contenido: text("contenido").notNull(),
     creadoEn: timestamp("creado_en", { withTimezone: true }).notNull().defaultNow(),
+    porHumano: boolean("por_humano").notNull().default(false),
+    // id del mensaje en WhatsApp (msg.id). Único → hace el webhook idempotente ante
+    // los reintentos de Meta. Null en los salientes (no vienen de Meta); Postgres
+    // permite múltiples NULL en un índice único, así que no chocan entre sí.
+    waMessageId: text("wa_message_id"),
   },
   (t) => ({
     idxConv: index("wa_msg_conv_idx").on(t.conversacionId),
+    uqWaId: uniqueIndex("wa_msg_waid_uq").on(t.waMessageId),
   }),
 );
 
@@ -57,6 +76,8 @@ export const waCitas = pgTable(
     placa: text("placa"),
     estado: text("estado").notNull().default("agendada"),
     creadaEn: timestamp("creada_en", { withTimezone: true }).notNull().defaultNow(),
+    // Precio cotizado al agendar (colones). Para métricas de ingresos. Puede ser null.
+    precio: integer("precio"),
     // Integración con Google Calendar y recordatorios por WhatsApp.
     gcalEventId: text("gcal_event_id"),
     recordatorioDiaAntesEn: timestamp("recordatorio_dia_antes_en", { withTimezone: true }),
@@ -82,4 +103,21 @@ export const waEventosCalidad = pgTable(
   }),
 );
 
-export const schema = { waConversaciones, waMensajes, waCitas, waEventosCalidad };
+// Suscripciones de notificaciones push del panel (Web Push), por negocio.
+export const waPushSubs = pgTable(
+  "wa_push_subs",
+  {
+    id: id(),
+    tenantId: text("tenant_id").notNull(),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    creadaEn: timestamp("creada_en", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uq: uniqueIndex("wa_push_endpoint_uq").on(t.endpoint),
+    idxTenant: index("wa_push_tenant_idx").on(t.tenantId),
+  }),
+);
+
+export const schema = { waConversaciones, waMensajes, waCitas, waEventosCalidad, waPushSubs };

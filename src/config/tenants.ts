@@ -22,6 +22,10 @@ const rosales: Tenant = {
   nombre: "Lavacar Rosales",
   phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID ?? "NUMERO_DE_PRUEBA",
   accessToken: undefined,
+  // Hash de la contraseña del panel. NUNCA se commitea: se lee de una variable de
+  // entorno. Generá el hash con: npx tsx scripts/hashPassword.ts "TU_CLAVE" y ponelo
+  // en .env como PANEL_PASSWORD_HASH_ROSALES.
+  panelPasswordHash: process.env.PANEL_PASSWORD_HASH_ROSALES,
   timezone: "America/Costa_Rica",
   moneda: "₡",
   ubicacion:

@@ -48,6 +48,8 @@ export interface Tenant {
   phoneNumberId: string;
   /** Token del WABA del cliente. Si no se da, cae al de .env (número de prueba). */
   accessToken?: string;
+  /** Hash ("salt:hash") de la contraseña del panel de este negocio. Ver scripts/hashPassword.ts. */
+  panelPasswordHash?: string;
   timezone: string;
   moneda: string;
   ubicacion: string;
@@ -73,6 +75,8 @@ export interface Cita {
   placa?: string;
   estado: EstadoCita;
   creadaEn: string; // ISO
+  /** Precio cotizado al agendar (colones). Para métricas de ingresos. */
+  precio?: number;
   /** id del evento creado en Google Calendar (si la integración está configurada). */
   gcalEventId?: string;
   /** Cuándo se envió el recordatorio del día antes (ISO). null/undefined = pendiente. */
@@ -87,14 +91,65 @@ export interface MensajeConversacion {
   rol: "user" | "assistant";
   contenido: string;
   creadoEn: string; // ISO
+  /** true => lo escribió un operador humano desde el panel (se guarda como "assistant"). */
+  porHumano?: boolean;
+  /** id del mensaje en WhatsApp (msg.id). Permite deduplicar reintentos de Meta. */
+  waMessageId?: string;
 }
+
+/** Quién atiende la conversación: la IA ("bot") o un humano desde el panel ("humano"). */
+export type ModoConversacion = "bot" | "humano";
 
 export interface Conversacion {
   id: string;
   tenantId: string;
   clienteWa: string;
   optInEn: string | null;
+  /** "bot" => responde la IA. "humano" => la IA se calla y atiende una persona. */
+  modo: ModoConversacion;
   mensajes: MensajeConversacion[];
+}
+
+/** Fila liviana para la lista de la bandeja del panel (sin todo el historial). */
+export interface ResumenConversacion {
+  id: string;
+  clienteWa: string;
+  modo: ModoConversacion;
+  ultimoMensaje: string | null;
+  ultimaActividadEn: string | null; // ISO
+  /** Mensajes del cliente sin "ver" por el operador (para el badge). */
+  sinLeer: number;
+}
+
+/** Suscripción de notificaciones push de un navegador (Web Push). */
+export interface PushSub {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}
+
+/** Métricas del negocio para el dashboard del panel. */
+export interface Metricas {
+  totalConversaciones: number;
+  totalCitas: number;
+  conversionPct: number;
+  ingresosEstimados: number;
+  enModoHumano: number;
+  serviciosTop: { servicioId: string; nombre?: string; cantidad: number }[];
+  citasPorDia: { fecha: string; cantidad: number }[];
+  horasPico: { hora: string; cantidad: number }[];
+}
+
+/** Ficha (mini-CRM) de un cliente: datos agregados para el panel. */
+export interface FichaCliente {
+  clienteWa: string;
+  nombre: string | null;
+  placas: string[];
+  totalCitas: number;
+  ultimaVisita: string | null; // "YYYY-MM-DD" de la cita más reciente
+  primerContacto: string | null; // ISO (creación de la conversación)
+  notas: string;
+  historial: { servicioId: string; fecha: string; hora: string; estado: string }[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -102,7 +157,13 @@ export interface Conversacion {
 // ─────────────────────────────────────────────────────────────────────────────
 export interface Repositorio {
   obtenerOConversacion(tenantId: string, clienteWa: string): Promise<Conversacion>;
-  guardarMensaje(conversacionId: string, msg: MensajeConversacion): Promise<void>;
+  /**
+   * Guarda un mensaje. Devuelve `true` si se almacenó y `false` si se descartó por
+   * ser un duplicado (mismo waMessageId ya visto) — así el webhook es idempotente
+   * ante los reintentos de Meta. Los mensajes salientes (sin waMessageId) siempre
+   * devuelven `true`.
+   */
+  guardarMensaje(conversacionId: string, msg: MensajeConversacion): Promise<boolean>;
   marcarOptIn(conversacionId: string): Promise<void>;
 
   citasPorFecha(tenantId: string, fecha: string): Promise<Cita[]>;
@@ -118,4 +179,29 @@ export interface Repositorio {
     tipo: "mensaje_ok" | "fuera_de_alcance" | "error";
     detalle?: string;
   }): Promise<void>;
+
+  // ── Panel / bandeja humana ──
+  // Las mutaciones reciben tenantId y lo aplican en el WHERE: la frontera entre
+  // negocios la hace la capa de datos, no solo el router (defensa en profundidad).
+  /** Cambia quién atiende la conversación (bot ↔ humano). */
+  setModoConversacion(tenantId: string, conversacionId: string, modo: ModoConversacion): Promise<void>;
+  /** Lista las conversaciones del negocio para la bandeja (más reciente primero). */
+  listarConversaciones(tenantId: string): Promise<ResumenConversacion[]>;
+  /** Trae una conversación con su historial por id (null si no existe o no es del tenant). */
+  obtenerConversacionPorId(tenantId: string, conversacionId: string): Promise<Conversacion | null>;
+  /** Lee SOLO el modo actual (lectura liviana, p. ej. para revalidar antes de que el bot responda). */
+  obtenerModo(tenantId: string, conversacionId: string): Promise<ModoConversacion | null>;
+  /** Marca como leídos los mensajes del cliente hasta ahora (resetea el badge). */
+  marcarLeidas(tenantId: string, conversacionId: string): Promise<void>;
+  /** Datos agregados de un cliente (citas, vehículos, visitas, notas) para la ficha. */
+  fichaCliente(tenantId: string, clienteWa: string): Promise<FichaCliente | null>;
+  /** Guarda las notas privadas del negocio sobre un cliente. */
+  guardarNotas(tenantId: string, conversacionId: string, notas: string): Promise<void>;
+  /** Métricas agregadas del negocio para el dashboard. */
+  metricas(tenantId: string): Promise<Metricas>;
+
+  // ── Notificaciones push (Web Push) ──
+  guardarPushSub(tenantId: string, sub: PushSub): Promise<void>;
+  listarPushSubs(tenantId: string): Promise<PushSub[]>;
+  borrarPushSub(endpoint: string): Promise<void>;
 }

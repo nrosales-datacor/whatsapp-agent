@@ -1,4 +1,16 @@
-import type { Cita, Conversacion, MensajeConversacion, Repositorio, TipoRecordatorio } from "../types";
+import type {
+  Cita,
+  Conversacion,
+  FichaCliente,
+  MensajeConversacion,
+  Metricas,
+  ModoConversacion,
+  PushSub,
+  Repositorio,
+  ResumenConversacion,
+  TipoRecordatorio,
+} from "../types";
+import { calcularMetricas } from "../panel/metricas";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Repositorio EN MEMORIA. Sirve para probar el agente YA, sin base de datos.
@@ -6,31 +18,82 @@ import type { Cita, Conversacion, MensajeConversacion, Repositorio, TipoRecordat
 // En el monorepo se reemplaza por la impl Prisma (mismos métodos).
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Estado interno de una conversación en memoria. Incluye campos que NO se exponen
+// en el DTO Conversacion (notas, marcas de tiempo) — por eso se proyecta con dto().
+type ConvInterna = Conversacion & {
+  notas: string;
+  creadaEn: string; // ISO, para primerContacto (no deriva del primer mensaje, que se trunca)
+  leidoHasta: string | null;
+  humanoEn: string | null;
+};
+
+const TOPE_MENSAJES = 200; // historial que se guarda por conversación (la vista del panel usa los últimos 100)
+const MAX_WA_IDS = 5000; // tope del set de dedup de waMessageId (evita crecimiento sin límite)
+
 export class RepositorioEnMemoria implements Repositorio {
-  private conversaciones = new Map<string, Conversacion>();
+  private conversaciones = new Map<string, ConvInterna>();
   private citas: Cita[] = [];
+  private pushSubs = new Map<string, PushSub & { tenantId: string }>();
+  // ids de mensajes de WhatsApp ya vistos, para deduplicar reintentos de Meta.
+  private waIdsVistos = new Set<string>();
 
   private clave(tenantId: string, clienteWa: string) {
     return `${tenantId}:${clienteWa}`;
+  }
+
+  /** Proyecta el estado interno al DTO público (copia los mensajes; no filtra notas). */
+  private dto(c: ConvInterna, limite: number): Conversacion {
+    return {
+      id: c.id,
+      tenantId: c.tenantId,
+      clienteWa: c.clienteWa,
+      optInEn: c.optInEn,
+      modo: c.modo,
+      // porHumano normalizado a boolean (paridad con Drizzle, que nunca es undefined).
+      mensajes: c.mensajes.slice(-limite).map((m) => ({ ...m, porHumano: m.porHumano ?? false })),
+    };
   }
 
   async obtenerOConversacion(tenantId: string, clienteWa: string): Promise<Conversacion> {
     const k = this.clave(tenantId, clienteWa);
     let c = this.conversaciones.get(k);
     if (!c) {
-      c = { id: k, tenantId, clienteWa, optInEn: null, mensajes: [] };
+      c = {
+        id: k,
+        tenantId,
+        clienteWa,
+        optInEn: null,
+        modo: "bot",
+        mensajes: [],
+        notas: "",
+        creadaEn: new Date().toISOString(),
+        leidoHasta: null,
+        humanoEn: null,
+      };
       this.conversaciones.set(k, c);
     }
-    return c;
+    // Devolvemos una COPIA (últimos 20) — nunca el objeto vivo del Map, para que
+    // mutar el resultado no corrompa el estado interno ni filtre campos privados.
+    return this.dto(c, 20);
   }
 
-  async guardarMensaje(conversacionId: string, msg: MensajeConversacion): Promise<void> {
+  async guardarMensaje(conversacionId: string, msg: MensajeConversacion): Promise<boolean> {
     const c = this.conversaciones.get(conversacionId);
-    if (c) {
-      c.mensajes.push(msg);
-      // Mantener el historial acotado (últimos 20) para no inflar tokens.
-      if (c.mensajes.length > 20) c.mensajes = c.mensajes.slice(-20);
+    if (!c) return false;
+    // Idempotencia: si ya vimos este waMessageId (reintento de Meta), lo ignoramos.
+    if (msg.waMessageId) {
+      if (this.waIdsVistos.has(msg.waMessageId)) return false;
+      this.waIdsVistos.add(msg.waMessageId);
+      // Acotar el set para que no crezca sin límite (evicta el más viejo; el Set
+      // mantiene orden de inserción). Los reintentos de Meta son inmediatos.
+      if (this.waIdsVistos.size > MAX_WA_IDS) {
+        const masViejo = this.waIdsVistos.values().next().value;
+        if (masViejo !== undefined) this.waIdsVistos.delete(masViejo);
+      }
     }
+    c.mensajes.push({ ...msg });
+    if (c.mensajes.length > TOPE_MENSAJES) c.mensajes = c.mensajes.slice(-TOPE_MENSAJES);
+    return true;
   }
 
   async marcarOptIn(conversacionId: string): Promise<void> {
@@ -74,5 +137,98 @@ export class RepositorioEnMemoria implements Repositorio {
   }): Promise<void> {
     // En memoria solo lo mostramos por consola. En prod se guarda en tabla.
     console.log("[calidad]", JSON.stringify(evento));
+  }
+
+  // ── Panel / bandeja humana ──
+  async setModoConversacion(tenantId: string, conversacionId: string, modo: ModoConversacion): Promise<void> {
+    const c = this.conversaciones.get(conversacionId);
+    if (!c || c.tenantId !== tenantId) return;
+    c.modo = modo;
+    // Marca el primer traspaso a humano y NO la borra al volver a bot (paridad con Drizzle).
+    if (modo === "humano" && !c.humanoEn) c.humanoEn = new Date().toISOString();
+  }
+
+  async listarConversaciones(tenantId: string): Promise<ResumenConversacion[]> {
+    return [...this.conversaciones.values()]
+      .filter((c) => c.tenantId === tenantId)
+      .map((c) => {
+        const ult = c.mensajes[c.mensajes.length - 1];
+        // sin_leer se calcula (no hay contador): mensajes del cliente posteriores a
+        // leidoHasta, y solo en modo humano. Misma semántica que el repo Drizzle.
+        const sinLeer =
+          c.modo === "humano"
+            ? c.mensajes.filter((m) => m.rol === "user" && (!c.leidoHasta || m.creadoEn > c.leidoHasta)).length
+            : 0;
+        return {
+          id: c.id,
+          clienteWa: c.clienteWa,
+          modo: c.modo,
+          ultimoMensaje: ult ? ult.contenido : null,
+          ultimaActividadEn: ult ? ult.creadoEn : c.creadaEn,
+          sinLeer,
+        };
+      })
+      .sort((a, b) => (b.ultimaActividadEn ?? "").localeCompare(a.ultimaActividadEn ?? ""));
+  }
+
+  async obtenerConversacionPorId(tenantId: string, conversacionId: string): Promise<Conversacion | null> {
+    const c = this.conversaciones.get(conversacionId);
+    if (!c || c.tenantId !== tenantId) return null;
+    return this.dto(c, 100); // copia (últimos 100), nunca el objeto vivo
+  }
+
+  async obtenerModo(tenantId: string, conversacionId: string): Promise<ModoConversacion | null> {
+    const c = this.conversaciones.get(conversacionId);
+    return c && c.tenantId === tenantId ? c.modo : null;
+  }
+
+  async marcarLeidas(tenantId: string, conversacionId: string): Promise<void> {
+    const c = this.conversaciones.get(conversacionId);
+    if (c && c.tenantId === tenantId) c.leidoHasta = new Date().toISOString();
+  }
+
+  async fichaCliente(tenantId: string, clienteWa: string): Promise<FichaCliente | null> {
+    const conv = this.conversaciones.get(this.clave(tenantId, clienteWa));
+    const citas = this.citas
+      .filter((c) => c.tenantId === tenantId && c.clienteWa === clienteWa)
+      .sort((a, b) => b.fecha.localeCompare(a.fecha));
+    if (!conv && citas.length === 0) return null;
+    const placas = [...new Set(citas.map((c) => c.placa).filter((p): p is string => !!p))];
+    return {
+      clienteWa,
+      nombre: citas.find((c) => c.clienteNombre)?.clienteNombre ?? null,
+      placas,
+      totalCitas: citas.length,
+      ultimaVisita: citas[0]?.fecha ?? null,
+      primerContacto: conv?.creadaEn ?? null,
+      notas: conv?.notas ?? "",
+      historial: citas.map((c) => ({ servicioId: c.servicioId, fecha: c.fecha, hora: c.hora, estado: c.estado })),
+    };
+  }
+
+  async guardarNotas(tenantId: string, conversacionId: string, notas: string): Promise<void> {
+    const c = this.conversaciones.get(conversacionId);
+    if (c && c.tenantId === tenantId) c.notas = notas;
+  }
+
+  async metricas(tenantId: string): Promise<Metricas> {
+    const convs = [...this.conversaciones.values()].filter((c) => c.tenantId === tenantId);
+    const citas = this.citas.filter((c) => c.tenantId === tenantId);
+    return calcularMetricas(convs.length, convs.filter((c) => c.modo === "humano").length, citas);
+  }
+
+  // ── Notificaciones push ──
+  async guardarPushSub(tenantId: string, sub: PushSub): Promise<void> {
+    this.pushSubs.set(sub.endpoint, { ...sub, tenantId });
+  }
+
+  async listarPushSubs(tenantId: string): Promise<PushSub[]> {
+    return [...this.pushSubs.values()]
+      .filter((s) => s.tenantId === tenantId)
+      .map(({ endpoint, p256dh, auth }) => ({ endpoint, p256dh, auth }));
+  }
+
+  async borrarPushSub(endpoint: string): Promise<void> {
+    this.pushSubs.delete(endpoint);
   }
 }

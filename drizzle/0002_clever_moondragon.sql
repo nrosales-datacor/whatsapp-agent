@@ -1,0 +1,1 @@
+ALTER TABLE "wa_conversaciones" ADD COLUMN "notas" text;
