@@ -64,6 +64,12 @@ async function ejecutarTool(
         motivo: "ese servicio no se agenda; los lavados son por orden de llegada.",
       });
     }
+    // Validar el formato de fecha/hora ANTES de persistir: la cita se muestra en el
+    // panel, así que un valor con formato raro no debe colarse (defensa en profundidad
+    // contra inyección por la ficha del cliente).
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(hora)) {
+      return JSON.stringify({ ok: false, motivo: "formato inválido: usá fecha YYYY-MM-DD y hora HH:mm (24h)." });
+    }
     // Validar que el espacio siga libre antes de crear (evita doble reserva).
     const citas = await repo.citasPorFecha(tenant.id, fecha);
     const libres = espaciosDisponibles(tenant, fecha, servicioId, citas);
@@ -78,6 +84,7 @@ async function ejecutarTool(
       fecha,
       hora,
       placa: args.placa ? String(args.placa) : undefined,
+      precio: args.precio != null && !Number.isNaN(Number(args.precio)) ? Number(args.precio) : undefined,
     });
 
     // Reflejar la cita en el Google Calendar del negocio (si está configurado).

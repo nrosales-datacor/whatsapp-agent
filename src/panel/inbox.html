@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b6b5e" />
+  <title>Bandeja</title>
+  <style>
+    /* ── Fuentes self-hosted (las sirve el panel; sin CDN, funciona offline) ── */
+    @font-face{font-family:'Inter';font-style:normal;font-weight:400;font-display:swap;src:url('/panel/fonts/inter-400.woff2') format('woff2');}
+    @font-face{font-family:'Inter';font-style:normal;font-weight:500;font-display:swap;src:url('/panel/fonts/inter-500.woff2') format('woff2');}
+    @font-face{font-family:'Inter';font-style:normal;font-weight:600;font-display:swap;src:url('/panel/fonts/inter-600.woff2') format('woff2');}
+    @font-face{font-family:'Inter';font-style:normal;font-weight:700;font-display:swap;src:url('/panel/fonts/inter-700.woff2') format('woff2');}
+    @font-face{font-family:'Space Grotesk';font-style:normal;font-weight:500;font-display:swap;src:url('/panel/fonts/space-grotesk-500.woff2') format('woff2');}
+    @font-face{font-family:'Space Grotesk';font-style:normal;font-weight:700;font-display:swap;src:url('/panel/fonts/space-grotesk-700.woff2') format('woff2');}
+
+    /* ── Tokens Swiss-minimal: neutros + UN acento (el verde de la marca) ── */
+    :root {
+      --font-display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+      --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+      /* Escala tipográfica: salto grande de display a cuerpo */
+      --step--1: .82rem; --step-0: 1rem; --step-1: 1.18rem; --step-2: 1.42rem;
+      --step-3: 1.9rem; --step-4: 2.6rem; --step-5: 3.4rem;
+      /* Color */
+      --bg: #F6F8F9; --surface: #FFFFFF; --surface-2: #F1F4F5;
+      --text: #0F1B22; --text-muted: #5B6B73; --border: #E3E8EA;
+      --accent: #0B6B5E; --accent-strong: #08564B; --on-accent: #FFFFFF;
+      --accent-soft: #E6F1EE; --accent-line: #CFE5E0;
+      --destructive: #C0392B; --destructive-soft: #FBEBE8;
+      /* Forma: radio casi nulo, sin sombras (salvo overlays) */
+      --radius: 4px; --radius-pill: 999px;
+      --shadow-overlay: 0 1px 2px rgba(15,27,34,.05), 0 16px 40px -12px rgba(15,27,34,.22);
+      /* Espaciado: contraste entre grupos apretados y secciones amplias */
+      --space-2xs: 4px; --space-xs: 8px; --space-sm: 12px; --space-md: 16px;
+      --space-lg: 24px; --space-xl: 40px; --space-2xl: 64px;
+      /* Alias legacy → tokens: los componentes aún sin refinar heredan el sistema */
+      --verde: var(--accent); --verde-claro: var(--accent-soft); --verde-burbuja: var(--surface-2);
+      --panel: var(--surface); --texto: var(--text); --gris: var(--text-muted);
+      --linea: var(--border); --rojo: var(--destructive);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body { font-family: var(--font-body); color: var(--text); background: var(--bg); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+    button { font: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .oculto { display: none !important; }
+
+    /* ── Login ── */
+    #login { min-height: 100%; display: flex; align-items: center; justify-content: center; padding: var(--space-lg); background: var(--bg); }
+    #login form { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-overlay); padding: var(--space-xl); width: 100%; max-width: 384px; }
+    .marca { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-xl); }
+    .marca-chip { display: grid; place-items: center; width: 38px; height: 38px; background: var(--accent); color: var(--on-accent); border-radius: var(--radius); flex-shrink: 0; }
+    .marca-chip svg { width: 20px; height: 20px; }
+    .marca-txt { font-size: var(--step--1); font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--text-muted); }
+    #login h1 { font-family: var(--font-display); font-size: var(--step-4); font-weight: 700; line-height: 1.04; letter-spacing: -.01em; color: var(--text); }
+    #login p { color: var(--text-muted); font-size: var(--step-0); line-height: 1.5; margin-top: var(--space-xs); margin-bottom: var(--space-xl); max-width: 34ch; }
+    #login label { display: block; font-size: var(--step--1); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); margin: var(--space-md) 0 var(--space-2xs); }
+    #login input { width: 100%; padding: 11px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: var(--step-0); color: var(--text); background: var(--surface); transition: border-color .15s, box-shadow .15s; }
+    #login input::placeholder { color: var(--text-muted); }
+    #login input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    #login button { width: 100%; margin-top: var(--space-xl); background: var(--accent); color: var(--on-accent); padding: 12px; border-radius: var(--radius); font-weight: 600; font-size: var(--step-0); transition: background .15s; }
+    #login button:hover { background: var(--accent-strong); }
+    #loginError { color: var(--destructive); font-size: var(--step--1); margin-top: var(--space-md); min-height: 16px; }
+
+    /* ── App ── */
+    #app { height: 100%; display: flex; }
+    #lista { width: 360px; max-width: 38%; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+    #lista header, #chat header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 var(--space-md); display: flex; align-items: center; gap: var(--space-sm); min-height: 60px; }
+    #lista header { justify-content: space-between; }
+    .negocio { font-family: var(--font-display); font-weight: 700; font-size: var(--step-1); letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .acciones { display: flex; gap: var(--space-2xs); flex-shrink: 0; }
+    .btn-ghost { color: var(--text-muted); font-size: var(--step--1); font-weight: 600; padding: 6px 10px; border-radius: var(--radius); border: 1px solid transparent; transition: background .15s, border-color .15s, color .15s; }
+    .btn-ghost:hover { background: var(--surface-2); border-color: var(--border); color: var(--text); }
+    #convs { flex: 1; overflow-y: auto; }
+    .conv { display: flex; gap: var(--space-sm); padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--border); cursor: pointer; align-items: center; transition: background .12s; }
+    .conv:hover { background: var(--surface-2); }
+    .conv.activa { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+    .avatar { width: 40px; height: 40px; border-radius: var(--radius); background: var(--accent-soft); color: var(--accent-strong); display: grid; place-items: center; font-weight: 600; font-size: var(--step--1); flex-shrink: 0; }
+    .conv .info { flex: 1; min-width: 0; }
+    .conv .fila { display: flex; justify-content: space-between; gap: var(--space-xs); align-items: baseline; }
+    .conv .fila + .fila { margin-top: 3px; }
+    .conv .num { font-weight: 600; font-size: var(--step-0); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .conv .hora { font-size: var(--step--1); color: var(--text-muted); flex-shrink: 0; }
+    .conv .ultimo { font-size: var(--step--1); color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .badges { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+    .pill { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 2px 6px; border-radius: var(--radius); border: 1px solid transparent; }
+    .pill.humano { background: var(--destructive-soft); color: var(--destructive); }
+    .pill.bot { background: var(--surface-2); color: var(--text-muted); border-color: var(--border); }
+    .badge { background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 700; min-width: 18px; height: 18px; border-radius: var(--radius); display: grid; place-items: center; padding: 0 5px; }
+
+    /* ── Chat ── */
+    #chat { flex: 1; display: flex; flex-direction: column; background: var(--bg); min-width: 0; }
+    .volver { display: none; background: none; color: var(--text-muted); padding: 6px; border-radius: var(--radius); }
+    .volver svg { width: 22px; height: 22px; display: block; }
+    .chatHead { flex: 1; min-width: 0; cursor: pointer; }
+    #chatTitulo { font-weight: 600; font-size: var(--step-0); }
+    #chatModo { font-size: var(--step--1); color: var(--text-muted); display: flex; align-items: center; gap: 6px; margin-top: 1px; }
+    .estado-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .estado-dot.bot { background: var(--text-muted); }
+    .estado-dot.humano { background: var(--accent); }
+    .chatHead .ver { font-size: var(--step--1); color: var(--accent); margin-top: 1px; }
+    .toggle { background: var(--accent); color: var(--on-accent); padding: 8px 14px; border-radius: var(--radius); font-size: var(--step--1); font-weight: 600; white-space: nowrap; flex-shrink: 0; transition: background .15s; }
+    .toggle:hover { background: var(--accent-strong); }
+    .toggle.devolver { background: var(--surface); color: var(--accent); border: 1px solid var(--accent-line); }
+    .toggle.devolver:hover { background: var(--accent-soft); }
+    #msgs { flex: 1; overflow-y: auto; padding: var(--space-lg) 8vw; display: flex; flex-direction: column; gap: var(--space-xs); }
+    .b { max-width: 72%; padding: var(--space-xs) var(--space-sm); border-radius: var(--radius); font-size: var(--step-0); line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; border: 1px solid var(--border); }
+    .b .meta { font-size: 10px; color: var(--text-muted); margin-top: 4px; text-align: right; }
+    .b.cliente { background: var(--surface); align-self: flex-start; }
+    .b.bot { background: var(--accent-soft); border-color: var(--accent-line); align-self: flex-end; }
+    .b.humano { background: var(--surface-2); align-self: flex-end; }
+    .b .quien { font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); margin-bottom: 3px; }
+    #composer { display: flex; gap: var(--space-xs); padding: var(--space-sm) var(--space-md); background: var(--surface); border-top: 1px solid var(--border); align-items: flex-end; }
+    #composer textarea { flex: 1; resize: none; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; font: inherit; font-size: var(--step-0); max-height: 120px; background: var(--surface); transition: border-color .15s, box-shadow .15s; }
+    #composer textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    #composer button { background: var(--accent); color: var(--on-accent); width: 42px; height: 42px; border-radius: var(--radius); display: grid; place-items: center; flex-shrink: 0; transition: background .15s; }
+    #composer button:hover { background: var(--accent-strong); }
+    #composer button svg { width: 20px; height: 20px; }
+    #vacio { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--text-muted); text-align: center; padding: var(--space-lg); font-size: var(--step-0); }
+
+    /* ── Ficha de cliente ── */
+    .overlay { position: fixed; inset: 0; background: rgba(15,27,34,.45); display: flex; align-items: center; justify-content: center; z-index: 50; padding: var(--space-md); }
+    .ficha-modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-overlay); width: 100%; max-width: 440px; max-height: 88vh; overflow-y: auto; }
+    .ficha-head { display: flex; justify-content: space-between; align-items: center; padding: var(--space-md) var(--space-lg); border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); }
+    .ficha-head h3 { font-family: var(--font-display); font-size: var(--step-2); font-weight: 700; letter-spacing: -.01em; }
+    .ficha-head button { background: none; font-size: var(--step-1); color: var(--text-muted); line-height: 1; padding: 4px; }
+    .ficha-body { padding: var(--space-md) var(--space-lg) var(--space-lg); }
+    .dato { display: flex; justify-content: space-between; gap: var(--space-sm); padding: 10px 0; border-bottom: 1px solid var(--border); font-size: var(--step-0); }
+    .dato span { color: var(--text-muted); }
+    .dato b { text-align: right; font-weight: 600; }
+    .ficha-body h4 { margin: var(--space-lg) 0 var(--space-xs); font-size: var(--step--1); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
+    .hist { font-size: var(--step--1); padding: var(--space-xs) var(--space-sm); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 6px; }
+    .hist b { color: var(--text); font-weight: 600; }
+    #fNotas { width: 100%; min-height: 80px; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; font: inherit; font-size: var(--step-0); resize: vertical; background: var(--surface); transition: border-color .15s, box-shadow .15s; }
+    #fNotas:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    #guardarNotas { margin-top: var(--space-sm); background: var(--accent); color: var(--on-accent); padding: 10px 16px; border-radius: var(--radius); font-weight: 600; font-size: var(--step--1); transition: background .15s; }
+    #guardarNotas:hover { background: var(--accent-strong); }
+
+    /* ── Dashboard ── */
+    #dashboard { position: fixed; inset: 0; background: var(--bg); z-index: 40; overflow-y: auto; display: none; }
+    #dashboard.activo { display: block; }
+    .dash-head { background: var(--surface); border-bottom: 1px solid var(--border); padding: var(--space-md) var(--space-lg); display: flex; align-items: center; gap: var(--space-md); position: sticky; top: 0; }
+    .dash-head h2 { font-family: var(--font-display); font-size: var(--step-2); font-weight: 700; letter-spacing: -.01em; flex: 1; }
+    .dash-head button { color: var(--text-muted); font-size: var(--step--1); font-weight: 600; padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--border); transition: background .15s, color .15s; }
+    .dash-head button:hover { background: var(--surface-2); color: var(--text); }
+    .dash-body { padding: var(--space-xl) var(--space-lg); max-width: 920px; margin: 0 auto; }
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-md); margin-bottom: var(--space-xl); }
+    .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-md) var(--space-lg); }
+    .kpi .n { font-family: var(--font-display); font-size: var(--step-4); font-weight: 700; line-height: 1; color: var(--text); letter-spacing: -.02em; }
+    .kpi .l { font-size: var(--step--1); color: var(--text-muted); margin-top: var(--space-xs); }
+    .kpi.hero .n { color: var(--accent); } /* ingresos lidera la jerarquía (acento con moderación) */
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-md) var(--space-lg); margin-bottom: var(--space-md); }
+    .card h3 { font-size: var(--step--1); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: var(--space-md); }
+    .barra { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-xs); font-size: var(--step--1); }
+    .barra .et { width: 130px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-muted); }
+    .barra .track { display: block; flex: 1; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); height: 20px; overflow: hidden; }
+    .barra .fill { display: block; height: 100%; background: var(--accent); min-width: 2px; }
+    .barra .v { width: 34px; text-align: right; font-weight: 700; color: var(--text); }
+
+    @media (max-width: 760px) {
+      #lista { width: 100%; max-width: 100%; }
+      #lista.escondida { display: none; }
+      #chat { position: fixed; inset: 0; }
+      #chat.escondido { display: none; }
+      #msgs { padding: var(--space-md); }
+      .dash-body { padding: var(--space-lg) var(--space-md); }
+      /* Áreas táctiles ≥44px (WCAG 2.5.5): crece el área de toque, no el peso visual. */
+      .btn-ghost, .toggle, .dash-head button { min-height: 44px; display: inline-flex; align-items: center; }
+      .volver, #composer button, .ficha-head button { width: 44px; height: 44px; display: grid; place-items: center; }
+    }
+  </style>
+</head>
+<body>
+  <!-- LOGIN -->
+  <div id="login">
+    <form id="loginForm">
+      <div class="marca">
+        <span class="marca-chip" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13h4l2 3h4l2-3h4"/><path d="M5 6h14a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1Z"/></svg>
+        </span>
+        <span class="marca-txt">Panel de atención</span>
+      </div>
+      <h1>Bandeja</h1>
+      <p>Ingresá para responder a tus clientes y ver las métricas de tu negocio.</p>
+      <label for="usuario">Negocio</label>
+      <input id="usuario" autocomplete="username" placeholder="ej: lavacar-rosales" required />
+      <label for="password">Contraseña</label>
+      <input id="password" type="password" autocomplete="current-password" required />
+      <button type="submit">Entrar</button>
+      <div id="loginError"></div>
+    </form>
+  </div>
+
+  <!-- APP -->
+  <div id="app" class="oculto">
+    <section id="lista">
+      <header>
+        <span class="negocio" id="negocioNombre">—</span>
+        <div class="acciones">
+          <button type="button" class="btn-ghost" id="btnPanel">Panel</button>
+          <button type="button" class="btn-ghost" id="btnSalir">Salir</button>
+        </div>
+      </header>
+      <div id="convs"></div>
+    </section>
+
+    <section id="chat" class="escondido">
+      <header>
+        <button type="button" class="volver" id="btnVolver" title="Volver a la lista" aria-label="Volver a la lista">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        </button>
+        <div class="chatHead oculto" id="chatHead">
+          <div id="chatTitulo"></div>
+          <div id="chatModo"></div>
+          <div class="ver">Ver ficha del cliente ›</div>
+        </div>
+        <button type="button" class="toggle oculto" id="btnToggle"></button>
+      </header>
+      <div id="vacio">Elegí una conversación para empezar.</div>
+      <div id="msgs" class="oculto"></div>
+      <div id="composer" class="oculto">
+        <textarea id="texto" rows="1" placeholder="Escribí un mensaje..."></textarea>
+        <button type="button" id="btnEnviar" title="Enviar" aria-label="Enviar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg>
+        </button>
+      </div>
+    </section>
+
+    <!-- Ficha de cliente (modal) -->
+    <div id="fichaOverlay" class="overlay oculto">
+      <div class="ficha-modal">
+        <div class="ficha-head">
+          <h3 id="fichaNombre">Cliente</h3>
+          <button type="button" id="cerrarFicha" title="Cerrar">✕</button>
+        </div>
+        <div class="ficha-body">
+          <div class="dato"><span>Teléfono</span><b id="fNum">—</b></div>
+          <div class="dato"><span>Vehículos</span><b id="fPlacas">—</b></div>
+          <div class="dato"><span>Total de citas</span><b id="fCitas">0</b></div>
+          <div class="dato"><span>Última visita</span><b id="fUltima">—</b></div>
+          <div class="dato"><span>Cliente desde</span><b id="fDesde">—</b></div>
+          <h4>Historial de servicios</h4>
+          <div id="fHistorial"></div>
+          <h4>Notas privadas</h4>
+          <textarea id="fNotas" placeholder="Ej: paga con SINPE, prefiere las mañanas, cliente de Uber..."></textarea>
+          <button type="button" id="guardarNotas">Guardar notas</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dashboard -->
+  <div id="dashboard">
+    <div class="dash-head">
+      <h2 id="dashTitulo">Panel</h2>
+      <button type="button" id="cerrarDash">Volver a chats</button>
+    </div>
+    <div class="dash-body">
+      <div class="kpis">
+        <div class="kpi"><div class="n" id="kConv">0</div><div class="l">Conversaciones</div></div>
+        <div class="kpi"><div class="n" id="kCitas">0</div><div class="l">Citas agendadas</div></div>
+        <div class="kpi"><div class="n" id="kConversion">0%</div><div class="l">Conversión (chats → citas)</div></div>
+        <div class="kpi hero"><div class="n" id="kIngresos">₡0</div><div class="l">Ingresos estimados</div></div>
+      </div>
+      <div class="card"><h3>Citas por día</h3><div id="cCitasDia"></div></div>
+      <div class="card"><h3>Servicios más pedidos</h3><div id="cServicios"></div></div>
+      <div class="card"><h3>Horas pico</h3><div id="cHoras"></div></div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (s) => document.querySelector(s);
+    let estado = { convs: [], abierta: null, nombre: "" };
+
+    async function api(ruta, opts) {
+      const r = await fetch("/api/panel/" + ruta, { headers: { "content-type": "application/json" }, ...opts });
+      if (r.status === 401) { mostrarLogin(); throw new Error("401"); }
+      return r.json();
+    }
+    // Escapa también comillas: así es seguro tanto en texto como dentro de atributos.
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const hora = (iso) => iso ? new Date(iso).toLocaleTimeString("es-CR", { hour: "2-digit", minute: "2-digit" }) : "";
+    const fmtNum = (wa) => "+" + wa;
+
+    function mostrarLogin() { $("#login").classList.remove("oculto"); $("#app").classList.add("oculto"); }
+    function mostrarApp() { $("#login").classList.add("oculto"); $("#app").classList.remove("oculto"); }
+
+    // ── Login ──
+    $("#loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      $("#loginError").textContent = "";
+      const r = await api("login", { method: "POST", body: JSON.stringify({ usuario: $("#usuario").value.trim(), password: $("#password").value }) }).catch(() => ({ ok: false, error: "Error de conexión" }));
+      if (r.ok) { estado.nombre = r.nombre; iniciar(); }
+      else $("#loginError").textContent = r.error || "No se pudo entrar";
+    });
+    $("#btnSalir").addEventListener("click", async () => { await api("logout", { method: "POST" }).catch(() => {}); location.reload(); });
+
+    // ── Lista de conversaciones ──
+    async function cargarConvs() {
+      const r = await api("conversaciones").catch(() => null);
+      if (!r || !r.ok) return;
+      estado.convs = r.conversaciones;
+      renderLista();
+    }
+    function renderLista() {
+      $("#negocioNombre").textContent = estado.nombre;
+      // Evitamos reconstruir el DOM en cada poll si nada cambió. La firma incluye la
+      // conversación activa para refrescar el resaltado al cambiar de chat.
+      const sig = estado.abierta + "||" + estado.convs
+        .map((c) => [c.id, c.ultimaActividadEn, c.sinLeer, c.modo, c.ultimoMensaje || ""].join("·"))
+        .join("|");
+      if (sig === estado._sigLista) return;
+      estado._sigLista = sig;
+      $("#convs").innerHTML = estado.convs.map((c) => `
+        <div class="conv ${estado.abierta === c.id ? "activa" : ""}" data-id="${esc(c.id)}">
+          <div class="avatar">${esc(c.clienteWa.slice(-2))}</div>
+          <div class="info">
+            <div class="fila"><span class="num">${esc(fmtNum(c.clienteWa))}</span><span class="hora">${hora(c.ultimaActividadEn)}</span></div>
+            <div class="fila">
+              <span class="ultimo">${esc(c.ultimoMensaje || "—")}</span>
+              <span class="badges">
+                <span class="pill ${c.modo}">${c.modo === "humano" ? "humano" : "bot"}</span>
+                ${c.sinLeer > 0 ? `<span class="badge">${c.sinLeer}</span>` : ""}
+              </span>
+            </div>
+          </div>
+        </div>`).join("") || `<div style="padding:24px;color:var(--gris);text-align:center">Todavía no hay conversaciones.</div>`;
+    }
+    // Un solo listener delegado (en vez de reatar uno por fila en cada render).
+    $("#convs").addEventListener("click", (e) => {
+      const el = e.target.closest(".conv");
+      if (el) abrir(el.dataset.id);
+    });
+
+    // ── Chat abierto ──
+    async function abrir(id) {
+      estado.abierta = id;
+      const r = await api("conversaciones/" + encodeURIComponent(id)).catch(() => null);
+      if (!r || !r.ok) return;
+      renderChat(r.conversacion);
+      renderLista();
+      if (window.innerWidth <= 760) { $("#lista").classList.add("escondida"); $("#chat").classList.remove("escondido"); }
+    }
+    function renderChat(conv) {
+      estado.convActual = conv;
+      $("#chatHead").classList.remove("oculto"); // se mostraba "—" + pill vacío sin chat abierto
+      $("#chatTitulo").textContent = fmtNum(conv.clienteWa);
+      const humano = conv.modo === "humano";
+      // Indicador con punto de estado (sin emoji). Texto estático → innerHTML seguro.
+      $("#chatModo").innerHTML = humano
+        ? '<span class="estado-dot humano"></span>Lo estás atendiendo vos'
+        : '<span class="estado-dot bot"></span>Lo atiende el bot';
+      const btn = $("#btnToggle");
+      btn.textContent = humano ? "Devolver al bot" : "Atender yo";
+      btn.className = "toggle" + (humano ? " devolver" : ""); // reasigna className → quita "oculto"
+      $("#vacio").classList.add("oculto");
+      $("#msgs").classList.remove("oculto");
+      $("#composer").classList.remove("oculto");
+      $("#msgs").innerHTML = conv.mensajes.map((m) => {
+        const clase = m.rol === "user" ? "cliente" : (m.porHumano ? "humano" : "bot");
+        const quien = m.rol === "user" ? "" : (m.porHumano ? `<div class="quien">Vos</div>` : `<div class="quien">Bot</div>`);
+        return `<div class="b ${clase}">${quien}${esc(m.contenido)}<div class="meta">${hora(m.creadoEn)}</div></div>`;
+      }).join("");
+      const m = $("#msgs"); m.scrollTop = m.scrollHeight;
+      // Marca de actividad del chat abierto: el poll la usa para decidir si recargar.
+      const ult = conv.mensajes[conv.mensajes.length - 1];
+      estado.ultimaActividadAbierta = ult ? ult.creadoEn : null;
+    }
+
+    // Reinicia el panel de chat a su estado vacío (sin conversación abierta).
+    function mostrarVacio() {
+      estado.convActual = null;
+      $("#chatHead").classList.add("oculto");
+      $("#btnToggle").classList.add("oculto");
+      $("#msgs").classList.add("oculto");
+      $("#composer").classList.add("oculto");
+      $("#vacio").classList.remove("oculto");
+    }
+
+    $("#btnVolver").addEventListener("click", () => { $("#lista").classList.remove("escondida"); $("#chat").classList.add("escondido"); estado.abierta = null; mostrarVacio(); renderLista(); });
+
+    $("#btnToggle").addEventListener("click", async () => {
+      if (!estado.convActual) return;
+      const nuevo = estado.convActual.modo === "humano" ? "bot" : "humano";
+      await api("conversaciones/" + encodeURIComponent(estado.convActual.id) + "/modo", { method: "POST", body: JSON.stringify({ modo: nuevo }) });
+      abrir(estado.convActual.id);
+    });
+
+    async function enviar() {
+      const ta = $("#texto"); const t = ta.value.trim();
+      if (!t || !estado.convActual) return;
+      ta.value = ""; ta.style.height = "auto";
+      const r = await api("conversaciones/" + encodeURIComponent(estado.convActual.id) + "/responder", { method: "POST", body: JSON.stringify({ texto: t }) }).catch(() => ({ ok: false }));
+      if (!r.ok) { alert(r.error || "No se pudo enviar"); ta.value = t; ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 120) + "px"; return; }
+      abrir(estado.convActual.id);
+    }
+    $("#btnEnviar").addEventListener("click", enviar);
+    $("#texto").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(); } });
+    $("#texto").addEventListener("input", (e) => { e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px"; });
+
+    // ── Ficha de cliente ──
+    async function abrirFicha() {
+      if (!estado.convActual) return;
+      const r = await api("conversaciones/" + encodeURIComponent(estado.convActual.id) + "/ficha").catch(() => null);
+      if (!r || !r.ok) return;
+      const f = r.ficha;
+      $("#fichaNombre").textContent = f && f.nombre ? f.nombre : "Cliente";
+      $("#fNum").textContent = fmtNum(estado.convActual.clienteWa);
+      $("#fPlacas").textContent = f && f.placas.length ? f.placas.join(", ") : "—";
+      $("#fCitas").textContent = f ? f.totalCitas : 0;
+      $("#fUltima").textContent = f && f.ultimaVisita ? f.ultimaVisita : "—";
+      $("#fDesde").textContent = f && f.primerContacto ? new Date(f.primerContacto).toLocaleDateString("es-CR") : "—";
+      $("#fHistorial").innerHTML =
+        f && f.historial.length
+          ? f.historial.map((h) => `<div class="hist"><b>${esc(h.servicioNombre)}</b> · ${esc(h.fecha)} ${esc(h.hora)} <span style="color:var(--text-muted)">(${esc(h.estado)})</span></div>`).join("")
+          : `<div style="color:var(--gris);font-size:13px">Sin citas todavía.</div>`;
+      $("#fNotas").value = f && f.notas ? f.notas : "";
+      $("#fichaOverlay").classList.remove("oculto");
+    }
+    $("#chatHead").addEventListener("click", abrirFicha);
+    $("#cerrarFicha").addEventListener("click", () => $("#fichaOverlay").classList.add("oculto"));
+    $("#fichaOverlay").addEventListener("click", (e) => { if (e.target.id === "fichaOverlay") $("#fichaOverlay").classList.add("oculto"); });
+    $("#guardarNotas").addEventListener("click", async () => {
+      if (!estado.convActual) return;
+      await api("conversaciones/" + encodeURIComponent(estado.convActual.id) + "/notas", { method: "POST", body: JSON.stringify({ notas: $("#fNotas").value }) }).catch(() => {});
+      const b = $("#guardarNotas"); b.textContent = "Guardado"; setTimeout(() => (b.textContent = "Guardar notas"), 1500);
+    });
+
+    // ── Dashboard ──
+    function renderBarras(sel, items) {
+      const max = Math.max(1, ...items.map((i) => i.v));
+      $(sel).innerHTML = items.length
+        ? items.map((i) => `<div class="barra"><span class="et">${esc(String(i.et))}</span><span class="track"><span class="fill" style="width:${Math.round((i.v / max) * 100)}%"></span></span><span class="v">${i.v}</span></div>`).join("")
+        : `<div style="color:var(--gris);font-size:13px">Sin datos todavía.</div>`;
+    }
+    async function abrirDashboard() {
+      const r = await api("metricas").catch(() => null);
+      if (!r || !r.ok) return;
+      const m = r.metricas;
+      $("#dashTitulo").textContent = "Panel · " + estado.nombre;
+      $("#kConv").textContent = m.totalConversaciones;
+      $("#kCitas").textContent = m.totalCitas;
+      $("#kConversion").textContent = m.conversionPct + "%";
+      $("#kIngresos").textContent = "₡" + (m.ingresosEstimados || 0).toLocaleString("es-CR");
+      renderBarras("#cCitasDia", m.citasPorDia.map((d) => ({ et: d.fecha, v: d.cantidad })));
+      renderBarras("#cServicios", m.serviciosTop.map((s) => ({ et: s.nombre || s.servicioId, v: s.cantidad })));
+      renderBarras("#cHoras", m.horasPico.map((h) => ({ et: h.hora, v: h.cantidad })));
+      $("#dashboard").classList.add("activo");
+    }
+    $("#btnPanel").addEventListener("click", abrirDashboard);
+    $("#cerrarDash").addEventListener("click", () => $("#dashboard").classList.remove("activo"));
+
+    // ── Arranque + refresco ──
+    function iniciar() {
+      mostrarApp();
+      cargarConvs();
+      clearInterval(window._poll);
+      window._poll = setInterval(refrescar, 4000);
+    }
+    // Cada ciclo refresca la lista (1 sola query) y SOLO recarga el chat abierto si su
+    // última actividad cambió, evitando el GET + render + marcar-leído cada 4s sin novedad.
+    async function refrescar() {
+      await cargarConvs();
+      if (!estado.abierta) return;
+      const c = estado.convs.find((x) => x.id === estado.abierta);
+      if (c && c.ultimaActividadEn !== estado.ultimaActividadAbierta) refrescarChatSilencioso();
+    }
+    async function refrescarChatSilencioso() {
+      const r = await api("conversaciones/" + encodeURIComponent(estado.abierta)).catch(() => null);
+      if (r && r.ok) renderChat(r.conversacion);
+    }
+
+    (async () => {
+      const r = await api("me").catch(() => null);
+      if (r && r.ok) { estado.nombre = r.nombre; iniciar(); } else mostrarLogin();
+    })();
+  </script>
+</body>
+</html>

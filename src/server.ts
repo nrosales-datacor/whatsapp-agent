@@ -1,12 +1,13 @@
 import "dotenv/config";
 import http from "node:http";
 import { verificarWebhook, firmaValida } from "./whatsapp/client";
-import { manejarWebhook } from "./handleWebhook";
+import { ingerirEntrante, responderEntrante } from "./handleWebhook";
 import { RepositorioEnMemoria } from "./booking/inMemoryRepository";
 import { RepositorioDrizzle } from "./booking/drizzleRepository";
 import { crearDb } from "./db/client";
 import { iniciarRecordatorios } from "./reminders/scheduler";
 import { calendarioConfigurado } from "./calendar/googleCalendar";
+import { manejarPanel } from "./panel/router";
 import type { Repositorio } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -31,6 +32,9 @@ const server = http.createServer(async (req, res) => {
     res.end("Agente de WhatsApp corriendo ✅");
     return;
   }
+
+  // Panel web (bandeja humana): /panel y /api/panel/*.
+  if (await manejarPanel(req, res, repo, url.pathname)) return;
 
   if (url.pathname !== RUTA_WEBHOOK) {
     res.writeHead(404);
@@ -73,16 +77,39 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // Respondemos 200 rápido para que Meta no reintente; el LLM corre aparte.
+    // FASE 1: persistir el entrante ANTES de responder 200. Si falla, devolvemos 500
+    // y Meta reintenta — la deduplicación por waMessageId evita procesarlo dos veces.
+    let pendiente;
+    try {
+      pendiente = await ingerirEntrante(body, repo);
+    } catch (e) {
+      console.error("[server] no se pudo persistir el mensaje entrante (Meta reintentará):", e);
+      res.writeHead(500, { "content-type": "text/plain" });
+      res.end("error");
+      return;
+    }
+
+    // FASE 2: respondemos 200 rápido y procesamos la respuesta (LLM) aparte.
     res.writeHead(200, { "content-type": "text/plain" });
     res.end("EVENT_RECEIVED");
-    manejarWebhook(body, repo).catch((e) => console.error("[server] manejarWebhook:", e));
+    if (pendiente) {
+      responderEntrante(pendiente, repo).catch((e) => console.error("[server] responderEntrante:", e));
+    }
     return;
   }
 
   res.writeHead(405);
   res.end("Method not allowed");
 });
+
+// Datos de demo para desarrollo/diseño del panel. SOLO se siembran en el repo en
+// memoria: si hay DATABASE_URL (base real), se ignora para no ensuciar producción.
+if (process.env.SEED_DEMO && !process.env.DATABASE_URL) {
+  const { seedDemo } = await import("./panel/seedDemo");
+  await seedDemo(repo).catch((e) => console.error("[seed] error:", e));
+} else if (process.env.SEED_DEMO) {
+  console.warn("[seed] SEED_DEMO ignorado: hay DATABASE_URL. Los datos de demo solo se cargan en memoria.");
+}
 
 server.listen(PORT, () => {
   const modo = process.env.DATABASE_URL ? "PostgreSQL (Drizzle)" : "memoria (no persiste)";

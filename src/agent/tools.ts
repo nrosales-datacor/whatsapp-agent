@@ -38,6 +38,11 @@ export const TOOLS: ChatCompletionTool[] = [
           fecha: { type: "string", description: "Fecha en formato YYYY-MM-DD." },
           hora: { type: "string", description: "Hora en formato HH:mm (24h)." },
           placa: { type: "string", description: "Placa del vehículo (opcional)." },
+          precio: {
+            type: "number",
+            description:
+              "Precio cotizado en colones (ej: 15000), tomado de la tabla de parabrisas según el vehículo. Para pulido de focos (se cotiza en persona) omitir.",
+          },
         },
         required: ["nombre", "servicioId", "fecha", "hora"],
         additionalProperties: false,

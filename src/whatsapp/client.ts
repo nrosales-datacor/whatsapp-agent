@@ -37,9 +37,11 @@ export function firmaValida(rawBody: string, firmaHeader: string | null): boolea
 // ─────────────────────────────────────────────────────────────────────────────
 export interface MensajeEntrante {
   phoneNumberId: string; // a qué número llegó → identifica el tenant
-  clienteWa: string; // número del cliente (E.164 sin "+")
+  clienteWa: string; // número del cliente, SOLO dígitos (E.164 sin "+")
   texto: string; // texto del mensaje (vacío si no es texto)
   esTexto: boolean;
+  /** id del mensaje en WhatsApp (msg.id). Para deduplicar reintentos de Meta. */
+  messageId?: string;
 }
 
 export function parsearEntrante(body: any): MensajeEntrante | null {
@@ -48,11 +50,14 @@ export function parsearEntrante(body: any): MensajeEntrante | null {
     const msg = value?.messages?.[0];
     if (!msg) return null; // puede ser un status (entregado/leído), lo ignoramos
     const phoneNumberId = value?.metadata?.phone_number_id;
-    const clienteWa = msg.from;
+    // Saneamos el "from" a solo dígitos: nunca confiamos en el payload crudo. Así un
+    // número con caracteres raros no se cuela a la UI del panel (defensa en
+    // profundidad contra XSS) y la clave del cliente queda consistente.
+    const clienteWa = String(msg.from ?? "").replace(/\D/g, "");
     const esTexto = msg.type === "text";
     const texto = esTexto ? (msg.text?.body ?? "") : "";
     if (!phoneNumberId || !clienteWa) return null;
-    return { phoneNumberId, clienteWa, texto, esTexto };
+    return { phoneNumberId, clienteWa, texto, esTexto, messageId: msg.id ? String(msg.id) : undefined };
   } catch {
     return null;
   }
