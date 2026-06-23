@@ -202,6 +202,29 @@ Esto ya está corriendo. Quedó así, distinto del genérico de arriba en alguno
   en `~/.ssh/config`), agregada en GitHub → Settings → Deploy keys de este repo.
   No se tocó la deploy key que ya usa selyon (`~/.ssh/github_deploy`).
 
+## 13. Actualizar a la versión con PANEL (bandeja humana + CRM + dashboard)
+
+La versión nueva agrega el panel web en `/panel`. Necesita **dos secretos nuevos en el
+`.env`** y **correr las migraciones** (la base cambió: columnas `modo`, `no_leidos`,
+`notas`, `precio`, campos de Google Calendar y la tabla `wa_push_subs`).
+
+> ⚠️ Sin `PANEL_SESSION_SECRET` el servidor **NO arranca en producción** (se cae el
+> bot que ya funciona). Sin `PANEL_PASSWORD_HASH_ROSALES` nadie puede entrar al panel.
+
+```bash
+cd ~/lavacar-whatsapp-bot
+nano .env        # agregá las DOS líneas que te pasó Nathan (PANEL_SESSION_SECRET y
+                 # PANEL_PASSWORD_HASH_ROSALES). Guardá: Ctrl+O, Enter, Ctrl+X.
+git pull
+npm install
+npx tsx scripts/migrar.ts        # crea/actualiza las tablas (idempotente)
+pm2 restart whatsapp-bot
+pm2 logs whatsapp-bot            # debe decir "Agente escuchando", sin errores de PANEL_SESSION_SECRET
+```
+
+Probá en el navegador (PC o celular): **https://wabotlavacar.selyon.app/panel**
+Usuario `lavacar-rosales`, contraseña `lavacar2026` (cambiala cuanto antes).
+
 ## Mantenimiento rápido
 
 | Acción | Comando |
@@ -209,7 +232,7 @@ Esto ya está corriendo. Quedó así, distinto del genérico de arriba en alguno
 | Ver estado | `pm2 status` |
 | Ver registros | `pm2 logs whatsapp-bot` |
 | Reiniciar | `pm2 restart whatsapp-bot` |
-| Actualizar el código | `cd ~/lavacar-whatsapp-bot && git pull && npm install && pm2 restart whatsapp-bot` |
+| Actualizar el código | `cd ~/lavacar-whatsapp-bot && git pull && npm install && npx tsx scripts/migrar.ts && pm2 restart whatsapp-bot` |
 
 ## Si algo falla
 - El bot no arranca → `pm2 logs whatsapp-bot` (suele ser algo del `.env`).
