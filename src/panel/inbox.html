@@ -10,7 +10,7 @@
   <link rel="apple-touch-icon" href="/panel/icons/icon-180.png" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Bandeja" />
   <style>
     /* ── Fuentes self-hosted (las sirve el panel; sin CDN, funciona offline) ── */
@@ -167,6 +167,14 @@
     .barra .track { display: block; flex: 1; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); height: 20px; overflow: hidden; }
     .barra .fill { display: block; height: 100%; background: var(--accent); min-width: 2px; }
     .barra .v { width: 34px; text-align: right; font-weight: 700; color: var(--text); }
+
+    /* ── Safe areas: evita que la barra de estado / notch / home indicator del
+       celular tapen el contenido cuando se instala como app (PWA). En pantallas
+       sin notch, env() vale 0 y no cambia nada. ── */
+    #lista header, #chat header { padding-top: env(safe-area-inset-top); min-height: calc(60px + env(safe-area-inset-top)); }
+    .dash-head { padding-top: calc(var(--space-md) + env(safe-area-inset-top)); }
+    #composer { padding-bottom: calc(var(--space-sm) + env(safe-area-inset-bottom)); }
+    #convs { padding-bottom: env(safe-area-inset-bottom); }
 
     @media (max-width: 760px) {
       #lista { width: 100%; max-width: 100%; }
