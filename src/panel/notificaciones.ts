@@ -1,9 +1,10 @@
 import type { Conversacion, Repositorio, Tenant } from "../types";
+import { enviarPushATenant, pushConfigurado } from "./push";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Aviso al operador de que un cliente necesita atención humana.
-//   Fase 1: lo registra en consola (y el badge del panel ya lo muestra).
-//   Fase 2: enviará una notificación PUSH (Web Push) a los navegadores suscritos.
+//   - Lo registra en consola (y el badge del panel ya lo muestra).
+//   - Envía una notificación PUSH (Web Push) a los navegadores/celulares suscritos.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function notificarOperador(
@@ -15,6 +16,16 @@ export async function notificarOperador(
   console.log(
     `[panel] 🔔 ${tenant.nombre}: +${conv.clienteWa} necesita atención humana — "${texto.slice(0, 60)}"`,
   );
-  // Fase 2: notificación push real a repo.listarPushSubs(tenant.id).
-  void repo;
+
+  if (!pushConfigurado()) return; // sin VAPID configurado, solo queda el log + badge
+
+  const r = await enviarPushATenant(repo, tenant.id, {
+    title: `💬 +${conv.clienteWa} quiere hablar`,
+    body: texto.slice(0, 120),
+    url: "/panel/",
+    tag: conv.id, // una notificación por chat (no se acumulan)
+  });
+  if (r.enviadas === 0 && r.fallidas === 0) {
+    console.log(`[push] ${tenant.nombre}: sin dispositivos suscritos todavía`);
+  }
 }

@@ -5,6 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0b6b5e" />
   <title>Bandeja</title>
+  <!-- PWA: instalable + notificaciones push -->
+  <link rel="manifest" href="/panel/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/panel/icons/icon-180.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Bandeja" />
   <style>
     /* ── Fuentes self-hosted (las sirve el panel; sin CDN, funciona offline) ── */
     @font-face{font-family:'Inter';font-style:normal;font-weight:400;font-display:swap;src:url('/panel/fonts/inter-400.woff2') format('woff2');}
@@ -71,6 +78,10 @@
     .acciones { display: flex; gap: var(--space-2xs); flex-shrink: 0; }
     .btn-ghost { color: var(--text-muted); font-size: var(--step--1); font-weight: 600; padding: 6px 10px; border-radius: var(--radius); border: 1px solid transparent; transition: background .15s, border-color .15s, color .15s; }
     .btn-ghost:hover { background: var(--surface-2); border-color: var(--border); color: var(--text); }
+    .btn-ghost.btn-icono { padding: 6px; display: inline-grid; place-items: center; }
+    .btn-ghost.btn-icono svg { width: 18px; height: 18px; display: block; }
+    .btn-ghost.btn-icono.on { color: var(--accent); }
+    .btn-ghost.btn-icono.on:hover { color: var(--accent-strong); }
     #convs { flex: 1; overflow-y: auto; }
     .conv { display: flex; gap: var(--space-sm); padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--border); cursor: pointer; align-items: center; transition: background .12s; }
     .conv:hover { background: var(--surface-2); }
@@ -197,6 +208,9 @@
       <header>
         <span class="negocio" id="negocioNombre">—</span>
         <div class="acciones">
+          <button type="button" class="btn-ghost btn-icono" id="btnNotif" title="Activar notificaciones" aria-label="Activar notificaciones" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+          </button>
           <button type="button" class="btn-ghost" id="btnPanel">Panel</button>
           <button type="button" class="btn-ghost" id="btnSalir">Salir</button>
         </div>
@@ -290,7 +304,7 @@
       e.preventDefault();
       $("#loginError").textContent = "";
       const r = await api("login", { method: "POST", body: JSON.stringify({ usuario: $("#usuario").value.trim(), password: $("#password").value }) }).catch(() => ({ ok: false, error: "Error de conexión" }));
-      if (r.ok) { estado.nombre = r.nombre; iniciar(); }
+      if (r.ok) { estado.nombre = r.nombre; estado.vapid = r.vapidPublica; iniciar(); }
       else $("#loginError").textContent = r.error || "No se pudo entrar";
     });
     $("#btnSalir").addEventListener("click", async () => { await api("logout", { method: "POST" }).catch(() => {}); location.reload(); });
@@ -450,10 +464,71 @@
     $("#btnPanel").addEventListener("click", abrirDashboard);
     $("#cerrarDash").addEventListener("click", () => $("#dashboard").classList.remove("activo"));
 
+    // ── Notificaciones push (PWA) ──
+    const soportaPush = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+    let swReg = null;
+
+    // La llave VAPID llega en base64url; el navegador la necesita como Uint8Array.
+    function urlB64ToUint8(base64) {
+      const pad = "=".repeat((4 - (base64.length % 4)) % 4);
+      const b64 = (base64 + pad).replace(/-/g, "+").replace(/_/g, "/");
+      const raw = atob(b64);
+      const arr = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+      return arr;
+    }
+    async function registrarSW() {
+      if (!("serviceWorker" in navigator)) return;
+      try { swReg = await navigator.serviceWorker.register("/panel/sw.js"); }
+      catch (e) { console.warn("[panel] SW no registrado:", e); }
+    }
+    async function subActual() {
+      if (!swReg) return null;
+      try { return await swReg.pushManager.getSubscription(); } catch { return null; }
+    }
+    async function pintarBotonNotif() {
+      const btn = $("#btnNotif");
+      if (!soportaPush || !estado.vapid) { btn.hidden = true; return; }
+      btn.hidden = false;
+      const activo = !!(await subActual()) && Notification.permission === "granted";
+      btn.classList.toggle("on", activo);
+      btn.title = activo
+        ? "Notificaciones activas (tocá para enviar una de prueba)"
+        : Notification.permission === "denied"
+          ? "Notificaciones bloqueadas en el navegador"
+          : "Activar notificaciones";
+    }
+    async function activarNotif() {
+      if (!soportaPush || !estado.vapid) return;
+      if (Notification.permission === "denied") {
+        alert("Las notificaciones están bloqueadas. Activálas en los ajustes del navegador (ícono junto a la dirección) y volvé a intentar.");
+        return;
+      }
+      try {
+        await registrarSW();
+        await navigator.serviceWorker.ready;
+        let sub = await subActual();
+        if (!sub) {
+          const permiso = await Notification.requestPermission();
+          if (permiso !== "granted") { await pintarBotonNotif(); return; }
+          sub = await swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8(estado.vapid) });
+          const j = sub.toJSON();
+          await api("push/suscribir", { method: "POST", body: JSON.stringify({ endpoint: j.endpoint, keys: j.keys }) });
+        }
+        await api("push/probar", { method: "POST" }).catch(() => {});
+        await pintarBotonNotif();
+      } catch (e) {
+        console.error("[panel] activarNotif:", e);
+        alert("No se pudieron activar las notificaciones: " + (e && e.message ? e.message : e));
+      }
+    }
+    $("#btnNotif").addEventListener("click", activarNotif);
+
     // ── Arranque + refresco ──
     function iniciar() {
       mostrarApp();
       cargarConvs();
+      registrarSW().then(pintarBotonNotif);
       clearInterval(window._poll);
       window._poll = setInterval(refrescar, 4000);
     }
@@ -472,7 +547,7 @@
 
     (async () => {
       const r = await api("me").catch(() => null);
-      if (r && r.ok) { estado.nombre = r.nombre; iniciar(); } else mostrarLogin();
+      if (r && r.ok) { estado.nombre = r.nombre; estado.vapid = r.vapidPublica; iniciar(); } else mostrarLogin();
     })();
   </script>
 </body>

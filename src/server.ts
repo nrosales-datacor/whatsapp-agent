@@ -8,6 +8,7 @@ import { crearDb } from "./db/client";
 import { iniciarRecordatorios } from "./reminders/scheduler";
 import { calendarioConfigurado } from "./calendar/googleCalendar";
 import { manejarPanel } from "./panel/router";
+import { pushConfigurado } from "./panel/push";
 import type { Repositorio } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -116,6 +117,7 @@ server.listen(PORT, () => {
   console.log(`Agente escuchando en http://localhost:${PORT}`);
   console.log(`Webhook: http://localhost:${PORT}${RUTA_WEBHOOK}  ·  Almacenamiento: ${modo}`);
   console.log(`Google Calendar: ${calendarioConfigurado() ? "conectado ✅" : "no configurado (opcional)"}`);
+  console.log(`Notificaciones push: ${pushConfigurado() ? "configuradas ✅" : "no configuradas (faltan llaves VAPID)"}`);
 
   // Recordatorios de cita por WhatsApp (día antes + mismo día).
   iniciarRecordatorios(repo);
