@@ -212,22 +212,24 @@ Google Calendar y la tabla `wa_push_subs`).
 > ⚠️ Sin `PANEL_SESSION_SECRET` el servidor **NO arranca en producción** (se cae el
 > bot que ya funciona). Sin `PANEL_PASSWORD_HASH_ROSALES` nadie puede entrar al panel.
 
-Líneas a agregar al `.env` (las dos primeras te las pasa Nathan; las VAPID se generan):
+Líneas a agregar al `.env`. **Las 5 te las pasa Nathan** (ya están generadas — NO las
+generes vos: si las VAPID cambian, se rompen todas las suscripciones de push):
 
 ```
 PANEL_SESSION_SECRET=...                # te lo pasa Nathan (obligatorio)
 PANEL_PASSWORD_HASH_ROSALES=salt:hash   # te lo pasa Nathan (obligatorio)
-VAPID_PUBLIC_KEY=...                     # para notificaciones push (ver abajo)
-VAPID_PRIVATE_KEY=...                    # SECRETA
+VAPID_PUBLIC_KEY=...                     # te lo pasa Nathan
+VAPID_PRIVATE_KEY=...                    # te lo pasa Nathan (SECRETA)
 VAPID_SUBJECT=mailto:soporte@selyon.app
 ```
 
-Las llaves VAPID se generan UNA sola vez (cualquiera de los dos las genera y se pegan
-en el `.env`; deben quedar fijas, no regenerarlas en cada deploy):
-
-```bash
-npx web-push generate-vapid-keys
-```
+> Es **un solo redeploy** para todo lo nuevo (bandeja + CRM + dashboard + PWA + push):
+> está todo en `main`. Si todavía no habías actualizado desde la versión vieja, este
+> redeploy lo trae junto.
+>
+> _(Las llaves VAPID se generan una única vez por toda la vida del producto con
+> `npx web-push generate-vapid-keys`. Ya se hizo; solo sirve si algún día se levanta
+> una instancia nueva desde cero.)_
 
 Luego, en el droplet:
 
