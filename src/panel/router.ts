@@ -5,9 +5,10 @@ import { TENANTS } from "../config/tenants";
 import { enviarTexto } from "../whatsapp/client";
 import type { Repositorio, Tenant } from "../types";
 import { crearSesion, HASH_DUMMY, verificarPassword, verificarSesion } from "./auth";
+import { clavePublicaVapid, enviarPushATenant } from "./push";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Panel web (bandeja humana). Maneja las rutas /panel y /api/panel/*.
+// Panel web (bandeja humana). Maneja las rutas /panel, /panel/* y /api/panel/*.
 // Devuelve true si manejó la request; false si no es ruta del panel.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -23,6 +24,23 @@ function leerFuente(file: string): Buffer | null {
   try {
     const buf = readFileSync(fileURLToPath(new URL(`./fonts/${file}`, import.meta.url)));
     fontCache.set(file, buf);
+    return buf;
+  } catch {
+    return null;
+  }
+}
+
+// Assets de la PWA (íconos, manifest, service worker). Allowlist + caché en memoria.
+const assetCache = new Map<string, Buffer>();
+function leerAsset(rel: string): Buffer | null {
+  if (rel !== "sw.js" && rel !== "manifest.webmanifest" && !/^icons\/[a-z0-9-]+\.png$/.test(rel)) {
+    return null;
+  }
+  const cached = assetCache.get(rel);
+  if (cached) return cached;
+  try {
+    const buf = readFileSync(fileURLToPath(new URL(`./${rel}`, import.meta.url)));
+    assetCache.set(rel, buf);
     return buf;
   } catch {
     return null;
@@ -117,6 +135,32 @@ export async function manejarPanel(
     return true;
   }
 
+  // ── Assets de la PWA: service worker, manifest e íconos ──
+  if (pathname === "/panel/sw.js" || pathname === "/panel/manifest.webmanifest" || pathname.startsWith("/panel/icons/")) {
+    const rel = pathname.slice("/panel/".length);
+    const buf = leerAsset(rel);
+    if (!buf) {
+      res.writeHead(404);
+      res.end("Not found");
+      return true;
+    }
+    const headers: Record<string, string> = {};
+    if (rel === "sw.js") {
+      headers["content-type"] = "text/javascript; charset=utf-8";
+      headers["cache-control"] = "no-cache"; // el navegador revalida el SW seguido
+      headers["service-worker-allowed"] = "/panel/";
+    } else if (rel === "manifest.webmanifest") {
+      headers["content-type"] = "application/manifest+json; charset=utf-8";
+      headers["cache-control"] = "max-age=3600";
+    } else {
+      headers["content-type"] = "image/png";
+      headers["cache-control"] = "public, max-age=31536000, immutable";
+    }
+    res.writeHead(200, headers);
+    res.end(buf);
+    return true;
+  }
+
   if (!pathname.startsWith("/api/panel/")) return false;
   const ruta = pathname.slice("/api/panel/".length).replace(/\/$/, "");
 
@@ -141,7 +185,7 @@ export async function manejarPanel(
     }
     const cookie = `${COOKIE}=${crearSesion(tenant.id)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${7 * 24 * 60 * 60}`;
     res.writeHead(200, { "content-type": "application/json; charset=utf-8", "set-cookie": cookie });
-    res.end(JSON.stringify({ ok: true, nombre: tenant.nombre }));
+    res.end(JSON.stringify({ ok: true, nombre: tenant.nombre, vapidPublica: clavePublicaVapid() }));
     return true;
   }
 
@@ -162,8 +206,37 @@ export async function manejarPanel(
   }
 
   if (ruta === "me" && metodo === "GET") {
-    json(res, 200, { ok: true, nombre: tenant.nombre, tenantId: tenant.id });
+    json(res, 200, { ok: true, nombre: tenant.nombre, tenantId: tenant.id, vapidPublica: clavePublicaVapid() });
     return true;
+  }
+
+  // ── Notificaciones push ──
+  if (ruta === "push/suscribir" && metodo === "POST") {
+    const body = await leerBody(req);
+    if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
+    const endpoint = body?.endpoint;
+    const p256dh = body?.keys?.p256dh;
+    const auth = body?.keys?.auth;
+    if (!endpoint || !p256dh || !auth) return json(res, 400, { ok: false, error: "Suscripción inválida" }), true;
+    await repo.guardarPushSub(tenant.id, { endpoint: String(endpoint), p256dh: String(p256dh), auth: String(auth) });
+    return json(res, 200, { ok: true }), true;
+  }
+
+  if (ruta === "push/desuscribir" && metodo === "POST") {
+    const body = await leerBody(req);
+    if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
+    if (body?.endpoint) await repo.borrarPushSub(String(body.endpoint));
+    return json(res, 200, { ok: true }), true;
+  }
+
+  if (ruta === "push/probar" && metodo === "POST") {
+    const r = await enviarPushATenant(repo, tenant.id, {
+      title: "✅ Notificaciones activas",
+      body: "Te avisaremos por acá cuando un cliente necesite atención.",
+      url: "/panel/",
+      tag: "prueba",
+    });
+    return json(res, 200, { ok: true, ...r }), true;
   }
 
   if (ruta === "conversaciones" && metodo === "GET") {

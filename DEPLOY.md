@@ -204,26 +204,48 @@ Esto ya está corriendo. Quedó así, distinto del genérico de arriba en alguno
 
 ## 13. Actualizar a la versión con PANEL (bandeja humana + CRM + dashboard)
 
-La versión nueva agrega el panel web en `/panel`. Necesita **dos secretos nuevos en el
-`.env`** y **correr las migraciones** (la base cambió: columnas `modo`, `no_leidos`,
-`notas`, `precio`, campos de Google Calendar y la tabla `wa_push_subs`).
+La versión nueva agrega el panel web en `/panel`, **instalable como app (PWA)** y con
+**notificaciones push** al celular. Necesita secretos nuevos en el `.env` y **correr las
+migraciones** (la base cambió: columnas `modo`, `no_leidos`, `notas`, `precio`, campos de
+Google Calendar y la tabla `wa_push_subs`).
 
 > ⚠️ Sin `PANEL_SESSION_SECRET` el servidor **NO arranca en producción** (se cae el
 > bot que ya funciona). Sin `PANEL_PASSWORD_HASH_ROSALES` nadie puede entrar al panel.
 
+Líneas a agregar al `.env` (las dos primeras te las pasa Nathan; las VAPID se generan):
+
+```
+PANEL_SESSION_SECRET=...                # te lo pasa Nathan (obligatorio)
+PANEL_PASSWORD_HASH_ROSALES=salt:hash   # te lo pasa Nathan (obligatorio)
+VAPID_PUBLIC_KEY=...                     # para notificaciones push (ver abajo)
+VAPID_PRIVATE_KEY=...                    # SECRETA
+VAPID_SUBJECT=mailto:soporte@selyon.app
+```
+
+Las llaves VAPID se generan UNA sola vez (cualquiera de los dos las genera y se pegan
+en el `.env`; deben quedar fijas, no regenerarlas en cada deploy):
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Luego, en el droplet:
+
 ```bash
 cd ~/lavacar-whatsapp-bot
-nano .env        # agregá las DOS líneas que te pasó Nathan (PANEL_SESSION_SECRET y
-                 # PANEL_PASSWORD_HASH_ROSALES). Guardá: Ctrl+O, Enter, Ctrl+X.
+nano .env        # pegá las líneas de arriba. Guardá: Ctrl+O, Enter, Ctrl+X.
 git pull
 npm install
 npx tsx scripts/migrar.ts        # crea/actualiza las tablas (idempotente)
 pm2 restart whatsapp-bot
-pm2 logs whatsapp-bot            # debe decir "Agente escuchando", sin errores de PANEL_SESSION_SECRET
+pm2 logs whatsapp-bot            # debe decir "Agente escuchando" + "Notificaciones push: configuradas ✅"
 ```
 
 Probá en el navegador (PC o celular): **https://wabotlavacar.selyon.app/panel**
 Usuario `lavacar-rosales`, contraseña `lavacar2026` (cambiala cuanto antes).
+En el celular: abrí ese link → menú del navegador → **"Agregar a pantalla de inicio"**
+para instalarla como app. Adentro, tocá la 🔔 (arriba a la derecha) para activar las
+notificaciones (te pedirá permiso y te llegará una de prueba).
 
 ## Mantenimiento rápido
 
