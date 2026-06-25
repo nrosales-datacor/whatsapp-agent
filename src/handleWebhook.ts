@@ -10,7 +10,7 @@ const AVISO_BOT =
 
 // Resultado de la fase de ingesta: lo que quedó listo (y ya persistido) para responder.
 type Pendiente =
-  | { clase: "no-texto"; tenant: Tenant; entrante: MensajeEntrante }
+  | { clase: "no-texto"; tenant: Tenant; entrante: MensajeEntrante; conv: Conversacion }
   | {
       clase: "texto";
       tenant: Tenant;
@@ -49,7 +49,7 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio): Promise
       waMessageId: entrante.messageId,
     });
     if (!esNuevo) return null;
-    return { clase: "no-texto", tenant, entrante };
+    return { clase: "no-texto", tenant, entrante, conv };
   }
 
   console.log(`[entrante] ${entrante.clienteWa}: "${entrante.texto.slice(0, 80)}"`);
@@ -82,7 +82,20 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio): Promise
  */
 export async function responderEntrante(p: Pendiente, repo: Repositorio): Promise<void> {
   if (p.clase === "no-texto") {
-    await enviarTexto(p.tenant, p.entrante.clienteWa, "Por ahora solo puedo leer mensajes de texto 🙂");
+    // El bot no puede leer fotos/audios/stickers. Le pedimos al cliente que
+    // escriba en qué ayudarle Y avisamos a un humano: el adjunto puede ser
+    // importante (p. ej. la foto del parabrisas a pulir) y no queremos ignorarlo.
+    await enviarTexto(
+      p.tenant,
+      p.entrante.clienteWa,
+      "¡Hola! 🙂 Por ahora no puedo ver fotos, audios ni stickers. Contame por texto en qué te puedo ayudar (precios, horarios, ubicación o agendar una cita) y con gusto te atiendo.",
+    ).catch((e) => console.error("[no-texto] no se pudo responder al cliente:", e));
+    await notificarOperador(
+      repo,
+      p.tenant,
+      p.conv,
+      "📎 Llegó un mensaje multimedia que el bot no puede leer (foto/audio/sticker).",
+    ).catch((e) => console.error("[no-texto] notificarOperador:", e));
     return;
   }
 
@@ -179,6 +192,15 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
       entrante.clienteWa,
       "Disculpá, tuvimos un problemita. Probá de nuevo en un momento 🙏",
     ).catch(() => {});
+    // Red de seguridad: avisar a un humano para que entre de una. Si el envío de
+    // arriba también falló (p. ej. caída de WhatsApp), el cliente quedó sin
+    // respuesta y no queremos que espere horas hasta que alguien lo note a mano.
+    await notificarOperador(
+      repo,
+      tenant,
+      conv,
+      `⚠️ El bot no pudo responder a "${entrante.texto.slice(0, 60)}". Conviene atenderlo a mano.`,
+    ).catch((e2) => console.error("[webhook] notificarOperador tras error:", e2));
   }
 }
 
