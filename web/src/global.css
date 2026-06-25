@@ -1,0 +1,97 @@
+/* ── Tokens base (Swiss-minimal) — subconjunto del sistema del panel actual.
+   El set completo se porta en el paso A2 al migrar las pantallas. ── */
+:root {
+  --font-body: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --bg: #f6f8f9;
+  --surface: #ffffff;
+  --text: #0f1b22;
+  --text-muted: #5b6b73;
+  --border: #e3e8ea;
+  --accent: #0b6b5e;
+  --on-accent: #ffffff;
+  --radius: 4px;
+  --shadow-overlay: 0 1px 2px rgba(15, 27, 34, 0.05), 0 16px 40px -12px rgba(15, 27, 34, 0.22);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.shell {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-overlay);
+  padding: 40px;
+  width: 100%;
+  max-width: 460px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.brand-chip {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  background: var(--accent);
+  color: var(--on-accent);
+  border-radius: var(--radius);
+  flex-shrink: 0;
+}
+
+.brand-txt {
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.card h1 {
+  font-size: 1.9rem;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+
+.card p {
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1.55;
+  margin-top: 12px;
+}
+
+.card p.muted {
+  font-size: 0.82rem;
+  margin-top: 24px;
+}
