@@ -64,31 +64,98 @@ export function parsearEntrante(body: any): MensajeEntrante | null {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 4) Envío de un mensaje de texto al cliente.
+// 4) Envío de mensajes a la Graph API, con REINTENTOS ante fallos transitorios.
+//
+// Meta a veces devuelve hipos momentáneos y recuperables (los marca con
+// `is_transient: true`, p. ej. «(#2) Service temporarily unavailable»), además de
+// rate limits (429) y errores de servidor (5xx). Sin reintento, un solo hipo deja
+// al cliente sin respuesta — fue justo lo que pasó: una respuesta del bot se
+// perdió por un error transitorio y el cliente esperó horas. Reintentamos con
+// backoff exponencial. Esto corre en la fase 2 (después del 200 a Meta), así que
+// unos segundos extra no bloquean el webhook.
 // ─────────────────────────────────────────────────────────────────────────────
-export async function enviarTexto(tenant: Tenant, paraWa: string, texto: string): Promise<void> {
+const MAX_INTENTOS_ENVIO = 3;
+
+const dormir = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+// Backoff antes de reintentar tras el intento `n` que falló: 500ms, 1500ms… (tope 5s).
+const retardoMs = (intentoFallido: number) => Math.min(500 * 3 ** (intentoFallido - 1), 5000);
+
+function statusEsTransitorio(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+// Códigos de error de Meta tratados como transitorios aunque lleguen con HTTP 400/200.
+// Ref Meta: 1 (API desconocido), 2 (servicio no disponible), 4/80007/130429 (rate
+// limit), 131000 («algo salió mal»), 131016 (servicio no disponible), 133016.
+const CODIGOS_META_TRANSITORIOS = new Set([1, 2, 4, 80007, 130429, 131000, 131016, 133016]);
+
+function cuerpoEsTransitorio(detalle: string): boolean {
+  try {
+    const err = JSON.parse(detalle)?.error;
+    if (!err) return false;
+    if (err.is_transient === true) return true;
+    return typeof err.code === "number" && CODIGOS_META_TRANSITORIOS.has(err.code);
+  } catch {
+    return false; // no es JSON de Meta → no asumimos transitorio
+  }
+}
+
+// POST genérico a /{phone_number_id}/messages con reintentos. `etiqueta` arma el
+// mensaje de error (se conserva el formato «Error enviando WhatsApp (status): …»).
+async function postMensaje(
+  tenant: Tenant,
+  contenido: Record<string, unknown>,
+  etiqueta: string,
+): Promise<void> {
   const token = tenant.accessToken ?? process.env.WHATSAPP_ACCESS_TOKEN;
   if (!token) throw new Error("Falta access token de WhatsApp para el tenant " + tenant.id);
 
   const url = `https://graph.facebook.com/${GRAPH_VERSION}/${tenant.phoneNumberId}/messages`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      to: paraWa,
-      type: "text",
-      text: { body: texto.slice(0, 4096) }, // límite de WhatsApp
-    }),
-  });
+  const cuerpo = JSON.stringify({ messaging_product: "whatsapp", ...contenido });
 
-  if (!res.ok) {
+  let ultimoError: Error | null = null;
+  for (let intento = 1; intento <= MAX_INTENTOS_ENVIO; intento++) {
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: cuerpo,
+      });
+    } catch (e) {
+      // fetch lanzó (DNS/red/timeout): siempre transitorio.
+      ultimoError = e instanceof Error ? e : new Error(String(e));
+      if (intento < MAX_INTENTOS_ENVIO) {
+        console.warn(`[whatsapp] red falló (intento ${intento}/${MAX_INTENTOS_ENVIO}), reintento: ${ultimoError.message}`);
+        await dormir(retardoMs(intento));
+        continue;
+      }
+      throw ultimoError;
+    }
+
+    if (res.ok) return;
+
     const detalle = await res.text();
-    throw new Error(`Error enviando WhatsApp (${res.status}): ${detalle}`);
+    ultimoError = new Error(`Error ${etiqueta} (${res.status}): ${detalle}`);
+    const transitorio = statusEsTransitorio(res.status) || cuerpoEsTransitorio(detalle);
+    if (transitorio && intento < MAX_INTENTOS_ENVIO) {
+      console.warn(`[whatsapp] envío transitorio falló (intento ${intento}/${MAX_INTENTOS_ENVIO}), reintento: ${detalle.slice(0, 140)}`);
+      await dormir(retardoMs(intento));
+      continue;
+    }
+    throw ultimoError; // error permanente, o se agotaron los intentos
   }
+  throw ultimoError ?? new Error(`Error ${etiqueta}: se agotaron los reintentos`);
+}
+
+// Envío de un mensaje de texto al cliente.
+export async function enviarTexto(tenant: Tenant, paraWa: string, texto: string): Promise<void> {
+  await postMensaje(
+    tenant,
+    { to: paraWa, type: "text", text: { body: texto.slice(0, 4096) } }, // 4096 = límite de WhatsApp
+    "enviando WhatsApp",
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -105,18 +172,9 @@ export async function enviarPlantilla(
   idioma: string,
   parametros: string[],
 ): Promise<void> {
-  const token = tenant.accessToken ?? process.env.WHATSAPP_ACCESS_TOKEN;
-  if (!token) throw new Error("Falta access token de WhatsApp para el tenant " + tenant.id);
-
-  const url = `https://graph.facebook.com/${GRAPH_VERSION}/${tenant.phoneNumberId}/messages`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
+  await postMensaje(
+    tenant,
+    {
       to: paraWa,
       type: "template",
       template: {
@@ -131,11 +189,7 @@ export async function enviarPlantilla(
             ]
           : undefined,
       },
-    }),
-  });
-
-  if (!res.ok) {
-    const detalle = await res.text();
-    throw new Error(`Error enviando plantilla WhatsApp (${res.status}): ${detalle}`);
-  }
+    },
+    "enviando plantilla WhatsApp",
+  );
 }
