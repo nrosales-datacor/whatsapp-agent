@@ -1,0 +1,151 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Capa de API tipada del panel (paso A3 del ROADMAP).
+//
+// Envuelve los endpoints /api/panel/* del backend. REUSA los tipos del dominio
+// desde src/types.ts (import SOLO de tipos → se borra en el build, no acopla el
+// runtime del frontend con el del server). En dev, Vite proxya /api al backend
+// (ver vite.config.ts); en prod es el mismo origen, así que la cookie de sesión
+// viaja sola — igual mandamos credentials: "include" por claridad.
+// ─────────────────────────────────────────────────────────────────────────────
+import type {
+  Conversacion,
+  FichaCliente,
+  Metricas,
+  ModoConversacion,
+  ResumenConversacion,
+} from "../../src/types";
+
+export type { Conversacion, FichaCliente, Metricas, ModoConversacion, ResumenConversacion };
+
+const BASE = "/api/panel";
+
+/** Error de una llamada a la API. `status` 0 = no hubo respuesta (red caída). */
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+/** true si el error es "no autenticado" (401) → el caller debe mandar al login. */
+export function esNoAutenticado(e: unknown): e is ApiError {
+  return e instanceof ApiError && e.status === 401;
+}
+
+// Sobre del backend: éxito trae { ok:true, ...datos }; error trae { ok:false, error }.
+type Respuesta<T> = ({ ok: true } & T) | { ok: false; error: string };
+
+async function pedir<T = unknown>(path: string, init?: RequestInit): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      credentials: "include",
+      headers: init?.body ? { "Content-Type": "application/json" } : undefined,
+      ...init,
+    });
+  } catch {
+    throw new ApiError(0, "No hay conexión con el servidor.");
+  }
+
+  let cuerpo: Respuesta<T> | null = null;
+  try {
+    cuerpo = (await res.json()) as Respuesta<T>;
+  } catch {
+    // respuesta sin JSON (p. ej. 500 en texto plano)
+  }
+
+  if (!res.ok || !cuerpo || cuerpo.ok === false) {
+    const msg = cuerpo && cuerpo.ok === false ? cuerpo.error : `Error ${res.status || "de red"}`;
+    throw new ApiError(res.status, msg);
+  }
+  return cuerpo as T;
+}
+
+// ── Tipos de respuesta que enriquecen los del dominio ──
+export interface Sesion {
+  nombre: string;
+  tenantId: string;
+  /** Clave pública VAPID para suscribir push (null si el server no tiene push). */
+  vapidPublica: string | null;
+}
+
+/** La ficha que devuelve el panel agrega el nombre del servicio a cada ítem del historial. */
+export interface FichaEnriquecida extends Omit<FichaCliente, "historial"> {
+  historial: (FichaCliente["historial"][number] & { servicioNombre: string })[];
+}
+
+// ── Auth ──
+export function login(usuario: string, password: string) {
+  return pedir<{ nombre: string; vapidPublica: string | null }>("/login", {
+    method: "POST",
+    body: JSON.stringify({ usuario, password }),
+  });
+}
+
+export async function logout(): Promise<void> {
+  await pedir("/logout", { method: "POST" });
+}
+
+export function me(): Promise<Sesion> {
+  return pedir<Sesion>("/me");
+}
+
+// ── Bandeja ──
+export function listarConversaciones(): Promise<ResumenConversacion[]> {
+  return pedir<{ conversaciones: ResumenConversacion[] }>("/conversaciones").then((r) => r.conversaciones);
+}
+
+export function obtenerConversacion(id: string): Promise<Conversacion> {
+  return pedir<{ conversacion: Conversacion }>(`/conversaciones/${encodeURIComponent(id)}`).then(
+    (r) => r.conversacion,
+  );
+}
+
+export async function responder(id: string, texto: string): Promise<void> {
+  await pedir(`/conversaciones/${encodeURIComponent(id)}/responder`, {
+    method: "POST",
+    body: JSON.stringify({ texto }),
+  });
+}
+
+export async function cambiarModo(id: string, modo: ModoConversacion): Promise<void> {
+  await pedir(`/conversaciones/${encodeURIComponent(id)}/modo`, {
+    method: "POST",
+    body: JSON.stringify({ modo }),
+  });
+}
+
+export function obtenerFicha(id: string): Promise<FichaEnriquecida | null> {
+  return pedir<{ ficha: FichaEnriquecida | null }>(`/conversaciones/${encodeURIComponent(id)}/ficha`).then(
+    (r) => r.ficha,
+  );
+}
+
+export async function guardarNotas(id: string, notas: string): Promise<void> {
+  await pedir(`/conversaciones/${encodeURIComponent(id)}/notas`, {
+    method: "POST",
+    body: JSON.stringify({ notas }),
+  });
+}
+
+// ── Métricas ──
+export function obtenerMetricas(): Promise<Metricas> {
+  return pedir<{ metricas: Metricas }>("/metricas").then((r) => r.metricas);
+}
+
+// ── Notificaciones push (Web Push) ──
+export async function suscribirPush(sub: PushSubscriptionJSON): Promise<void> {
+  // El backend lee endpoint + keys.p256dh + keys.auth, justo lo que da sub.toJSON().
+  await pedir("/push/suscribir", { method: "POST", body: JSON.stringify(sub) });
+}
+
+export async function desuscribirPush(endpoint: string): Promise<void> {
+  await pedir("/push/desuscribir", { method: "POST", body: JSON.stringify({ endpoint }) });
+}
+
+export function probarPush(): Promise<{ enviadas: number; fallidas: number }> {
+  return pedir<{ enviadas: number; fallidas: number }>("/push/probar", { method: "POST" });
+}
