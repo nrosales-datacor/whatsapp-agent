@@ -10,20 +10,34 @@
 import type {
   Conversacion,
   FichaCliente,
+  HorarioDia,
+  KnowledgeBase,
   Metricas,
   ModoConversacion,
   ResumenConversacion,
+  Service,
 } from "../../src/types";
 
-export type { Conversacion, FichaCliente, Metricas, ModoConversacion, ResumenConversacion };
+export type {
+  Conversacion,
+  FichaCliente,
+  HorarioDia,
+  KnowledgeBase,
+  Metricas,
+  ModoConversacion,
+  ResumenConversacion,
+  Service,
+};
 
 const BASE = "/api/panel";
 
-/** Error de una llamada a la API. `status` 0 = no hubo respuesta (red caída). */
+/** Error de una llamada a la API. `status` 0 = no hubo respuesta (red caída).
+ *  `path` (p. ej. "/me" o "/admin/me") permite distinguir la compuerta operador vs admin. */
 export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    public path?: string,
   ) {
     super(message);
     this.name = "ApiError";
@@ -47,7 +61,7 @@ async function pedir<T = unknown>(path: string, init?: RequestInit): Promise<T> 
       ...init,
     });
   } catch {
-    throw new ApiError(0, "No hay conexión con el servidor.");
+    throw new ApiError(0, "No hay conexión con el servidor.", path);
   }
 
   let cuerpo: Respuesta<T> | null = null;
@@ -59,7 +73,7 @@ async function pedir<T = unknown>(path: string, init?: RequestInit): Promise<T> 
 
   if (!res.ok || !cuerpo || cuerpo.ok === false) {
     const msg = cuerpo && cuerpo.ok === false ? cuerpo.error : `Error ${res.status || "de red"}`;
-    throw new ApiError(res.status, msg);
+    throw new ApiError(res.status, msg, path);
   }
   return cuerpo as T;
 }
@@ -148,4 +162,61 @@ export async function desuscribirPush(endpoint: string): Promise<void> {
 
 export function probarPush(): Promise<{ enviadas: number; fallidas: number }> {
   return pedir<{ enviadas: number; fallidas: number }>("/push/probar", { method: "POST" });
+}
+
+// ── Admin / onboarding (ROADMAP B3) ──
+// Área del superadmin: alta de negocios. Sesión y cookie aparte de la del operador.
+export interface AdminSesion {
+  admin: true;
+  usuario: string;
+  /** false en dev sin DATABASE_URL: el alta requiere base. La UI deshabilita el submit. */
+  hayDb: boolean;
+}
+
+export interface TenantResumen {
+  id: string;
+  nombre: string;
+  phoneNumberId: string;
+  moneda: string;
+  timezone: string;
+  servicios: number;
+}
+
+/** Cuerpo del alta de negocio (lo valida y normaliza el backend igual). */
+export interface AltaTenant {
+  tenant: {
+    id: string;
+    nombre: string;
+    phoneNumberId: string;
+    accessToken?: string;
+    timezone: string;
+    moneda: string;
+    ubicacion: string;
+    intervaloAgendaMin: number;
+    horario: Record<number, HorarioDia>;
+    servicios: Service[];
+    kb: KnowledgeBase;
+  };
+  usuario: string;
+  password: string;
+}
+
+export function adminLogin(usuario: string, password: string) {
+  return pedir("/admin/login", { method: "POST", body: JSON.stringify({ usuario, password }) });
+}
+
+export async function adminLogout(): Promise<void> {
+  await pedir("/admin/logout", { method: "POST" });
+}
+
+export function adminMe(): Promise<AdminSesion> {
+  return pedir<AdminSesion>("/admin/me");
+}
+
+export function adminListarTenants(): Promise<TenantResumen[]> {
+  return pedir<{ tenants: TenantResumen[] }>("/admin/tenants").then((r) => r.tenants);
+}
+
+export function adminCrearTenant(body: AltaTenant): Promise<{ tenantId: string }> {
+  return pedir<{ tenantId: string }>("/admin/tenants", { method: "POST", body: JSON.stringify(body) });
 }
