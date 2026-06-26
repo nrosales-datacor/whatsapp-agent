@@ -1,5 +1,5 @@
 import type { Conversacion, MensajeConversacion, Repositorio, Tenant } from "./types";
-import { tenantPorPhoneNumberId } from "./config/tenants";
+import { obtenerTenantPorPhoneNumberId, refrescarSiFaltaPhoneNumberId } from "./config/tenantStore";
 import { parsearEntrante, enviarTexto, type MensajeEntrante } from "./whatsapp/client";
 import { correrAgente } from "./agent/runAgent";
 import { notificarOperador } from "./panel/notificaciones";
@@ -31,9 +31,12 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio): Promise
   const entrante = parsearEntrante(body);
   if (!entrante) return null; // status u otro evento que no nos interesa
 
-  const tenant = tenantPorPhoneNumberId(entrante.phoneNumberId);
+  const tenant = obtenerTenantPorPhoneNumberId(entrante.phoneNumberId);
   if (!tenant) {
     console.warn("[webhook] mensaje a un phone_number_id sin tenant:", entrante.phoneNumberId);
+    // Quizás es un negocio recién dado de alta que el caché aún no tiene: gatilla un
+    // refresh (fire-and-forget, con cooldown) para tomarlo en el próximo mensaje.
+    refrescarSiFaltaPhoneNumberId(entrante.phoneNumberId);
     return null;
   }
 

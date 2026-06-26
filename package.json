@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "seed:tenants": "tsx scripts/seedTenants.ts",
     "web:dev": "npm --prefix web run dev",
     "web:build": "npm --prefix web install && npm --prefix web run build"
   },

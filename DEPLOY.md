@@ -239,10 +239,22 @@ nano .env        # pegá las líneas de arriba. Guardá: Ctrl+O, Enter, Ctrl+X.
 git pull
 npm install
 npx tsx scripts/migrar.ts        # crea/actualiza las tablas (idempotente)
+npx tsx scripts/seedTenants.ts   # siembra el negocio + usuario del panel en la base (idempotente, ver nota 🆕 tenants)
 npm run web:build                # compila el panel React (web/) → web/dist (ver nota abajo)
 pm2 restart whatsapp-bot
 pm2 logs whatsapp-bot            # debe decir "Agente escuchando" + "Notificaciones push: configuradas ✅"
 ```
+
+> 🆕 **Los negocios ahora viven en la base (no en el código).** `scripts/seedTenants.ts`
+> inserta/actualiza el negocio `lavacar-rosales` y su usuario de panel en las tablas
+> `wa_tenants`/`wa_usuarios` a partir de la config + `PANEL_PASSWORD_HASH_ROSALES` del
+> `.env`. **Corre DESPUÉS de `migrar.ts` y ANTES del `pm2 restart`** para que al reiniciar
+> el bot ya encuentre al negocio en la base. Es idempotente (se puede correr en cada deploy).
+> **Red de seguridad:** si la base quedara sin negocios o no respondiera, el bot cae a una
+> copia interna de `lavacar-rosales` y sigue atendiendo (en los logs aparece un aviso
+> ruidoso indicando que hay que correr el seed) — así esta migración no puede dejar el bot
+> caído. Dar de alta OTRO negocio = insertar filas en `wa_tenants`/`wa_usuarios` (el bot lo
+> toma solo en ~1 min, sin redeploy); más adelante eso será por pantalla (onboarding, B3).
 
 > 🆕 **El panel ahora es React (Vite).** `npm run web:build` instala las dependencias
 > de `web/` y genera `web/dist` (que NO está en git). El bot sirve ese build en
@@ -265,7 +277,7 @@ notificaciones (te pedirá permiso y te llegará una de prueba).
 | Ver estado | `pm2 status` |
 | Ver registros | `pm2 logs whatsapp-bot` |
 | Reiniciar | `pm2 restart whatsapp-bot` |
-| Actualizar el código | `cd ~/lavacar-whatsapp-bot && git pull && npm install && npx tsx scripts/migrar.ts && npm run web:build && pm2 restart whatsapp-bot` |
+| Actualizar el código | `cd ~/lavacar-whatsapp-bot && git pull && npm install && npx tsx scripts/migrar.ts && npx tsx scripts/seedTenants.ts && npm run web:build && pm2 restart whatsapp-bot` |
 
 ## Si algo falla
 - El bot no arranca → `pm2 logs whatsapp-bot` (suele ser algo del `.env`).

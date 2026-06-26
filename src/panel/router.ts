@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { TENANTS } from "../config/tenants";
+import { obtenerTenantPorId, obtenerUsuario } from "../config/tenantStore";
 import { enviarTexto } from "../whatsapp/client";
 import type { Repositorio, Tenant } from "../types";
 import { crearSesion, HASH_DUMMY, verificarPassword, verificarSesion } from "./auth";
@@ -185,7 +185,7 @@ function mismoOrigen(req: IncomingMessage): boolean {
 function tenantDeSesion(req: IncomingMessage): Tenant | null {
   const tid = verificarSesion(leerCookies(req)[COOKIE]);
   if (!tid) return null;
-  return TENANTS.find((t) => t.id === tid) ?? null;
+  return obtenerTenantPorId(tid) ?? null;
 }
 
 export async function manejarPanel(
@@ -286,11 +286,13 @@ export async function manejarPanel(
     const body = await leerBody(req);
     if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
     const { usuario, password } = body;
-    const tenant = TENANTS.find((t) => t.id === usuario);
+    // Resuelve usuario → cuenta (wa_usuarios) → tenant, vía el caché del tenantStore.
+    const cuenta = obtenerUsuario(String(usuario ?? ""));
     // Corremos scrypt SIEMPRE (con un hash dummy si el usuario no existe) para no
-    // filtrar por timing qué tenants son válidos. El 401 es idéntico en ambos casos.
-    const ok = verificarPassword(String(password ?? ""), tenant?.panelPasswordHash ?? HASH_DUMMY);
-    if (!tenant || !ok) {
+    // filtrar por timing qué usuarios son válidos. El 401 es idéntico en ambos casos.
+    const ok = verificarPassword(String(password ?? ""), cuenta?.passwordHash ?? HASH_DUMMY);
+    const tenant = cuenta ? obtenerTenantPorId(cuenta.tenantId) : undefined;
+    if (!cuenta || !ok || !tenant) {
       json(res, 401, { ok: false, error: "Usuario o contraseña incorrectos" });
       return true;
     }
