@@ -1,35 +1,19 @@
-// Paso A2 — preview ESTÁTICO del Login, con el markup real del panel, para verificar
-// que el sistema de diseño (global.css, portado de inbox.html) luce idéntico.
-// Todavía no tiene lógica: el envío y el manejo de sesión se cablean en A4.
+import { useQuery } from "@tanstack/react-query";
+import { me } from "./api";
+import Login from "./components/Login";
+import Panel from "./components/Panel";
+
+// Raíz del panel: decide entre login y app según haya sesión.
+// La sesión vive en la query ["me"]; un 401 en cualquier lado la pone en null
+// (ver main.tsx) → se cae al login sin lógica extra acá.
 export default function App() {
-  return (
-    <div id="login">
-      <form id="loginForm" onSubmit={(e) => e.preventDefault()}>
-        <div className="marca">
-          <span className="marca-chip" aria-hidden="true">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M4 13h4l2 3h4l2-3h4" />
-              <path d="M5 6h14a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1Z" />
-            </svg>
-          </span>
-          <span className="marca-txt">Panel de atención</span>
-        </div>
-        <h1>Bandeja</h1>
-        <p>Ingresá para responder a tus clientes y ver las métricas de tu negocio.</p>
-        <label htmlFor="usuario">Negocio</label>
-        <input id="usuario" autoComplete="username" placeholder="ej: lavacar-rosales" required />
-        <label htmlFor="password">Contraseña</label>
-        <input id="password" type="password" autoComplete="current-password" required />
-        <button type="submit">Entrar</button>
-        <div id="loginError"></div>
-      </form>
-    </div>
-  );
+  const sesion = useQuery({ queryKey: ["me"], queryFn: me });
+
+  // Primer chequeo de sesión en curso: no parpadear login antes de saber.
+  if (sesion.isLoading) return null;
+
+  // Sin sesión (nunca entró, o expiró) → login.
+  if (!sesion.data) return <Login />;
+
+  return <Panel sesion={sesion.data} />;
 }

@@ -16,3 +16,11 @@ Agente de WhatsApp con IA (soporte + agenda de citas) para lavacar, multi-tenant
 - Código y comentarios en español (es-CR), igual que el código existente.
 - El panel y el backend se comunican por la API JSON `/api/panel/*` — esa costura es estable; respétala al migrar el panel a React.
 - Secretos en `.env` (gitignored); ver `.env.example` para la lista vigente.
+
+## Política de dependencias (supply-chain — OBLIGATORIO)
+
+Antes de instalar **cualquier** paquete (`npm install`), se cumplen las TRES reglas. Si una falla, no se instala: se busca alternativa o se hace a mano.
+
+1. **Ampliamente usado.** Paquete establecido y popular (no nicho, no recién nacido).
+2. **Publisher conocido.** Autor/organización reputada y reconocible.
+3. **Versión con +1 mes de publicada.** Nunca se instala una versión recién salida (ventana para detectar paquetes comprometidos). Verificar con `npm view <pkg> time --json` y **fijar la versión exacta** (sin `^`/`~`) a una que tenga más de un mes.
