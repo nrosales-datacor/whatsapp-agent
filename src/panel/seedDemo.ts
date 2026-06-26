@@ -1,5 +1,5 @@
 import type { Repositorio } from "../types";
-import { TENANTS } from "../config/tenants";
+import { listarTenants } from "../config/tenantStore";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Datos de DEMO (desarrollo / diseño). Se cargan SOLO si la variable de entorno
@@ -160,7 +160,7 @@ const CITAS: Reserva[] = [
 ];
 
 export async function seedDemo(repo: Repositorio): Promise<void> {
-  const tid = TENANTS[0].id;
+  const tid = listarTenants()[0]?.id ?? "lavacar-rosales";
   for (const c of CONVERSACIONES) {
     const conv = await repo.obtenerOConversacion(tid, c.wa);
     for (const m of c.msgs) {

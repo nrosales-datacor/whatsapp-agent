@@ -1,5 +1,5 @@
 import type { Cita, Repositorio, Tenant, TipoRecordatorio } from "../types";
-import { TENANTS } from "../config/tenants";
+import { listarTenants } from "../config/tenantStore";
 import { enviarPlantilla, enviarTexto } from "../whatsapp/client";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -141,7 +141,7 @@ async function procesarTenant(tenant: Tenant, repo: Repositorio): Promise<void> 
  */
 export function iniciarRecordatorios(repo: Repositorio): void {
   const tick = async () => {
-    for (const tenant of TENANTS) {
+    for (const tenant of listarTenants()) {
       try {
         await procesarTenant(tenant, repo);
       } catch (e) {

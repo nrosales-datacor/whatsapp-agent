@@ -1,7 +1,9 @@
 import type { Tenant } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// REGISTRO DE TENANTS — Lavacar Rosales es el tenant #1.
+// CONFIG DE LAVACAR ROSALES — los tenants ahora viven en la base (ver tenantStore).
+// Este objeto es la FUENTE DEL SEED (scripts/seedTenants.ts) y el FALLBACK de
+// emergencia del store. Sigue siendo el lugar donde se editan las reglas del negocio.
 //
 // REGLA DE NEGOCIO IMPORTANTE:
 //   • Los LAVADOS son por ORDEN DE LLEGADA (sin cita). Sus precios viven en
@@ -171,9 +173,8 @@ const rosales: Tenant = {
   },
 };
 
-export const TENANTS: Tenant[] = [rosales];
-
-/** Busca el tenant por el phone_number_id que viene en el webhook entrante. */
-export function tenantPorPhoneNumberId(phoneNumberId: string): Tenant | undefined {
-  return TENANTS.find((t) => t.phoneNumberId === phoneNumberId);
-}
+// Antes acá vivía el registro de tenants (TENANTS + tenantPorPhoneNumberId). Ahora
+// los tenants se leen de la base a través del caché (src/config/tenantStore.ts).
+// Este objeto queda como fuente del seed (scripts/seedTenants.ts) y como FALLBACK de
+// emergencia del store si la base aún no está sembrada o no responde.
+export const TENANT_FALLBACK_ROSALES: Tenant = rosales;
