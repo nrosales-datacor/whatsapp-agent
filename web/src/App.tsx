@@ -1,24 +1,35 @@
-// Placeholder del scaffold (paso A1). Confirma que el build de React se sirve
-// desde el server bajo /panel. Las pantallas reales (login, bandeja, ficha,
-// dashboard) se migran en A2–A5 reusando la API /api/panel/* existente.
+// Paso A2 — preview ESTÁTICO del Login, con el markup real del panel, para verificar
+// que el sistema de diseño (global.css, portado de inbox.html) luce idéntico.
+// Todavía no tiene lógica: el envío y el manejo de sesión se cablean en A4.
 export default function App() {
   return (
-    <main className="shell">
-      <div className="card">
-        <div className="brand">
-          <span className="brand-chip" aria-hidden="true">
-            ◆
+    <div id="login">
+      <form id="loginForm" onSubmit={(e) => e.preventDefault()}>
+        <div className="marca">
+          <span className="marca-chip" aria-hidden="true">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M4 13h4l2 3h4l2-3h4" />
+              <path d="M5 6h14a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1Z" />
+            </svg>
           </span>
-          <span className="brand-txt">Panel</span>
+          <span className="marca-txt">Panel de atención</span>
         </div>
-        <h1>Panel en React</h1>
-        <p>
-          El nuevo panel (React&nbsp;+&nbsp;TypeScript) ya se sirve desde el servidor. Las pantallas
-          —&nbsp;bandeja, ficha de cliente y dashboard&nbsp;— se migran en los próximos pasos,
-          reusando la misma API.
-        </p>
-        <p className="muted">Paso A1 · scaffold listo ✓</p>
-      </div>
-    </main>
+        <h1>Bandeja</h1>
+        <p>Ingresá para responder a tus clientes y ver las métricas de tu negocio.</p>
+        <label htmlFor="usuario">Negocio</label>
+        <input id="usuario" autoComplete="username" placeholder="ej: lavacar-rosales" required />
+        <label htmlFor="password">Contraseña</label>
+        <input id="password" type="password" autoComplete="current-password" required />
+        <button type="submit">Entrar</button>
+        <div id="loginError"></div>
+      </form>
+    </div>
   );
 }

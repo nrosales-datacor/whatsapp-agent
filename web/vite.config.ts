@@ -21,6 +21,9 @@ export default defineConfig({
     port: 5173,
     proxy: {
       "/api": { target: "http://localhost:3000", changeOrigin: true },
+      // Las fuentes self-hosted las sirve el backend en /panel/fonts/*; en dev las
+      // proxyamos para que el panel luzca con sus tipografías (no solo system-ui).
+      "/panel/fonts": { target: "http://localhost:3000", changeOrigin: true },
     },
   },
 });

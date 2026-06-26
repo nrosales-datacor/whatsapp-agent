@@ -6,7 +6,7 @@
 
 **Leyenda:** ✅ hecho · 🔵 en progreso · ⬜ pendiente · 🔴 bloqueante crítico para escalar
 
-**Última actualización:** 2026-06-25
+**Última actualización:** 2026-06-26
 
 ---
 
@@ -21,7 +21,7 @@ El **código** es sólido para el piloto; lo que no escala todavía es la **topo
 > Stack: **Vite + React + TS + TanStack Query + vite-plugin-pwa + React Router.** Mismo proceso Node sirve el `dist/`. Reusar tokens CSS de `src/panel/inbox.html` y los tipos de `src/types.ts`. La API `/api/panel/*` NO cambia.
 
 - [x] ✅ **A1 — Scaffold del frontend.** Workspace `web/` (Vite+React+TS); el server sirve `web/dist` en `/panel` y `/panel/assets/*`, con **fallback a inbox.html** si no hay build (migración sin riesgo). Verificado: typecheck + build OK y los endpoints sirven el bundle. Dev: `npm run web:dev` (Vite 5173, proxy a /api). _Falta correr el build en el deploy → A6._
-- [ ] **A2 — Portar el sistema de diseño.** Mover los tokens Swiss-minimal (variables CSS de `inbox.html`) a un `global.css`. Sin rediseño. _Done:_ look idéntico al actual.
+- [x] ✅ **A2 — Portar el sistema de diseño.** Sistema completo (tokens + `@font-face` + base + estilos de todos los componentes) portado **verbatim** de `inbox.html` a `web/src/global.css`. Fuentes servidas por el backend en `/panel/fonts/*` (con proxy en dev). `App.tsx` pasa a ser un preview estático del Login con el markup real. Verificado: build OK y `/panel` sirve el bundle con el sistema completo.
 - [ ] **A3 — Capa de API tipada.** `api.ts` con funciones por endpoint `/api/panel/*`, reusando tipos de `src/types.ts`. _Done:_ front y back comparten tipos.
 - [ ] **A4 — Migrar pantallas.** Login → Inbox (lista+chat) → Ficha CRM → Dashboard. El polling 4s pasa a `useQuery` con `refetchInterval`. _Done:_ las 4 pantallas contra la API real.
 - [ ] **A5 — PWA con vite-plugin-pwa.** Generar SW + manifest; portar la suscripción push (VAPID) a un hook. Mismos endpoints push. _Done:_ instalable + push OK en iOS/Android.
