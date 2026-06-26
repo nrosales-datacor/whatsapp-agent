@@ -1,19 +1,28 @@
+import { Route, Routes } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { me } from "./api";
 import Login from "./components/Login";
 import Panel from "./components/Panel";
+import RutaAdmin from "./components/admin/RutaAdmin";
 
-// Raíz del panel: decide entre login y app según haya sesión.
-// La sesión vive en la query ["me"]; un 401 en cualquier lado la pone en null
-// (ver main.tsx) → se cae al login sin lógica extra acá.
-export default function App() {
+// Compuerta del operador (lo de siempre): la sesión vive en ["me"]; un 401 la pone en
+// null (ver main.tsx) → se cae al login. Idéntico a antes de B3, ahora bajo la ruta "/".
+function RutaOperador() {
   const sesion = useQuery({ queryKey: ["me"], queryFn: me });
-
-  // Primer chequeo de sesión en curso: no parpadear login antes de saber.
   if (sesion.isLoading) return null;
-
-  // Sin sesión (nunca entró, o expiró) → login.
   if (!sesion.data) return <Login />;
-
   return <Panel sesion={sesion.data} />;
+}
+
+// Rutas del panel (basename "/panel" lo pone main.tsx):
+//   "/"       → operador (bandeja)
+//   "/admin"  → superadmin (onboarding, ROADMAP B3)
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<RutaOperador />} />
+      <Route path="/admin/*" element={<RutaAdmin />} />
+      <Route path="*" element={<RutaOperador />} />
+    </Routes>
+  );
 }

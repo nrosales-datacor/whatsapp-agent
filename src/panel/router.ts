@@ -1,10 +1,25 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { obtenerTenantPorId, obtenerUsuario } from "../config/tenantStore";
+import {
+  crearTenant,
+  hayBaseDeDatos,
+  listarTenants,
+  obtenerTenantPorId,
+  obtenerUsuario,
+  recargar,
+} from "../config/tenantStore";
 import { enviarTexto } from "../whatsapp/client";
-import type { Repositorio, Tenant } from "../types";
-import { crearSesion, HASH_DUMMY, verificarPassword, verificarSesion } from "./auth";
+import type { HorarioDia, KnowledgeBase, Repositorio, Service, Tenant } from "../types";
+import {
+  crearSesion,
+  crearSesionAdmin,
+  hashearPassword,
+  HASH_DUMMY,
+  verificarPassword,
+  verificarSesion,
+  verificarSesionAdmin,
+} from "./auth";
 import { clavePublicaVapid, enviarPushATenant } from "./push";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -13,6 +28,7 @@ import { clavePublicaVapid, enviarPushATenant } from "./push";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const COOKIE = "panel_sesion";
+const COOKIE_ADMIN = "panel_admin_sesion"; // sesión del superadmin (onboarding), aparte de la del operador
 const HTML = readFileSync(fileURLToPath(new URL("./inbox.html", import.meta.url)), "utf8");
 
 // Fuentes self-hosted (woff2). Se cachean en memoria al primer pedido.
@@ -188,6 +204,154 @@ function tenantDeSesion(req: IncomingMessage): Tenant | null {
   return obtenerTenantPorId(tid) ?? null;
 }
 
+/** true si el request trae una sesión de superadmin válida (onboarding, ROADMAP B3). */
+function esAdmin(req: IncomingMessage): boolean {
+  return verificarSesionAdmin(leerCookies(req)[COOKIE_ADMIN]);
+}
+
+// ── Validación del alta de negocios (server-side; no confiar en el cliente) ──
+const RE_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const RE_USUARIO = /^[a-zA-Z0-9._-]{3,40}$/;
+const RE_HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+type ResultadoAlta = { ok: true; tenant: Tenant; usuario: string; password: string } | { ok: false; error: string };
+
+function limpiarLineas(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return v.map((s) => String(s ?? "").trim()).filter(Boolean);
+}
+
+function validarHorario(v: any): Record<number, HorarioDia> | null {
+  const out: Record<number, HorarioDia> = {};
+  for (let d = 0; d < 7; d++) {
+    const dia = v && typeof v === "object" ? v[d] : undefined;
+    if (dia === undefined || dia === null) {
+      out[d] = { abre: "06:00", cierra: "18:00" }; // default razonable para días sin especificar
+      continue;
+    }
+    const abre = dia.abre ?? null;
+    const cierra = dia.cierra ?? null;
+    if (abre === null && cierra === null) {
+      out[d] = { abre: null, cierra: null }; // cerrado
+      continue;
+    }
+    if (typeof abre !== "string" || typeof cierra !== "string" || !RE_HORA.test(abre) || !RE_HORA.test(cierra)) {
+      return null;
+    }
+    out[d] = { abre, cierra };
+  }
+  return out;
+}
+
+function validarServicios(v: unknown): Service[] | null {
+  if (!Array.isArray(v)) return null;
+  const vistos = new Set<string>();
+  const out: Service[] = [];
+  for (const s of v) {
+    if (!s || typeof s !== "object") return null;
+    const r = s as Record<string, unknown>;
+    const id = String(r.id ?? "").trim();
+    const nombre = String(r.nombre ?? "").trim();
+    const duracionMin = Number(r.duracionMin);
+    if (!RE_SLUG.test(id) || id.length > 50 || vistos.has(id)) return null;
+    if (!nombre || nombre.length > 120) return null;
+    if (!Number.isInteger(duracionMin) || duracionMin <= 0 || duracionMin > 600) return null;
+    vistos.add(id);
+    const serv: Service = { id, nombre, duracionMin };
+    if (r.agendable) serv.agendable = true;
+    if (r.precioVariable) serv.precioVariable = true;
+    if (r.precio !== undefined && r.precio !== null && r.precio !== "") {
+      const p = Number(r.precio);
+      if (!Number.isInteger(p) || p < 0) return null;
+      serv.precio = p;
+    }
+    const precioNota = String(r.precioNota ?? "").trim();
+    if (precioNota) serv.precioNota = precioNota.slice(0, 200);
+    const descripcion = String(r.descripcion ?? "").trim();
+    if (descripcion) serv.descripcion = descripcion.slice(0, 500);
+    out.push(serv);
+  }
+  return out;
+}
+
+function validarFaq(v: unknown): { pregunta: string; respuesta: string }[] {
+  if (!Array.isArray(v)) return [];
+  const out: { pregunta: string; respuesta: string }[] = [];
+  for (const f of v) {
+    if (!f || typeof f !== "object") continue;
+    const r = f as Record<string, unknown>;
+    const pregunta = String(r.pregunta ?? "").trim();
+    const respuesta = String(r.respuesta ?? "").trim();
+    if (pregunta && respuesta) out.push({ pregunta: pregunta.slice(0, 300), respuesta: respuesta.slice(0, 1000) });
+  }
+  return out;
+}
+
+/** Valida y normaliza el cuerpo del alta de negocio. Devuelve el Tenant + credenciales o un error. */
+function validarAltaTenant(body: any): ResultadoAlta {
+  if (!body || typeof body !== "object") return { ok: false, error: "Datos inválidos" };
+  const t = body.tenant;
+  if (!t || typeof t !== "object") return { ok: false, error: "Falta la configuración del negocio" };
+
+  const id = String(t.id ?? "").trim().toLowerCase();
+  if (!RE_SLUG.test(id) || id.length < 3 || id.length > 50) {
+    return { ok: false, error: "El id del negocio debe ser un slug (minúsculas, números y guiones), de 3 a 50 caracteres" };
+  }
+  const nombre = String(t.nombre ?? "").trim();
+  if (!nombre || nombre.length > 80) return { ok: false, error: "El nombre del negocio es obligatorio (máx 80)" };
+
+  const phoneNumberId = String(t.phoneNumberId ?? "").trim();
+  if (!/^\d{5,30}$/.test(phoneNumberId)) return { ok: false, error: "El phone_number_id debe ser numérico (5 a 30 dígitos)" };
+
+  const ubicacion = String(t.ubicacion ?? "").trim();
+  if (!ubicacion || ubicacion.length > 1000) return { ok: false, error: "La ubicación es obligatoria (máx 1000)" };
+
+  const accessToken = t.accessToken ? String(t.accessToken).trim() : undefined;
+  if (accessToken && accessToken.length > 512) return { ok: false, error: "El accessToken es demasiado largo" };
+
+  const timezone = String(t.timezone ?? "").trim() || "America/Costa_Rica";
+  const moneda = String(t.moneda ?? "").trim() || "₡";
+
+  let intervaloAgendaMin = 30;
+  if (t.intervaloAgendaMin !== undefined && t.intervaloAgendaMin !== null && t.intervaloAgendaMin !== "") {
+    const n = Number(t.intervaloAgendaMin);
+    if (!Number.isInteger(n) || n < 5 || n > 120) return { ok: false, error: "El intervalo de agenda debe ser un entero entre 5 y 120" };
+    intervaloAgendaMin = n;
+  }
+
+  const horario = validarHorario(t.horario);
+  if (!horario) return { ok: false, error: "Horario inválido (usá formato HH:mm, o vacío para día cerrado)" };
+
+  const servicios = validarServicios(t.servicios ?? []);
+  if (!servicios) return { ok: false, error: "Hay un servicio inválido (revisá id único, nombre y duración en minutos)" };
+
+  const kb: KnowledgeBase = {
+    faq: validarFaq(t.kb?.faq),
+    datos: limpiarLineas(t.kb?.datos),
+    politicas: limpiarLineas(t.kb?.politicas),
+    tarifas: limpiarLineas(t.kb?.tarifas),
+    parabrisas: limpiarLineas(t.kb?.parabrisas),
+  };
+
+  const usuario = String(body.usuario ?? "").trim();
+  if (!RE_USUARIO.test(usuario)) return { ok: false, error: "Usuario inválido (3 a 40 caracteres: letras, números, . _ -)" };
+  if (usuario === process.env.PANEL_SUPERADMIN_USUARIO) return { ok: false, error: "Ese usuario está reservado" };
+  const password = String(body.password ?? "");
+  if (password.length < 8) return { ok: false, error: "La contraseña del panel debe tener al menos 8 caracteres" };
+
+  const tenant: Tenant = { id, nombre, phoneNumberId, accessToken, timezone, moneda, ubicacion, intervaloAgendaMin, horario, servicios, kb };
+  return { ok: true, tenant, usuario, password };
+}
+
+/** Mapea un choque de índice único de Postgres (23505) a un mensaje claro. */
+function mensajeConflicto(e: unknown): string {
+  const nombre = (e as { constraint_name?: string }).constraint_name;
+  if (nombre === "wa_tenants_pkey") return "Ya existe un negocio con ese id";
+  if (nombre === "wa_tenants_pnid_uq") return "Ese phone_number_id ya está en uso por otro negocio";
+  if (nombre === "wa_usuarios_usuario_uq") return "Ese usuario de panel ya existe";
+  return "Ya existe un registro con esos datos (id, phone_number_id o usuario duplicado)";
+}
+
 export async function manejarPanel(
   req: IncomingMessage,
   res: ServerResponse,
@@ -195,25 +359,6 @@ export async function manejarPanel(
   pathname: string,
 ): Promise<boolean> {
   const metodo = req.method ?? "GET";
-
-  // ── La página del panel ──
-  // Preferimos el build de React (web/dist); si no existe, servimos el inbox.html
-  // actual como fallback (migración incremental — ver ROADMAP carril A).
-  if (pathname === "/panel" || pathname === "/panel/") {
-    const react = leerReactIndex();
-    if (react) {
-      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-      res.end(react);
-      return true;
-    }
-    // Fallback: panel actual (vanilla). En dev (SEED_DEMO) se relee para iterar.
-    const html = process.env.SEED_DEMO
-      ? readFileSync(fileURLToPath(new URL("./inbox.html", import.meta.url)), "utf8")
-      : HTML;
-    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    res.end(html);
-    return true;
-  }
 
   // ── Assets hasheados del build de React (/panel/assets/*) ──
   if (pathname.startsWith("/panel/assets/")) {
@@ -272,6 +417,26 @@ export async function manejarPanel(
     return true;
   }
 
+  // ── Fallback SPA (React Router) ──
+  // Cualquier /panel/* de PÁGINA (no asset, no /api) sirve el index del build, para que
+  // el deep-link a una ruta cliente (p. ej. /panel/admin) funcione en carga completa.
+  // Va DESPUÉS de los bloques de assets (que ya hacen return) y ANTES del check de /api,
+  // así no sombrea ni los assets ni /api/panel/*. Sin build → inbox.html (panel viejo).
+  if (pathname === "/panel" || pathname.startsWith("/panel/")) {
+    if (metodo !== "GET" && metodo !== "HEAD") {
+      res.writeHead(405);
+      res.end("Method not allowed");
+      return true;
+    }
+    const react = leerReactIndex();
+    const html =
+      react ??
+      (process.env.SEED_DEMO ? readFileSync(fileURLToPath(new URL("./inbox.html", import.meta.url)), "utf8") : HTML);
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    res.end(html);
+    return true;
+  }
+
   if (!pathname.startsWith("/api/panel/")) return false;
   const ruta = pathname.slice("/api/panel/".length).replace(/\/$/, "");
 
@@ -279,6 +444,87 @@ export async function manejarPanel(
   if (metodo === "POST" && !mismoOrigen(req)) {
     json(res, 403, { ok: false, error: "Origen no permitido" });
     return true;
+  }
+
+  // ── Onboarding: API del superadmin (ROADMAP B3). Comparte el guard CSRF de arriba. ──
+  if (ruta === "admin/login" && metodo === "POST") {
+    const body = await leerBody(req);
+    if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
+    const usuarioOk = !!process.env.PANEL_SUPERADMIN_USUARIO && body?.usuario === process.env.PANEL_SUPERADMIN_USUARIO;
+    // scrypt SIEMPRE (HASH_DUMMY si falta config/usuario) → no filtra por timing.
+    const passOk = verificarPassword(String(body?.password ?? ""), process.env.PANEL_SUPERADMIN_HASH ?? HASH_DUMMY);
+    if (!usuarioOk || !passOk) {
+      json(res, 401, { ok: false, error: "Usuario o contraseña incorrectos" });
+      return true;
+    }
+    const cookie = `${COOKIE_ADMIN}=${crearSesionAdmin()}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${7 * 24 * 60 * 60}`;
+    res.writeHead(200, { "content-type": "application/json; charset=utf-8", "set-cookie": cookie });
+    res.end(JSON.stringify({ ok: true }));
+    return true;
+  }
+
+  if (ruta === "admin/logout" && metodo === "POST") {
+    res.writeHead(200, {
+      "content-type": "application/json; charset=utf-8",
+      "set-cookie": `${COOKIE_ADMIN}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`,
+    });
+    res.end(JSON.stringify({ ok: true }));
+    return true;
+  }
+
+  if (ruta === "admin" || ruta.startsWith("admin/")) {
+    if (!esAdmin(req)) {
+      json(res, 401, { ok: false, error: "No autenticado" });
+      return true;
+    }
+
+    if (ruta === "admin/me" && metodo === "GET") {
+      json(res, 200, {
+        ok: true,
+        admin: true,
+        usuario: process.env.PANEL_SUPERADMIN_USUARIO ?? "",
+        hayDb: hayBaseDeDatos(),
+      });
+      return true;
+    }
+
+    if (ruta === "admin/tenants" && metodo === "GET") {
+      // Resumen liviano: NUNCA exponemos accessToken por la API.
+      const tenants = listarTenants().map((t) => ({
+        id: t.id,
+        nombre: t.nombre,
+        phoneNumberId: t.phoneNumberId,
+        moneda: t.moneda,
+        timezone: t.timezone,
+        servicios: t.servicios.length,
+      }));
+      json(res, 200, { ok: true, tenants });
+      return true;
+    }
+
+    if (ruta === "admin/tenants" && metodo === "POST") {
+      if (!hayBaseDeDatos()) {
+        return json(res, 503, { ok: false, error: "El alta de negocios requiere base de datos (no configurada)." }), true;
+      }
+      const body = await leerBody(req);
+      if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
+      const v = validarAltaTenant(body);
+      if (!v.ok) return json(res, 400, { ok: false, error: v.error }), true;
+      try {
+        await crearTenant(v.tenant, { usuario: v.usuario, passwordHash: hashearPassword(v.password) });
+      } catch (e) {
+        if ((e as { code?: string }).code === "23505") return json(res, 409, { ok: false, error: mensajeConflicto(e) }), true;
+        if (e instanceof Error && e.message === "SIN_DB") {
+          return json(res, 503, { ok: false, error: "El alta de negocios requiere base de datos." }), true;
+        }
+        console.error("[admin] crearTenant:", e);
+        return json(res, 500, { ok: false, error: "No se pudo crear el negocio." }), true;
+      }
+      await recargar(); // el negocio queda vivo en el caché sin reiniciar el proceso
+      return json(res, 201, { ok: true, tenantId: v.tenant.id }), true;
+    }
+
+    return json(res, 404, { ok: false, error: "Ruta no encontrada" }), true;
   }
 
   // ── Login ──

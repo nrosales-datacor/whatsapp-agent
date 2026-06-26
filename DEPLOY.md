@@ -254,7 +254,32 @@ pm2 logs whatsapp-bot            # debe decir "Agente escuchando" + "Notificacio
 > copia interna de `lavacar-rosales` y sigue atendiendo (en los logs aparece un aviso
 > ruidoso indicando que hay que correr el seed) — así esta migración no puede dejar el bot
 > caído. Dar de alta OTRO negocio = insertar filas en `wa_tenants`/`wa_usuarios` (el bot lo
-> toma solo en ~1 min, sin redeploy); más adelante eso será por pantalla (onboarding, B3).
+> toma solo en ~1 min, sin redeploy); también se puede por pantalla (onboarding, ver paso 14).
+
+## 14. Habilitar el onboarding de negocios (área de superadmin)
+
+El panel tiene un área protegida en **`/panel/admin`** para dar de alta un negocio nuevo
+(datos, servicios, base de conocimiento) y su usuario, **sin tocar código ni SQL**. Lo opera
+el dueño del SaaS (no es público). Para habilitarlo, agregá al `.env` un superadmin:
+
+```bash
+npx tsx scripts/hashPassword.ts "UNA_CLAVE_FUERTE"   # copiá el salt:hash que imprime
+nano .env
+```
+```
+PANEL_SUPERADMIN_USUARIO=admin          # usuario DISTINTO de los de panel
+PANEL_SUPERADMIN_HASH=salt:hash         # el hash recién generado
+```
+```bash
+pm2 restart whatsapp-bot
+```
+
+Luego entrá a **https://wabotlavacar.selyon.app/panel/admin**, logueate con ese usuario y
+completá el formulario. Para conectar WhatsApp del negocio pegás su **`phone_number_id`** y
+**`accessToken`** (los sacás del WhatsApp Manager de Meta). Al crear, el negocio queda
+**vivo al instante** (sin `pm2 restart`) y ya puede entrar al panel con el usuario que le
+pusiste. El alta requiere `DATABASE_URL` (ya está en prod). Si `PANEL_SUPERADMIN_*` quedan
+vacíos, el área existe pero nadie puede entrar.
 
 > 🆕 **El panel ahora es React (Vite).** `npm run web:build` instala las dependencias
 > de `web/` y genera `web/dist` (que NO está en git). El bot sirve ese build en

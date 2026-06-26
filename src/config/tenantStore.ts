@@ -151,6 +151,51 @@ export function obtenerUsuario(usuario: string): CuentaUsuario | undefined {
   return cache.usuarios.get(usuario);
 }
 
+// ── Escritura: alta de negocios (onboarding, ROADMAP B3) ──
+
+/** true si hay base configurada (el alta de negocios la requiere). */
+export function hayBaseDeDatos(): boolean {
+  return !!process.env.DATABASE_URL;
+}
+
+/** Recarga inmediata del caché desde la base (tras un alta). No-op sin DATABASE_URL. */
+export async function recargar(): Promise<void> {
+  if (!hayDb) return;
+  await recargarDesdeDb();
+}
+
+interface NuevoUsuario {
+  usuario: string;
+  passwordHash: string;
+}
+
+/**
+ * Da de alta un negocio y su primer usuario de panel en UNA transacción (o ambos o
+ * ninguno). Lanza Error("SIN_DB") si no hay base. Deja propagar el error de Postgres
+ * con code "23505" (choque de índice único: id, phone_number_id o usuario repetido)
+ * para que el router lo mapee a un 409 con mensaje claro.
+ */
+export async function crearTenant(tenant: Tenant, u: NuevoUsuario): Promise<void> {
+  if (!hayDb) throw new Error("SIN_DB");
+  const d = obtenerDb();
+  await d.transaction(async (tx) => {
+    await tx.insert(waTenants).values({
+      id: tenant.id,
+      nombre: tenant.nombre,
+      phoneNumberId: tenant.phoneNumberId,
+      accessToken: tenant.accessToken ?? null,
+      timezone: tenant.timezone,
+      moneda: tenant.moneda,
+      ubicacion: tenant.ubicacion,
+      intervaloAgendaMin: tenant.intervaloAgendaMin,
+      horario: tenant.horario,
+      servicios: tenant.servicios,
+      kb: tenant.kb,
+    });
+    await tx.insert(waUsuarios).values({ usuario: u.usuario, passwordHash: u.passwordHash, tenantId: tenant.id });
+  });
+}
+
 // ── Recarga on-demand ante un phone_number_id desconocido ──
 // El webhook la llama fire-and-forget cuando llega un número que no está en el
 // caché: un negocio recién dado de alta queda disponible en el próximo mensaje, sin

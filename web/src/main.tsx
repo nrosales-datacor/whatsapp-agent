@@ -1,8 +1,9 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
-import { esNoAutenticado } from "./api";
+import { ApiError, esNoAutenticado } from "./api";
 import "./global.css";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -13,7 +14,10 @@ import "./global.css";
 // repetimos el chequeo de 401 en cada pantalla (lo hacía el `api()` del inbox.html).
 // ─────────────────────────────────────────────────────────────────────────────
 function alFallar(error: unknown) {
-  if (esNoAutenticado(error)) queryClient.setQueryData(["me"], null);
+  if (!esNoAutenticado(error)) return;
+  // Un 401 cae a la compuerta correcta: las rutas /admin/* a ["adminMe"], el resto a ["me"].
+  const path = error instanceof ApiError ? error.path : undefined;
+  queryClient.setQueryData(path?.startsWith("/admin") ? ["adminMe"] : ["me"], null);
 }
 
 const queryClient = new QueryClient({
@@ -30,7 +34,10 @@ const queryClient = new QueryClient({
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      {/* basename="/panel": el panel se sirve bajo /panel (mismo base que Vite). */}
+      <BrowserRouter basename="/panel">
+        <App />
+      </BrowserRouter>
     </QueryClientProvider>
   </StrictMode>,
 );
