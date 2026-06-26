@@ -57,6 +57,7 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
           conversaciones={conversaciones}
           abiertaId={abiertaId}
           escondida={mostrarChatMovil}
+          vapidPublica={sesion.vapidPublica}
           onAbrir={abrir}
           onPanel={() => setDashAbierto(true)}
           onSalir={() => salir.mutate()}

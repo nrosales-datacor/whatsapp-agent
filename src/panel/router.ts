@@ -111,6 +111,28 @@ function leerDistAsset(file: string): { buf: Buffer; tipo: string } | null {
   return { buf, tipo };
 }
 
+// Archivos de la RAÍZ del build (no hasheados): sw.js, manifest.webmanifest, íconos.
+// Los genera vite-plugin-pwa (carril A5). Misma allowlist que leerAsset; si existe el
+// build, tiene prioridad sobre los de src/panel (fallback en migración). En dev
+// (SEED_DEMO) no se cachea para poder iterar tras un rebuild.
+const distRaizCache = new Map<string, Buffer>();
+function leerDistRaiz(rel: string): Buffer | null {
+  if (rel !== "sw.js" && rel !== "manifest.webmanifest" && !/^icons\/[a-z0-9-]+\.png$/.test(rel)) {
+    return null;
+  }
+  if (!process.env.SEED_DEMO) {
+    const cached = distRaizCache.get(rel);
+    if (cached) return cached;
+  }
+  try {
+    const buf = readFileSync(rutaDist(rel));
+    distRaizCache.set(rel, buf);
+    return buf;
+  } catch {
+    return null;
+  }
+}
+
 function json(res: ServerResponse, status: number, obj: unknown) {
   const body = JSON.stringify(obj);
   res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
@@ -223,9 +245,11 @@ export async function manejarPanel(
   }
 
   // ── Assets de la PWA: service worker, manifest e íconos ──
+  // Prioridad al build de React (web/dist, generado por vite-plugin-pwa); si no hay
+  // build, se cae a los de src/panel (panel viejo) — migración sin riesgo.
   if (pathname === "/panel/sw.js" || pathname === "/panel/manifest.webmanifest" || pathname.startsWith("/panel/icons/")) {
     const rel = pathname.slice("/panel/".length);
-    const buf = leerAsset(rel);
+    const buf = leerDistRaiz(rel) ?? leerAsset(rel);
     if (!buf) {
       res.writeHead(404);
       res.end("Not found");

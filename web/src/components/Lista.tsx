@@ -1,5 +1,6 @@
 import type { ResumenConversacion } from "../api";
 import { fmtNum, hora } from "../lib/formato";
+import BotonNotif from "./BotonNotif";
 
 interface Props {
   nombre: string;
@@ -7,18 +8,21 @@ interface Props {
   abiertaId: string | null;
   /** En móvil, cuando hay un chat abierto, la lista se esconde (la tapa el chat). */
   escondida: boolean;
+  /** Llave pública VAPID de la sesión (para la campana de notificaciones). */
+  vapidPublica: string | null;
   onAbrir: (id: string) => void;
   onPanel: () => void;
   onSalir: () => void;
 }
 
 // Columna izquierda: encabezado del negocio + lista de conversaciones.
-export default function Lista({ nombre, conversaciones, abiertaId, escondida, onAbrir, onPanel, onSalir }: Props) {
+export default function Lista({ nombre, conversaciones, abiertaId, escondida, vapidPublica, onAbrir, onPanel, onSalir }: Props) {
   return (
     <section id="lista" className={escondida ? "escondida" : undefined}>
       <header>
         <span className="negocio">{nombre}</span>
         <div className="acciones">
+          <BotonNotif vapidPublica={vapidPublica} />
           <button type="button" className="btn-ghost" onClick={onPanel}>
             Panel
           </button>
