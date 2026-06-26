@@ -239,9 +239,18 @@ nano .env        # pegá las líneas de arriba. Guardá: Ctrl+O, Enter, Ctrl+X.
 git pull
 npm install
 npx tsx scripts/migrar.ts        # crea/actualiza las tablas (idempotente)
+npm run web:build                # compila el panel React (web/) → web/dist (ver nota abajo)
 pm2 restart whatsapp-bot
 pm2 logs whatsapp-bot            # debe decir "Agente escuchando" + "Notificaciones push: configuradas ✅"
 ```
+
+> 🆕 **El panel ahora es React (Vite).** `npm run web:build` instala las dependencias
+> de `web/` y genera `web/dist` (que NO está en git). El bot sirve ese build en
+> `/panel`; **si `web/dist` no existe, cae automáticamente al panel viejo (`inbox.html`)**,
+> así que un deploy sin el build no rompe nada — solo no trae la versión nueva del panel.
+> El `pm2 restart` del final hace que el bot tome el build recién generado. Necesita
+> Node 18+ (el droplet ya tiene Node 20). El service worker, el manifest y los íconos de
+> la PWA salen de ese mismo build.
 
 Probá en el navegador (PC o celular): **https://wabotlavacar.selyon.app/panel**
 Usuario `lavacar-rosales`, contraseña `lavacar2026` (cambiala cuanto antes).
@@ -256,7 +265,7 @@ notificaciones (te pedirá permiso y te llegará una de prueba).
 | Ver estado | `pm2 status` |
 | Ver registros | `pm2 logs whatsapp-bot` |
 | Reiniciar | `pm2 restart whatsapp-bot` |
-| Actualizar el código | `cd ~/lavacar-whatsapp-bot && git pull && npm install && npx tsx scripts/migrar.ts && pm2 restart whatsapp-bot` |
+| Actualizar el código | `cd ~/lavacar-whatsapp-bot && git pull && npm install && npx tsx scripts/migrar.ts && npm run web:build && pm2 restart whatsapp-bot` |
 
 ## Si algo falla
 - El bot no arranca → `pm2 logs whatsapp-bot` (suele ser algo del `.env`).
