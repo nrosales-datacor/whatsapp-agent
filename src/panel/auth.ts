@@ -77,3 +77,35 @@ export function verificarSesion(token: string | undefined): string | null {
     return null;
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sesión del SUPERADMIN (onboarding en /panel/admin). Es APARTE de la del operador:
+// cookie distinta (panel_admin_sesion) y un marcador fijo en el payload (no es un
+// tenantId). Reusa el mismo HMAC/SECRET/duración/versión. El superadmin se valida
+// por .env (PANEL_SUPERADMIN_*), no vive en la base. (ROADMAP B3)
+// ─────────────────────────────────────────────────────────────────────────────
+const ADMIN_MARCA = "__superadmin__";
+
+/** Crea el token de sesión del superadmin (va en la cookie panel_admin_sesion). */
+export function crearSesionAdmin(): string {
+  const payload = `${ADMIN_MARCA}.${Date.now() + DURACION_MS}.${SESSION_VERSION}`;
+  const firma = crypto.createHmac("sha256", SECRET).update(payload).digest("hex");
+  return Buffer.from(`${payload}.${firma}`).toString("base64url");
+}
+
+/** true si el token es una sesión de superadmin válida y vigente. */
+export function verificarSesionAdmin(token: string | undefined): boolean {
+  if (!token) return false;
+  try {
+    const [marca, exp, ver, firma] = Buffer.from(token, "base64url").toString().split(".");
+    if (marca !== ADMIN_MARCA || !exp || !ver || !firma) return false;
+    if (ver !== SESSION_VERSION) return false;
+    const esperada = crypto.createHmac("sha256", SECRET).update(`${marca}.${exp}.${ver}`).digest("hex");
+    const a = Buffer.from(firma);
+    const b = Buffer.from(esperada);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
+    return Date.now() <= Number(exp);
+  } catch {
+    return false;
+  }
+}

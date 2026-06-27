@@ -49,4 +49,23 @@ export const TOOLS: ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "escalar_a_humano",
+      description:
+        "Pasa la conversación a una persona del equipo cuando NO podés resolver lo que el cliente necesita: una pregunta SOBRE EL NEGOCIO que no está en tu información, un reclamo, un caso especial, o algo que requiere a un encargado. NO la uses para pedidos FUERA del lavacar (esos se responden con amabilidad, sin escalar) ni cuando SÍ tenés la respuesta.",
+      parameters: {
+        type: "object",
+        properties: {
+          motivo: {
+            type: "string",
+            description: "Una frase breve con lo que el cliente necesita, para que el operador entre en contexto.",
+          },
+        },
+        required: ["motivo"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];

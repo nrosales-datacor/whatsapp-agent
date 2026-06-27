@@ -6,6 +6,7 @@ import { RepositorioEnMemoria } from "./booking/inMemoryRepository";
 import { RepositorioDrizzle } from "./booking/drizzleRepository";
 import { crearDb } from "./db/client";
 import { iniciarRecordatorios } from "./reminders/scheduler";
+import { cargarTenants } from "./config/tenantStore";
 import { calendarioConfigurado } from "./calendar/googleCalendar";
 import { manejarPanel } from "./panel/router";
 import { pushConfigurado } from "./panel/push";
@@ -102,6 +103,10 @@ const server = http.createServer(async (req, res) => {
   res.writeHead(405);
   res.end("Method not allowed");
 });
+
+// Carga el registro de tenants (de la base, o fallback en memoria) ANTES de aceptar
+// tráfico: ningún webhook ni login debe entrar con el caché vacío. (ROADMAP B2)
+await cargarTenants();
 
 // Datos de demo para desarrollo/diseño del panel. SOLO se siembran en el repo en
 // memoria: si hay DATABASE_URL (base real), se ignora para no ensuciar producción.
