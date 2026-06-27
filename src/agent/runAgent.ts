@@ -107,6 +107,10 @@ async function ejecutarTool(
 export interface ResultadoAgente {
   respuesta: string;
   fueraDeAlcance: boolean;
+  /** El bot no pudo resolver y pidió pasar la conversación a una persona. */
+  escalar: boolean;
+  /** Motivo breve del traspaso (contexto para el operador). */
+  motivo?: string;
 }
 
 /**
@@ -138,12 +142,23 @@ export async function correrAgente(
     if (!msg.tool_calls?.length) {
       const respuesta = msg.content ?? "Disculpá, no entendí. ¿Me lo repetís?";
       const fueraDeAlcance = /solo puedo ayudarte con/i.test(respuesta);
-      return { respuesta, fueraDeAlcance };
+      return { respuesta, fueraDeAlcance, escalar: false };
     }
 
     for (const call of msg.tool_calls) {
       // En openai 6.x, tool_calls puede incluir herramientas "custom"; solo procesamos las de tipo "function".
       if (call.type !== "function") continue;
+      // Escalada a humano: el modelo decidió que no puede resolverlo. Cortamos el agente
+      // acá (no mandamos respuesta del bot) y señalamos el traspaso para handleWebhook.
+      if (call.function.name === "escalar_a_humano") {
+        let motivo = "";
+        try {
+          motivo = String(JSON.parse(call.function.arguments || "{}").motivo ?? "");
+        } catch {
+          // sin motivo legible: igual escalamos
+        }
+        return { respuesta: "", fueraDeAlcance: false, escalar: true, motivo };
+      }
       let resultado: string;
       try {
         const args = JSON.parse(call.function.arguments || "{}");
@@ -155,8 +170,12 @@ export async function correrAgente(
     }
   }
 
+  // Se agotaron los pasos de tool-calling sin una respuesta final: el bot quedó
+  // trabado → lo pasamos a una persona (en vez de dejar al cliente sin solución).
   return {
-    respuesta: "Disculpá, no pude completar eso. Un encargado te va a contactar pronto 🙂",
+    respuesta: "",
     fueraDeAlcance: false,
+    escalar: true,
+    motivo: "el bot no pudo completar la solicitud",
   };
 }

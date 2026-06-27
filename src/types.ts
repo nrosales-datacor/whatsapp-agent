@@ -48,7 +48,11 @@ export interface Tenant {
   phoneNumberId: string;
   /** Token del WABA del cliente. Si no se da, cae al de .env (número de prueba). */
   accessToken?: string;
-  /** Hash ("salt:hash") de la contraseña del panel de este negocio. Ver scripts/hashPassword.ts. */
+  /**
+   * @deprecated La contraseña del panel ya no vive en el tenant: está en la tabla
+   * `wa_usuarios` (resuelta por src/config/tenantStore.ts). Se mantiene el campo por
+   * compatibilidad del fallback hardcodeado; el código de login ya no lo lee.
+   */
   panelPasswordHash?: string;
   timezone: string;
   moneda: string;

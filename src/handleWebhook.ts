@@ -1,5 +1,5 @@
 import type { Conversacion, MensajeConversacion, Repositorio, Tenant } from "./types";
-import { tenantPorPhoneNumberId } from "./config/tenants";
+import { obtenerTenantPorPhoneNumberId, refrescarSiFaltaPhoneNumberId } from "./config/tenantStore";
 import { parsearEntrante, enviarTexto, type MensajeEntrante } from "./whatsapp/client";
 import { correrAgente } from "./agent/runAgent";
 import { notificarOperador } from "./panel/notificaciones";
@@ -7,6 +7,9 @@ import { notificarOperador } from "./panel/notificaciones";
 // Aviso de transparencia que se manda UNA vez por cliente (cumple opt-in/política).
 const AVISO_BOT =
   "👋 ¡Hola! Soy el asistente automatizado de %NOMBRE%. Puedo darte info de servicios, precios y horarios, y agendarte una cita. Escribí *agente* si preferís hablar con una persona.";
+
+// Mensaje al cliente cuando el bot no pudo resolver y pasa el caso a una persona.
+const MENSAJE_ESCALADA = "Dejame consultarlo con una persona del equipo 🙋 En un momento te responden por acá.";
 
 // Resultado de la fase de ingesta: lo que quedó listo (y ya persistido) para responder.
 type Pendiente =
@@ -31,9 +34,12 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio): Promise
   const entrante = parsearEntrante(body);
   if (!entrante) return null; // status u otro evento que no nos interesa
 
-  const tenant = tenantPorPhoneNumberId(entrante.phoneNumberId);
+  const tenant = obtenerTenantPorPhoneNumberId(entrante.phoneNumberId);
   if (!tenant) {
     console.warn("[webhook] mensaje a un phone_number_id sin tenant:", entrante.phoneNumberId);
+    // Quizás es un negocio recién dado de alta que el caché aún no tiene: gatilla un
+    // refresh (fire-and-forget, con cooldown) para tomarlo en el próximo mensaje.
+    refrescarSiFaltaPhoneNumberId(entrante.phoneNumberId);
     return null;
   }
 
@@ -144,7 +150,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
   }
 
   try {
-    const { respuesta, fueraDeAlcance } = await correrAgente(
+    const { respuesta, fueraDeAlcance, escalar, motivo } = await correrAgente(
       { tenant, repo, clienteWa: entrante.clienteWa },
       entrante.texto,
       historialPrevio,
@@ -155,6 +161,30 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
     const modoActual = await repo.obtenerModo(tenant.id, conv.id);
     if (modoActual === "humano") {
       console.log(`[bot] respuesta descartada: un humano tomó ${entrante.clienteWa} durante el proceso`);
+      return;
+    }
+
+    // El bot no pudo resolver (pidió escalar_a_humano o se trabó): pasamos la conversación
+    // a una persona y avisamos (push), en vez de mandar una respuesta vaga o genérica.
+    if (escalar) {
+      await repo.setModoConversacion(tenant.id, conv.id, "humano");
+      let salida = MENSAJE_ESCALADA;
+      if (primerContacto) salida = `${AVISO_BOT.replace("%NOMBRE%", tenant.nombre)}\n\n${salida}`;
+      await enviarTexto(tenant, entrante.clienteWa, salida);
+      if (primerContacto) await repo.marcarOptIn(conv.id);
+      await repo.guardarMensaje(conv.id, {
+        rol: "assistant",
+        contenido: MENSAJE_ESCALADA,
+        creadoEn: new Date().toISOString(),
+      });
+      await notificarOperador(repo, tenant, conv, motivo ? `🙋 El bot pasó este caso: ${motivo}` : entrante.texto);
+      await repo.registrarCalidad({
+        tenantId: tenant.id,
+        clienteWa: entrante.clienteWa,
+        tipo: "fuera_de_alcance",
+        detalle: motivo ? `escalado: ${motivo}` : "escalado a humano",
+      });
+      console.log(`[escalado] → ${entrante.clienteWa}: el bot pasó a humano${motivo ? ` (${motivo})` : ""}`);
       return;
     }
 

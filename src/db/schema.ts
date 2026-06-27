@@ -1,5 +1,6 @@
-import { pgTable, text, timestamp, integer, boolean, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer, boolean, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
+import type { HorarioDia, KnowledgeBase, Service } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Esquema Drizzle del agente de WhatsApp.
@@ -120,4 +121,61 @@ export const waPushSubs = pgTable(
   }),
 );
 
-export const schema = { waConversaciones, waMensajes, waCitas, waEventosCalidad, waPushSubs };
+// ─────────────────────────────────────────────────────────────────────────────
+// Multi-tenant: los negocios y sus usuarios del panel viven en la base (antes
+// estaban hardcodeados en src/config/tenants.ts). Así se da de alta un negocio sin
+// tocar código (ROADMAP B2). El código los lee a través de un caché en memoria
+// (src/config/tenantStore.ts); estas tablas son la fuente de verdad.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const waTenants = pgTable(
+  "wa_tenants",
+  {
+    // OJO: el id es el SLUG del negocio ("lavacar-rosales"), NO un uuid. Tiene que
+    // coincidir con el tenant_id ya guardado en wa_conversaciones/wa_citas/etc.
+    // (no son FK, pero el valor debe ser el mismo). Por eso es inmutable.
+    id: text("id").primaryKey(),
+    nombre: text("nombre").notNull(),
+    // phone_number_id de WhatsApp Cloud API. Único → ruteo determinístico del webhook.
+    phoneNumberId: text("phone_number_id").notNull(),
+    // Token del WABA del cliente. null => cae al token de .env (número de prueba).
+    accessToken: text("access_token"),
+    timezone: text("timezone").notNull(),
+    moneda: text("moneda").notNull(),
+    ubicacion: text("ubicacion").notNull(),
+    intervaloAgendaMin: integer("intervalo_agenda_min").notNull().default(30),
+    // Config rica como JSONB: árboles profundos, read-mostly, nunca se consultan por
+    // dentro. El caché sirve la lectura; el onboarding (B3) escribe estos blobs.
+    horario: jsonb("horario").$type<Record<number, HorarioDia>>().notNull(),
+    servicios: jsonb("servicios").$type<Service[]>().notNull(),
+    kb: jsonb("kb").$type<KnowledgeBase>().notNull(),
+    activo: boolean("activo").notNull().default(true),
+    creadoEn: timestamp("creado_en", { withTimezone: true }).notNull().defaultNow(),
+    actualizadoEn: timestamp("actualizado_en", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqPnid: uniqueIndex("wa_tenants_pnid_uq").on(t.phoneNumberId),
+  }),
+);
+
+export const waUsuarios = pgTable(
+  "wa_usuarios",
+  {
+    id: id(),
+    // Lo que se escribe en el login del panel. Único en todo el sistema.
+    usuario: text("usuario").notNull(),
+    // "salt:hash" scrypt (ver src/panel/auth.ts). Reemplaza al PANEL_PASSWORD_HASH_* de .env.
+    passwordHash: text("password_hash").notNull(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => waTenants.id, { onDelete: "cascade" }),
+    activo: boolean("activo").notNull().default(true),
+    creadoEn: timestamp("creado_en", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqUsuario: uniqueIndex("wa_usuarios_usuario_uq").on(t.usuario),
+    idxTenant: index("wa_usuarios_tenant_idx").on(t.tenantId),
+  }),
+);
+
+export const schema = { waConversaciones, waMensajes, waCitas, waEventosCalidad, waPushSubs, waTenants, waUsuarios };
