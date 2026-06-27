@@ -43,6 +43,7 @@ El **código** es sólido para el piloto; lo que no escala todavía es la **topo
 ## Fiabilidad / hardening
 
 - [x] ✅ **Reintentos con backoff en envíos a WhatsApp** + aviso al operador si falla + manejo de multimedia (commit `d4e1624`). _Nota: parche en la capa de envío; NO sobrevive a muerte del proceso — eso lo cierra B1._
+- [x] ✅ **Escalada a humano cuando el bot no puede resolver.** Herramienta `escalar_a_humano` (el bot la llama ante una pregunta del negocio que no puede contestar, un reclamo o un caso especial; también al trabarse el tool-loop): la conversación pasa a modo humano + notificación push al operador, en vez de una respuesta vaga/genérica. Los pedidos fuera del lavacar siguen con la deflección amable (no escalan, para no spamear al operador). Verificado en vivo (gpt-4o-mini) con los 3 casos.
 
 ---
 
