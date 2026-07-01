@@ -1,6 +1,6 @@
 import { pgTable, text, timestamp, integer, boolean, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
-import type { HorarioDia, KnowledgeBase, Service } from "../types";
+import type { HorarioDia, KnowledgeBase, PendienteSerializado, Service } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Esquema Drizzle del agente de WhatsApp.
@@ -178,4 +178,36 @@ export const waUsuarios = pgTable(
   }),
 );
 
-export const schema = { waConversaciones, waMensajes, waCitas, waEventosCalidad, waPushSubs, waTenants, waUsuarios };
+// ─────────────────────────────────────────────────────────────────────────────
+// Cola durable de jobs (B1). Cada mensaje entrante genera un job aquí ANTES de
+// responder 200 a Meta. El worker lo consume con FOR UPDATE SKIP LOCKED: N
+// instancias comparten la cola sin doble-procesar. Sin esta tabla, un crash a
+// mitad del LLM pierde el mensaje (fire-and-forget).
+// ─────────────────────────────────────────────────────────────────────────────
+export const waJobs = pgTable(
+  "wa_jobs",
+  {
+    id: id(),
+    tenantId: text("tenant_id").notNull(),
+    tipo: text("tipo").notNull().default("responder_entrante"),
+    estado: text("estado").notNull().default("pendiente"), // pendiente|procesando|hecho|error
+    intentos: integer("intentos").notNull().default(0),
+    maxIntentos: integer("max_intentos").notNull().default(5),
+    ejecutarDespuesDe: timestamp("ejecutar_despues_de", { withTimezone: true }).notNull().defaultNow(),
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    creadoEn: timestamp("creado_en", { withTimezone: true }).notNull().defaultNow(),
+    finalizadoEn: timestamp("finalizado_en", { withTimezone: true }),
+    payload: jsonb("payload").$type<PendienteSerializado>().notNull(),
+    ultimoError: text("ultimo_error"),
+    // Idempotencia: 1 job por mensaje entrante. NULL permitido (múltiples NULL no
+    // chocan en un índice único de Postgres).
+    waMessageId: text("wa_message_id"),
+  },
+  (t) => ({
+    // Índice que usa el worker al reclamar: pendientes listos para correr, más viejos primero.
+    idxClaim: index("wa_jobs_claim_idx").on(t.estado, t.ejecutarDespuesDe),
+    uqWaId: uniqueIndex("wa_jobs_waid_uq").on(t.waMessageId),
+  }),
+);
+
+export const schema = { waConversaciones, waMensajes, waCitas, waEventosCalidad, waPushSubs, waTenants, waUsuarios, waJobs };

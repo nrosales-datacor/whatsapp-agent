@@ -10,6 +10,7 @@ import { cargarTenants } from "./config/tenantStore";
 import { calendarioConfigurado } from "./calendar/googleCalendar";
 import { manejarPanel } from "./panel/router";
 import { pushConfigurado } from "./panel/push";
+import { iniciarWorker } from "./queue/worker";
 import type { Repositorio } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -21,9 +22,10 @@ import type { Repositorio } from "./types";
 const PORT = Number(process.env.PORT ?? 3000);
 const RUTA_WEBHOOK = "/webhook";
 
-const repo: Repositorio = process.env.DATABASE_URL
-  ? new RepositorioDrizzle(crearDb())
-  : new RepositorioEnMemoria();
+// `db` se expone por separado para pasárselo al worker (que opera directamente
+// sobre wa_jobs sin pasar por la interfaz Repositorio).
+const db = process.env.DATABASE_URL ? crearDb() : null;
+const repo: Repositorio = db ? new RepositorioDrizzle(db) : new RepositorioEnMemoria();
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
@@ -94,7 +96,9 @@ const server = http.createServer(async (req, res) => {
     // FASE 2: respondemos 200 rápido y procesamos la respuesta (LLM) aparte.
     res.writeHead(200, { "content-type": "text/plain" });
     res.end("EVENT_RECEIVED");
-    if (pendiente) {
+    if (pendiente && !db) {
+      // Sin base de datos (dev local / sin DATABASE_URL): procesar inline como antes.
+      // Con DB el job ya quedó encolado en Fase 1 y el worker lo consume.
       responderEntrante(pendiente, repo).catch((e) => console.error("[server] responderEntrante:", e));
     }
     return;
@@ -118,11 +122,14 @@ if (process.env.SEED_DEMO && !process.env.DATABASE_URL) {
 }
 
 server.listen(PORT, () => {
-  const modo = process.env.DATABASE_URL ? "PostgreSQL (Drizzle)" : "memoria (no persiste)";
+  const modo = db ? "PostgreSQL (Drizzle)" : "memoria (no persiste)";
   console.log(`Agente escuchando en http://localhost:${PORT}`);
   console.log(`Webhook: http://localhost:${PORT}${RUTA_WEBHOOK}  ·  Almacenamiento: ${modo}`);
   console.log(`Google Calendar: ${calendarioConfigurado() ? "conectado ✅" : "no configurado (opcional)"}`);
   console.log(`Notificaciones push: ${pushConfigurado() ? "configuradas ✅" : "no configuradas (faltan llaves VAPID)"}`);
+
+  // Cola durable: el worker consume los jobs de wa_jobs. Solo cuando hay DB.
+  if (db) iniciarWorker(repo, db);
 
   // Recordatorios de cita por WhatsApp (día antes + mismo día).
   iniciarRecordatorios(repo);
