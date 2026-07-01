@@ -5,6 +5,7 @@ import type {
   MensajeConversacion,
   Metricas,
   ModoConversacion,
+  PendienteSerializado,
   PushSub,
   Repositorio,
   ResumenConversacion,
@@ -127,6 +128,35 @@ export class RepositorioEnMemoria implements Repositorio {
     const ahora = new Date().toISOString();
     if (tipo === "dia_antes") c.recordatorioDiaAntesEn = ahora;
     else c.recordatorioMismoDiaEn = ahora;
+  }
+
+  async reclamarRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<boolean> {
+    const c = this.citas.find((x) => x.id === citaId);
+    if (!c) return false;
+    if (tipo === "dia_antes") {
+      if (c.recordatorioDiaAntesEn) return false;
+      c.recordatorioDiaAntesEn = new Date().toISOString();
+    } else {
+      if (c.recordatorioMismoDiaEn) return false;
+      c.recordatorioMismoDiaEn = new Date().toISOString();
+    }
+    return true;
+  }
+
+  async revertirRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<void> {
+    const c = this.citas.find((x) => x.id === citaId);
+    if (!c) return;
+    if (tipo === "dia_antes") c.recordatorioDiaAntesEn = null;
+    else c.recordatorioMismoDiaEn = null;
+  }
+
+  async guardarEntranteYEncolar(
+    conversacionId: string,
+    msg: MensajeConversacion,
+    _payload: PendienteSerializado,
+  ): Promise<boolean> {
+    // Sin base de datos no hay cola: solo guardamos el mensaje (comportamiento de dev).
+    return this.guardarMensaje(conversacionId, msg);
   }
 
   async registrarCalidad(evento: {

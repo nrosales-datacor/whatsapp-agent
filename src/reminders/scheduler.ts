@@ -108,11 +108,15 @@ async function procesarTenant(tenant: Tenant, repo: Repositorio): Promise<void> 
       // Si la cita se creó hace muy poco, el cliente acaba de recibir la
       // confirmación: no tiene sentido recordarle de inmediato.
       if (new Date(cita.creadaEn).getTime() > haceUnaHora) continue;
+      // Claim atómico: solo UNA instancia pasa de NULL a timestamp; las demás
+      // obtienen false y hacen continue → sin duplicados con N instancias.
+      if (!(await repo.reclamarRecordatorio(cita.id, "dia_antes"))) continue;
       try {
         await enviarRecordatorio(tenant, cita, "dia_antes");
-        await repo.marcarRecordatorio(cita.id, "dia_antes");
         console.log(`[recordatorios] día antes → cita ${cita.id} (${cita.clienteWa})`);
       } catch (e) {
+        // El envío falló: revertir el claim para que el próximo tick reintente.
+        await repo.revertirRecordatorio(cita.id, "dia_antes");
         console.error(`[recordatorios] error (día antes, cita ${cita.id}):`, e);
       }
     }
@@ -125,11 +129,12 @@ async function procesarTenant(tenant: Tenant, repo: Repositorio): Promise<void> 
     if (ahoraMin >= citaMin) continue; // la hora ya pasó: no recordar tarde
     if (ahoraMin < Math.max(citaMin - HORAS_ANTES * 60, NO_ANTES_DE_MIN)) continue; // aún no toca
     if (new Date(cita.creadaEn).getTime() > haceUnaHora) continue; // recién agendada
+    if (!(await repo.reclamarRecordatorio(cita.id, "mismo_dia"))) continue;
     try {
       await enviarRecordatorio(tenant, cita, "mismo_dia");
-      await repo.marcarRecordatorio(cita.id, "mismo_dia");
       console.log(`[recordatorios] mismo día → cita ${cita.id} (${cita.clienteWa})`);
     } catch (e) {
+      await repo.revertirRecordatorio(cita.id, "mismo_dia");
       console.error(`[recordatorios] error (mismo día, cita ${cita.id}):`, e);
     }
   }
