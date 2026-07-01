@@ -91,6 +91,27 @@ export interface Cita {
 
 export type TipoRecordatorio = "dia_antes" | "mismo_dia";
 
+/**
+ * Payload serializable de un Pendiente para la cola durable (wa_jobs).
+ * No incluye el `tenant`; el worker lo relee del tenantStore por phoneNumberId.
+ * Los campos de `entrante` se inlinean para evitar dependencia circular con
+ * whatsapp/client.ts (que importa Tenant desde este mismo módulo).
+ */
+export interface PendienteSerializado {
+  clase: "texto" | "no-texto";
+  tenantId: string;
+  entrante: {
+    phoneNumberId: string;
+    clienteWa: string;
+    messageId?: string;
+    esTexto: boolean;
+    texto: string;
+  };
+  conv: Conversacion;
+  primerContacto?: boolean;
+  historialPrevio?: MensajeConversacion[];
+}
+
 export interface MensajeConversacion {
   rol: "user" | "assistant";
   contenido: string;
@@ -176,6 +197,29 @@ export interface Repositorio {
   guardarGcalEventId(citaId: string, eventId: string): Promise<void>;
   /** Marca un recordatorio como enviado (para no mandarlo dos veces). */
   marcarRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<void>;
+  /**
+   * Intenta marcar el recordatorio como enviado atómicamente (compare-and-swap).
+   * Devuelve `true` si esta instancia ganó el claim (la columna estaba NULL y se
+   * seteó); `false` si ya fue reclamado por otra instancia.
+   * Pooler-safe: es un UPDATE de una sola fila, sin advisory locks de sesión.
+   */
+  reclamarRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<boolean>;
+  /**
+   * Revierte el claim (columna a NULL) cuando el envío falló, para que el próximo
+   * tick pueda reintentarlo.
+   */
+  revertirRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<void>;
+  /**
+   * Transaccional (con DB): guarda el mensaje entrante Y encola el job de respuesta en
+   * `wa_jobs` en una sola transacción → "mensaje persistido ⇒ job encolado" es
+   * invariante. Devuelve `true` si el mensaje era nuevo (se encoló); `false` si era
+   * duplicado (mismo waMessageId). Sin DB (repo en memoria), solo guarda el mensaje.
+   */
+  guardarEntranteYEncolar(
+    conversacionId: string,
+    msg: MensajeConversacion,
+    payload: PendienteSerializado,
+  ): Promise<boolean>;
 
   registrarCalidad(evento: {
     tenantId: string;

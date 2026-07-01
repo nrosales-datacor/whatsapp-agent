@@ -1,6 +1,6 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import { schema, waCitas, waConversaciones, waEventosCalidad, waMensajes, waPushSubs } from "../db/schema";
+import { schema, waCitas, waConversaciones, waEventosCalidad, waMensajes, waPushSubs, waJobs } from "../db/schema";
 import type {
   Cita,
   Conversacion,
@@ -8,6 +8,7 @@ import type {
   MensajeConversacion,
   Metricas,
   ModoConversacion,
+  PendienteSerializado,
   PushSub,
   Repositorio,
   ResumenConversacion,
@@ -155,6 +156,61 @@ export class RepositorioDrizzle implements Repositorio {
         ? { recordatorioDiaAntesEn: new Date() }
         : { recordatorioMismoDiaEn: new Date() };
     await this.db.update(waCitas).set(cambio).where(eq(waCitas.id, citaId));
+  }
+
+  async reclamarRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<boolean> {
+    // UPDATE ... WHERE col IS NULL RETURNING id — atómico: solo una instancia pasa
+    // de NULL a timestamp; las demás obtienen 0 filas → claim perdido → continue.
+    const col = tipo === "dia_antes" ? waCitas.recordatorioDiaAntesEn : waCitas.recordatorioMismoDiaEn;
+    const cambio =
+      tipo === "dia_antes"
+        ? { recordatorioDiaAntesEn: new Date() }
+        : { recordatorioMismoDiaEn: new Date() };
+    const filas = await this.db
+      .update(waCitas)
+      .set(cambio)
+      .where(and(eq(waCitas.id, citaId), isNull(col)))
+      .returning({ id: waCitas.id });
+    return filas.length > 0;
+  }
+
+  async revertirRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<void> {
+    const cambio =
+      tipo === "dia_antes"
+        ? { recordatorioDiaAntesEn: null }
+        : { recordatorioMismoDiaEn: null };
+    await this.db.update(waCitas).set(cambio).where(eq(waCitas.id, citaId));
+  }
+
+  async guardarEntranteYEncolar(
+    conversacionId: string,
+    msg: MensajeConversacion,
+    payload: PendienteSerializado,
+  ): Promise<boolean> {
+    // Una sola transacción: "mensaje persistido ⇒ job encolado" es invariante.
+    // Si el proceso muere a mitad, Postgres revierte ambas filas → Meta reintenta
+    // → Fase 1 vuelve a intentar → finalmente quedan ambas o ninguna.
+    let encolado = false;
+    await this.db.transaction(async (tx) => {
+      const filas = await tx
+        .insert(waMensajes)
+        .values({
+          conversacionId,
+          rol: msg.rol,
+          contenido: msg.contenido,
+          porHumano: msg.porHumano ?? false,
+          waMessageId: msg.waMessageId ?? null,
+        })
+        .onConflictDoNothing()
+        .returning({ id: waMensajes.id });
+      if (filas.length === 0) return; // mensaje duplicado → no encolar
+      await tx
+        .insert(waJobs)
+        .values({ tenantId: payload.tenantId, payload, waMessageId: msg.waMessageId ?? null })
+        .onConflictDoNothing(); // idempotencia extra por waMessageId
+      encolado = true;
+    });
+    return encolado;
   }
 
   async registrarCalidad(evento: {
