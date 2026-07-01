@@ -29,7 +29,6 @@ import { clavePublicaVapid, enviarPushATenant } from "./push";
 
 const COOKIE = "panel_sesion";
 const COOKIE_ADMIN = "panel_admin_sesion"; // sesión del superadmin (onboarding), aparte de la del operador
-const HTML = readFileSync(fileURLToPath(new URL("./inbox.html", import.meta.url)), "utf8");
 
 // Fuentes self-hosted (woff2). Se cachean en memoria al primer pedido.
 const fontCache = new Map<string, Buffer>();
@@ -64,9 +63,7 @@ function leerAsset(rel: string): Buffer | null {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Build de React (Vite) del panel nuevo (web/dist). Si existe se sirve ese; si no,
-// se cae al inbox.html actual — así el panel nunca queda en blanco mientras dura la
-// migración (ROADMAP carril A) o si todavía no se corrió `npm run build` en web/.
+// Build de React (Vite) del panel (web/dist). Si no existe devuelve null → 503.
 // ─────────────────────────────────────────────────────────────────────────────
 function rutaDist(rel: string): string {
   return fileURLToPath(new URL(`../../web/dist/${rel}`, import.meta.url));
@@ -421,7 +418,7 @@ export async function manejarPanel(
   // Cualquier /panel/* de PÁGINA (no asset, no /api) sirve el index del build, para que
   // el deep-link a una ruta cliente (p. ej. /panel/admin) funcione en carga completa.
   // Va DESPUÉS de los bloques de assets (que ya hacen return) y ANTES del check de /api,
-  // así no sombrea ni los assets ni /api/panel/*. Sin build → inbox.html (panel viejo).
+  // así no sombrea ni los assets ni /api/panel/*.
   if (pathname === "/panel" || pathname.startsWith("/panel/")) {
     if (metodo !== "GET" && metodo !== "HEAD") {
       res.writeHead(405);
@@ -429,11 +426,13 @@ export async function manejarPanel(
       return true;
     }
     const react = leerReactIndex();
-    const html =
-      react ??
-      (process.env.SEED_DEMO ? readFileSync(fileURLToPath(new URL("./inbox.html", import.meta.url)), "utf8") : HTML);
+    if (!react) {
+      res.writeHead(503, { "content-type": "text/plain; charset=utf-8" });
+      res.end("Panel no disponible — corré `npm run web:build` y reiniciá el proceso.");
+      return true;
+    }
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    res.end(html);
+    res.end(react);
     return true;
   }
 
