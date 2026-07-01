@@ -1,4 +1,4 @@
-import type { Conversacion, MensajeConversacion, Repositorio, Tenant } from "./types";
+import type { Conversacion, MensajeConversacion, PendienteSerializado, Repositorio, Tenant } from "./types";
 import { obtenerTenantPorPhoneNumberId, refrescarSiFaltaPhoneNumberId } from "./config/tenantStore";
 import { parsearEntrante, enviarTexto, type MensajeEntrante } from "./whatsapp/client";
 import { correrAgente } from "./agent/runAgent";
@@ -12,7 +12,8 @@ const AVISO_BOT =
 const MENSAJE_ESCALADA = "Dejame consultarlo con una persona del equipo 🙋 En un momento te responden por acá.";
 
 // Resultado de la fase de ingesta: lo que quedó listo (y ya persistido) para responder.
-type Pendiente =
+// Exportado para que el worker pueda reconstruirlo desde el payload serializado.
+export type Pendiente =
   | { clase: "no-texto"; tenant: Tenant; entrante: MensajeEntrante; conv: Conversacion }
   | {
       clase: "texto";
@@ -48,12 +49,14 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio): Promise
   // "solo texto" dos veces ante un reintento de Meta.
   if (!entrante.esTexto || !entrante.texto.trim()) {
     const conv = await repo.obtenerOConversacion(tenant.id, entrante.clienteWa);
-    const esNuevo = await repo.guardarMensaje(conv.id, {
+    const msg: MensajeConversacion = {
       rol: "user",
       contenido: "[mensaje no de texto]",
       creadoEn: new Date().toISOString(),
       waMessageId: entrante.messageId,
-    });
+    };
+    const payload: PendienteSerializado = { clase: "no-texto", tenantId: tenant.id, entrante, conv };
+    const esNuevo = await repo.guardarEntranteYEncolar(conv.id, msg, payload);
     if (!esNuevo) return null;
     return { clase: "no-texto", tenant, entrante, conv };
   }
@@ -67,12 +70,21 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio): Promise
   // que es lo que pasaba cuando el repo devolvía el array vivo ya con el mensaje).
   const historialPrevio = conv.mensajes.slice();
 
-  const esNuevo = await repo.guardarMensaje(conv.id, {
+  const msg: MensajeConversacion = {
     rol: "user",
     contenido: entrante.texto,
     creadoEn: new Date().toISOString(),
     waMessageId: entrante.messageId,
-  });
+  };
+  const payload: PendienteSerializado = {
+    clase: "texto",
+    tenantId: tenant.id,
+    entrante,
+    conv,
+    primerContacto,
+    historialPrevio,
+  };
+  const esNuevo = await repo.guardarEntranteYEncolar(conv.id, msg, payload);
   if (!esNuevo) {
     console.log(`[webhook] mensaje duplicado ignorado (${entrante.messageId ?? "sin id"})`);
     return null;

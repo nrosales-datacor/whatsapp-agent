@@ -6,7 +6,7 @@
 
 **Leyenda:** ✅ hecho · 🔵 en progreso · ⬜ pendiente · 🔴 bloqueante crítico para escalar
 
-**Última actualización:** 2026-06-30
+**Última actualización:** 2026-06-30 (B1 + B4)
 
 ---
 
@@ -32,10 +32,10 @@ El **código** es sólido para el piloto; lo que no escala todavía es la **topo
 
 ## Carril B — Backend escalable
 
-- [ ] 🔴 **B1 — Cola durable en Postgres** (`wa_jobs` + `FOR UPDATE SKIP LOCKED`). Hoy el LLM corre fire-and-forget en proceso → se pierden mensajes en vuelo ante crash/reinicio. Cierra el hueco y absorbe los reintentos actuales. **Sin UI → empezar ya, en paralelo a A.** _Done:_ un mensaje entrante sobrevive a un restart del proceso.
+- [x] ✅ **B1 — Cola durable en Postgres** (`wa_jobs` + `FOR UPDATE SKIP LOCKED`). Tabla `wa_jobs` en el esquema (migración `0006_daily_nomad.sql`). Fase 1 del webhook guarda el mensaje **y** encola el job en una sola transacción antes de responder 200 (`guardarEntranteYEncolar`). `src/queue/cola.ts`: `reclamarUno` (claim con `FOR UPDATE SKIP LOCKED`), backoff exponencial, reaper. `src/queue/worker.ts`: loop serial (1 job a la vez; preserva orden) + reaper cada 60s. Sin DB → comportamiento inline previo (dev local sin cambios). _Done:_ un mensaje entrante sobrevive a un restart del proceso; el worker retoma el job pendiente.
 - [x] ✅ **B2 — Tenants y su config → base de datos** + tabla `usuarios`/auth del panel. Tablas `wa_tenants` (config rica como JSONB: horario/servicios/kb + `phone_number_id` único para ruteo) y `wa_usuarios` (login del panel). Se leen vía un **caché en memoria** (`src/config/tenantStore.ts`, accesores síncronos para el hot path) que carga de la base, se refresca cada ~60s y **on-demand** ante un número nuevo (alta sin redeploy), con **fallback hardcodeado** si la base está vacía/caída → la migración no puede causar outage. Login pasa a `usuario → wa_usuarios → tenant` (la sesión sigue firmando `tenant.id`). Seed idempotente `scripts/seedTenants.ts` + DEPLOY.md con orden seguro. Verificado: typecheck + path en memoria (login/me/anti-timing). _Pendiente: la verificación contra Postgres real ocurre en el deploy sembrado (no hay Docker local); el fallback la cubre. El alta self-serve por UI es B3._
 - [x] ✅ **B3 — Onboarding (UI en React, operado por admin).** Área de superadmin en `/panel/admin` (auth por `.env` `PANEL_SUPERADMIN_*`, sesión/cookie aparte `panel_admin_sesion` — no toca el login operador). API `/api/panel/admin/*` (login, me, logout, listar/crear negocios) con CSRF + validación server-side + 409 por duplicados; `crearTenant` transaccional en el store + recarga del caché → el negocio queda vivo sin redeploy. Acá entró **React Router** (`basename=/panel`: `/` operador, `/admin` onboarding) + **fallback SPA** en el server para los deep-links. Formulario MVP (datos + servicios + horario + KB en bloques de texto + usuario). Verificado local: typecheck + build + flujo admin/CSRF/no-sombra/regresión operador (alta real requiere base → se valida en el deploy). _MVP: el alta es por admin (no signup público); editar/borrar negocios y conectar WhatsApp por Embedded Signup quedan para más adelante._
-- [ ] 🔴 **B4 — Recordatorios safe para N instancias.** `src/reminders/scheduler.ts` usa `setInterval` en cada instancia → duplicados con 2+ instancias. Necesita leader/advisory lock. _Done:_ correr 2 instancias no duplica recordatorios.
+- [x] ✅ **B4 — Recordatorios safe para N instancias.** Reemplazado el patrón "leer-y-marcar" (carrera read→write con N instancias) por **claim atómico** (`reclamarRecordatorio`: `UPDATE ... WHERE col IS NULL RETURNING id`). Si el envío falla, `revertirRecordatorio` pone la columna a NULL para reintentar. Sin migración nueva (reutiliza `recordatorio_dia_antes_en`/`recordatorio_mismo_dia_en`). Pooler-safe (no usa advisory locks de sesión). _Done:_ correr 2 instancias no duplica recordatorios.
 - [ ] **B5 — Observabilidad + CI/CD.** Sentry (errores), uptime monitor, métricas (msg/s, latencia LLM, profundidad de cola), backups verificados. Pipeline en vez de `git pull && pm2 restart`. _Done:_ alertas activas y deploy automatizado.
 
 ---
