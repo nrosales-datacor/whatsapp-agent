@@ -305,6 +305,17 @@ notificaciones (te pedirá permiso y te llegará una de prueba).
 | Actualizar el código | `cd ~/lavacar-whatsapp-bot && git pull && npm install && npx tsx scripts/migrar.ts && npx tsx scripts/seedTenants.ts && npm run web:build && pm2 restart whatsapp-bot` |
 
 ## Si algo falla
+- **El panel se ve VIEJO (no es el React nuevo)** → el server está sirviendo el
+  fallback `inbox.html` porque no encuentra `web/dist`. Verificá:
+  `ls -la ~/lavacar-whatsapp-bot/web/dist/index.html`. Si NO existe, el build no se
+  generó: corré `npm run web:build` **a solas** (sin encadenar) y mirá el error.
+  Causa típica: con `NODE_ENV=production`, `npm install` **omite las devDependencies**
+  (y `vite` es una devDependency), así que el build falla con "vite: not found". El
+  script `web:build` ya fuerza `--include=dev` para evitarlo; si igual falla, pegá la
+  salida. Tras un build exitoso, `pm2 restart whatsapp-bot` (el proceso cachea el index
+  una sola vez → sin restart sigue con el viejo). Confirmá con:
+  `curl -s https://wabotlavacar.selyon.app/panel | grep -o '/panel/assets/[^"]*'`
+  (si imprime `.js`/`.css` → React está vivo; vacío → sigue el fallback).
 - El bot no arranca → `pm2 logs whatsapp-bot` (suele ser algo del `.env`).
 - No llega el HTTPS → revisá que el registro A de `wabotlavacar.selyon.app` en
   Cloudflare apunte a `157.230.190.60` y que el firewall tenga abierto 80/443.
