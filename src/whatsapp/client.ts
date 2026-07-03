@@ -42,6 +42,8 @@ export interface MensajeEntrante {
   esTexto: boolean;
   /** id del mensaje en WhatsApp (msg.id). Para deduplicar reintentos de Meta. */
   messageId?: string;
+  /** id del media de audio (cuando msg.type === "audio"). Para transcribir en fase 2. */
+  audioId?: string;
 }
 
 export function parsearEntrante(body: any): MensajeEntrante | null {
@@ -56,8 +58,9 @@ export function parsearEntrante(body: any): MensajeEntrante | null {
     const clienteWa = String(msg.from ?? "").replace(/\D/g, "");
     const esTexto = msg.type === "text";
     const texto = esTexto ? (msg.text?.body ?? "") : "";
+    const audioId = msg.type === "audio" ? (msg.audio?.id ? String(msg.audio.id) : undefined) : undefined;
     if (!phoneNumberId || !clienteWa) return null;
-    return { phoneNumberId, clienteWa, texto, esTexto, messageId: msg.id ? String(msg.id) : undefined };
+    return { phoneNumberId, clienteWa, texto, esTexto, messageId: msg.id ? String(msg.id) : undefined, audioId };
   } catch {
     return null;
   }
@@ -159,7 +162,34 @@ export async function enviarTexto(tenant: Tenant, paraWa: string, texto: string)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 5) Envío de un MENSAJE DE PLANTILLA (template).
+// 5) Descarga de media (audio/imagen) desde la Graph API.
+//    Paso 1: GET /{mediaId} → devuelve la URL temporal del archivo.
+//    Paso 2: GET de esa URL con el token → devuelve los bytes.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function descargarMedia(
+  tenant: Tenant,
+  mediaId: string,
+): Promise<{ buffer: Buffer; mimeType: string }> {
+  const token = tenant.accessToken ?? process.env.WHATSAPP_ACCESS_TOKEN;
+  if (!token) throw new Error("Falta access token de WhatsApp para el tenant " + tenant.id);
+
+  const metaRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${mediaId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!metaRes.ok) {
+    const detalle = await metaRes.text();
+    throw new Error(`Error obteniendo URL de media ${mediaId} (${metaRes.status}): ${detalle.slice(0, 140)}`);
+  }
+  const { url, mime_type } = (await metaRes.json()) as { url: string; mime_type: string };
+
+  const archivoRes = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!archivoRes.ok) throw new Error(`Error descargando media (${archivoRes.status})`);
+  const buffer = Buffer.from(await archivoRes.arrayBuffer());
+  return { buffer, mimeType: mime_type ?? "audio/ogg" };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 6) Envío de un MENSAJE DE PLANTILLA (template).
 //    Necesario para iniciar conversación FUERA de la ventana de 24 h de Meta
 //    (caso típico: recordatorios de cita). La plantilla debe estar APROBADA
 //    en el WhatsApp Manager del negocio y sus variables {{1}}, {{2}}… se

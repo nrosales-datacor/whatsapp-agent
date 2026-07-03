@@ -98,7 +98,7 @@ export type TipoRecordatorio = "dia_antes" | "mismo_dia";
  * whatsapp/client.ts (que importa Tenant desde este mismo módulo).
  */
 export interface PendienteSerializado {
-  clase: "texto" | "no-texto";
+  clase: "texto" | "no-texto" | "audio";
   tenantId: string;
   entrante: {
     phoneNumberId: string;
@@ -106,6 +106,8 @@ export interface PendienteSerializado {
     messageId?: string;
     esTexto: boolean;
     texto: string;
+    /** id del media de audio en WhatsApp (solo cuando clase === "audio"). */
+    audioId?: string;
   };
   conv: Conversacion;
   primerContacto?: boolean;

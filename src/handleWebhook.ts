@@ -1,6 +1,7 @@
 import type { Conversacion, MensajeConversacion, PendienteSerializado, Repositorio, Tenant } from "./types";
 import { obtenerTenantPorPhoneNumberId, refrescarSiFaltaPhoneNumberId } from "./config/tenantStore";
 import { parsearEntrante, enviarTexto, type MensajeEntrante } from "./whatsapp/client";
+import { transcribirAudio } from "./whatsapp/transcribir";
 import { correrAgente } from "./agent/runAgent";
 import { notificarOperador } from "./panel/notificaciones";
 
@@ -15,6 +16,14 @@ const MENSAJE_ESCALADA = "Dejame consultarlo con una persona del equipo 🙋 En 
 // Exportado para que el worker pueda reconstruirlo desde el payload serializado.
 export type Pendiente =
   | { clase: "no-texto"; tenant: Tenant; entrante: MensajeEntrante; conv: Conversacion }
+  | {
+      clase: "audio";
+      tenant: Tenant;
+      entrante: MensajeEntrante;
+      conv: Conversacion;
+      primerContacto: boolean;
+      historialPrevio: MensajeConversacion[];
+    }
   | {
       clase: "texto";
       tenant: Tenant;
@@ -44,20 +53,30 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio): Promise
     return null;
   }
 
-  // Por ahora solo manejamos texto. Igual guardamos un marcador (deduplicado por
-  // waMessageId) para que el operador vea que llegó algo y para no enviar el aviso
-  // "solo texto" dos veces ante un reintento de Meta.
+  // Mensajes no-texto: audio (notas de voz) los transcribimos en fase 2; el resto
+  // (fotos, stickers, video) se notifica al operador. Igual guardamos un marcador
+  // deduplicado por waMessageId para que el operador vea que llegó algo.
   if (!entrante.esTexto || !entrante.texto.trim()) {
+    const esAudio = !!entrante.audioId;
     const conv = await repo.obtenerOConversacion(tenant.id, entrante.clienteWa);
+    const primerContacto = !conv.optInEn;
+    const historialPrevio = conv.mensajes.slice();
     const msg: MensajeConversacion = {
       rol: "user",
-      contenido: "[mensaje no de texto]",
+      contenido: esAudio ? "[audio]" : "[multimedia]",
       creadoEn: new Date().toISOString(),
       waMessageId: entrante.messageId,
     };
-    const payload: PendienteSerializado = { clase: "no-texto", tenantId: tenant.id, entrante, conv };
+    const payload: PendienteSerializado = {
+      clase: esAudio ? "audio" : "no-texto",
+      tenantId: tenant.id,
+      entrante,
+      conv,
+      ...(esAudio ? { primerContacto, historialPrevio } : {}),
+    };
     const esNuevo = await repo.guardarEntranteYEncolar(conv.id, msg, payload);
     if (!esNuevo) return null;
+    if (esAudio) return { clase: "audio", tenant, entrante, conv, primerContacto, historialPrevio };
     return { clase: "no-texto", tenant, entrante, conv };
   }
 
@@ -100,20 +119,133 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio): Promise
  */
 export async function responderEntrante(p: Pendiente, repo: Repositorio): Promise<void> {
   if (p.clase === "no-texto") {
-    // El bot no puede leer fotos/audios/stickers. Le pedimos al cliente que
+    // El bot no puede leer fotos, stickers ni video. Le pedimos al cliente que
     // escriba en qué ayudarle Y avisamos a un humano: el adjunto puede ser
     // importante (p. ej. la foto del parabrisas a pulir) y no queremos ignorarlo.
     await enviarTexto(
       p.tenant,
       p.entrante.clienteWa,
-      "¡Hola! 🙂 Por ahora no puedo ver fotos, audios ni stickers. Contame por texto en qué te puedo ayudar (precios, horarios, ubicación o agendar una cita) y con gusto te atiendo.",
+      "¡Hola! 🙂 Por ahora no puedo ver fotos ni stickers. Contame por texto en qué te puedo ayudar (precios, horarios, ubicación o agendar una cita) y con gusto te atiendo.",
     ).catch((e) => console.error("[no-texto] no se pudo responder al cliente:", e));
     await notificarOperador(
       repo,
       p.tenant,
       p.conv,
-      "📎 Llegó un mensaje multimedia que el bot no puede leer (foto/audio/sticker).",
+      "📎 Llegó un mensaje multimedia que el bot no puede leer (foto/sticker/video).",
     ).catch((e) => console.error("[no-texto] notificarOperador:", e));
+    return;
+  }
+
+  if (p.clase === "audio") {
+    const { tenant, entrante, conv, primerContacto, historialPrevio } = p;
+
+    if (conv.modo === "humano") {
+      await notificarOperador(repo, tenant, conv, "🎤 Nota de voz recibida.").catch((e) =>
+        console.error("[audio] notificarOperador:", e),
+      );
+      return;
+    }
+
+    let textoTranscrito: string;
+    try {
+      textoTranscrito = await transcribirAudio(tenant, entrante.audioId!);
+      console.log(`[audio] ${entrante.clienteWa}: "${textoTranscrito.slice(0, 80)}"`);
+    } catch (e) {
+      console.error("[audio] transcripción fallida:", e);
+      await enviarTexto(
+        tenant,
+        entrante.clienteWa,
+        "🎤 Recibí tu nota de voz, pero tuve problemas para escucharla. ¿Podés contarme por texto en qué te ayudo?",
+      ).catch(() => {});
+      await notificarOperador(repo, tenant, conv, "🎤 Nota de voz recibida — transcripción falló.").catch(() => {});
+      return;
+    }
+
+    // Escotilla de salida: si el audio pide hablar con una persona, escalamos.
+    if (/\bagente\b|\bhumano\b|\bpersona\b/i.test(textoTranscrito)) {
+      try {
+        await repo.setModoConversacion(tenant.id, conv.id, "humano");
+        await enviarTexto(
+          tenant,
+          entrante.clienteWa,
+          "¡Listo! Te paso con una persona del equipo. En un momento te responden por acá. 🙋",
+        );
+        await notificarOperador(repo, tenant, conv, `🎤 ${textoTranscrito}`);
+        await repo.registrarCalidad({
+          tenantId: tenant.id,
+          clienteWa: entrante.clienteWa,
+          tipo: "fuera_de_alcance",
+          detalle: "pidió humano (audio)",
+        });
+      } catch (e) {
+        console.error("[audio/humano] no se pudo completar el traspaso:", e);
+      }
+      return;
+    }
+
+    try {
+      const { respuesta, fueraDeAlcance, escalar, motivo } = await correrAgente(
+        { tenant, repo, clienteWa: entrante.clienteWa },
+        textoTranscrito,
+        historialPrevio,
+      );
+
+      const modoActual = await repo.obtenerModo(tenant.id, conv.id);
+      if (modoActual === "humano") {
+        console.log(`[audio] respuesta descartada: un humano tomó ${entrante.clienteWa} durante el proceso`);
+        return;
+      }
+
+      if (escalar) {
+        await repo.setModoConversacion(tenant.id, conv.id, "humano");
+        let salida = MENSAJE_ESCALADA;
+        if (primerContacto) salida = `${AVISO_BOT.replace("%NOMBRE%", tenant.nombre)}\n\n${salida}`;
+        await enviarTexto(tenant, entrante.clienteWa, salida);
+        if (primerContacto) await repo.marcarOptIn(conv.id);
+        await repo.guardarMensaje(conv.id, { rol: "assistant", contenido: MENSAJE_ESCALADA, creadoEn: new Date().toISOString() });
+        await notificarOperador(
+          repo,
+          tenant,
+          conv,
+          motivo ? `🙋 El bot pasó este caso: ${motivo}` : `🎤 ${textoTranscrito}`,
+        );
+        await repo.registrarCalidad({
+          tenantId: tenant.id,
+          clienteWa: entrante.clienteWa,
+          tipo: "fuera_de_alcance",
+          detalle: motivo ? `escalado: ${motivo}` : "escalado a humano",
+        });
+        return;
+      }
+
+      let salida = respuesta;
+      if (primerContacto) salida = `${AVISO_BOT.replace("%NOMBRE%", tenant.nombre)}\n\n${respuesta}`;
+      await enviarTexto(tenant, entrante.clienteWa, salida);
+      if (primerContacto) await repo.marcarOptIn(conv.id);
+      await repo.guardarMensaje(conv.id, { rol: "assistant", contenido: respuesta, creadoEn: new Date().toISOString() });
+      console.log(`[audio→saliente] → ${entrante.clienteWa}: "${respuesta.slice(0, 80)}"`);
+      await repo.registrarCalidad({
+        tenantId: tenant.id,
+        clienteWa: entrante.clienteWa,
+        tipo: fueraDeAlcance ? "fuera_de_alcance" : "mensaje_ok",
+      });
+    } catch (e) {
+      console.error("[audio] error procesando:", e);
+      await repo
+        .registrarCalidad({ tenantId: tenant.id, clienteWa: entrante.clienteWa, tipo: "error", detalle: String(e) })
+        .catch(() => {});
+      await enviarTexto(
+        tenant,
+        entrante.clienteWa,
+        "Disculpá, tuvimos un problemita. Probá de nuevo en un momento 🙏",
+      ).catch(() => {});
+      await notificarOperador(
+        repo,
+        tenant,
+        conv,
+        `⚠️ El bot no pudo responder a la nota de voz: "${textoTranscrito.slice(0, 60)}".`,
+      ).catch(() => {});
+    }
     return;
   }
 
