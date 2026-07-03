@@ -6,7 +6,7 @@
 
 **Leyenda:** ✅ hecho · 🔵 en progreso · ⬜ pendiente · 🔴 bloqueante crítico para escalar
 
-**Última actualización:** 2026-07-03 (A8 completo — Fase 4 de verificación hecha con 3 fixes)
+**Última actualización:** 2026-07-03 (C1.4 completo — Notas de voz con Whisper)
 
 ---
 
@@ -50,7 +50,7 @@ El **código** es sólido para el piloto; lo que no escala todavía es la **topo
 - [ ] **C1.1 — Reprogramar/cancelar cita por el bot** (herramientas nuevas + sync Calendar).
 - [ ] **C1.2 — Mensajes interactivos** (botones y listas nativas de WhatsApp, sin deps nuevas).
 - [ ] **C1.3 — Recordatorio con confirmación** (anti no-show; cita confirmada visible en panel).
-- [ ] **C1.4 — Notas de voz** (transcripción con el SDK de OpenAI ya instalado).
+- [x] ✅ **C1.4 — Notas de voz** (transcripción con el SDK de OpenAI ya instalado). `parsearEntrante()` detecta `msg.type === "audio"` y extrae `audioId`; `descargarMedia()` baja el archivo de Graph API; `transcribirAudio()` (Whisper-1, `src/whatsapp/transcribir.ts`) lo transcribe al español; el webhook maneja la clase `"audio"` en fase 2 con el mismo flujo de agente (escalada, opt-in, fallback al operador si Whisper falla). Mensajes de fotos/stickers/video siguen notificando al operador.
 - [ ] **C1.5 — Fotos → cotización con visión** (+ imágenes visibles en el chat del panel).
 - [ ] **C2.1 — Vista Agenda en el panel** (citas por día/semana + cita manual + estados).
 - [ ] **C2.2 — Configuración self-service del negocio** (servicios/precios/horario/bloqueos/KB).
