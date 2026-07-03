@@ -179,6 +179,9 @@ export class RepositorioEnMemoria implements Repositorio {
   }
 
   async listarConversaciones(tenantId: string): Promise<ResumenConversacion[]> {
+    const hoy = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
+    const hace24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
     return [...this.conversaciones.values()]
       .filter((c) => c.tenantId === tenantId)
       .map((c) => {
@@ -189,13 +192,31 @@ export class RepositorioEnMemoria implements Repositorio {
           c.modo === "humano"
             ? c.mensajes.filter((m) => m.rol === "user" && (!c.leidoHasta || m.creadoEn > c.leidoHasta)).length
             : 0;
+
+        const ultimaActividadEn = ult ? ult.creadoEn : c.creadaEn;
+        const citasCliente = this.citas.filter(
+          (ct) => ct.tenantId === tenantId && ct.clienteWa === c.clienteWa,
+        );
+        const citaActiva = citasCliente.find((ct) => ct.estado === "agendada" && ct.fecha >= hoy);
+
+        // Heurística tentativa de lead score (misma que el repo Drizzle).
+        let leadScore = 40;
+        if (citasCliente.length > 0) leadScore += 25;
+        if (ult?.rol === "user") leadScore += 15;
+        if (ultimaActividadEn >= hace24h) leadScore += 10;
+        if (citaActiva) leadScore += 10;
+        leadScore = Math.min(100, Math.max(0, leadScore));
+
         return {
           id: c.id,
           clienteWa: c.clienteWa,
           modo: c.modo,
           ultimoMensaje: ult ? ult.contenido : null,
-          ultimaActividadEn: ult ? ult.creadoEn : c.creadaEn,
+          ultimaActividadEn,
           sinLeer,
+          leadScore,
+          servicio: citaActiva?.servicioId ?? null,
+          tieneCita: !!citaActiva,
         };
       })
       .sort((a, b) => (b.ultimaActividadEn ?? "").localeCompare(a.ultimaActividadEn ?? ""));
@@ -204,7 +225,12 @@ export class RepositorioEnMemoria implements Repositorio {
   async obtenerConversacionPorId(tenantId: string, conversacionId: string): Promise<Conversacion | null> {
     const c = this.conversaciones.get(conversacionId);
     if (!c || c.tenantId !== tenantId) return null;
-    return this.dto(c, 100); // copia (últimos 100), nunca el objeto vivo
+    const hoy = new Date().toISOString().slice(0, 10);
+    const citaActiva = this.citas.find(
+      (ct) => ct.tenantId === tenantId && ct.clienteWa === c.clienteWa && ct.estado === "agendada" && ct.fecha >= hoy,
+    );
+    const base = this.dto(c, 100);
+    return { ...base, servicio: citaActiva?.servicioId ?? null, tieneCita: !!citaActiva };
   }
 
   async obtenerModo(tenantId: string, conversacionId: string): Promise<ModoConversacion | null> {

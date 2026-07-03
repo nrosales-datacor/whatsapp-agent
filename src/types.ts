@@ -133,6 +133,10 @@ export interface Conversacion {
   /** "bot" => responde la IA. "humano" => la IA se calla y atiende una persona. */
   modo: ModoConversacion;
   mensajes: MensajeConversacion[];
+  /** Nombre del servicio de la cita activa más próxima (o null si no tiene). */
+  servicio?: string | null;
+  /** true si el cliente tiene al menos una cita agendada futura activa. */
+  tieneCita?: boolean;
 }
 
 /** Fila liviana para la lista de la bandeja del panel (sin todo el historial). */
@@ -144,6 +148,15 @@ export interface ResumenConversacion {
   ultimaActividadEn: string | null; // ISO
   /** Mensajes del cliente sin "ver" por el operador (para el badge). */
   sinLeer: number;
+  /**
+   * Puntuación de prioridad del lead (0–100). Heurística tentativa — calibrar con el
+   * negocio. Omitida si no hay suficientes datos; la UI oculta el tile cuando falta.
+   */
+  leadScore?: number;
+  /** Nombre del servicio de la cita activa más próxima (o null si no tiene). */
+  servicio?: string | null;
+  /** true si el cliente tiene al menos una cita agendada futura activa. */
+  tieneCita?: boolean;
 }
 
 /** Suscripción de notificaciones push de un navegador (Web Push). */
@@ -163,6 +176,16 @@ export interface Metricas {
   serviciosTop: { servicioId: string; nombre?: string; cantidad: number }[];
   citasPorDia: { fecha: string; cantidad: number }[];
   horasPico: { hora: string; cantidad: number }[];
+  /**
+   * Variación vs. los 7 días anteriores ("+12%", "-5%", "+∞").
+   * Omitido si no hay período comparable (p. ej. repo en memoria).
+   */
+  deltas?: {
+    conversaciones?: string;
+    citas?: string;
+    conversion?: string;
+    ingresos?: string;
+  };
 }
 
 /** Ficha (mini-CRM) de un cliente: datos agregados para el panel. */

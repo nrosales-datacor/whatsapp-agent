@@ -30,16 +30,17 @@ import { clavePublicaVapid, enviarPushATenant } from "./push";
 const COOKIE = "panel_sesion";
 const COOKIE_ADMIN = "panel_admin_sesion"; // sesión del superadmin (onboarding), aparte de la del operador
 
-// Fuentes self-hosted (woff2). Se cachean en memoria al primer pedido.
+// Fuentes self-hosted (woff2 y ttf). Se cachean en memoria al primer pedido.
 const fontCache = new Map<string, Buffer>();
-function leerFuente(file: string): Buffer | null {
-  if (!/^[a-z0-9-]+\.woff2$/.test(file)) return null;
+function leerFuente(file: string): { buf: Buffer; mime: string } | null {
+  if (!/^[a-z0-9-]+\.(woff2|ttf)$/.test(file)) return null;
   const cached = fontCache.get(file);
-  if (cached) return cached;
+  const mime = file.endsWith(".ttf") ? "font/ttf" : "font/woff2";
+  if (cached) return { buf: cached, mime };
   try {
     const buf = readFileSync(fileURLToPath(new URL(`./fonts/${file}`, import.meta.url)));
     fontCache.set(file, buf);
-    return buf;
+    return { buf, mime };
   } catch {
     return null;
   }
@@ -373,16 +374,16 @@ export async function manejarPanel(
     return true;
   }
 
-  // ── Fuentes self-hosted (woff2) ──
+  // ── Fuentes self-hosted (woff2 y ttf) ──
   if (pathname.startsWith("/panel/fonts/")) {
-    const buf = leerFuente(pathname.slice("/panel/fonts/".length));
-    if (!buf) {
+    const fuente = leerFuente(pathname.slice("/panel/fonts/".length));
+    if (!fuente) {
       res.writeHead(404);
       res.end("Not found");
       return true;
     }
-    res.writeHead(200, { "content-type": "font/woff2", "cache-control": "public, max-age=31536000, immutable" });
-    res.end(buf);
+    res.writeHead(200, { "content-type": fuente.mime, "cache-control": "public, max-age=31536000, immutable" });
+    res.end(fuente.buf);
     return true;
   }
 

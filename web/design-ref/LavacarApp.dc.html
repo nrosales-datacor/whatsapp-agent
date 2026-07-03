@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+@font-face { font-family:'Noto Sans'; font-weight:400; src:url('fonts/NotoSans-Regular.ttf') format('truetype'); font-display:swap; }
+@font-face { font-family:'Noto Sans'; font-weight:500; src:url('fonts/NotoSans-Medium.ttf') format('truetype'); font-display:swap; }
+@font-face { font-family:'Noto Sans'; font-weight:600; src:url('fonts/NotoSans-SemiBold.ttf') format('truetype'); font-display:swap; }
+@font-face { font-family:'Noto Sans'; font-weight:700; src:url('fonts/NotoSans-Bold.ttf') format('truetype'); font-display:swap; }
+@font-face { font-family:'Noto Sans'; font-weight:800; src:url('fonts/NotoSans-ExtraBold.ttf') format('truetype'); font-display:swap; }
+@font-face { font-family:'Noto Sans'; font-weight:900; src:url('fonts/NotoSans-Black.ttf') format('truetype'); font-display:swap; }
+
+/* ===== Theme tokens (default = Verde / light) ===== */
+[data-app]{
+  --font-display:'Noto Sans',sans-serif; --font-body:'Roboto','Noto Sans',sans-serif;
+  --c-bg:#e9efec; --c-surface:#ffffff; --c-surface-2:#f4f8f6; --c-elevated:#ffffff;
+  --c-text:#0f2723; --c-text-2:#5e716c; --c-text-3:#9aaaa4;
+  --c-border:#e3ebe7; --c-border-2:#eef3f0;
+  --c-accent:#0b7d72; --c-accent-fg:#ffffff; --c-accent-soft:#d6efe9;
+  --c-bubble-in:#ffffff; --c-bubble-out:#d4f2e7; --c-bubble-out-fg:#0f2723;
+  --c-header-bg:#0b5c56; --c-header-fg:#eafcf6; --c-header-sub:#9fd8cf;
+  --c-bot:#0b7d72; --c-bot-soft:#d6efe9; --c-human:#b5620a; --c-human-soft:#fbe6cf;
+  --c-active:#eef7f4; --c-chat-bg:#e5ece9; --c-dot:rgba(11,92,86,.05);
+  --c-danger:#C72B3F; --c-success:#58BE4D; --c-warning:#FA8500;
+  --c-radius:16px; --c-radius-sm:10px; --c-av:13px;
+  --c-shadow:0 1px 2px rgba(15,39,35,.05),0 10px 30px rgba(15,39,35,.06);
+}
+[data-app][data-variant="verde"][data-mode="dark"]{
+  --c-bg:#0a1614; --c-surface:#0f1f1c; --c-surface-2:#0c1a18; --c-elevated:#132825;
+  --c-text:#e7f1ee; --c-text-2:#9db4ae; --c-text-3:#5f7772;
+  --c-border:#1c302c; --c-border-2:#162925;
+  --c-accent:#37b3a3; --c-accent-fg:#04211d; --c-accent-soft:#12332e;
+  --c-bubble-in:#17302b; --c-bubble-out:#0f463f; --c-bubble-out-fg:#dff5ef;
+  --c-header-bg:#0b201d; --c-header-fg:#e7f1ee; --c-header-sub:#6fada4;
+  --c-bot:#37b3a3; --c-bot-soft:#123330; --c-human:#e0902f; --c-human-soft:#3a2a13;
+  --c-active:#16302b; --c-chat-bg:#0a1917; --c-dot:rgba(255,255,255,.03);
+  --c-shadow:0 1px 2px rgba(0,0,0,.4),0 12px 34px rgba(0,0,0,.5);
+}
+[data-app][data-variant="azul"]{
+  --c-bg:#eef2f7; --c-surface:#ffffff; --c-surface-2:#f6f9fc; --c-elevated:#ffffff;
+  --c-text:#0d2138; --c-text-2:#526078; --c-text-3:#93a1b5;
+  --c-border:#e4eaf2; --c-border-2:#eef2f8;
+  --c-accent:#248DE3; --c-accent-fg:#ffffff; --c-accent-soft:#dcecfb;
+  --c-bubble-in:#ffffff; --c-bubble-out:#dfeefb; --c-bubble-out-fg:#0d2138;
+  --c-header-bg:#103050; --c-header-fg:#eaf2fb; --c-header-sub:#8fb2d6;
+  --c-bot:#248DE3; --c-bot-soft:#dcecfb; --c-human:#b5620a; --c-human-soft:#fbe6cf;
+  --c-active:#eef5fd; --c-chat-bg:#f0f4f9; --c-dot:rgba(16,48,80,0);
+  --c-danger:#C72B3F; --c-success:#58BE4D; --c-warning:#FA8500;
+  --c-radius:10px; --c-radius-sm:8px; --c-av:999px;
+  --c-shadow:0 1px 2px rgba(13,33,56,.05),0 8px 26px rgba(13,33,56,.07);
+}
+[data-app][data-variant="azul"][data-mode="dark"]{
+  --c-bg:#080f1a; --c-surface:#0e1a2b; --c-surface-2:#0b1725; --c-elevated:#122136;
+  --c-text:#e6eef8; --c-text-2:#93a6c1; --c-text-3:#5d708c; --c-border:#1b2c44; --c-border-2:#152438;
+  --c-accent:#4aa3ea; --c-accent-fg:#04162a; --c-accent-soft:#122c48;
+  --c-bubble-in:#152438; --c-bubble-out:#123a5e; --c-bubble-out-fg:#e0eefb;
+  --c-header-bg:#0a1626; --c-header-fg:#e6eef8; --c-header-sub:#6f93bd;
+  --c-bot:#4aa3ea; --c-bot-soft:#12314f; --c-human:#e0902f; --c-human-soft:#3a2a13;
+  --c-active:#14243a; --c-chat-bg:#0a1522; --c-dot:rgba(255,255,255,0);
+  --c-shadow:0 1px 2px rgba(0,0,0,.4),0 12px 34px rgba(0,0,0,.55);
+}
+[data-app] *{ box-sizing:border-box; }
+[data-scroll]::-webkit-scrollbar{ width:9px; height:9px; }
+[data-scroll]::-webkit-scrollbar-thumb{ background:var(--c-border); border-radius:999px; border:2px solid transparent; background-clip:padding-box; }
+[data-scroll]::-webkit-scrollbar-thumb:hover{ background:var(--c-text-3); background-clip:padding-box; }
+[data-scroll]::-webkit-scrollbar-track{ background:transparent; }
+@keyframes lc-up{ from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);} }
+@keyframes lc-in{ from{opacity:0;} to{opacity:1;} }
+@keyframes lc-bar{ from{transform:scaleX(0);} to{transform:scaleX(1);} }
+</style>
+</helmet>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<g id="lc-icons" fill="none" stroke="currentColor">
+<symbol id="i-search" viewBox="0 0 24 24"><circle fill="none" cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></symbol>
+<symbol id="i-send" viewBox="0 0 24 24"><path fill="none" d="M22 2 11 13"/><path fill="none" d="m22 2-7 20-4-9-9-4Z"/></symbol>
+<symbol id="i-cal" viewBox="0 0 24 24"><rect fill="none" x="3" y="4.5" width="18" height="17" rx="2.5"/><line x1="3" y1="9.5" x2="21" y2="9.5"/><line x1="8" y1="2.5" x2="8" y2="6"/><line x1="16" y1="2.5" x2="16" y2="6"/></symbol>
+<symbol id="i-quote" viewBox="0 0 24 24"><path fill="none" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path fill="none" d="M14 2v6h6"/><line x1="8.5" y1="13" x2="15.5" y2="13"/><line x1="8.5" y1="17" x2="13" y2="17"/></symbol>
+<symbol id="i-check2" viewBox="0 0 24 24"><path fill="none" d="M18 6 7 17l-5-5"/><path fill="none" d="m22 10-7.5 7.5L13 16"/></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24"><path fill="none" d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path fill="none" d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path fill="none" d="M12 3a6.5 6.5 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle fill="none" cx="12" cy="12" r="4"/><path fill="none" d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+<symbol id="i-chat" viewBox="0 0 24 24"><path fill="none" d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+<symbol id="i-dash" viewBox="0 0 24 24"><rect fill="none" x="3" y="3" width="7" height="9" rx="1.5"/><rect fill="none" x="14" y="3" width="7" height="5" rx="1.5"/><rect fill="none" x="14" y="12" width="7" height="9" rx="1.5"/><rect fill="none" x="3" y="16" width="7" height="5" rx="1.5"/></symbol>
+<symbol id="i-out" viewBox="0 0 24 24"><path fill="none" d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path fill="none" d="M16 17l5-5-5-5"/><line x1="21" y1="12" x2="9" y2="12"/></symbol>
+<symbol id="i-bot" viewBox="0 0 24 24"><rect fill="none" x="4" y="9" width="16" height="11" rx="3"/><path fill="none" d="M12 5v4M12 3.5h.01"/><circle fill="currentColor" stroke="none" cx="9" cy="14.5" r="1"/><circle fill="currentColor" stroke="none" cx="15" cy="14.5" r="1"/><path fill="none" d="M2 14v2M22 14v2"/></symbol>
+<symbol id="i-user" viewBox="0 0 24 24"><circle fill="none" cx="12" cy="8" r="4"/><path fill="none" d="M5 21v-1a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v1"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></symbol>
+<symbol id="i-trend" viewBox="0 0 24 24"><path fill="none" d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path fill="none" d="M16 7h6v6"/></symbol>
+<symbol id="i-money" viewBox="0 0 24 24"><rect fill="none" x="2" y="6" width="20" height="12" rx="2"/><circle fill="none" cx="12" cy="12" r="2.5"/><path fill="none" d="M6 9v6M18 9v6"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle fill="none" cx="12" cy="12" r="9"/><path fill="none" d="M12 7.5V12l3 2"/></symbol>
+</g></defs></svg>
+
+<template id="__bundler_thumbnail" data-bg-color="#0b5c56">
+<svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+<rect width="1200" height="800" fill="#0b5c56"/>
+<rect x="470" y="300" width="260" height="200" rx="44" fill="#37b3a3"/>
+<text x="600" y="440" font-family="sans-serif" font-size="120" font-weight="900" fill="#04211d" text-anchor="middle">LR</text>
+</svg>
+</template>
+<div data-app data-variant="{{ variant }}" data-mode="{{ mode }}" style="width:100%;height:100%;min-height:0;display:flex;flex-direction:column;font-family:var(--font-body);background:var(--c-bg);color:var(--c-text);overflow:hidden;position:relative;">
+
+  <!-- ===== Top bar ===== -->
+  <header style="flex:0 0 auto;height:60px;display:flex;align-items:center;gap:16px;padding:0 18px;background:var(--c-header-bg);color:var(--c-header-fg);z-index:5;">
+    <div style="display:flex;align-items:center;gap:11px;min-width:0;">
+      <div style="width:34px;height:34px;border-radius:10px;background:var(--c-accent);color:var(--c-accent-fg);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:900;font-size:17px;flex:0 0 auto;box-shadow:0 2px 8px rgba(0,0,0,.18);">LR</div>
+      <div style="min-width:0;line-height:1.1;">
+        <div style="font-family:var(--font-display);font-weight:800;font-size:15.5px;letter-spacing:-.01em;white-space:nowrap;">Lavacar Rosales</div>
+        <div style="font-size:11px;color:var(--c-header-sub);font-weight:500;margin-top:2px;">WhatsApp Business · San José</div>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:4px;background:rgba(255,255,255,.10);padding:4px;border-radius:11px;margin-left:6px;">
+      <button onClick="{{ goInbox }}" style="{{ tabInboxStyle }}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-chat"/></svg>
+        Inbox<span style="{{ inboxCountStyle }}">{{ inboxUnread }}</span>
+      </button>
+      <button onClick="{{ goPanel }}" style="{{ tabPanelStyle }}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-dash"/></svg>
+        Panel
+      </button>
+    </div>
+
+    <div style="flex:1 1 auto;"></div>
+
+    <button title="Notificaciones" style="position:relative;width:38px;height:38px;border:none;background:rgba(255,255,255,.08);color:var(--c-header-fg);border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-bell"/></svg>
+      <span style="position:absolute;top:8px;right:9px;width:7px;height:7px;border-radius:999px;background:var(--c-warning);border:1.5px solid var(--c-header-bg);"></span>
+    </button>
+    <button onClick="{{ toggleMode }}" title="Modo claro / oscuro" style="width:38px;height:38px;border:none;background:rgba(255,255,255,.08);color:var(--c-header-fg);border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+      {{ modeIconEl }}
+    </button>
+    <button style="display:flex;align-items:center;gap:7px;height:38px;padding:0 13px;border:none;background:rgba(255,255,255,.08);color:var(--c-header-fg);border-radius:10px;cursor:pointer;font-family:var(--font-body);font-size:13px;font-weight:500;">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-out"/></svg>
+      Salir
+    </button>
+  </header>
+
+  <!-- ===== INBOX ===== -->
+  <sc-if value="{{ isInbox }}" hint-placeholder-val="{{ true }}">
+  <div style="flex:1 1 auto;min-height:0;display:flex;">
+
+    <!-- Sidebar -->
+    <aside style="flex:0 0 350px;min-height:0;display:flex;flex-direction:column;background:var(--c-surface);border-right:1px solid var(--c-border);">
+      <div style="padding:14px 14px 10px;display:flex;flex-direction:column;gap:11px;border-bottom:1px solid var(--c-border-2);">
+        <div style="position:relative;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--c-text-3);"><use href="#i-search"/></svg>
+          <input value="{{ search }}" onInput="{{ onSearch }}" placeholder="Buscar por número o mensaje" style="width:100%;height:40px;border:1px solid var(--c-border);background:var(--c-surface-2);border-radius:var(--c-radius-sm);padding:0 12px 0 36px;font-family:var(--font-body);font-size:13.5px;color:var(--c-text);outline:none;" />
+        </div>
+        <div style="display:flex;gap:7px;">
+          <sc-for list="{{ filters }}" as="f" hint-placeholder-count="4">
+            <button onClick="{{ f.onClick }}" style="{{ f.style }}">{{ f.label }}<span style="{{ f.countStyle }}">{{ f.count }}</span></button>
+          </sc-for>
+        </div>
+      </div>
+
+      <div data-scroll style="flex:1 1 auto;min-height:0;overflow-y:auto;">
+        <sc-for list="{{ conversations }}" as="c" hint-placeholder-count="8">
+          <button onClick="{{ c.onClick }}" style="{{ c.rowStyle }}">
+            <div style="{{ c.scoreStyle }}">{{ c.score }}</div>
+            <div style="flex:1 1 auto;min-width:0;">
+              <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;">
+                <span style="{{ c.phoneStyle }}">{{ c.phone }}</span>
+                <span style="{{ c.timeStyle }}">{{ c.time }}</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:3px;">
+                <span style="{{ c.previewStyle }}">{{ c.preview }}</span>
+                <span style="{{ c.badgeStyle }}">{{ c.badge }}</span>
+              </div>
+            </div>
+          </button>
+        </sc-for>
+        <div style="height:10px;"></div>
+      </div>
+    </aside>
+
+    <!-- Conversation panel -->
+    <sc-if value="{{ hasSelection }}" hint-placeholder-val="{{ false }}">
+    <section style="flex:1 1 auto;min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--c-chat-bg);">
+      <!-- chat header -->
+      <div style="flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:11px 18px;background:var(--c-surface);border-bottom:1px solid var(--c-border);box-shadow:0 1px 0 var(--c-border-2);">
+        <div style="{{ sel.scoreStyle }}">{{ sel.score }}</div>
+        <div style="min-width:0;flex:1 1 auto;">
+          <div style="display:flex;align-items:center;gap:9px;">
+            <span style="font-family:var(--font-display);font-weight:700;font-size:15.5px;color:var(--c-text);white-space:nowrap;">{{ sel.phone }}</span>
+            <span style="{{ sel.badgeStyle }}">{{ sel.badge }}</span>
+            <sc-if value="{{ sel.appointment }}" hint-placeholder-val="{{ false }}">
+              <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--c-accent);background:var(--c-accent-soft);padding:3px 8px;border-radius:999px;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-cal"/></svg>Cita agendada
+              </span>
+            </sc-if>
+          </div>
+          <div style="font-size:12px;color:var(--c-text-2);margin-top:2px;">{{ sel.sub }}</div>
+        </div>
+        <button onClick="{{ toggleChannel }}" title="Cambiar entre bot y humano" style="display:flex;align-items:center;gap:7px;height:36px;padding:0 12px;border:1px solid var(--c-border);background:var(--c-surface-2);color:var(--c-text);border-radius:999px;cursor:pointer;font-family:var(--font-body);font-size:12.5px;font-weight:600;">
+          {{ sel.chIconEl }}
+          {{ sel.chToggleLabel }}
+        </button>
+      </div>
+
+      <!-- messages -->
+      <div data-scroll data-chat style="flex:1 1 auto;min-height:0;overflow-y:auto;padding:18px 6% 8px;background-color:var(--c-chat-bg);background-image:radial-gradient(var(--c-dot) 1.2px,transparent 1.2px);background-size:22px 22px;">
+        <div style="text-align:center;margin-bottom:16px;">
+          <span style="display:inline-block;font-size:11px;font-weight:600;color:var(--c-text-2);background:var(--c-surface);border:1px solid var(--c-border-2);padding:4px 12px;border-radius:999px;box-shadow:var(--c-shadow);">Hoy</span>
+        </div>
+        <sc-for list="{{ messages }}" as="m" hint-placeholder-count="4">
+          <div style="{{ m.wrapStyle }}">
+            <div style="{{ m.bubbleStyle }}">
+              <sc-if value="{{ m.tag }}" hint-placeholder-val="{{ false }}">
+                <div style="{{ m.tagStyle }}">
+                  {{ m.tagIconEl }}{{ m.tagText }}
+                </div>
+              </sc-if>
+              <div style="font-size:14px;line-height:1.42;white-space:pre-wrap;">{{ m.text }}</div>
+              <div style="{{ m.timeStyle }}">{{ m.time }}</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- quick actions + input -->
+      <div style="flex:0 0 auto;background:var(--c-surface);border-top:1px solid var(--c-border);padding:11px 16px 13px;">
+        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+          <button onClick="{{ actCita }}" style="display:flex;align-items:center;gap:7px;height:34px;padding:0 13px;border:1px solid var(--c-accent);background:var(--c-accent);color:var(--c-accent-fg);border-radius:999px;cursor:pointer;font-family:var(--font-body);font-size:12.5px;font-weight:600;box-shadow:var(--c-shadow);">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-cal"/></svg>Agendar cita
+          </button>
+          <button onClick="{{ actCotiza }}" style="display:flex;align-items:center;gap:7px;height:34px;padding:0 13px;border:1px solid var(--c-border);background:var(--c-surface-2);color:var(--c-text);border-radius:999px;cursor:pointer;font-family:var(--font-body);font-size:12.5px;font-weight:600;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><use href="#i-quote"/></svg>Enviar cotización
+          </button>
+          <button onClick="{{ actAtendido }}" style="display:flex;align-items:center;gap:7px;height:34px;padding:0 13px;border:1px solid var(--c-border);background:var(--c-surface-2);color:var(--c-text);border-radius:999px;cursor:pointer;font-family:var(--font-body);font-size:12.5px;font-weight:600;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--c-success);"><use href="#i-check2"/></svg>Marcar atendido
+          </button>
+        </div>
+        <div style="display:flex;align-items:flex-end;gap:9px;">
+          <textarea value="{{ draft }}" onInput="{{ onDraft }}" onKeyDown="{{ onKey }}" rows="1" placeholder="Escribí un mensaje…" style="flex:1 1 auto;resize:none;max-height:96px;min-height:44px;border:1px solid var(--c-border);background:var(--c-surface-2);border-radius:14px;padding:12px 14px;font-family:var(--font-body);font-size:14px;line-height:1.4;color:var(--c-text);outline:none;"></textarea>
+          <button onClick="{{ sendMsg }}" title="Enviar" style="flex:0 0 auto;width:44px;height:44px;border:none;border-radius:14px;background:var(--c-accent);color:var(--c-accent-fg);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:var(--c-shadow);">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-send"/></svg>
+          </button>
+        </div>
+      </div>
+    </section>
+    </sc-if>
+
+    <!-- empty state -->
+    <sc-if value="{{ noSelection }}" hint-placeholder-val="{{ true }}">
+    <section style="flex:1 1 auto;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:var(--c-chat-bg);background-image:radial-gradient(var(--c-dot) 1.2px,transparent 1.2px);background-size:22px 22px;text-align:center;padding:24px;">
+      <div style="width:96px;height:96px;border-radius:26px;background:var(--c-surface);display:flex;align-items:center;justify-content:center;box-shadow:var(--c-shadow);">
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="color:var(--c-accent);"><use href="#i-chat"/></svg>
+      </div>
+      <div>
+        <div style="font-family:var(--font-display);font-weight:700;font-size:19px;color:var(--c-text);">Elegí una conversación para empezar</div>
+        <div style="font-size:13.5px;color:var(--c-text-2);margin-top:6px;max-width:340px;">Seleccioná un chat de la izquierda para ver el historial, responder o dejar que el bot atienda.</div>
+      </div>
+    </section>
+    </sc-if>
+
+  </div>
+  </sc-if>
+
+  <!-- ===== PANEL / DASHBOARD ===== -->
+  <sc-if value="{{ isPanel }}" hint-placeholder-val="{{ false }}">
+  <div data-scroll style="flex:1 1 auto;min-height:0;overflow-y:auto;background:var(--c-bg);">
+    <div style="max-width:1120px;margin:0 auto;padding:26px 28px 40px;">
+      <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:20px;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:11.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--c-text-3);">Panel · Lavacar Rosales</div>
+          <h1 style="font-family:var(--font-display);font-weight:800;font-size:27px;letter-spacing:-.02em;color:var(--c-text);margin:4px 0 0;">Resumen operativo</h1>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--c-text-2);background:var(--c-surface);border:1px solid var(--c-border);padding:7px 13px;border-radius:999px;box-shadow:var(--c-shadow);">
+          <span style="width:8px;height:8px;border-radius:999px;background:var(--c-success);box-shadow:0 0 0 3px color-mix(in srgb,var(--c-success) 22%,transparent);"></span>
+          Últimos 7 días · San José
+        </div>
+      </div>
+
+      <!-- KPIs -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:16px;">
+        <sc-for list="{{ kpis }}" as="k" hint-placeholder-count="4">
+          <div style="background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--c-radius);padding:18px;box-shadow:var(--c-shadow);">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <span style="font-size:12.5px;font-weight:600;color:var(--c-text-2);">{{ k.label }}</span>
+              <span style="width:32px;height:32px;border-radius:9px;background:var(--c-accent-soft);color:var(--c-accent);display:flex;align-items:center;justify-content:center;">
+                {{ k.iconEl }}
+              </span>
+            </div>
+            <div style="font-family:var(--font-display);font-weight:900;font-size:34px;letter-spacing:-.02em;color:var(--c-text);margin-top:10px;line-height:1;">{{ k.value }}</div>
+            <div style="display:flex;align-items:center;gap:5px;margin-top:9px;font-size:12px;font-weight:600;color:var(--c-success);">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-trend"/></svg>
+              {{ k.delta }}
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <!-- Citas por día -->
+      <div style="background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--c-radius);padding:20px 22px;box-shadow:var(--c-shadow);margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:9px;margin-bottom:16px;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--c-accent);"><use href="#i-cal"/></svg>
+          <span style="font-family:var(--font-display);font-weight:700;font-size:15px;color:var(--c-text);">Citas por día</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:11px;">
+          <sc-for list="{{ citasDia }}" as="b" hint-placeholder-count="6">
+            <div style="display:flex;align-items:center;gap:14px;">
+              <span style="flex:0 0 84px;font-size:12.5px;color:var(--c-text-2);font-weight:500;">{{ b.label }}</span>
+              <div style="flex:1 1 auto;height:14px;border-radius:999px;background:var(--c-surface-2);overflow:hidden;">
+                <div style="{{ b.barStyle }}"></div>
+              </div>
+              <span style="flex:0 0 24px;text-align:right;font-family:var(--font-display);font-weight:700;font-size:13.5px;color:var(--c-text);">{{ b.n }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <!-- Two column: servicios + horas -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div style="background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--c-radius);padding:20px 22px;box-shadow:var(--c-shadow);">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:16px;">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--c-accent);"><use href="#i-trend"/></svg>
+            <span style="font-family:var(--font-display);font-weight:700;font-size:15px;color:var(--c-text);">Servicios más pedidos</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:14px;">
+            <sc-for list="{{ servicios }}" as="s" hint-placeholder-count="5">
+              <div>
+                <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:6px;">
+                  <span style="font-size:13px;color:var(--c-text);font-weight:500;display:flex;align-items:center;gap:8px;"><span style="{{ s.rankStyle }}">{{ s.rank }}</span>{{ s.label }}</span>
+                  <span style="font-family:var(--font-display);font-weight:700;font-size:13px;color:var(--c-text-2);">{{ s.n }}</span>
+                </div>
+                <div style="height:9px;border-radius:999px;background:var(--c-surface-2);overflow:hidden;">
+                  <div style="{{ s.barStyle }}"></div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--c-radius);padding:20px 22px;box-shadow:var(--c-shadow);">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:16px;">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--c-accent);"><use href="#i-clock"/></svg>
+            <span style="font-family:var(--font-display);font-weight:700;font-size:15px;color:var(--c-text);">Horas pico</span>
+          </div>
+          <div style="display:flex;align-items:flex-end;gap:8px;height:150px;padding-top:8px;">
+            <sc-for list="{{ horas }}" as="h" hint-placeholder-count="8">
+              <div style="flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:7px;height:100%;justify-content:flex-end;">
+                <span style="font-family:var(--font-display);font-weight:700;font-size:11.5px;color:var(--c-text-2);">{{ h.n }}</span>
+                <div style="{{ h.barStyle }}"></div>
+                <span style="font-size:10.5px;color:var(--c-text-3);transform:rotate(-32deg);white-space:nowrap;">{{ h.label }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- toast -->
+  <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;bottom:20px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:var(--c-elevated);color:var(--c-text);border:1px solid var(--c-border);border-radius:12px;padding:11px 14px 11px 13px;box-shadow:var(--c-shadow);z-index:20;max-width:90%;">
+      <span style="width:26px;height:26px;flex:0 0 auto;border-radius:8px;background:var(--c-accent-soft);color:var(--c-accent);display:flex;align-items:center;justify-content:center;">
+        {{ toastIconEl }}
+      </span>
+      <span style="font-size:13px;font-weight:500;">{{ toast }}</span>
+      <button onClick="{{ dismissToast }}" style="border:none;background:transparent;color:var(--c-text-3);cursor:pointer;display:flex;padding:2px;margin-left:4px;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-x"/></svg>
+      </button>
+    </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1180,&quot;height&quot;:760},&quot;variant&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;verde&quot;,&quot;azul&quot;],&quot;default&quot;:&quot;verde&quot;,&quot;tsType&quot;:&quot;'verde'|'azul'&quot;}}">
+class Component extends DCLogic {
+  state = {
+    view: 'inbox',
+    mode: 'light',
+    selectedId: null,
+    filter: 'todos',
+    search: '',
+    draft: '',
+    toast: null,
+    toastIcon: '#i-check2',
+    convs: this.seed(),
+  };
+
+  seed() {
+    const M = (from, by, text, t) => ({ from, by, text, t });
+    return [
+      { id:'c1', phone:'+506 8883 3270', score:70, channel:'bot', unread:true, appointment:false, service:'Detailing completo', messages:[
+        M('cliente',null,'Buenas, ¿cuánto cuesta un detailing completo?','10:31 a. m.'),
+        M('negocio','bot','¡Hola! Con gusto te ayudo. ¿Qué tipo de carro tenés?','10:32 a. m.'),
+        M('cliente',null,'Una Hyundai Tucson 2025','10:35 a. m.'),
+        M('negocio','bot','Para una Tucson 2025, el precio del detailing completo es ₡ 45 000. Incluye lavado a fondo, encerado y limpieza interior detallada.','10:37 a. m.'),
+      ]},
+      { id:'c2', phone:'+506 8997 8771', score:71, channel:'bot', unread:true, appointment:false, messages:[
+        M('cliente',null,'¿Hacen cambio de aceite?','08:52 a. m.'),
+        M('negocio','bot','Disculpá, solo puedo ayudarte con lavado y detailing. ¿Te agendo un lavado?','08:54 a. m.'),
+      ]},
+      { id:'c3', phone:'+506 8817 9691', score:91, channel:'humano', unread:false, appointment:false, service:'Pulido de parabrisas', messages:[
+        M('cliente',null,'El parabrisas tiene unos rayones, ¿se pueden quitar?','08:01 a. m.'),
+        M('negocio','humano','El pulido de parabrisas anda por ₡ 12 000 y quita rayones leves. ¿Cuándo te queda bien traerlo?','08:06 a. m.'),
+      ]},
+      { id:'c4', phone:'+506 6286 6885', score:85, channel:'humano', unread:true, appointment:false, messages:[
+        M('cliente',null,'¿Cuánto por pulir todos los vidrios?','08:03 a. m.'),
+        M('negocio','humano','Todos los vidrios costaría ₡ 40 000. Tardamos unas 3 horas.','08:05 a. m.'),
+        M('cliente',null,'¿Y me incluyen el pulido de focos también?','08:07 a. m.'),
+      ]},
+      { id:'c5', phone:'+506 8885 1558', score:58, channel:'humano', unread:false, appointment:false, messages:[
+        M('cliente',null,'Perfecto, muchas gracias por todo','11:08 p. m.'),
+        M('negocio','humano','Para servirte. Cualquier consulta acá estamos.','11:10 p. m.'),
+      ]},
+      { id:'c6', phone:'+506 6195 2792', score:92, channel:'humano', unread:true, appointment:false, service:'Tratamiento cerámico', messages:[
+        M('cliente',null,'Quiero el tratamiento cerámico','11:00 p. m.'),
+        M('negocio','humano','¡Excelente elección! ¿Qué tipo de carro tenés? Los precios varían según el tamaño.','11:05 p. m.'),
+        M('cliente',null,'Es un Corolla 2022','11:06 p. m.'),
+      ]},
+      { id:'c7', phone:'+506 8946 7650', score:50, channel:'bot', unread:false, appointment:false, messages:[
+        M('cliente',null,'Quiero lavado + encerado el sábado','11:40 a. m.'),
+        M('negocio','bot','Si gustás agendar la cita acá está el link, o decime la hora y yo te la aparto.','11:45 a. m.'),
+      ]},
+      { id:'c8', phone:'+506 8653 5240', score:40, channel:'bot', unread:false, appointment:false, messages:[
+        M('cliente',null,'¿Dónde están ubicados?','11:09 a. m.'),
+        M('negocio','bot','Estamos en San José, Curridabat, 200m sur del parque. Abrimos de 7:00 a. m. a 6:00 p. m.','11:11 a. m.'),
+      ]},
+      { id:'c9', phone:'+506 6440 4997', score:97, channel:'bot', unread:true, appointment:false, messages:[
+        M('cliente',null,'Ando fuera del país, agendo cuando vuelva','09:58 a. m.'),
+        M('negocio','bot','¡Claro! Cuando estés de regreso escribinos y te apartamos el espacio.','10:02 a. m.'),
+      ]},
+      { id:'c10', phone:'+506 7254 5900', score:33, channel:'bot', unread:false, appointment:false, messages:[
+        M('cliente',null,'¿Precio del pulido de parabrisas?','10:05 p. m.'),
+        M('negocio','bot','Los pulidos de parabrisas andan en ₡ 12 000.','10:08 p. m.'),
+      ]},
+      { id:'c11', phone:'+506 7068 5752', score:22, channel:'bot', unread:false, appointment:false, messages:[
+        M('cliente',null,'¿Venden llantas?','09:40 p. m.'),
+        M('negocio','bot','Disculpá, no puedo ayudar con compra de llantas. Solo lavado y detailing.','09:42 p. m.'),
+      ]},
+      { id:'c12', phone:'+506 8302 1190', score:88, channel:'humano', unread:true, appointment:true, service:'Lavado premium', messages:[
+        M('cliente',null,'Agendame un lavado premium para mañana a las 9','03:20 p. m.'),
+        M('negocio','humano','Perfecto, te espero mañana a las 9:00 a. m. Lavado premium ₡ 22 000.','03:22 p. m.'),
+      ]},
+      { id:'c13', phone:'+506 6011 4478', score:64, channel:'bot', unread:false, appointment:false, messages:[
+        M('cliente',null,'¿Hacen lavado de motor?','01:15 p. m.'),
+        M('negocio','bot','Con gusto, el lavado de motor cuesta ₡ 15 000 y tarda unos 40 min.','01:17 p. m.'),
+        M('cliente',null,'Ok, ¿y el lavado normal cuánto sale?','01:18 p. m.'),
+      ]},
+      { id:'c14', phone:'+506 8720 9931', score:76, channel:'humano', unread:true, appointment:true, service:'Detailing completo', messages:[
+        M('cliente',null,'¿Se puede hoy mismo?','12:02 p. m.'),
+        M('negocio','humano','Podés traerlo hoy antes de las 4:00 p. m. y te lo entregamos a las 6.','12:05 p. m.'),
+      ]},
+      { id:'c15', phone:'+506 6398 5520', score:45, channel:'bot', unread:false, appointment:false, messages:[
+        M('cliente',null,'¿Diferencia entre encerado normal y a mano?','09:20 a. m.'),
+        M('negocio','bot','El encerado a mano dura más y da mejor brillo. Cuesta ₡ 8 000 adicional.','09:22 a. m.'),
+      ]},
+      { id:'c16', phone:'+506 8551 0043', score:60, channel:'bot', unread:false, appointment:true, service:'Lavado + encerado', messages:[
+        M('cliente',null,'Viernes 2pm lavado y encerado','04:33 p. m.'),
+        M('negocio','bot','Listo, agendado para el viernes a las 2:00 p. m. Lavado + encerado ₡ 14 000.','04:35 p. m.'),
+      ]},
+    ];
+  }
+
+  // ---- helpers ----
+  scoreColors(score) {
+    if (score >= 80) return { bg:'var(--c-accent)', fg:'var(--c-accent-fg)' };
+    if (score >= 55) return { bg:'var(--c-accent-soft)', fg:'var(--c-accent)' };
+    return { bg:'var(--c-surface-2)', fg:'var(--c-text-2)' };
+  }
+  scoreTile(score, size) {
+    const c = this.scoreColors(score);
+    const s = size || 44;
+    return { flex:`0 0 ${s}px`, width:s+'px', height:s+'px', borderRadius:'var(--c-av)', background:c.bg, color:c.fg,
+      display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'var(--font-display)', fontWeight:800,
+      fontSize: s>=44?'15px':'14px', letterSpacing:'-.01em' };
+  }
+  badge(channel) {
+    const bot = channel === 'bot';
+    return {
+      text: bot ? 'BOT' : 'HUMANO',
+      style: { flex:'0 0 auto', fontSize:'10px', fontWeight:700, letterSpacing:'.05em', padding:'2px 7px', borderRadius:'6px',
+        color: bot ? 'var(--c-bot)' : 'var(--c-human)', background: bot ? 'var(--c-bot-soft)' : 'var(--c-human-soft)' },
+    };
+  }
+  isPending(c) { const m = c.messages[c.messages.length-1]; return m && m.from === 'cliente'; }
+  clip(t, n) { return t.length > n ? t.slice(0, n-1).trimEnd() + '…' : t; }
+
+  setState2(patch) { this.setState(patch); }
+
+  // JS-built icon (kept out of source HTML so the offline bundler doesn't try to fetch dynamic sprite refs)
+  iconEl(id, size, sw) {
+    return React.createElement('svg',
+      { width:size, height:size, viewBox:'0 0 24 24', fill:'none', stroke:'currentColor',
+        strokeWidth: sw||2, strokeLinecap:'round', strokeLinejoin:'round' },
+      React.createElement('use', { href:'#'+id }));
+  }
+
+  renderVals() {
+    const st = this.state;
+    const variant = this.props.variant || 'verde';
+    const view = st.view;
+
+    // filters
+    const all = st.convs;
+    const counts = {
+      todos: all.length,
+      bot: all.filter(c => c.channel==='bot').length,
+      humano: all.filter(c => c.channel==='humano').length,
+      pendientes: all.filter(c => this.isPending(c)).length,
+    };
+    const filterDefs = [
+      { key:'todos', label:'Todos' },
+      { key:'bot', label:'Bot' },
+      { key:'humano', label:'Humano' },
+      { key:'pendientes', label:'Sin resp.' },
+    ];
+    const filters = filterDefs.map(f => {
+      const active = st.filter === f.key;
+      return {
+        label: f.label,
+        count: counts[f.key],
+        onClick: () => this.setState({ filter: f.key }),
+        style: { flex:'1 1 0', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px', height:'32px',
+          border:'1px solid ' + (active ? 'var(--c-accent)' : 'var(--c-border)'), cursor:'pointer',
+          background: active ? 'var(--c-accent)' : 'var(--c-surface-2)', color: active ? 'var(--c-accent-fg)' : 'var(--c-text-2)',
+          borderRadius:'999px', fontFamily:'var(--font-body)', fontSize:'12px', fontWeight:600, whiteSpace:'nowrap', padding:'0 6px' },
+        countStyle: { fontSize:'10.5px', fontWeight:700, opacity:.8 },
+      };
+    });
+
+    // conversation list
+    const q = st.search.trim().toLowerCase();
+    let list = all.filter(c => {
+      if (st.filter==='bot' && c.channel!=='bot') return false;
+      if (st.filter==='humano' && c.channel!=='humano') return false;
+      if (st.filter==='pendientes' && !this.isPending(c)) return false;
+      if (q) {
+        const last = c.messages[c.messages.length-1];
+        return c.phone.toLowerCase().includes(q) || last.text.toLowerCase().includes(q);
+      }
+      return true;
+    });
+
+    const conversations = list.map(c => {
+      const last = c.messages[c.messages.length-1];
+      const selected = c.id === st.selectedId;
+      const b = this.badge(c.channel);
+      return {
+        phone: c.phone, score: c.score, time: last.t, badge: b.text, badgeStyle: b.style,
+        preview: (last.from==='cliente' ? '' : '') + this.clip(last.text, 34),
+        onClick: () => this.selectConv(c.id),
+        scoreStyle: this.scoreTile(c.score, 44),
+        rowStyle: { width:'100%', display:'flex', gap:'12px', alignItems:'center', textAlign:'left', cursor:'pointer',
+          padding:'12px 14px', border:'none', borderLeft:'3px solid ' + (selected ? 'var(--c-accent)' : 'transparent'),
+          borderBottom:'1px solid var(--c-border-2)', background: selected ? 'var(--c-active)' : 'transparent', fontFamily:'var(--font-body)' },
+        phoneStyle: { fontFamily:'var(--font-display)', fontWeight: c.unread?700:600, fontSize:'14px', color:'var(--c-text)',
+          whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' },
+        timeStyle: { flex:'0 0 auto', fontSize:'11px', fontWeight: c.unread?600:400, color: c.unread?'var(--c-accent)':'var(--c-text-3)' },
+        previewStyle: { flex:'1 1 auto', minWidth:0, fontSize:'12.5px', color: c.unread?'var(--c-text)':'var(--c-text-2)',
+          fontWeight: c.unread?500:400, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' },
+      };
+    });
+
+    // selected conversation
+    const selConv = all.find(c => c.id === st.selectedId) || null;
+    let sel = null, messages = [];
+    if (selConv) {
+      const b = this.badge(selConv.channel);
+      const bot = selConv.channel === 'bot';
+      sel = {
+        phone: selConv.phone, score: selConv.score, scoreStyle: this.scoreTile(selConv.score, 42),
+        badge: b.text, badgeStyle: b.style, appointment: selConv.appointment,
+        sub: (selConv.service ? selConv.service + ' · ' : '') + 'Lead score ' + selConv.score + ' / 100',
+        chIconEl: this.iconEl(bot ? 'i-bot' : 'i-user', 15, 1.9),
+        chToggleLabel: bot ? 'Atendido por bot' : 'Atendido por agente',
+      };
+      messages = selConv.messages.map(m => {
+        const out = m.from === 'negocio';
+        const isBot = m.by === 'bot';
+        return {
+          text: m.text, time: m.t, tag: out,
+          tagText: isBot ? 'Bot' : 'Agente', tagIconEl: this.iconEl(isBot ? 'i-bot' : 'i-user', 12, 2),
+          wrapStyle: { display:'flex', justifyContent: out?'flex-end':'flex-start', marginBottom:'9px' },
+          bubbleStyle: { maxWidth:'74%', padding:'9px 12px 7px', borderRadius:'var(--c-radius)',
+            background: out?'var(--c-bubble-out)':'var(--c-bubble-in)', color: out?'var(--c-bubble-out-fg)':'var(--c-text)',
+            boxShadow:'0 1px 1.5px rgba(2,4,7,.08)',
+            borderBottomRightRadius: out?'4px':'var(--c-radius)', borderBottomLeftRadius: out?'var(--c-radius)':'4px' },
+          tagStyle: { display:'flex', alignItems:'center', gap:'4px', fontSize:'10px', fontWeight:700, letterSpacing:'.04em',
+            marginBottom:'3px', color: isBot ? 'var(--c-bot)' : 'var(--c-human)' },
+          timeStyle: { fontSize:'10px', color: out?'color-mix(in srgb,var(--c-bubble-out-fg) 55%,transparent)':'var(--c-text-3)',
+            textAlign:'right', marginTop:'3px' },
+        };
+      });
+    }
+
+    // dashboard data
+    const kpiIcons = ['#i-chat','#i-cal','#i-trend','#i-money'];
+    const kpiRaw = [
+      { label:'Conversaciones', value:'42', delta:'+8 esta semana' },
+      { label:'Citas agendadas', value:'11', delta:'+3 vs. semana pasada' },
+      { label:'Conversión', value:'26%', delta:'+4 pts' },
+      { label:'Ingresos estimados', value:'₡ 312 500', delta:'+₡ 46 000' },
+    ];
+    const kpis = kpiRaw.map((k,i) => ({ ...k, iconEl: this.iconEl(kpiIcons[i].slice(1), 17, 1.9) }));
+
+    const citasRaw = [
+      { label:'Lun 22', n:1 }, { label:'Mar 23', n:2 }, { label:'Mié 24', n:1 },
+      { label:'Jue 25', n:3 }, { label:'Vie 26', n:2 }, { label:'Sáb 27', n:2 },
+    ];
+    const cMax = Math.max(...citasRaw.map(c=>c.n));
+    const citasDia = citasRaw.map(c => ({ label:c.label, n:c.n,
+      barStyle:{ width:(c.n/cMax*100)+'%', height:'100%', background:'var(--c-accent)', borderRadius:'999px',
+        transition:'width .5s var(--ease-standard,ease)' } }));
+
+    const servRaw = [
+      { label:'Lavado + encerado', n:14 }, { label:'Detailing completo', n:9 },
+      { label:'Pulido de focos', n:7 }, { label:'Lavado premium', n:6 }, { label:'Tratamiento cerámico', n:4 },
+    ];
+    const sMax = Math.max(...servRaw.map(s=>s.n));
+    const servicios = servRaw.map((s,i) => ({ label:s.label, n:s.n, rank:i+1,
+      rankStyle:{ width:'18px', height:'18px', borderRadius:'6px', background:'var(--c-accent-soft)', color:'var(--c-accent)',
+        fontFamily:'var(--font-display)', fontWeight:700, fontSize:'11px', display:'inline-flex', alignItems:'center', justifyContent:'center' },
+      barStyle:{ width:(s.n/sMax*100)+'%', height:'100%', background: i===0?'var(--c-accent)':'color-mix(in srgb,var(--c-accent) '+(85-i*13)+'%,var(--c-surface-2))',
+        borderRadius:'999px', transition:'width .5s var(--ease-standard,ease)' } }));
+
+    const horasRaw = [
+      { label:'07h', n:2 }, { label:'08h', n:5 }, { label:'09h', n:7 }, { label:'10h', n:6 },
+      { label:'11h', n:4 }, { label:'14h', n:5 }, { label:'16h', n:6 }, { label:'17h', n:3 },
+    ];
+    const hMax = Math.max(...horasRaw.map(h=>h.n));
+    const horas = horasRaw.map(h => ({ label:h.label, n:h.n,
+      barStyle:{ width:'100%', height:(h.n/hMax*100)+'%', minHeight:'6px', borderRadius:'7px 7px 3px 3px',
+        background: h.n>=hMax ? 'var(--c-accent)' : 'color-mix(in srgb,var(--c-accent) 55%,var(--c-surface-2))' } }));
+
+    const tabBase = { display:'flex', alignItems:'center', gap:'7px', height:'34px', padding:'0 13px', border:'none',
+      borderRadius:'8px', cursor:'pointer', fontFamily:'var(--font-body)', fontSize:'13px', fontWeight:600 };
+    const activeTab = { ...tabBase, background:'var(--c-header-fg)', color:'var(--c-header-bg)' };
+    const idleTab = { ...tabBase, background:'transparent', color:'var(--c-header-fg)' };
+
+    return {
+      variant, mode: st.mode, view,
+      isInbox: view === 'inbox', isPanel: view === 'panel',
+      goInbox: () => this.setState({ view:'inbox' }),
+      goPanel: () => this.setState({ view:'panel' }),
+      toggleMode: () => this.setState(s => ({ mode: s.mode==='light'?'dark':'light' })),
+      modeIconEl: this.iconEl(st.mode==='light' ? 'i-moon' : 'i-sun', 19, 1.8),
+      tabInboxStyle: view==='inbox' ? activeTab : idleTab,
+      tabPanelStyle: view==='panel' ? activeTab : idleTab,
+      inboxUnread: counts.todos && all.filter(c=>c.unread).length,
+      inboxCountStyle: { fontSize:'11px', fontWeight:700, background:'var(--c-warning)', color:'#fff',
+        minWidth:'18px', height:'18px', padding:'0 5px', borderRadius:'999px', display:'inline-flex', alignItems:'center', justifyContent:'center' },
+      filters, conversations,
+      search: st.search, onSearch: (e)=> this.setState({ search: e.target.value }),
+      hasSelection: !!selConv, noSelection: !selConv, sel, messages,
+      draft: st.draft, onDraft: (e)=> this.setState({ draft: e.target.value }),
+      onKey: (e)=> { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); this.sendMsg(); } },
+      sendMsg: () => this.sendMsg(),
+      toggleChannel: () => this.toggleChannel(),
+      actCita: () => this.quickAction('cita'),
+      actCotiza: () => this.quickAction('cotiza'),
+      actAtendido: () => this.quickAction('atendido'),
+      toast: st.toast, toastIconEl: this.iconEl((st.toastIcon||'#i-check2').slice(1), 15, 2.2), dismissToast: () => this.setState({ toast:null }),
+      kpis, citasDia, servicios, horas,
+    };
+  }
+
+  selectConv(id) {
+    this.setState(s => ({ selectedId: id, convs: s.convs.map(c => c.id===id ? { ...c, unread:false } : c) }));
+  }
+  toggleChannel() {
+    const id = this.state.selectedId; if (!id) return;
+    this.setState(s => ({ convs: s.convs.map(c => c.id===id ? { ...c, channel: c.channel==='bot'?'humano':'bot' } : c) }));
+    this.flash('Conversación movida a ' + (this.state.convs.find(c=>c.id===id).channel==='bot'?'agente humano':'bot'), '#i-user');
+  }
+  sendMsg() {
+    const id = this.state.selectedId; const text = this.state.draft.trim();
+    if (!id || !text) return;
+    const now = this.nowLabel();
+    this.setState(s => ({ draft:'', convs: s.convs.map(c => c.id===id
+      ? { ...c, channel:'humano', unread:false, messages:[...c.messages, { from:'negocio', by:'humano', text, t: now }] } : c) }));
+  }
+  quickAction(type) {
+    const id = this.state.selectedId; if (!id) return;
+    const now = this.nowLabel();
+    let msg = '', toast = '', icon = '#i-check2';
+    if (type==='cita') { msg = 'Tu cita quedó agendada. Te esperamos según lo conversado. ¡Gracias!'; toast='Cita agendada y confirmada al cliente'; icon='#i-cal'; }
+    if (type==='cotiza') { msg = 'Te comparto la cotización: lavado + encerado ₡ 14 000 · detailing completo ₡ 45 000. Precios válidos por 7 días.'; toast='Cotización enviada'; icon='#i-quote'; }
+    if (type==='atendido') { toast='Conversación marcada como atendida'; icon='#i-check2'; }
+    this.setState(s => ({ convs: s.convs.map(c => {
+      if (c.id!==id) return c;
+      const base = { ...c, unread:false };
+      if (type==='cita') return { ...base, appointment:true, channel:'humano', messages:[...c.messages, { from:'negocio', by:'humano', text: msg, t: now }] };
+      if (type==='cotiza') return { ...base, channel:'humano', messages:[...c.messages, { from:'negocio', by:'humano', text: msg, t: now }] };
+      return base;
+    }) }));
+    this.flash(toast, icon);
+  }
+  flash(text, icon) {
+    clearTimeout(this._t);
+    this.setState({ toast:text, toastIcon: icon || '#i-check2' });
+    this._t = setTimeout(() => this.setState({ toast:null }), 3200);
+  }
+  nowLabel() {
+    const d = new Date(); let h = d.getHours(); const m = String(d.getMinutes()).padStart(2,'0');
+    const ap = h < 12 ? 'a. m.' : 'p. m.'; h = h % 12; if (h===0) h = 12;
+    return h + ':' + m + ' ' + ap;
+  }
+}
+</script>
+</body>
+</html>

@@ -1,16 +1,38 @@
 import { useQuery } from "@tanstack/react-query";
 import { obtenerMetricas } from "../api";
 import { colones } from "../lib/formato";
+import Icono, { type IconoId } from "./Iconos";
 
-interface ItemBarra {
-  et: string;
-  v: number;
+// ── KPI card ──────────────────────────────────────────────────────────────────
+
+interface KPIProps {
+  icono: IconoId;
+  label: string;
+  valor: string;
+  delta?: string;
+  hero?: boolean;
 }
 
-// Barras horizontales normalizadas al máximo del grupo (como renderBarras del inbox.html).
-function Barras({ items }: { items: ItemBarra[] }) {
-  if (!items.length) return <div style={{ color: "var(--gris)", fontSize: 13 }}>Sin datos todavía.</div>;
-  const max = Math.max(1, ...items.map((i) => i.v));
+function KPICard({ icono, label, valor, delta, hero }: KPIProps) {
+  return (
+    <div className={"kpi" + (hero ? " hero" : "")}>
+      <div className="kpi-top">
+        <div className="kpi-icon-badge">
+          <Icono id={icono} size={20} />
+        </div>
+        {delta && <span className="kpi-delta">{delta}</span>}
+      </div>
+      <div className="kpi-n">{valor}</div>
+      <div className="kpi-l">{label}</div>
+    </div>
+  );
+}
+
+// ── Barras horizontales (citas por día) ───────────────────────────────────────
+
+function Barras({ items }: { items: { et: string; v: number }[] }) {
+  if (!items.length) return <p className="dash-vacio">Sin datos todavía.</p>;
+  const max = Math.max(1, ...items.map(i => i.v));
   return (
     <>
       {items.map((i, idx) => (
@@ -26,49 +48,111 @@ function Barras({ items }: { items: ItemBarra[] }) {
   );
 }
 
-// Dashboard de métricas (overlay a pantalla completa).
-export default function Dashboard({ nombre, onCerrar }: { nombre: string; onCerrar: () => void }) {
+// ── Ranking de servicios ──────────────────────────────────────────────────────
+
+interface ServicioItem { servicioId: string; nombre?: string; cantidad: number }
+
+function ServiciosRanking({ items }: { items: ServicioItem[] }) {
+  if (!items.length) return <p className="dash-vacio">Sin datos todavía.</p>;
+  const max = Math.max(1, ...items.map(i => i.cantidad));
+  return (
+    <>
+      {items.map((s, i) => (
+        <div className="ranking-row" key={i}>
+          <span className="rank-num">{i + 1}</span>
+          <div className="rank-info">
+            <div className="rank-nombre">{s.nombre || s.servicioId}</div>
+            <div className="rank-track">
+              <div className="rank-fill" style={{ width: Math.round((s.cantidad / max) * 100) + "%" }} />
+            </div>
+          </div>
+          <span className="rank-v">{s.cantidad}</span>
+        </div>
+      ))}
+    </>
+  );
+}
+
+// ── Horas pico (barras verticales) ───────────────────────────────────────────
+
+const BAR_MAX_H = 96; // px de altura máxima para la barra más alta
+
+function HorasPico({ items }: { items: { hora: string; cantidad: number }[] }) {
+  if (!items.length) return <p className="dash-vacio">Sin datos todavía.</p>;
+  const max = Math.max(1, ...items.map(i => i.cantidad));
+  return (
+    <div className="horas-pico-wrap">
+      <div className="horas-pico-grid">
+        {items.map((h, i) => {
+          const barH = Math.max(4, Math.round((h.cantidad / max) * BAR_MAX_H));
+          return (
+            <div key={i} className="bv-col">
+              <span className="bv-num">{h.cantidad}</span>
+              <div className="bv-bar" style={{ height: barH }} />
+              <span className="bv-label">{h.hora}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+
+export default function Dashboard({ nombre }: { nombre: string }) {
   const q = useQuery({ queryKey: ["metricas"], queryFn: obtenerMetricas });
   const m = q.data;
 
+  const kpis: KPIProps[] = [
+    {
+      icono: "chat", label: "Conversaciones",
+      valor: String(m?.totalConversaciones ?? 0),
+      delta: m?.deltas?.conversaciones,
+    },
+    {
+      icono: "cal", label: "Citas agendadas",
+      valor: String(m?.totalCitas ?? 0),
+      delta: m?.deltas?.citas,
+    },
+    {
+      icono: "trend", label: "Conversión",
+      valor: (m?.conversionPct ?? 0) + "%",
+      delta: m?.deltas?.conversion,
+    },
+    {
+      icono: "money", label: "Ingresos estimados",
+      valor: colones(m?.ingresosEstimados ?? 0),
+      delta: m?.deltas?.ingresos,
+      hero: true,
+    },
+  ];
+
   return (
-    <div id="dashboard" className="activo">
-      <div className="dash-head">
-        <h2 id="dashTitulo">Panel · {nombre}</h2>
-        <button type="button" onClick={onCerrar}>
-          Volver a chats
-        </button>
-      </div>
+    <div id="dashboard">
       <div className="dash-body">
-        <div className="kpis">
-          <div className="kpi">
-            <div className="n">{m?.totalConversaciones ?? 0}</div>
-            <div className="l">Conversaciones</div>
-          </div>
-          <div className="kpi">
-            <div className="n">{m?.totalCitas ?? 0}</div>
-            <div className="l">Citas agendadas</div>
-          </div>
-          <div className="kpi">
-            <div className="n">{(m?.conversionPct ?? 0) + "%"}</div>
-            <div className="l">Conversión (chats → citas)</div>
-          </div>
-          <div className="kpi hero">
-            <div className="n">{colones(m?.ingresosEstimados ?? 0)}</div>
-            <div className="l">Ingresos estimados</div>
-          </div>
+        <div className="dash-titulo">
+          <h2>Panel · {nombre}</h2>
         </div>
+
+        <div className="kpis">
+          {kpis.map((k, i) => <KPICard key={i} {...k} />)}
+        </div>
+
         <div className="card">
           <h3>Citas por día</h3>
-          <Barras items={(m?.citasPorDia ?? []).map((d) => ({ et: d.fecha, v: d.cantidad }))} />
+          <Barras items={(m?.citasPorDia ?? []).map(d => ({ et: d.fecha, v: d.cantidad }))} />
         </div>
-        <div className="card">
-          <h3>Servicios más pedidos</h3>
-          <Barras items={(m?.serviciosTop ?? []).map((s) => ({ et: s.nombre || s.servicioId, v: s.cantidad }))} />
-        </div>
-        <div className="card">
-          <h3>Horas pico</h3>
-          <Barras items={(m?.horasPico ?? []).map((h) => ({ et: h.hora, v: h.cantidad }))} />
+
+        <div className="dash-grid-2">
+          <div className="card">
+            <h3>Servicios más pedidos</h3>
+            <ServiciosRanking items={m?.serviciosTop ?? []} />
+          </div>
+          <div className="card">
+            <h3>Horas pico</h3>
+            <HorasPico items={m?.horasPico ?? []} />
+          </div>
         </div>
       </div>
     </div>

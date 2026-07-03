@@ -3,6 +3,16 @@ import type { Metricas } from "../types";
 // Cálculo puro de métricas a partir de las citas y conversaciones de un negocio.
 // Se usa desde ambos repositorios (memoria y Drizzle).
 
+/**
+ * Formatea la variación porcentual entre dos períodos de 7 días.
+ * Devuelve undefined si no hay período anterior (no hay datos comparables).
+ */
+export function formatDelta(actual: number, previo: number): string | undefined {
+  if (previo === 0) return actual > 0 ? "+∞" : undefined;
+  const pct = Math.round(((actual - previo) / previo) * 100);
+  return pct >= 0 ? `+${pct}%` : `${pct}%`;
+}
+
 type CitaMetrica = { estado: string; precio?: number | null; servicioId: string; fecha: string; hora: string };
 
 export function calcularMetricas(

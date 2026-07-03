@@ -4,7 +4,11 @@ import { BrowserRouter } from "react-router-dom";
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import { ApiError, esNoAutenticado } from "./api";
+import { initTema } from "./lib/tema";
 import "./global.css";
+
+// Aplicar el tema antes del primer render para evitar flash (claro → oscuro).
+initTema();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Cliente de TanStack Query. Centraliza fetching/caché/polling del panel.

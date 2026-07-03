@@ -14,7 +14,7 @@ import type {
   ResumenConversacion,
   TipoRecordatorio,
 } from "../types";
-import { calcularMetricas } from "../panel/metricas";
+import { calcularMetricas, formatDelta } from "../panel/metricas";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Repositorio Drizzle. Implementa la MISMA interfaz que el de memoria.
@@ -244,6 +244,7 @@ export class RepositorioDrizzle implements Repositorio {
     // sin_leer se calcula (no es un contador mutable): cuenta los mensajes del
     // cliente posteriores a leido_hasta, y SOLO cuando la conversación está en modo
     // humano (en modo bot no requiere atención, así el badge significa algo).
+    // También trae datos para el lead score (último rol, cita activa, histórico de citas).
     const filas = (await this.db.execute(sql`
       SELECT
         c.id,
@@ -251,20 +252,35 @@ export class RepositorioDrizzle implements Repositorio {
         c.modo,
         c.creada_en,
         m.contenido AS ultimo_mensaje,
+        m.rol AS ultimo_rol,
         COALESCE(m.creado_en, c.creada_en) AS ultima_actividad,
         CASE WHEN c.modo = 'humano' THEN (
           SELECT count(*) FROM wa_mensajes um
           WHERE um.conversacion_id = c.id AND um.rol = 'user'
             AND (c.leido_hasta IS NULL OR um.creado_en > c.leido_hasta)
-        ) ELSE 0 END AS sin_leer
+        ) ELSE 0 END AS sin_leer,
+        cita_prox.servicio_id AS servicio_id,
+        (cita_prox.servicio_id IS NOT NULL) AS tiene_cita,
+        EXISTS(
+          SELECT 1 FROM wa_citas ch
+          WHERE ch.tenant_id = c.tenant_id AND ch.cliente_wa = c.cliente_wa
+        ) AS tuvo_cita
       FROM wa_conversaciones c
       LEFT JOIN LATERAL (
-        SELECT contenido, creado_en
+        SELECT contenido, creado_en, rol
         FROM wa_mensajes
         WHERE conversacion_id = c.id
         ORDER BY creado_en DESC
         LIMIT 1
       ) m ON true
+      LEFT JOIN LATERAL (
+        SELECT servicio_id
+        FROM wa_citas
+        WHERE tenant_id = c.tenant_id AND cliente_wa = c.cliente_wa
+          AND estado = 'agendada' AND fecha >= current_date::text
+        ORDER BY fecha ASC, hora ASC
+        LIMIT 1
+      ) cita_prox ON true
       WHERE c.tenant_id = ${tenantId}
       ORDER BY ultima_actividad DESC
     `)) as unknown as Array<{
@@ -273,17 +289,39 @@ export class RepositorioDrizzle implements Repositorio {
       modo: string;
       sin_leer: number | string;
       ultimo_mensaje: string | null;
+      ultimo_rol: string | null;
       ultima_actividad: Date | string;
+      servicio_id: string | null;
+      tiene_cita: boolean;
+      tuvo_cita: boolean;
     }>;
 
-    return filas.map((r) => ({
-      id: r.id,
-      clienteWa: r.cliente_wa,
-      modo: r.modo as ModoConversacion,
-      ultimoMensaje: r.ultimo_mensaje ?? null,
-      ultimaActividadEn: new Date(r.ultima_actividad).toISOString(),
-      sinLeer: Number(r.sin_leer),
-    }));
+    const hace24h = Date.now() - 24 * 60 * 60 * 1000;
+
+    return filas.map((r) => {
+      const ultimaActividad = new Date(r.ultima_actividad);
+      // Heurística tentativa de lead score (calibrar con el negocio):
+      // base 40 + tuvo alguna vez intención de cita (+25) + cliente esperando respuesta (+15)
+      // + actividad reciente <24h (+10) + cita activa futura (+10).
+      let leadScore = 40;
+      if (r.tuvo_cita) leadScore += 25;
+      if (r.ultimo_rol === "user") leadScore += 15;
+      if (ultimaActividad.getTime() >= hace24h) leadScore += 10;
+      if (r.tiene_cita) leadScore += 10;
+      leadScore = Math.min(100, Math.max(0, leadScore));
+
+      return {
+        id: r.id,
+        clienteWa: r.cliente_wa,
+        modo: r.modo as ModoConversacion,
+        ultimoMensaje: r.ultimo_mensaje ?? null,
+        ultimaActividadEn: ultimaActividad.toISOString(),
+        sinLeer: Number(r.sin_leer),
+        leadScore,
+        servicio: r.servicio_id ?? null,
+        tieneCita: r.tiene_cita,
+      };
+    });
   }
 
   async obtenerConversacionPorId(tenantId: string, conversacionId: string): Promise<Conversacion | null> {
@@ -310,6 +348,21 @@ export class RepositorioDrizzle implements Repositorio {
     if (!conv) return null; // no existe / no es de este tenant → descartamos los mensajes leídos
     const msgs = msgsDesc.reverse();
 
+    // Cita activa más próxima del cliente (para badge "Cita agendada" y subtítulo servicio).
+    const [citaActiva] = await this.db
+      .select({ servicioId: waCitas.servicioId })
+      .from(waCitas)
+      .where(
+        and(
+          eq(waCitas.tenantId, tenantId),
+          eq(waCitas.clienteWa, conv.clienteWa),
+          eq(waCitas.estado, "agendada"),
+          sql`${waCitas.fecha} >= current_date::text`,
+        ),
+      )
+      .orderBy(waCitas.fecha, waCitas.hora)
+      .limit(1);
+
     return {
       id: conv.id,
       tenantId: conv.tenantId,
@@ -322,6 +375,8 @@ export class RepositorioDrizzle implements Repositorio {
         creadoEn: m.creadoEn.toISOString(),
         porHumano: m.porHumano,
       })),
+      servicio: citaActiva?.servicioId ?? null,
+      tieneCita: !!citaActiva,
     };
   }
 
@@ -376,23 +431,66 @@ export class RepositorioDrizzle implements Repositorio {
   }
 
   async metricas(tenantId: string): Promise<Metricas> {
-    // Contamos las conversaciones en SQL en vez de traer todas las filas: la tabla
-    // crece con cada chat y el dashboard no necesita el detalle, solo los totales.
-    const [agg] = (await this.db.execute(sql`
-      SELECT count(*) AS total, count(*) FILTER (WHERE modo = 'humano') AS humano
-      FROM wa_conversaciones WHERE tenant_id = ${tenantId}
-    `)) as unknown as Array<{ total: number | string; humano: number | string }>;
-    const citas = await this.db
-      .select({
-        estado: waCitas.estado,
-        precio: waCitas.precio,
-        servicioId: waCitas.servicioId,
-        fecha: waCitas.fecha,
-        hora: waCitas.hora,
-      })
-      .from(waCitas)
-      .where(eq(waCitas.tenantId, tenantId));
-    return calcularMetricas(Number(agg.total), Number(agg.humano), citas);
+    const ahora = new Date();
+    const hace7d = new Date(ahora.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const hace14d = new Date(ahora.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
+
+    // Totales all-time + conteo por período para deltas (en paralelo).
+    const [aggResult, citas, periodoResult] = await Promise.all([
+      // Total de conversaciones all-time + cuántas en modo humano.
+      this.db.execute(sql`
+        SELECT count(*) AS total, count(*) FILTER (WHERE modo = 'humano') AS humano
+        FROM wa_conversaciones WHERE tenant_id = ${tenantId}
+      `) as unknown as Promise<Array<{ total: number | string; humano: number | string }>>,
+      // Todas las citas (para calcularMetricas all-time). Incluye creadaEn para deltas.
+      this.db
+        .select({
+          estado: waCitas.estado,
+          precio: waCitas.precio,
+          servicioId: waCitas.servicioId,
+          fecha: waCitas.fecha,
+          hora: waCitas.hora,
+          creadaEn: waCitas.creadaEn,
+        })
+        .from(waCitas)
+        .where(eq(waCitas.tenantId, tenantId)),
+      // Nuevas conversaciones por período (creada_en, no última actividad → más estable).
+      this.db.execute(sql`
+        SELECT
+          count(*) FILTER (WHERE creada_en >= ${hace7d}) AS convs_actual,
+          count(*) FILTER (WHERE creada_en >= ${hace14d} AND creada_en < ${hace7d}) AS convs_previo
+        FROM wa_conversaciones WHERE tenant_id = ${tenantId}
+      `) as unknown as Promise<Array<{ convs_actual: number | string; convs_previo: number | string }>>,
+    ]);
+
+    const agg = aggResult[0];
+    const periodo = periodoResult[0];
+    const base = calcularMetricas(Number(agg.total), Number(agg.humano), citas);
+
+    // Citas del período actual (últimos 7 días) y previo (7-14 días atrás) por creación.
+    const citasActivas = (c: typeof citas[0]) => c.estado !== "cancelada";
+    const enActual = citas.filter((c) => c.creadaEn >= new Date(hace7d));
+    const enPrevio = citas.filter((c) => c.creadaEn >= new Date(hace14d) && c.creadaEn < new Date(hace7d));
+
+    const citasA = enActual.filter(citasActivas).length;
+    const citasP = enPrevio.filter(citasActivas).length;
+    const ingresosA = enActual.filter(citasActivas).reduce((s, c) => s + (c.precio ?? 0), 0);
+    const ingresosP = enPrevio.filter(citasActivas).reduce((s, c) => s + (c.precio ?? 0), 0);
+    const convsA = Number(periodo.convs_actual);
+    const convsP = Number(periodo.convs_previo);
+    const convPctA = convsA ? Math.round((citasA / convsA) * 100) : 0;
+    const convPctP = convsP ? Math.round((citasP / convsP) * 100) : 0;
+
+    const deltas: Metricas["deltas"] = {
+      conversaciones: formatDelta(convsA, convsP),
+      citas: formatDelta(citasA, citasP),
+      conversion: formatDelta(convPctA, convPctP),
+      ingresos: formatDelta(ingresosA, ingresosP),
+    };
+    // Si ningún delta tiene valor, omitir el objeto completo.
+    const hayDeltas = Object.values(deltas).some(Boolean);
+
+    return { ...base, ...(hayDeltas ? { deltas } : {}) };
   }
 
   // ── Notificaciones push ──
