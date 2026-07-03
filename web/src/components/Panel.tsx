@@ -1,26 +1,26 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { listarConversaciones, logout, type Sesion } from "../api";
+import { listarConversaciones, logout, type Sesion, type ResumenConversacion } from "../api";
+import { useTema } from "../lib/tema";
 import Lista from "./Lista";
 import Chat from "./Chat";
 import FichaModal from "./FichaModal";
 import Dashboard from "./Dashboard";
+import BotonNotif from "./BotonNotif";
+import Icono from "./Iconos";
+import { ToastProvider } from "./Toast";
 
-// Ancho a partir del cual el panel pasa a layout de una columna (igual que el
-// media query de global.css): en móvil, abrir un chat tapa la lista.
 const ANCHO_MOVIL = 760;
+type Vista = "inbox" | "panel";
 
-// App autenticada: lista + chat lado a lado, con la ficha (modal) y el dashboard
-// (overlay) por encima. El estado de "qué está abierto" vive acá; los datos los
-// traen las queries de cada pantalla.
 export default function Panel({ sesion }: { sesion: Sesion }) {
   const qc = useQueryClient();
+  const { tema, alternar } = useTema();
+  const [vista, setVista] = useState<Vista>("inbox");
   const [abiertaId, setAbiertaId] = useState<string | null>(null);
   const [mostrarChatMovil, setMostrarChatMovil] = useState(false);
   const [fichaAbierta, setFichaAbierta] = useState(false);
-  const [dashAbierto, setDashAbierto] = useState(false);
 
-  // Lista de conversaciones: se refresca sola cada 4s (reemplaza el setInterval).
   const convs = useQuery({
     queryKey: ["conversaciones"],
     queryFn: listarConversaciones,
@@ -29,7 +29,6 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
 
   const salir = useMutation({
     mutationFn: logout,
-    // Pase lo que pase con la red, cerramos sesión local: ["me"] a null → login.
     onSettled: () => {
       qc.setQueryData(["me"], null);
       qc.removeQueries({ queryKey: ["conversaciones"] });
@@ -47,36 +46,96 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
   }
 
   const conversaciones = convs.data ?? [];
-  const convActiva = conversaciones.find((c) => c.id === abiertaId) ?? null;
+  const convActiva: ResumenConversacion | null =
+    conversaciones.find((c) => c.id === abiertaId) ?? null;
+  const totalSinLeer = conversaciones.reduce((s, c) => s + c.sinLeer, 0);
 
   return (
-    <>
+    <ToastProvider>
       <div id="app">
-        <Lista
-          nombre={sesion.nombre}
-          conversaciones={conversaciones}
-          abiertaId={abiertaId}
-          escondida={mostrarChatMovil}
-          vapidPublica={sesion.vapidPublica}
-          onAbrir={abrir}
-          onPanel={() => setDashAbierto(true)}
-          onSalir={() => salir.mutate()}
-        />
-        <Chat
-          id={abiertaId}
-          mostrar={mostrarChatMovil}
-          onVolver={volver}
-          onVerFicha={() => setFichaAbierta(true)}
-        />
-        {fichaAbierta && abiertaId && convActiva && (
-          <FichaModal
-            convId={abiertaId}
-            clienteWa={convActiva.clienteWa}
-            onCerrar={() => setFichaAbierta(false)}
-          />
-        )}
+        <header id="appHeader">
+          <div className="hd-marca">
+            <div className="marca-chip">LR</div>
+            <div className="hd-marca-txt">
+              <div className="hd-nombre">{sesion.nombre}</div>
+              <div className="hd-sub">WhatsApp Business</div>
+            </div>
+          </div>
+
+          <div className="hd-tabs">
+            <button
+              type="button"
+              className={"hd-tab" + (vista === "inbox" ? " activa" : "")}
+              onClick={() => setVista("inbox")}
+            >
+              <Icono id="chat" size={15} />
+              Inbox
+              {totalSinLeer > 0 && (
+                <span className="badge badge-naranja">{totalSinLeer}</span>
+              )}
+            </button>
+            <button
+              type="button"
+              className={"hd-tab" + (vista === "panel" ? " activa" : "")}
+              onClick={() => setVista("panel")}
+            >
+              <Icono id="dash" size={15} />
+              Panel
+            </button>
+          </div>
+
+          <div className="hd-acciones">
+            <BotonNotif vapidPublica={sesion.vapidPublica} />
+            <button
+              type="button"
+              className="btn-hd-icono"
+              onClick={alternar}
+              title={tema === "oscuro" ? "Modo claro" : "Modo oscuro"}
+              aria-label="Alternar modo claro/oscuro"
+            >
+              <Icono id={tema === "oscuro" ? "sun" : "moon"} size={18} />
+            </button>
+            <button
+              type="button"
+              className="btn-hd-salir"
+              onClick={() => salir.mutate()}
+              title="Salir"
+            >
+              <Icono id="out" size={17} />
+              <span>Salir</span>
+            </button>
+          </div>
+        </header>
+
+        <div id="mainView">
+          {vista === "inbox" && (
+            <div id="inbox-view">
+              <Lista
+                conversaciones={conversaciones}
+                abiertaId={abiertaId}
+                escondida={mostrarChatMovil}
+                onAbrir={abrir}
+              />
+              <Chat
+                id={abiertaId}
+                resumen={convActiva}
+                mostrar={mostrarChatMovil}
+                onVolver={volver}
+                onVerFicha={() => setFichaAbierta(true)}
+              />
+            </div>
+          )}
+          {vista === "panel" && <Dashboard nombre={sesion.nombre} />}
+        </div>
       </div>
-      {dashAbierto && <Dashboard nombre={sesion.nombre} onCerrar={() => setDashAbierto(false)} />}
-    </>
+
+      {fichaAbierta && abiertaId && convActiva && (
+        <FichaModal
+          convId={abiertaId}
+          clienteWa={convActiva.clienteWa}
+          onCerrar={() => setFichaAbierta(false)}
+        />
+      )}
+    </ToastProvider>
   );
 }

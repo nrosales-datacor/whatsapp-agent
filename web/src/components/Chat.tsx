@@ -1,20 +1,28 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { cambiarModo, obtenerConversacion, responder } from "../api";
+import { cambiarModo, obtenerConversacion, responder, type ResumenConversacion } from "../api";
 import { fmtNum, hora } from "../lib/formato";
+import Icono from "./Iconos";
+import { useToast } from "./Toast";
 
 interface Props {
   id: string | null;
-  /** En móvil, si el panel de chat está visible (encima de la lista). */
+  /** Resumen de la conversación activa (de la lista cacheada). Provee leadScore, tieneCita, etc. */
+  resumen: ResumenConversacion | null;
   mostrar: boolean;
   onVolver: () => void;
   onVerFicha: () => void;
 }
 
-// Columna derecha: la conversación abierta. Trae sus mensajes con polling (4s),
-// igual que la lista; responder o cambiar de modo refresca ambas queries.
-export default function Chat({ id, mostrar, onVolver, onVerFicha }: Props) {
+function scoreClase(s: number) {
+  if (s >= 80) return "score-alto";
+  if (s >= 55) return "score-medio";
+  return "score-bajo";
+}
+
+export default function Chat({ id, resumen, mostrar, onVolver, onVerFicha }: Props) {
   const qc = useQueryClient();
+  const { flash } = useToast();
   const [texto, setTexto] = useState("");
   const msgsRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -34,10 +42,7 @@ export default function Chat({ id, mostrar, onVolver, onVerFicha }: Props) {
 
   const enviar = useMutation({
     mutationFn: (t: string) => responder(id!, t),
-    onSuccess: () => {
-      setTexto("");
-      invalidar();
-    },
+    onSuccess: () => { setTexto(""); invalidar(); },
     onError: (e) => alert(e instanceof Error ? e.message : "No se pudo enviar"),
   });
 
@@ -46,7 +51,6 @@ export default function Chat({ id, mostrar, onVolver, onVerFicha }: Props) {
     onSuccess: invalidar,
   });
 
-  // Auto-scroll al fondo cuando entra un mensaje nuevo o se cambia de chat.
   const msgs = conv?.mensajes ?? [];
   const ultimoTs = msgs.length ? msgs[msgs.length - 1].creadoEn : null;
   useEffect(() => {
@@ -54,7 +58,6 @@ export default function Chat({ id, mostrar, onVolver, onVerFicha }: Props) {
     if (el) el.scrollTop = el.scrollHeight;
   }, [ultimoTs, id]);
 
-  // Auto-crecer el textarea (hasta 120px) según el contenido, igual que el inbox.html.
   useEffect(() => {
     const ta = taRef.current;
     if (!ta) return;
@@ -68,7 +71,29 @@ export default function Chat({ id, mostrar, onVolver, onVerFicha }: Props) {
     enviar.mutate(t);
   }
 
+  function accionCita() {
+    if (!id || enviar.isPending) return;
+    enviar.mutate("Podemos agendar tu cita 📅 ¿Qué servicio necesitás y qué día te queda bien?", {
+      onSuccess: () => flash("Mensaje de cita enviado"),
+    });
+  }
+
+  function accionCotizacion() {
+    if (!id || enviar.isPending) return;
+    enviar.mutate("Con gusto te preparamos una cotización 📋 ¿Qué servicio necesitás para tu vehículo?", {
+      onSuccess: () => flash("Mensaje de cotización enviado"),
+    });
+  }
+
+  function accionAtendido() {
+    qc.invalidateQueries({ queryKey: ["conversaciones"] });
+    flash("Conversación marcada como atendida ✓");
+  }
+
   const humano = conv?.modo === "humano";
+  const score = resumen?.leadScore;
+  const tieneCita = conv?.tieneCita ?? resumen?.tieneCita;
+  const servicio = conv?.servicio ?? resumen?.servicio;
 
   return (
     <section id="chat" className={mostrar ? undefined : "escondido"}>
@@ -80,20 +105,28 @@ export default function Chat({ id, mostrar, onVolver, onVerFicha }: Props) {
           title="Volver a la lista"
           aria-label="Volver a la lista"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="m15 18-6-6 6-6" />
-          </svg>
+          <Icono id="back" size={22} sw={2} />
         </button>
+
         {conv && (
           <div className="chatHead" onClick={onVerFicha}>
-            <div id="chatTitulo">{fmtNum(conv.clienteWa)}</div>
+            <div className="chat-head-top">
+              {score !== undefined && (
+                <div className={`score-tile score-tile-sm ${scoreClase(score)}`}>{score}</div>
+              )}
+              <span id="chatTitulo">{fmtNum(conv.clienteWa)}</span>
+              <span className={"pill " + conv.modo}>{humano ? "humano" : "bot"}</span>
+              {tieneCita && <span className="pill-cita">📅 Cita</span>}
+            </div>
             <div id="chatModo">
+              {servicio && <span className="chat-servicio">{servicio} · </span>}
               <span className={"estado-dot " + (humano ? "humano" : "bot")} />
               {humano ? "Lo estás atendiendo vos" : "Lo atiende el bot"}
             </div>
             <div className="ver">Ver ficha del cliente ›</div>
           </div>
         )}
+
         {conv && (
           <button
             type="button"
@@ -106,7 +139,50 @@ export default function Chat({ id, mostrar, onVolver, onVerFicha }: Props) {
         )}
       </header>
 
-      {!conv && <div id="vacio">{id ? "Cargando…" : "Elegí una conversación para empezar."}</div>}
+      {conv && (
+        <div className="acciones-rapidas">
+          <button
+            type="button"
+            className="accion accion-primaria"
+            onClick={accionCita}
+            disabled={enviar.isPending}
+          >
+            <Icono id="cal" size={14} />
+            Agendar cita
+          </button>
+          <button
+            type="button"
+            className="accion accion-outline"
+            onClick={accionCotizacion}
+            disabled={enviar.isPending}
+          >
+            <Icono id="quote" size={14} />
+            Cotización
+          </button>
+          <button
+            type="button"
+            className="accion accion-outline accion-check"
+            onClick={accionAtendido}
+          >
+            <Icono id="check2" size={14} sw={2.2} />
+            Atendido
+          </button>
+        </div>
+      )}
+
+      {!conv && (
+        <div id="vacio">
+          <div className="vacio-card">
+            <div className="vacio-icono"><Icono id="chat" size={38} /></div>
+            <div className="vacio-titulo">{id ? "Cargando…" : "Elegí una conversación"}</div>
+            {!id && (
+              <div className="vacio-sub">
+                Seleccioná un contacto de la lista para ver la conversación.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {conv && (
         <div id="msgs" ref={msgsRef}>
@@ -114,7 +190,9 @@ export default function Chat({ id, mostrar, onVolver, onVerFicha }: Props) {
             const clase = m.rol === "user" ? "cliente" : m.porHumano ? "humano" : "bot";
             return (
               <div className={"b " + clase} key={i}>
-                {m.rol !== "user" && <div className="quien">{m.porHumano ? "Vos" : "Bot"}</div>}
+                {m.rol !== "user" && (
+                  <div className="quien">{m.porHumano ? "Agente" : "Bot"}</div>
+                )}
                 {m.contenido}
                 <div className="meta">{hora(m.creadoEn)}</div>
               </div>
@@ -138,11 +216,14 @@ export default function Chat({ id, mostrar, onVolver, onVerFicha }: Props) {
               }
             }}
           />
-          <button type="button" onClick={mandar} disabled={enviar.isPending} title="Enviar" aria-label="Enviar">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M22 2 11 13" />
-              <path d="M22 2 15 22l-4-9-9-4 20-7Z" />
-            </svg>
+          <button
+            type="button"
+            onClick={mandar}
+            disabled={enviar.isPending}
+            title="Enviar"
+            aria-label="Enviar mensaje"
+          >
+            <Icono id="send" size={18} sw={1.8} />
           </button>
         </div>
       )}

@@ -29,24 +29,12 @@ export default function Login() {
         }}
       >
         <div className="marca">
-          <span className="marca-chip" aria-hidden="true">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M4 13h4l2 3h4l2-3h4" />
-              <path d="M5 6h14a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1Z" />
-            </svg>
-          </span>
+          <span className="marca-chip" aria-hidden="true">LR</span>
           <span className="marca-txt">Panel de atención</span>
         </div>
         <h1>Bandeja</h1>
         <p>Ingresá para responder a tus clientes y ver las métricas de tu negocio.</p>
-        <label htmlFor="usuario">Negocio</label>
+        <label htmlFor="usuario">Usuario</label>
         <input
           id="usuario"
           autoComplete="username"
@@ -65,7 +53,7 @@ export default function Login() {
           onChange={(e) => setPassword(e.target.value)}
         />
         <button type="submit" disabled={entrar.isPending}>
-          {entrar.isPending ? "Entrando…" : "Entrar"}
+          {entrar.isPending ? "Entrando…" : "Entrar →"}
         </button>
         <div id="loginError">{error}</div>
       </form>

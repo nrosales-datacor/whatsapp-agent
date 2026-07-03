@@ -6,7 +6,7 @@
 
 **Leyenda:** ✅ hecho · 🔵 en progreso · ⬜ pendiente · 🔴 bloqueante crítico para escalar
 
-**Última actualización:** 2026-06-30 (B1 + B4)
+**Última actualización:** 2026-07-03 (A8 completo — Fase 4 de verificación hecha con 3 fixes)
 
 ---
 
@@ -27,6 +27,7 @@ El **código** es sólido para el piloto; lo que no escala todavía es la **topo
 - [x] ✅ **A5 — PWA con vite-plugin-pwa.** `vite-plugin-pwa` (fijado a `1.3.0`, estrategia `injectManifest`) genera el manifest (inyecta el `<link>` en el index) y compila nuestro `src/sw.ts` → `/panel/sw.js` (sin precache: passthrough + push + notificationclick, portado del sw.js viejo). La suscripción push (VAPID) vive en el hook `usePush` (registra el SW, pide permiso solo al tocar la campana, suscribe y manda prueba); la campana volvió al header (`BotonNotif`). El backend sirve `sw.js`/`manifest`/`icons` desde `web/dist` con fallback a `src/panel`. Verificado: typecheck (app + SW en `tsconfig.sw.json`) + build OK; el server sirve el SW (con `Service-Worker-Allowed`), manifest e íconos, y `/me` expone la VAPID. _El SW solo corre en el build (no en `web:dev`); la entrega real de push se prueba en el panel servido por el backend / deploy. Done de iOS/Android queda para la prueba en dispositivo._
 - [x] ✅ **A6 — Servir el build + deploy.** El server ya sirve `web/dist/index.html` + assets hasheados (`/panel/assets/*`, cache `immutable`) + sw/manifest/íconos, con **fallback a `inbox.html`** si no hay build. `DEPLOY.md` actualizado: el flujo de redeploy ahora corre `npm run web:build` (instala deps de `web/` y genera `web/dist`) antes del `pm2 restart`; un deploy sin build no rompe nada (cae al panel viejo). Verificado local: `npm run web:build` desde la raíz compila el PWA completo. _Pendiente operativo: correr el redeploy en el droplet (lo hace Sebastián) para que producción quede en React._
 - [x] ✅ **A7 — Borrar `inbox.html`.** Panel verificado en producción (bundle React `/panel/assets/index-*.js` confirmado vivo). `src/panel/inbox.html` eliminado del repo; el servidor sirve solo `web/dist` — sin build → 503 con mensaje claro (en vez del fallback silencioso).
+- [x] ✅ **A8 — Rediseño visual del panel según mockup Lavacar (dark mode, lead score, dashboard rico).** Paleta verde + tokens white-label en `global.css`; Noto Sans self-hosted; modo claro/oscuro (`lib/tema.ts` + toggle en header); lead score heurístico por conversación; deltas de KPI en métricas; badge cita + servicio por conversación; búsqueda + filtros pill en bandeja; acciones rápidas (agendar, cotización, atendido) + toasts; horas pico verticales en dashboard. _Fase 4 (verificación) ✅: design-verify con Playwright en 390/1440px × claro/oscuro (20 capturas), flujo real end-to-end (login → chat → responder → toggle → acciones rápidas → ficha → dashboard), PWA (sw.js + `Service-Worker-Allowed` + manifest) y regresión admin. Fixes de la verificación: marca del header oculta en móvil (se truncaba), `color-scheme` por tema (inputs nativos/checkboxes en dark), toast de acciones rápidas ya no es optimista (solo en éxito). Pendiente de validar en dispositivo real: entrega de push iOS/Android._ Ver `PLAN-REDISENO-PANEL.md`.
 
 ---
 
@@ -40,6 +41,28 @@ El **código** es sólido para el piloto; lo que no escala todavía es la **topo
 
 ---
 
+## Carril C — Valor de producto (plan detallado: `PLAN-VALOR-PRODUCTO.md`)
+
+> Features que hacen que la app destaque y se venda: experiencia WhatsApp de primera, panel como
+> centro de operaciones del dueño, motor de crecimiento (reseñas/campañas) y maquinaria SaaS.
+> El orden de prioridad y el detalle de cada ítem viven en el plan.
+
+- [ ] **C1.1 — Reprogramar/cancelar cita por el bot** (herramientas nuevas + sync Calendar).
+- [ ] **C1.2 — Mensajes interactivos** (botones y listas nativas de WhatsApp, sin deps nuevas).
+- [ ] **C1.3 — Recordatorio con confirmación** (anti no-show; cita confirmada visible en panel).
+- [ ] **C1.4 — Notas de voz** (transcripción con el SDK de OpenAI ya instalado).
+- [ ] **C1.5 — Fotos → cotización con visión** (+ imágenes visibles en el chat del panel).
+- [ ] **C2.1 — Vista Agenda en el panel** (citas por día/semana + cita manual + estados).
+- [ ] **C2.2 — Configuración self-service del negocio** (servicios/precios/horario/bloqueos/KB).
+- [ ] **C2.3 — Estados de conversación + multi-operador por tenant** (roles dueño/operador).
+- [ ] **C3.1 — Post-servicio + reseñas de Google** (intercepta malas experiencias antes de la reseña).
+- [ ] **C3.2 — Campañas segmentadas** (plantilla MARKETING + opt-out; absorbe el pendiente "Promos").
+- [ ] **C3.3 — Dashboard de dueño** (ingresos, no-shows, ahorro del bot).
+- [ ] **C4.1 — White-label real por tenant** (marca/colores/logo desde la config; los tokens `--brand-*` de A8 ya lo preparan).
+- [ ] **C4.2 — Embedded Signup de Meta** (conectar WhatsApp self-serve; tramitar el review temprano — pasos del trámite en `GUIA-META.md` §B).
+- [ ] **C4.3 — Facturación Stripe + planes** (única dependencia npm nueva prevista del carril).
+- [ ] **C4.4 — Landing de venta** (el bot de ventas como demo del producto).
+
 ## Fiabilidad / hardening
 
 - [x] ✅ **Reintentos con backoff en envíos a WhatsApp** + aviso al operador si falla + manejo de multimedia (commit `d4e1624`). _Nota: parche en la capa de envío; NO sobrevive a muerte del proceso — eso lo cierra B1._
@@ -50,8 +73,9 @@ El **código** es sólido para el piloto; lo que no escala todavía es la **topo
 ## Pendientes operativos (piloto Lavacar Rosales)
 
 - [ ] **Cambiar la contraseña temporal del panel** (`lavacar2026`, débil). Generar hash con `npx tsx scripts/hashPassword.ts` y setear `PANEL_PASSWORD_HASH_ROSALES`.
-- [ ] **Plantilla de WhatsApp** (Utility, 3 variables) para recordatorios fuera de 24h — esperando aprobación de Meta. Setear `WHATSAPP_TEMPLATE_RECORDATORIO`.
-- [ ] **Promos / difusión** (marketing segmentado): requiere plantilla MARKETING aprobada, costo por mensaje y opt-out. Sin empezar.
+- [ ] **Plantilla de WhatsApp** (Utility, 3 variables) para recordatorios fuera de 24h — esperando aprobación de Meta. Setear `WHATSAPP_TEMPLATE_RECORDATORIO`. _Pasos exactos en `GUIA-META.md` §A._
+- [ ] **Redeploy pendiente en el droplet** (lo corre Sebastián): producción aún NO tiene B1–B4 ni el panel rediseñado — la tabla `wa_jobs` no existe en la base (verificado 2026-07-03), señal de que `migrar.ts` no corre desde antes de B1. El flujo de DEPLOY.md (pull → install → migrar → seed → web:build → pm2 restart) deja todo al día.
+- [ ] **Promos / difusión** (marketing segmentado): requiere plantilla MARKETING aprobada, costo por mensaje y opt-out. Sin empezar. _Absorbido por **C3.2** del Carril C._
 
 ---
 
