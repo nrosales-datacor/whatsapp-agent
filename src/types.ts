@@ -220,6 +220,24 @@ export interface Repositorio {
   crearCita(cita: Omit<Cita, "id" | "creadaEn" | "estado">): Promise<Cita>;
   /** Guarda el id del evento de Google Calendar asociado a la cita. */
   guardarGcalEventId(citaId: string, eventId: string): Promise<void>;
+  /**
+   * Citas ACTIVAS (estado "agendada") futuras de un cliente, de `desdeFecha` en
+   * adelante (inclusive), ordenadas por fecha/hora ascendente. `desdeFecha` es
+   * "hoy" en la zona del tenant, calculada por el caller. Sirve para que el bot
+   * identifique la cita a reprogramar/cancelar por el número del cliente.
+   */
+  citasActivasCliente(tenantId: string, clienteWa: string, desdeFecha: string): Promise<Cita[]>;
+  /**
+   * Reprograma una cita a nueva fecha/hora y REINICIA sus recordatorios (para que
+   * salgan según el nuevo horario, no el viejo). Scopeada por tenantId (defensa en
+   * profundidad). Devuelve la cita actualizada, o null si no existe / no es del tenant.
+   */
+  reprogramarCita(tenantId: string, citaId: string, fecha: string, hora: string): Promise<Cita | null>;
+  /**
+   * Cancela una cita (estado "cancelada"). Scopeada por tenantId. Devuelve la cita
+   * (con su gcalEventId, para borrar el evento del Calendar), o null si no existe.
+   */
+  cancelarCita(tenantId: string, citaId: string): Promise<Cita | null>;
   /** Marca un recordatorio como enviado (para no mandarlo dos veces). */
   marcarRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<void>;
   /**
