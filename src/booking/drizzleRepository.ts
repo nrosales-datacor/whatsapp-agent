@@ -25,6 +25,26 @@ import { calcularMetricas, formatDelta } from "../panel/metricas";
 
 type DB = PostgresJsDatabase<typeof schema>;
 
+/** Mapea una fila de wa_citas al DTO Cita (normaliza null→undefined y fechas→ISO). */
+function filaACita(r: typeof waCitas.$inferSelect): Cita {
+  return {
+    id: r.id,
+    tenantId: r.tenantId,
+    clienteWa: r.clienteWa,
+    clienteNombre: r.clienteNombre,
+    servicioId: r.servicioId,
+    fecha: r.fecha,
+    hora: r.hora,
+    placa: r.placa ?? undefined,
+    estado: r.estado as Cita["estado"],
+    creadaEn: r.creadaEn.toISOString(),
+    precio: r.precio ?? undefined,
+    gcalEventId: r.gcalEventId ?? undefined,
+    recordatorioDiaAntesEn: r.recordatorioDiaAntesEn ? r.recordatorioDiaAntesEn.toISOString() : null,
+    recordatorioMismoDiaEn: r.recordatorioMismoDiaEn ? r.recordatorioMismoDiaEn.toISOString() : null,
+  };
+}
+
 export class RepositorioDrizzle implements Repositorio {
   constructor(private db: DB) {}
 
@@ -99,21 +119,7 @@ export class RepositorioDrizzle implements Repositorio {
       .from(waCitas)
       .where(and(eq(waCitas.tenantId, tenantId), eq(waCitas.fecha, fecha)));
 
-    return rows.map((r) => ({
-      id: r.id,
-      tenantId: r.tenantId,
-      clienteWa: r.clienteWa,
-      clienteNombre: r.clienteNombre,
-      servicioId: r.servicioId,
-      fecha: r.fecha,
-      hora: r.hora,
-      placa: r.placa ?? undefined,
-      estado: r.estado as Cita["estado"],
-      creadaEn: r.creadaEn.toISOString(),
-      gcalEventId: r.gcalEventId ?? undefined,
-      recordatorioDiaAntesEn: r.recordatorioDiaAntesEn ? r.recordatorioDiaAntesEn.toISOString() : null,
-      recordatorioMismoDiaEn: r.recordatorioMismoDiaEn ? r.recordatorioMismoDiaEn.toISOString() : null,
-    }));
+    return rows.map(filaACita);
   }
 
   async crearCita(cita: Omit<Cita, "id" | "creadaEn" | "estado">): Promise<Cita> {
@@ -148,6 +154,41 @@ export class RepositorioDrizzle implements Repositorio {
 
   async guardarGcalEventId(citaId: string, eventId: string): Promise<void> {
     await this.db.update(waCitas).set({ gcalEventId: eventId }).where(eq(waCitas.id, citaId));
+  }
+
+  async citasActivasCliente(tenantId: string, clienteWa: string, desdeFecha: string): Promise<Cita[]> {
+    const rows = await this.db
+      .select()
+      .from(waCitas)
+      .where(
+        and(
+          eq(waCitas.tenantId, tenantId),
+          eq(waCitas.clienteWa, clienteWa),
+          eq(waCitas.estado, "agendada"),
+          sql`${waCitas.fecha} >= ${desdeFecha}`,
+        ),
+      )
+      .orderBy(waCitas.fecha, waCitas.hora);
+    return rows.map(filaACita);
+  }
+
+  async reprogramarCita(tenantId: string, citaId: string, fecha: string, hora: string): Promise<Cita | null> {
+    // Reinicia los recordatorios: deben salir según el nuevo horario, no el viejo.
+    const [r] = await this.db
+      .update(waCitas)
+      .set({ fecha, hora, recordatorioDiaAntesEn: null, recordatorioMismoDiaEn: null })
+      .where(and(eq(waCitas.id, citaId), eq(waCitas.tenantId, tenantId)))
+      .returning();
+    return r ? filaACita(r) : null;
+  }
+
+  async cancelarCita(tenantId: string, citaId: string): Promise<Cita | null> {
+    const [r] = await this.db
+      .update(waCitas)
+      .set({ estado: "cancelada" })
+      .where(and(eq(waCitas.id, citaId), eq(waCitas.tenantId, tenantId)))
+      .returning();
+    return r ? filaACita(r) : null;
   }
 
   async marcarRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<void> {

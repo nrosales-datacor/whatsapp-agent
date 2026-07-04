@@ -129,6 +129,38 @@ export async function crearEventoCita(tenant: Tenant, cita: Cita): Promise<strin
   return creado.id;
 }
 
+/**
+ * Actualiza fecha/hora (y datos) de un evento existente al reprogramar la cita.
+ * PATCH sobre el evento; no falla si la integración está apagada o falta eventId.
+ */
+export async function actualizarEventoCita(tenant: Tenant, cita: Cita): Promise<void> {
+  if (!calendarioConfigurado() || !cita.gcalEventId) return;
+
+  const servicio = tenant.servicios.find((s) => s.id === cita.servicioId);
+  const duracion = servicio?.duracionMin ?? tenant.intervaloAgendaMin;
+  const horaFin = sumarMinutos(cita.hora, duracion);
+
+  const cambios = {
+    summary: `${servicio?.nombre ?? cita.servicioId} — ${cita.clienteNombre}`,
+    start: { dateTime: `${cita.fecha}T${cita.hora}:00`, timeZone: tenant.timezone },
+    end: { dateTime: `${cita.fecha}T${horaFin}:00`, timeZone: tenant.timezone },
+  };
+
+  const calendarId = encodeURIComponent(process.env.GOOGLE_CALENDAR_ID!);
+  const token = await obtenerAccessToken();
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(cita.gcalEventId)}`,
+    {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(cambios),
+    },
+  );
+  if (!res.ok && res.status !== 404 && res.status !== 410) {
+    throw new Error(`Google Calendar actualizar (${res.status}): ${await res.text()}`);
+  }
+}
+
 /** Borra un evento del calendario (ej: al cancelar una cita). No falla si ya no existe. */
 export async function eliminarEventoCita(eventId: string): Promise<void> {
   if (!calendarioConfigurado() || !eventId) return;

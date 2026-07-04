@@ -52,6 +52,54 @@ export const TOOLS: ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "consultar_mi_cita",
+      description:
+        "Devuelve las citas de PULIDO activas (futuras) del cliente con el que estás chateando, identificadas por su número de WhatsApp. Usala cuando el cliente pregunte '¿cuándo es mi cita?' o antes de reprogramar/cancelar para saber cuál es.",
+      parameters: { type: "object", properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "reprogramar_cita",
+      description:
+        "Cambia la fecha y/u hora de una cita YA agendada del cliente. Llamar SOLO tras confirmar el nuevo horario con el cliente y que esté disponible. Si el cliente tiene varias citas activas, pasá el citaId para indicar cuál (obtenelo con consultar_mi_cita).",
+      parameters: {
+        type: "object",
+        properties: {
+          fecha: { type: "string", description: "Nueva fecha en formato YYYY-MM-DD." },
+          hora: { type: "string", description: "Nueva hora en formato HH:mm (24h)." },
+          citaId: {
+            type: "string",
+            description: "id de la cita a mover (solo necesario si el cliente tiene más de una cita activa).",
+          },
+        },
+        required: ["fecha", "hora"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "cancelar_cita",
+      description:
+        "Cancela una cita YA agendada del cliente. Llamar SOLO tras confirmar con el cliente que quiere cancelar. Si el cliente tiene varias citas activas, pasá el citaId (obtenelo con consultar_mi_cita).",
+      parameters: {
+        type: "object",
+        properties: {
+          citaId: {
+            type: "string",
+            description: "id de la cita a cancelar (solo necesario si el cliente tiene más de una cita activa).",
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "escalar_a_humano",
       description:
         "Pasa la conversación a una persona del equipo cuando NO podés resolver lo que el cliente necesita: una pregunta SOBRE EL NEGOCIO que no está en tu información, un reclamo, un caso especial, o algo que requiere a un encargado. NO la uses para pedidos FUERA del lavacar (esos se responden con amabilidad, sin escalar) ni cuando SÍ tenés la respuesta.",

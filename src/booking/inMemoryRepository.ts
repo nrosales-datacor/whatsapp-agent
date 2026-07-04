@@ -122,6 +122,36 @@ export class RepositorioEnMemoria implements Repositorio {
     if (c) c.gcalEventId = eventId;
   }
 
+  async citasActivasCliente(tenantId: string, clienteWa: string, desdeFecha: string): Promise<Cita[]> {
+    return this.citas
+      .filter(
+        (c) =>
+          c.tenantId === tenantId &&
+          c.clienteWa === clienteWa &&
+          c.estado === "agendada" &&
+          c.fecha >= desdeFecha,
+      )
+      .sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora));
+  }
+
+  async reprogramarCita(tenantId: string, citaId: string, fecha: string, hora: string): Promise<Cita | null> {
+    const c = this.citas.find((x) => x.id === citaId && x.tenantId === tenantId);
+    if (!c) return null;
+    c.fecha = fecha;
+    c.hora = hora;
+    // Reinicia recordatorios: deben salir según el nuevo horario, no el viejo.
+    c.recordatorioDiaAntesEn = null;
+    c.recordatorioMismoDiaEn = null;
+    return { ...c };
+  }
+
+  async cancelarCita(tenantId: string, citaId: string): Promise<Cita | null> {
+    const c = this.citas.find((x) => x.id === citaId && x.tenantId === tenantId);
+    if (!c) return null;
+    c.estado = "cancelada";
+    return { ...c };
+  }
+
   async marcarRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<void> {
     const c = this.citas.find((x) => x.id === citaId);
     if (!c) return;

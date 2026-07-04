@@ -1,13 +1,28 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import type { MensajeConversacion, Repositorio, Tenant } from "../types";
+import type { Cita, MensajeConversacion, Repositorio, Tenant } from "../types";
 import { construirSystemPrompt } from "./systemPrompt";
 import { TOOLS } from "./tools";
 import { espaciosDisponibles } from "../booking/availability";
-import { calendarioConfigurado, crearEventoCita } from "../calendar/googleCalendar";
+import {
+  actualizarEventoCita,
+  calendarioConfigurado,
+  crearEventoCita,
+  eliminarEventoCita,
+} from "../calendar/googleCalendar";
 
 const MODELO = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const MAX_PASOS = 4; // tope de iteraciones de tool-calling por mensaje
+
+/** "Hoy" ("YYYY-MM-DD") en la zona horaria del tenant (para filtrar citas futuras). */
+function hoyEnTz(timezone: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
 
 // Inicialización perezosa: el server arranca aunque todavía no haya OPENAI_API_KEY;
 // solo se necesita cuando llega un mensaje real.
@@ -99,6 +114,89 @@ async function ejecutarTool(
     }
 
     return JSON.stringify({ ok: true, cita });
+  }
+
+  // Nombre legible del servicio para las respuestas de las herramientas de cita.
+  const nombreServicio = (servicioId: string) =>
+    tenant.servicios.find((s) => s.id === servicioId)?.nombre ?? servicioId;
+  const citaResumen = (c: Cita) => ({
+    citaId: c.id,
+    servicio: nombreServicio(c.servicioId),
+    fecha: c.fecha,
+    hora: c.hora,
+    placa: c.placa,
+  });
+
+  if (nombre === "consultar_mi_cita") {
+    const activas = await repo.citasActivasCliente(tenant.id, clienteWa, hoyEnTz(tenant.timezone));
+    return JSON.stringify({
+      ok: true,
+      cantidad: activas.length,
+      citas: activas.map(citaResumen),
+      mensaje: activas.length ? "Estas son las citas activas del cliente." : "El cliente no tiene citas activas.",
+    });
+  }
+
+  if (nombre === "reprogramar_cita" || nombre === "cancelar_cita") {
+    const activas = await repo.citasActivasCliente(tenant.id, clienteWa, hoyEnTz(tenant.timezone));
+    if (activas.length === 0) {
+      return JSON.stringify({ ok: false, motivo: "el cliente no tiene ninguna cita activa para modificar." });
+    }
+    // Resolver a CUÁL cita se refiere: por citaId si se dio, si no la única activa;
+    // si hay varias y no especificó, devolver la lista para que el bot pregunte.
+    const citaIdArg = args.citaId ? String(args.citaId) : undefined;
+    let objetivo = activas.length === 1 ? activas[0] : undefined;
+    if (citaIdArg) objetivo = activas.find((c) => c.id === citaIdArg);
+    if (!objetivo) {
+      return JSON.stringify({
+        ok: false,
+        motivo: citaIdArg
+          ? "no encontré esa cita entre las activas del cliente."
+          : "el cliente tiene varias citas activas; preguntale cuál y pasá el citaId.",
+        citas: activas.map(citaResumen),
+      });
+    }
+
+    if (nombre === "cancelar_cita") {
+      const cancelada = await repo.cancelarCita(tenant.id, objetivo.id);
+      if (!cancelada) return JSON.stringify({ ok: false, motivo: "no se pudo cancelar la cita." });
+      if (cancelada.gcalEventId) {
+        try {
+          await eliminarEventoCita(cancelada.gcalEventId);
+        } catch (e) {
+          console.error(`[gcal] no se pudo borrar el evento de la cita ${cancelada.id}:`, e);
+        }
+      }
+      return JSON.stringify({ ok: true, cancelada: citaResumen(cancelada) });
+    }
+
+    // reprogramar_cita
+    const fecha = String(args.fecha);
+    const hora = String(args.hora);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(hora)) {
+      return JSON.stringify({ ok: false, motivo: "formato inválido: usá fecha YYYY-MM-DD y hora HH:mm (24h)." });
+    }
+    if (fecha < hoyEnTz(tenant.timezone)) {
+      return JSON.stringify({ ok: false, motivo: "no se puede reprogramar a una fecha pasada." });
+    }
+    // Verificar que el nuevo espacio esté libre, EXCLUYENDO la propia cita (para que
+    // no se bloquee a sí misma si se mueve dentro del mismo día).
+    const citasFecha = (await repo.citasPorFecha(tenant.id, fecha)).filter((c) => c.id !== objetivo!.id);
+    const libres = espaciosDisponibles(tenant, fecha, objetivo.servicioId, citasFecha);
+    if (!libres.includes(hora)) {
+      return JSON.stringify({ ok: false, motivo: "ese horario no está disponible", disponibles: libres });
+    }
+    const actualizada = await repo.reprogramarCita(tenant.id, objetivo.id, fecha, hora);
+    if (!actualizada) return JSON.stringify({ ok: false, motivo: "no se pudo reprogramar la cita." });
+    // Reflejar el cambio en Google Calendar (si está configurado y la cita tiene evento).
+    if (calendarioConfigurado() && actualizada.gcalEventId) {
+      try {
+        await actualizarEventoCita(tenant, actualizada);
+      } catch (e) {
+        console.error(`[gcal] no se pudo actualizar el evento de la cita ${actualizada.id}:`, e);
+      }
+    }
+    return JSON.stringify({ ok: true, cita: citaResumen(actualizada) });
   }
 
   return JSON.stringify({ error: `herramienta desconocida: ${nombre}` });

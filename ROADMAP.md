@@ -6,7 +6,7 @@
 
 **Leyenda:** ✅ hecho · 🔵 en progreso · ⬜ pendiente · 🔴 bloqueante crítico para escalar
 
-**Última actualización:** 2026-07-03 (C1.4 completo — Notas de voz con Whisper)
+**Última actualización:** 2026-07-04 (C1.1 completo — Reprogramar/cancelar cita por el bot)
 
 ---
 
@@ -47,7 +47,7 @@ El **código** es sólido para el piloto; lo que no escala todavía es la **topo
 > centro de operaciones del dueño, motor de crecimiento (reseñas/campañas) y maquinaria SaaS.
 > El orden de prioridad y el detalle de cada ítem viven en el plan.
 
-- [ ] **C1.1 — Reprogramar/cancelar cita por el bot** (herramientas nuevas + sync Calendar).
+- [x] ✅ **C1.1 — Reprogramar/cancelar cita por el bot** (herramientas nuevas + sync Calendar). Tres herramientas del agente: `consultar_mi_cita`, `reprogramar_cita`, `cancelar_cita` (`tools.ts` + ejecución en `runAgent.ts`). La cita se identifica por el número de WhatsApp del cliente (`citasActivasCliente`); si hay varias, el bot pide el `citaId`. Reprogramar valida formato + fecha no pasada + disponibilidad (excluyendo la propia cita) y **reinicia los recordatorios** (`reprogramarCita`); cancelar pone `estado="cancelada"` (`cancelarCita`) → el scheduler ya no manda el recordatorio de la cita vieja. Sync a Google Calendar: `actualizarEventoCita` (PATCH) al mover y `eliminarEventoCita` al cancelar (no bloquean si falla). Métodos nuevos en ambos repos (mem + Drizzle), scopeados por `tenantId`. Sin migración (reusa `estado`/`gcalEventId`/columnas de recordatorio). Verificado: typecheck + sanity del data layer (activas/reprogramar/cancelar/aislamiento por tenant/reinicio de recordatorio).
 - [ ] **C1.2 — Mensajes interactivos** (botones y listas nativas de WhatsApp, sin deps nuevas).
 - [ ] **C1.3 — Recordatorio con confirmación** (anti no-show; cita confirmada visible en panel).
 - [x] ✅ **C1.4 — Notas de voz** (transcripción con el SDK de OpenAI ya instalado). `parsearEntrante()` detecta `msg.type === "audio"` y extrae `audioId`; `descargarMedia()` baja el archivo de Graph API; `transcribirAudio()` (Whisper-1, `src/whatsapp/transcribir.ts`) lo transcribe al español; el webhook maneja la clase `"audio"` en fase 2 con el mismo flujo de agente (escalada, opt-in, fallback al operador si Whisper falla). Mensajes de fotos/stickers/video siguen notificando al operador.
