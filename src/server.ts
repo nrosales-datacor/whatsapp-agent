@@ -9,6 +9,7 @@ import { iniciarRecordatorios } from "./reminders/scheduler";
 import { cargarTenants } from "./config/tenantStore";
 import { calendarioConfigurado } from "./calendar/googleCalendar";
 import { manejarPanel } from "./panel/router";
+import { manejarLanding } from "./landing/servirLanding";
 import { pushConfigurado } from "./panel/push";
 import { iniciarWorker } from "./queue/worker";
 import type { Repositorio } from "./types";
@@ -30,12 +31,15 @@ const repo: Repositorio = db ? new RepositorioDrizzle(db) : new RepositorioEnMem
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
-  // Página simple para confirmar que está vivo.
-  if (url.pathname === "/") {
+  // Health check (antes vivía en `/`; el root ahora es la landing pública, C4.4).
+  if (url.pathname === "/salud") {
     res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
     res.end("Agente de WhatsApp corriendo ✅");
     return;
   }
+
+  // Landing pública de venta: `/`, `/privacidad`, `/terminos`, `/landing/*`, robots, favicon.
+  if (manejarLanding(req, res, url.pathname)) return;
 
   // Panel web (bandeja humana): /panel y /api/panel/*.
   if (await manejarPanel(req, res, repo, url.pathname)) return;

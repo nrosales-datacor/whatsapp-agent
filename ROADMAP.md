@@ -6,7 +6,7 @@
 
 **Leyenda:** ✅ hecho · 🔵 en progreso · ⬜ pendiente · 🔴 bloqueante crítico para escalar
 
-**Última actualización:** 2026-07-05 (C1.3 completo — Recordatorio con confirmación anti no-show)
+**Última actualización:** 2026-07-05 (C4.4 completo — Landing de venta pública)
 
 ---
 
@@ -61,7 +61,7 @@ El **código** es sólido para el piloto; lo que no escala todavía es la **topo
 - [ ] **C4.1 — White-label real por tenant** (marca/colores/logo desde la config; los tokens `--brand-*` de A8 ya lo preparan).
 - [ ] **C4.2 — Embedded Signup de Meta** (conectar WhatsApp self-serve; tramitar el review temprano — pasos del trámite en `GUIA-META.md` §B).
 - [ ] **C4.3 — Facturación Stripe + planes** (única dependencia npm nueva prevista del carril).
-- [ ] **C4.4 — Landing de venta** (el bot de ventas como demo del producto).
+- [x] ✅ **C4.4 — Landing de venta** ("Recepcionista IA", HTML/CSS estático en `landing/`, sin build ni deps nuevas — plan completo en `PLAN-C4.4-LANDING.md`). El **root del dominio** ahora sirve la landing (`GET /`) en vez del texto de salud, que se movió a `GET /salud`; nuevo handler `src/landing/servirLanding.ts` (mismo patrón allowlist/caché de `panel/router.ts`) atiende `/`, `/privacidad`, `/terminos`, `/landing/*` (assets), `/robots.txt` y `/favicon.svg`, sin tocar `/panel`, `/api/panel/*` ni `/webhook`. Contenido: hero con mock de chat de WhatsApp animado (CSS, respeta `prefers-reduced-motion`), 6 features reales (no prometidas), 4 screenshots reales del panel (claro/oscuro, móvil/desktop, capturados con Playwright vía `SEED_DEMO`), planes sin montos, FAQ y CTAs `wa.me` al bot piloto (Lavacar Rosales). `privacidad.html`/`terminos.html` cumplen el requisito de sitio público + política de privacidad de `GUIA-META.md` §B (URL: `/privacidad`) — **desbloquea también C4.2**. Verificado: typecheck, checklist de curl (rutas nuevas + regresión de `/panel`/`/webhook`/`/api/panel/me`), `design-verify` en 390/1440px (corregido padding del CTA final que quedaba pegado al borde en mobile). Placeholders marcados `[PENDIENTE-NATHAN]` en comentarios HTML (nombre legal, email, dominio propio, número de ventas): no bloquean, son un buscar-y-reemplazar. _Pendiente (F6, no bloquea):_ bot vendedor como tenant propio — requiere número nuevo en la WABA.
 
 ## Fiabilidad / hardening
 

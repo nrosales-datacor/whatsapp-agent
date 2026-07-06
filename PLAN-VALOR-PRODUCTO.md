@@ -228,7 +228,7 @@ Poco esfuerzo, y sin esto lo nuevo se construye sobre arena:
   versión +1 mes).
 - **Done:** un cliente paga solo, y el estado de su cuenta gobierna qué features tiene.
 
-### C4.4 Landing de venta — esfuerzo S
+### C4.4 Landing de venta — esfuerzo S (plan de ejecución: `PLAN-C4.4-LANDING.md`)
 
 - **Qué:** página pública (en el mismo server) que venda el producto: demo del chat, screenshots del
   panel (claro/oscuro), precios, y CTA a WhatsApp ("hablá con nuestro bot" — el producto se demuestra

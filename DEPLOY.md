@@ -304,6 +304,11 @@ notificaciones (te pedirá permiso y te llegará una de prueba).
 | Reiniciar | `pm2 restart whatsapp-bot` |
 | Actualizar el código | `cd ~/lavacar-whatsapp-bot && git pull && npm install && npx tsx scripts/migrar.ts && npx tsx scripts/seedTenants.ts && npm run web:build && pm2 restart whatsapp-bot` |
 
+**Landing de venta (ROADMAP C4.4):** vive en `landing/` (HTML/CSS estático, sin build) y la sirve
+el mismo proceso Node en el root del dominio (`GET /`). No agrega pasos al redeploy — el `git pull`
+de la fila de arriba ya la trae. Si algo (uptime monitor, script de verificación) usaba `GET /` como
+health check, ahora es `GET /salud` (el texto "Agente de WhatsApp corriendo ✅" se movió ahí).
+
 ## Si algo falla
 - **El panel se ve VIEJO (no es el React nuevo)** → el server está sirviendo el
   fallback `inbox.html` porque no encuentra `web/dist`. Verificá:
