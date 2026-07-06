@@ -1,6 +1,7 @@
 import type { Conversacion, MensajeConversacion, PendienteSerializado, Repositorio, Tenant } from "./types";
 import { obtenerTenantPorPhoneNumberId, refrescarSiFaltaPhoneNumberId } from "./config/tenantStore";
-import { parsearEntrante, enviarTexto, type MensajeEntrante } from "./whatsapp/client";
+import { parsearEntrante, enviarTexto, enviarInteractivo, esConfirmacionCita, type MensajeEntrante } from "./whatsapp/client";
+import type { MensajeInteractivo } from "./types";
 import { transcribirAudio } from "./whatsapp/transcribir";
 import { correrAgente } from "./agent/runAgent";
 import { notificarOperador } from "./panel/notificaciones";
@@ -11,6 +12,24 @@ const AVISO_BOT =
 
 // Mensaje al cliente cuando el bot no pudo resolver y pasa el caso a una persona.
 const MENSAJE_ESCALADA = "Dejame consultarlo con una persona del equipo 🙋 En un momento te responden por acá.";
+
+/**
+ * Envía la respuesta del bot al cliente: como mensaje INTERACTIVO (botones/lista)
+ * si el agente lo produjo, o como texto plano si no. El `cuerpo` del interactivo se
+ * rellena con el texto que redactó el agente (la invitación a elegir).
+ */
+async function enviarRespuestaBot(
+  tenant: Tenant,
+  paraWa: string,
+  texto: string,
+  interactivo?: MensajeInteractivo,
+): Promise<void> {
+  if (interactivo) {
+    await enviarInteractivo(tenant, paraWa, { ...interactivo, cuerpo: texto });
+  } else {
+    await enviarTexto(tenant, paraWa, texto);
+  }
+}
 
 // Resultado de la fase de ingesta: lo que quedó listo (y ya persistido) para responder.
 // Exportado para que el worker pueda reconstruirlo desde el payload serializado.
@@ -184,7 +203,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
     }
 
     try {
-      const { respuesta, fueraDeAlcance, escalar, motivo } = await correrAgente(
+      const { respuesta, fueraDeAlcance, escalar, motivo, interactivo } = await correrAgente(
         { tenant, repo, clienteWa: entrante.clienteWa },
         textoTranscrito,
         historialPrevio,
@@ -220,7 +239,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
 
       let salida = respuesta;
       if (primerContacto) salida = `${AVISO_BOT.replace("%NOMBRE%", tenant.nombre)}\n\n${respuesta}`;
-      await enviarTexto(tenant, entrante.clienteWa, salida);
+      await enviarRespuestaBot(tenant, entrante.clienteWa, salida, interactivo);
       if (primerContacto) await repo.marcarOptIn(conv.id);
       await repo.guardarMensaje(conv.id, { rol: "assistant", contenido: respuesta, creadoEn: new Date().toISOString() });
       console.log(`[audio→saliente] → ${entrante.clienteWa}: "${respuesta.slice(0, 80)}"`);
@@ -250,6 +269,26 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
   }
 
   const { tenant, entrante, conv, primerContacto, historialPrevio } = p;
+
+  // CONFIRMACIÓN DE CITA (C1.3): el cliente tocó "Confirmo ✅" en el recordatorio.
+  // Es una acción directa (no pasa por el agente ni por la ventana de modo humano):
+  // marcamos la cita como confirmada y damos un acuse corto. La cita se identifica
+  // por el citaId que viajó en el botón que nosotros enviamos.
+  const citaAConfirmar = esConfirmacionCita(entrante.interactiveId);
+  if (citaAConfirmar) {
+    try {
+      const confirmada = await repo.confirmarCita(tenant.id, citaAConfirmar);
+      const ack = confirmada
+        ? "¡Gracias por confirmar tu cita! ✅ Te esperamos. 🚗"
+        : "¡Gracias! Si necesitás algo más, escribinos por acá. 🙂";
+      await enviarTexto(tenant, entrante.clienteWa, ack);
+      await repo.guardarMensaje(conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
+      console.log(`[confirmacion] cita ${citaAConfirmar} ${confirmada ? "confirmada" : "no encontrada"} (${entrante.clienteWa})`);
+    } catch (e) {
+      console.error(`[confirmacion] no se pudo confirmar la cita ${citaAConfirmar}:`, e);
+    }
+    return;
+  }
 
   // Si la conversación YA está en modo humano, el bot NO responde: el mensaje ya
   // quedó guardado; solo avisamos al operador para que conteste del panel.
@@ -294,7 +333,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
   }
 
   try {
-    const { respuesta, fueraDeAlcance, escalar, motivo } = await correrAgente(
+    const { respuesta, fueraDeAlcance, escalar, motivo, interactivo } = await correrAgente(
       { tenant, repo, clienteWa: entrante.clienteWa },
       entrante.texto,
       historialPrevio,
@@ -339,7 +378,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
     // Enviar PRIMERO y persistir DESPUÉS: si el envío falla, no queda un mensaje
     // "fantasma" en el historial que el cliente nunca recibió (y el opt-in no se
     // marca, así el aviso se reintenta en el próximo mensaje).
-    await enviarTexto(tenant, entrante.clienteWa, salida);
+    await enviarRespuestaBot(tenant, entrante.clienteWa, salida, interactivo);
     if (primerContacto) await repo.marcarOptIn(conv.id);
     await repo.guardarMensaje(conv.id, {
       rol: "assistant",

@@ -152,6 +152,13 @@ export class RepositorioEnMemoria implements Repositorio {
     return { ...c };
   }
 
+  async confirmarCita(tenantId: string, citaId: string): Promise<Cita | null> {
+    const c = this.citas.find((x) => x.id === citaId && x.tenantId === tenantId && x.estado === "agendada");
+    if (!c) return null;
+    if (!c.confirmadaEn) c.confirmadaEn = new Date().toISOString(); // idempotente: conserva la primera
+    return { ...c };
+  }
+
   async marcarRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<void> {
     const c = this.citas.find((x) => x.id === citaId);
     if (!c) return;
@@ -247,6 +254,7 @@ export class RepositorioEnMemoria implements Repositorio {
           leadScore,
           servicio: citaActiva?.servicioId ?? null,
           tieneCita: !!citaActiva,
+          citaConfirmada: !!citaActiva?.confirmadaEn,
         };
       })
       .sort((a, b) => (b.ultimaActividadEn ?? "").localeCompare(a.ultimaActividadEn ?? ""));
@@ -260,7 +268,12 @@ export class RepositorioEnMemoria implements Repositorio {
       (ct) => ct.tenantId === tenantId && ct.clienteWa === c.clienteWa && ct.estado === "agendada" && ct.fecha >= hoy,
     );
     const base = this.dto(c, 100);
-    return { ...base, servicio: citaActiva?.servicioId ?? null, tieneCita: !!citaActiva };
+    return {
+      ...base,
+      servicio: citaActiva?.servicioId ?? null,
+      tieneCita: !!citaActiva,
+      citaConfirmada: !!citaActiva?.confirmadaEn,
+    };
   }
 
   async obtenerModo(tenantId: string, conversacionId: string): Promise<ModoConversacion | null> {

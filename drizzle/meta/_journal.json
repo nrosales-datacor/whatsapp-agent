@@ -50,6 +50,13 @@
       "when": 1782882830514,
       "tag": "0006_daily_nomad",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783295833895,
+      "tag": "0007_confirmada_en",
+      "breakpoints": true
     }
   ]
 }

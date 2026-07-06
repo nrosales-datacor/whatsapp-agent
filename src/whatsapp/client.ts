@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import type { Tenant } from "../types";
+import type { MensajeInteractivo, OpcionInteractiva, Tenant } from "../types";
 
 // ⚠️ La versión del Graph API cambia con el tiempo. Confirmá la vigente en la
 // documentación de Meta antes de producción. Se deja configurable por .env.
@@ -44,6 +44,12 @@ export interface MensajeEntrante {
   messageId?: string;
   /** id del media de audio (cuando msg.type === "audio"). Para transcribir en fase 2. */
   audioId?: string;
+  /**
+   * id CRUDO de la respuesta interactiva (el `id` que pusimos en el botón/fila),
+   * cuando el cliente tocó un botón o una fila de lista. Permite acciones directas
+   * (p. ej. confirmar una cita) sin pasar por el agente. `texto` trae su traducción.
+   */
+  interactiveId?: string;
 }
 
 export function parsearEntrante(body: any): MensajeEntrante | null {
@@ -56,14 +62,93 @@ export function parsearEntrante(body: any): MensajeEntrante | null {
     // número con caracteres raros no se cuela a la UI del panel (defensa en
     // profundidad contra XSS) y la clave del cliente queda consistente.
     const clienteWa = String(msg.from ?? "").replace(/\D/g, "");
-    const esTexto = msg.type === "text";
-    const texto = esTexto ? (msg.text?.body ?? "") : "";
+    let esTexto = msg.type === "text";
+    let texto = esTexto ? (msg.text?.body ?? "") : "";
     const audioId = msg.type === "audio" ? (msg.audio?.id ? String(msg.audio.id) : undefined) : undefined;
+
+    // Respuesta a un mensaje interactivo (el cliente tocó un botón o una fila de
+    // lista). La tratamos como TEXTO: la decodificamos a una frase clara para que
+    // fluya por el mismo pipeline del agente (dedup, cola, historial) sin ramas
+    // nuevas. La convención del `id` la definimos nosotros al enviar (ver abajo).
+    let interactiveId: string | undefined;
+    if (msg.type === "interactive") {
+      const reply = msg.interactive?.button_reply ?? msg.interactive?.list_reply;
+      interactiveId = reply?.id ? String(reply.id) : undefined;
+      const titulo = reply?.title ? String(reply.title) : "";
+      texto = decodificarRespuestaInteractiva(interactiveId ?? "", titulo);
+      esTexto = !!texto; // si no se pudo decodificar, cae al flujo no-texto
+    }
+
     if (!phoneNumberId || !clienteWa) return null;
-    return { phoneNumberId, clienteWa, texto, esTexto, messageId: msg.id ? String(msg.id) : undefined, audioId };
+    return {
+      phoneNumberId,
+      clienteWa,
+      texto,
+      esTexto,
+      messageId: msg.id ? String(msg.id) : undefined,
+      audioId,
+      interactiveId,
+    };
   } catch {
     return null;
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Protocolo de mensajes interactivos (C1.2).
+//
+// El `id` de cada botón/fila es opaco para WhatsApp pero lo definimos nosotros con
+// una convención "tipo|arg|arg…". Al enviar lo generamos (opcionHorario, etc.) y al
+// llegar la respuesta lo decodificamos a una frase clara para el agente. Mantener el
+// codificador y el decodificador juntos evita que se desincronicen.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** "14:00" → "2:00 p.m." (título amigable para las filas de la lista). */
+function horaAmigable(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const sufijo = h < 12 ? "a.m." : "p.m.";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, "0")} ${sufijo}`;
+}
+
+/** Construye una opción de lista para un horario de cita. */
+export function opcionHorario(fecha: string, hora: string): OpcionInteractiva {
+  return { id: `slot|${fecha}|${hora}`, titulo: horaAmigable(hora) };
+}
+
+/** Botones del recordatorio de cita (C1.3): confirmar o pedir reprogramación. */
+export function botonesRecordatorio(citaId: string): OpcionInteractiva[] {
+  return [
+    { id: `confirmar|${citaId}`, titulo: "Confirmo ✅" },
+    { id: `mover|${citaId}`, titulo: "Reprogramar" },
+  ];
+}
+
+/** true si la respuesta interactiva es una CONFIRMACIÓN de cita (acción directa). */
+export function esConfirmacionCita(interactiveId: string | undefined): string | null {
+  if (!interactiveId) return null;
+  const [tipo, citaId] = interactiveId.split("|");
+  return tipo === "confirmar" && citaId ? citaId : null;
+}
+
+/**
+ * Traduce el `id` de una respuesta interactiva a la frase que "diría" el cliente,
+ * para inyectarla al agente como si la hubiera escrito. Si el id no matchea ninguna
+ * convención conocida, cae al título visible del botón/fila.
+ */
+function decodificarRespuestaInteractiva(id: string, titulo: string): string {
+  const [tipo, ...resto] = id.split("|");
+  if (tipo === "slot" && resto.length === 2) {
+    const [fecha, hora] = resto;
+    return `Quiero agendar para el ${fecha} a las ${hora}.`;
+  }
+  // Confirmación de cita: se maneja como acción directa en handleWebhook (no llega
+  // al agente), pero igual dejamos un texto legible para el historial del panel.
+  if (tipo === "confirmar") return "Confirmo mi cita ✅";
+  // Pedido de reprogramar desde el recordatorio: fluye al agente, que arranca el
+  // flujo de reprogramación (C1.1) identificando la cita por el número del cliente.
+  if (tipo === "mover") return "Quiero reprogramar mi cita.";
+  return titulo;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -159,6 +244,94 @@ export async function enviarTexto(tenant: Tenant, paraWa: string, texto: string)
     { to: paraWa, type: "text", text: { body: texto.slice(0, 4096) } }, // 4096 = límite de WhatsApp
     "enviando WhatsApp",
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4b) Envío de MENSAJES INTERACTIVOS (botones y listas nativas de WhatsApp).
+//     Solo Graph API, sin dependencias nuevas. La respuesta del cliente llega como
+//     un mensaje `type: "interactive"` que parsearEntrante decodifica.
+//
+//     Límites de Meta (se recortan defensivamente para no fallar el envío):
+//       • Botones: hasta 3; título ≤20 chars.
+//       • Lista: hasta 10 filas en total; título de fila ≤24, descripción ≤72;
+//         texto del botón que abre la lista ≤20.
+//       • Cuerpo ≤1024 chars.
+// ─────────────────────────────────────────────────────────────────────────────
+const LIMITE_BOTONES = 3;
+const LIMITE_FILAS_LISTA = 10;
+
+export async function enviarBotones(
+  tenant: Tenant,
+  paraWa: string,
+  cuerpo: string,
+  botones: OpcionInteractiva[],
+): Promise<void> {
+  await postMensaje(
+    tenant,
+    {
+      to: paraWa,
+      type: "interactive",
+      interactive: {
+        type: "button",
+        body: { text: cuerpo.slice(0, 1024) },
+        action: {
+          buttons: botones.slice(0, LIMITE_BOTONES).map((b) => ({
+            type: "reply",
+            reply: { id: b.id.slice(0, 256), title: b.titulo.slice(0, 20) },
+          })),
+        },
+      },
+    },
+    "enviando botones WhatsApp",
+  );
+}
+
+export async function enviarLista(
+  tenant: Tenant,
+  paraWa: string,
+  cuerpo: string,
+  textoBoton: string,
+  filas: OpcionInteractiva[],
+  tituloSeccion = "Opciones",
+): Promise<void> {
+  await postMensaje(
+    tenant,
+    {
+      to: paraWa,
+      type: "interactive",
+      interactive: {
+        type: "list",
+        body: { text: cuerpo.slice(0, 1024) },
+        action: {
+          button: textoBoton.slice(0, 20),
+          sections: [
+            {
+              title: tituloSeccion.slice(0, 24),
+              rows: filas.slice(0, LIMITE_FILAS_LISTA).map((f) => ({
+                id: f.id.slice(0, 200),
+                title: f.titulo.slice(0, 24),
+                ...(f.descripcion ? { description: f.descripcion.slice(0, 72) } : {}),
+              })),
+            },
+          ],
+        },
+      },
+    },
+    "enviando lista WhatsApp",
+  );
+}
+
+/** Despacha un MensajeInteractivo al canal correcto (botones o lista). */
+export async function enviarInteractivo(
+  tenant: Tenant,
+  paraWa: string,
+  msg: MensajeInteractivo,
+): Promise<void> {
+  if (msg.tipo === "botones") {
+    await enviarBotones(tenant, paraWa, msg.cuerpo, msg.opciones);
+  } else {
+    await enviarLista(tenant, paraWa, msg.cuerpo, msg.textoBoton ?? "Ver opciones", msg.opciones);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

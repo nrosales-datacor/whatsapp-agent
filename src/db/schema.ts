@@ -83,6 +83,9 @@ export const waCitas = pgTable(
     gcalEventId: text("gcal_event_id"),
     recordatorioDiaAntesEn: timestamp("recordatorio_dia_antes_en", { withTimezone: true }),
     recordatorioMismoDiaEn: timestamp("recordatorio_mismo_dia_en", { withTimezone: true }),
+    // Cuándo el cliente CONFIRMÓ la cita (tocando el botón del recordatorio). null =
+    // sin confirmar. Anti no-show: el dueño ve qué citas de mañana están confirmadas (C1.3).
+    confirmadaEn: timestamp("confirmada_en", { withTimezone: true }),
   },
   (t) => ({
     idxTenantFecha: index("wa_citas_tenant_fecha_idx").on(t.tenantId, t.fecha),

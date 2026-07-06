@@ -42,6 +42,7 @@ function filaACita(r: typeof waCitas.$inferSelect): Cita {
     gcalEventId: r.gcalEventId ?? undefined,
     recordatorioDiaAntesEn: r.recordatorioDiaAntesEn ? r.recordatorioDiaAntesEn.toISOString() : null,
     recordatorioMismoDiaEn: r.recordatorioMismoDiaEn ? r.recordatorioMismoDiaEn.toISOString() : null,
+    confirmadaEn: r.confirmadaEn ? r.confirmadaEn.toISOString() : null,
   };
 }
 
@@ -191,6 +192,17 @@ export class RepositorioDrizzle implements Repositorio {
     return r ? filaACita(r) : null;
   }
 
+  async confirmarCita(tenantId: string, citaId: string): Promise<Cita | null> {
+    // COALESCE conserva la primera confirmación si el cliente toca el botón dos veces.
+    // Solo confirma citas "agendada" (no una cancelada/completada).
+    const [r] = await this.db
+      .update(waCitas)
+      .set({ confirmadaEn: sql`COALESCE(${waCitas.confirmadaEn}, now())` })
+      .where(and(eq(waCitas.id, citaId), eq(waCitas.tenantId, tenantId), eq(waCitas.estado, "agendada")))
+      .returning();
+    return r ? filaACita(r) : null;
+  }
+
   async marcarRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<void> {
     const cambio =
       tipo === "dia_antes"
@@ -302,6 +314,7 @@ export class RepositorioDrizzle implements Repositorio {
         ) ELSE 0 END AS sin_leer,
         cita_prox.servicio_id AS servicio_id,
         (cita_prox.servicio_id IS NOT NULL) AS tiene_cita,
+        (cita_prox.confirmada_en IS NOT NULL) AS cita_confirmada,
         EXISTS(
           SELECT 1 FROM wa_citas ch
           WHERE ch.tenant_id = c.tenant_id AND ch.cliente_wa = c.cliente_wa
@@ -315,7 +328,7 @@ export class RepositorioDrizzle implements Repositorio {
         LIMIT 1
       ) m ON true
       LEFT JOIN LATERAL (
-        SELECT servicio_id
+        SELECT servicio_id, confirmada_en
         FROM wa_citas
         WHERE tenant_id = c.tenant_id AND cliente_wa = c.cliente_wa
           AND estado = 'agendada' AND fecha >= current_date::text
@@ -334,6 +347,7 @@ export class RepositorioDrizzle implements Repositorio {
       ultima_actividad: Date | string;
       servicio_id: string | null;
       tiene_cita: boolean;
+      cita_confirmada: boolean;
       tuvo_cita: boolean;
     }>;
 
@@ -361,6 +375,7 @@ export class RepositorioDrizzle implements Repositorio {
         leadScore,
         servicio: r.servicio_id ?? null,
         tieneCita: r.tiene_cita,
+        citaConfirmada: r.cita_confirmada,
       };
     });
   }
@@ -391,7 +406,7 @@ export class RepositorioDrizzle implements Repositorio {
 
     // Cita activa más próxima del cliente (para badge "Cita agendada" y subtítulo servicio).
     const [citaActiva] = await this.db
-      .select({ servicioId: waCitas.servicioId })
+      .select({ servicioId: waCitas.servicioId, confirmadaEn: waCitas.confirmadaEn })
       .from(waCitas)
       .where(
         and(
@@ -418,6 +433,7 @@ export class RepositorioDrizzle implements Repositorio {
       })),
       servicio: citaActiva?.servicioId ?? null,
       tieneCita: !!citaActiva,
+      citaConfirmada: !!citaActiva?.confirmadaEn,
     };
   }
 

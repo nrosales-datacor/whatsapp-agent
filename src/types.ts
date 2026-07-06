@@ -65,6 +65,30 @@ export interface Tenant {
   kb: KnowledgeBase;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Mensajes interactivos de WhatsApp (botones y listas nativas). El agente decide
+// mostrarlos (runAgent) y la capa de WhatsApp los envía (whatsapp/client.ts).
+// La CONVENCIÓN del `id` de cada opción (p. ej. "slot|<fecha>|<hora>") vive en
+// whatsapp/client.ts, que es quien la genera y la decodifica al llegar la respuesta.
+// ─────────────────────────────────────────────────────────────────────────────
+export interface OpcionInteractiva {
+  /** id opaco que WhatsApp devuelve al tocar la opción (≤200 chars). Convención nuestra. */
+  id: string;
+  /** Texto visible. Botón ≤20 chars; fila de lista ≤24. */
+  titulo: string;
+  /** Descripción secundaria (solo listas, ≤72 chars). */
+  descripcion?: string;
+}
+
+export interface MensajeInteractivo {
+  tipo: "botones" | "lista";
+  /** Texto principal del mensaje (el cuerpo sobre los botones/lista). */
+  cuerpo: string;
+  /** Solo listas: texto del botón que despliega la lista (≤20 chars). */
+  textoBoton?: string;
+  opciones: OpcionInteractiva[];
+}
+
 export type EstadoCita = "agendada" | "cancelada" | "completada";
 
 export interface Cita {
@@ -87,6 +111,8 @@ export interface Cita {
   recordatorioDiaAntesEn?: string | null;
   /** Cuándo se envió el recordatorio del mismo día (ISO). null/undefined = pendiente. */
   recordatorioMismoDiaEn?: string | null;
+  /** Cuándo el cliente confirmó la cita tocando el botón del recordatorio (ISO). null = sin confirmar. */
+  confirmadaEn?: string | null;
 }
 
 export type TipoRecordatorio = "dia_antes" | "mismo_dia";
@@ -108,6 +134,8 @@ export interface PendienteSerializado {
     texto: string;
     /** id del media de audio en WhatsApp (solo cuando clase === "audio"). */
     audioId?: string;
+    /** id crudo de la respuesta interactiva (botón/lista); habilita acciones directas (C1.3). */
+    interactiveId?: string;
   };
   conv: Conversacion;
   primerContacto?: boolean;
@@ -139,6 +167,8 @@ export interface Conversacion {
   servicio?: string | null;
   /** true si el cliente tiene al menos una cita agendada futura activa. */
   tieneCita?: boolean;
+  /** true si esa cita activa más próxima está confirmada por el cliente (C1.3). */
+  citaConfirmada?: boolean;
 }
 
 /** Fila liviana para la lista de la bandeja del panel (sin todo el historial). */
@@ -159,6 +189,8 @@ export interface ResumenConversacion {
   servicio?: string | null;
   /** true si el cliente tiene al menos una cita agendada futura activa. */
   tieneCita?: boolean;
+  /** true si esa cita activa más próxima está confirmada por el cliente (C1.3). */
+  citaConfirmada?: boolean;
 }
 
 /** Suscripción de notificaciones push de un navegador (Web Push). */
@@ -238,6 +270,12 @@ export interface Repositorio {
    * (con su gcalEventId, para borrar el evento del Calendar), o null si no existe.
    */
   cancelarCita(tenantId: string, citaId: string): Promise<Cita | null>;
+  /**
+   * Marca una cita como confirmada por el cliente (anti no-show, C1.3). Idempotente:
+   * conserva la primera confirmación si se repite. Devuelve la cita, o null si no
+   * existe / no es del tenant / no está agendada.
+   */
+  confirmarCita(tenantId: string, citaId: string): Promise<Cita | null>;
   /** Marca un recordatorio como enviado (para no mandarlo dos veces). */
   marcarRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<void>;
   /**

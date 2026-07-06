@@ -1,8 +1,9 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import type { Cita, MensajeConversacion, Repositorio, Tenant } from "../types";
+import type { Cita, MensajeConversacion, MensajeInteractivo, Repositorio, Tenant } from "../types";
 import { construirSystemPrompt } from "./systemPrompt";
 import { TOOLS } from "./tools";
+import { opcionHorario } from "../whatsapp/client";
 import { espaciosDisponibles } from "../booking/availability";
 import {
   actualizarEventoCita,
@@ -38,17 +39,69 @@ interface ContextoAgente {
   clienteWa: string;
 }
 
-/** Ejecuta una herramienta pedida por el modelo y devuelve el resultado (string JSON). */
+/** Máximo de filas que admite una lista de WhatsApp (límite duro de Meta). */
+const MAX_FILAS_LISTA = 10;
+
+/**
+ * Ejecuta una herramienta pedida por el modelo y devuelve el resultado (string JSON).
+ * `capturas` es un canal de salida lateral: algunas herramientas (p. ej.
+ * `ofrecer_horarios`) no solo informan al modelo, sino que dejan un efecto para
+ * handleWebhook (mandar un mensaje interactivo). Se rellena, no se devuelve al modelo.
+ */
 async function ejecutarTool(
   nombre: string,
   args: Record<string, unknown>,
   ctx: ContextoAgente,
+  capturas: { interactivo?: MensajeInteractivo },
 ): Promise<string> {
   const { tenant, repo, clienteWa } = ctx;
 
   // Candado: solo se agendan servicios marcados como agendables (pulidos).
   const servicioEsAgendable = (servicioId: string) =>
     tenant.servicios.some((s) => s.id === servicioId && s.agendable);
+
+  if (nombre === "ofrecer_horarios") {
+    const fecha = String(args.fecha);
+    const servicioId = String(args.servicioId);
+    const franja = args.franja ? String(args.franja) : "todos";
+    if (!servicioEsAgendable(servicioId)) {
+      return JSON.stringify({
+        ok: false,
+        motivo: "ese servicio no se agenda; los lavados son por orden de llegada. Solo los pulidos requieren cita.",
+      });
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+      return JSON.stringify({ ok: false, motivo: "formato de fecha inválido: usá YYYY-MM-DD." });
+    }
+    const citas = await repo.citasPorFecha(tenant.id, fecha);
+    let libres = espaciosDisponibles(tenant, fecha, servicioId, citas);
+    if (franja === "mañana") libres = libres.filter((h) => Number(h.slice(0, 2)) < 12);
+    else if (franja === "tarde") libres = libres.filter((h) => Number(h.slice(0, 2)) >= 12);
+    if (libres.length === 0) {
+      return JSON.stringify({
+        ok: false,
+        motivo: "no hay horarios disponibles para esa fecha/franja; ofrecé otra fecha o franja.",
+        disponibles: [],
+      });
+    }
+    const mostrados = libres.slice(0, MAX_FILAS_LISTA);
+    const truncado = libres.length > MAX_FILAS_LISTA;
+    capturas.interactivo = {
+      tipo: "lista",
+      cuerpo: "", // handleWebhook lo rellena con la frase que redacte el agente.
+      textoBoton: "Ver horarios",
+      opciones: mostrados.map((h) => opcionHorario(fecha, h)),
+    };
+    return JSON.stringify({
+      ok: true,
+      mostrados: mostrados.length,
+      total: libres.length,
+      truncado,
+      mensaje: truncado
+        ? "Le mostré al cliente los primeros horarios como lista tocable. Invitalo con UNA frase corta a elegir uno, y aclarale que si prefiere otra hora te la escriba. No repitas los horarios en texto."
+        : "Le mostré al cliente los horarios como lista tocable. Invitalo con UNA frase corta a elegir uno. No repitas los horarios en texto.",
+    });
+  }
 
   if (nombre === "consultar_disponibilidad") {
     const fecha = String(args.fecha);
@@ -209,6 +262,11 @@ export interface ResultadoAgente {
   escalar: boolean;
   /** Motivo breve del traspaso (contexto para el operador). */
   motivo?: string;
+  /**
+   * Mensaje interactivo (botones/lista) a enviar EN LUGAR del texto plano: su
+   * `cuerpo` se rellena con `respuesta`. Lo produce una herramienta (ofrecer_horarios).
+   */
+  interactivo?: MensajeInteractivo;
 }
 
 /**
@@ -226,6 +284,9 @@ export async function correrAgente(
     { role: "user", content: textoUsuario },
   ];
 
+  // Canal de salida lateral para efectos de herramientas (mensaje interactivo).
+  const capturas: { interactivo?: MensajeInteractivo } = {};
+
   for (let paso = 0; paso < MAX_PASOS; paso++) {
     const res = await getOpenAI().chat.completions.create({
       model: MODELO,
@@ -240,7 +301,7 @@ export async function correrAgente(
     if (!msg.tool_calls?.length) {
       const respuesta = msg.content ?? "Disculpá, no entendí. ¿Me lo repetís?";
       const fueraDeAlcance = /solo puedo ayudarte con/i.test(respuesta);
-      return { respuesta, fueraDeAlcance, escalar: false };
+      return { respuesta, fueraDeAlcance, escalar: false, interactivo: capturas.interactivo };
     }
 
     for (const call of msg.tool_calls) {
@@ -260,7 +321,7 @@ export async function correrAgente(
       let resultado: string;
       try {
         const args = JSON.parse(call.function.arguments || "{}");
-        resultado = await ejecutarTool(call.function.name, args, ctx);
+        resultado = await ejecutarTool(call.function.name, args, ctx, capturas);
       } catch (e) {
         resultado = JSON.stringify({ error: String(e) });
       }

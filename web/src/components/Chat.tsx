@@ -93,6 +93,7 @@ export default function Chat({ id, resumen, mostrar, onVolver, onVerFicha }: Pro
   const humano = conv?.modo === "humano";
   const score = resumen?.leadScore;
   const tieneCita = conv?.tieneCita ?? resumen?.tieneCita;
+  const citaConfirmada = conv?.citaConfirmada ?? resumen?.citaConfirmada;
   const servicio = conv?.servicio ?? resumen?.servicio;
 
   return (
@@ -116,7 +117,11 @@ export default function Chat({ id, resumen, mostrar, onVolver, onVerFicha }: Pro
               )}
               <span id="chatTitulo">{fmtNum(conv.clienteWa)}</span>
               <span className={"pill " + conv.modo}>{humano ? "humano" : "bot"}</span>
-              {tieneCita && <span className="pill-cita">📅 Cita</span>}
+              {tieneCita && (
+                <span className={"pill-cita" + (citaConfirmada ? " confirmada" : "")}>
+                  {citaConfirmada ? "✅ Cita confirmada" : "📅 Cita"}
+                </span>
+              )}
             </div>
             <div id="chatModo">
               {servicio && <span className="chat-servicio">{servicio} · </span>}
