@@ -17,11 +17,11 @@
 
 | Fase | Qué | Estado |
 |---|---|---|
-| F1 | Servir la landing desde el server Node (`GET /`, `/privacidad`, `/terminos`, assets) | ⬜ |
-| F2 | Contenido + diseño de la landing (HTML/CSS estático, mock de chat, copy es-CR) | ⬜ |
-| F3 | Screenshots reales del panel (claro/oscuro) + imagen OG | ⬜ |
-| F4 | Política de privacidad + términos (requisito Meta) | ⬜ |
-| F5 | Verificación (design-verify, regresión) + ROADMAP/DEPLOY + commit | ⬜ |
+| F1 | Servir la landing desde el server Node (`GET /`, `/privacidad`, `/terminos`, assets) | ✅ |
+| F2 | Contenido + diseño de la landing (HTML/CSS estático, mock de chat, copy es-CR) | ✅ |
+| F3 | Screenshots reales del panel (claro/oscuro) + imagen OG | ✅ |
+| F4 | Política de privacidad + términos (requisito Meta) | ✅ |
+| F5 | Verificación (design-verify, regresión) + ROADMAP/DEPLOY + commit | ✅ |
 | F6 | Bot vendedor como tenant propio (dogfooding) — **bloqueada por número nuevo** | ⬜ |
 
 Las fases F1–F5 se hacen en orden y cierran el ítem C4.4. F6 es un añadido posterior que NO
