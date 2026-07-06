@@ -27,6 +27,28 @@ export const TOOLS: ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "ofrecer_horarios",
+      description:
+        "Muestra al cliente los horarios libres de un PULIDO como una LISTA TOCABLE de WhatsApp (en vez de escribirlos en texto). Usala cuando ya tengas claro el servicio y la fecha y quieras que el cliente elija la hora con un toque. El cliente responderá tocando una opción. Si hay muchos horarios, pasá la franja ('mañana' o 'tarde') para que la lista sea corta; si aún no sabés la franja, preguntásela antes.",
+      parameters: {
+        type: "object",
+        properties: {
+          fecha: { type: "string", description: "Fecha a mostrar en formato YYYY-MM-DD." },
+          servicioId: { type: "string", description: "id del servicio con pulido a agendar." },
+          franja: {
+            type: "string",
+            enum: ["mañana", "tarde", "todos"],
+            description: "Filtra los horarios: 'mañana' (antes de mediodía), 'tarde' (mediodía en adelante) o 'todos'. Por defecto 'todos'.",
+          },
+        },
+        required: ["fecha", "servicioId"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "agendar_cita",
       description:
         "Crea una cita de PULIDO confirmada. Llamar SOLO tras confirmar los datos con el cliente y verificar disponibilidad. No usar para lavados.",

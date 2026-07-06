@@ -1,6 +1,6 @@
 import type { Cita, Repositorio, Tenant, TipoRecordatorio } from "../types";
 import { listarTenants } from "../config/tenantStore";
-import { enviarPlantilla, enviarTexto } from "../whatsapp/client";
+import { botonesRecordatorio, enviarBotones, enviarPlantilla } from "../whatsapp/client";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RECORDATORIOS DE CITA por WhatsApp.
@@ -79,6 +79,11 @@ async function enviarRecordatorio(tenant: Tenant, cita: Cita, tipo: TipoRecordat
 
   const plantilla = process.env.WHATSAPP_TEMPLATE_RECORDATORIO;
   if (plantilla) {
+    // Plantilla aprobada (para fuera de la ventana de 24 h). NOTA: para que traiga
+    // botones "Confirmo/Reprogramar", la plantilla debe declararse en el WhatsApp
+    // Manager con componentes de tipo quick-reply y sus payloads; eso queda pendiente
+    // de la aprobación de la plantilla. Mientras tanto, el texto libre (abajo) sí los
+    // lleva (funciona con el número de prueba y dentro de la ventana de 24 h).
     const idioma = process.env.WHATSAPP_TEMPLATE_IDIOMA ?? "es";
     await enviarPlantilla(tenant, cita.clienteWa, plantilla, idioma, [
       cita.clienteNombre,
@@ -88,11 +93,13 @@ async function enviarRecordatorio(tenant: Tenant, cita: Cita, tipo: TipoRecordat
     return;
   }
 
-  const texto =
+  // Texto libre CON BOTONES interactivos (C1.3, anti no-show): el cliente confirma
+  // con un toque o pide reprogramar. La respuesta llega como mensaje `interactive`
+  // y la maneja handleWebhook (confirmar = acción directa; reprogramar = va al agente).
+  const cuerpo =
     `¡Hola ${cita.clienteNombre}! 👋 Te recordamos tu cita en ${tenant.nombre} ` +
-    `${cuando}: ${nombreServicio}. ` +
-    `Si necesitás reprogramar, escribinos por acá. ¡Te esperamos! 🚗`;
-  await enviarTexto(tenant, cita.clienteWa, texto);
+    `${cuando}: ${nombreServicio}. ¿Nos confirmás?`;
+  await enviarBotones(tenant, cita.clienteWa, cuerpo, botonesRecordatorio(cita.id));
 }
 
 /** Revisa las citas de un tenant y envía los recordatorios que tocan. */
