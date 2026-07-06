@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+@font-face{font-family:'Noto Sans';font-weight:400;font-display:swap;src:url('./fonts/NotoSans-Regular.ttf') format('truetype');}
+@font-face{font-family:'Noto Sans';font-weight:500;font-display:swap;src:url('./fonts/NotoSans-Medium.ttf') format('truetype');}
+@font-face{font-family:'Noto Sans';font-weight:600;font-display:swap;src:url('./fonts/NotoSans-SemiBold.ttf') format('truetype');}
+@font-face{font-family:'Noto Sans';font-weight:700;font-display:swap;src:url('./fonts/NotoSans-Bold.ttf') format('truetype');}
+@font-face{font-family:'Noto Sans';font-weight:800;font-display:swap;src:url('./fonts/NotoSans-ExtraBold.ttf') format('truetype');}
+@font-face{font-family:'Noto Sans';font-weight:900;font-display:swap;src:url('./fonts/NotoSans-Black.ttf') format('truetype');}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;scroll-padding-top:88px;}
+body{margin:0;background:#071a30;font-family:'Roboto',system-ui,sans-serif;color:#12385c;-webkit-font-smoothing:antialiased;overflow-x:hidden;}
+::selection{background:#FFC517;color:#0a2038;}
+img{display:block;max-width:100%;}
+a{color:inherit;text-decoration:none;}
+@keyframes syFloat{0%,100%{transform:translateY(0);}50%{transform:translateY(-14px);}}
+@keyframes syFloat2{0%,100%{transform:translateY(0);}50%{transform:translateY(10px);}}
+@keyframes syGlow{0%,100%{opacity:.55;transform:scale(1);}50%{opacity:.9;transform:scale(1.08);}}
+@keyframes syGridPan{from{background-position:0 0;}to{background-position:0 -560px;}}
+@keyframes syChatIn{from{opacity:0;transform:translateY(12px) scale(.98);}to{opacity:1;transform:none;}}
+@keyframes syBlink{0%,100%{opacity:.3;}50%{opacity:1;}}
+@keyframes syMarquee{from{transform:translateX(0);}to{transform:translateX(-50%);}}
+@keyframes syShine{from{background-position:-200% 0;}to{background-position:200% 0;}}
+[data-reveal]{opacity:0;transform:translateY(30px);transition:opacity .7s cubic-bezier(.2,0,0,1),transform .7s cubic-bezier(.2,0,0,1);}
+[data-reveal].sy-in{opacity:1;transform:none;}
+.sy-chat-live [data-b]{opacity:0;}
+.sy-chat-live.sy-play [data-b]{animation:syChatIn .5s cubic-bezier(.2,0,0,1) forwards;}
+.sy-chat-live.sy-play [data-b="1"]{animation-delay:.15s;}
+.sy-chat-live.sy-play [data-b="2"]{animation-delay:.9s;}
+.sy-chat-live.sy-play [data-b="3"]{animation-delay:1.7s;}
+.sy-chat-live.sy-play [data-b="4"]{animation-delay:2.4s;}
+.sy-chat-live.sy-play [data-b="5"]{animation-delay:3.4s;}
+.sy-chat-live.sy-play [data-b="6"]{animation-delay:4.1s;}
+.sy-navlink{position:relative;}
+.sy-navlink::after{content:"";position:absolute;left:0;right:100%;bottom:-4px;height:2px;background:#FFC517;transition:right .25s cubic-bezier(.2,0,0,1);}
+.sy-navlink:hover::after{right:0;}
+details summary span:last-child{transition:transform .2s cubic-bezier(.2,0,0,1);}
+details[open] summary span:last-child{transform:rotate(45deg);}
+@media (max-width:900px){.sy-hero-grid{grid-template-columns:1fr !important;}.sy-2col{grid-template-columns:1fr !important;}.sy-4col{grid-template-columns:1fr 1fr !important;}.sy-3col{grid-template-columns:1fr !important;}}
+@media (prefers-reduced-motion:reduce){[data-reveal]{transition:none;}*{animation-duration:.001ms !important;}}
+</style>
+</helmet>
+
+<div style="background:#071a30;">
+
+<!-- ============ NAV ============ -->
+<header style="position:sticky;top:0;z-index:60;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);background:rgba(7,26,48,.72);border-bottom:1px solid rgba(122,250,252,.12);">
+  <nav style="max-width:1240px;margin:0 auto;padding:15px 24px;display:flex;align-items:center;justify-content:space-between;gap:24px;">
+    <a href="#top" style="display:flex;align-items:center;gap:11px;">
+      <span style="display:inline-flex;">{{ logoMark }}</span>
+      <span style="font-family:'Noto Sans',sans-serif;font-weight:800;font-size:22px;letter-spacing:-.02em;color:#fff;">selyon</span>
+    </a>
+    <div style="display:flex;align-items:center;gap:34px;">
+      <a class="sy-navlink" href="#productos" style="display:none;font-family:'Noto Sans',sans-serif;font-weight:600;font-size:14.5px;color:#c3d6ee;" data-nav>Productos</a>
+      <a class="sy-navlink" href="#agente" style="display:none;font-family:'Noto Sans',sans-serif;font-weight:600;font-size:14.5px;color:#c3d6ee;" data-nav>Agente WhatsApp</a>
+      <a class="sy-navlink" href="#como" style="display:none;font-family:'Noto Sans',sans-serif;font-weight:600;font-size:14.5px;color:#c3d6ee;" data-nav>Cómo funciona</a>
+      <a class="sy-navlink" href="#precios" style="display:none;font-family:'Noto Sans',sans-serif;font-weight:600;font-size:14.5px;color:#c3d6ee;" data-nav>Precios</a>
+      <a href="{{ waDemo }}" target="_blank" rel="noopener" style="font-family:'Noto Sans',sans-serif;font-weight:700;font-size:14px;color:#0a2038;background:#FFC517;padding:11px 20px;border-radius:999px;box-shadow:0 6px 20px -6px rgba(255,197,23,.6);transition:transform .18s cubic-bezier(.2,0,0,1),box-shadow .18s cubic-bezier(.2,0,0,1);" style-hover="transform:translateY(-2px);box-shadow:0 10px 26px -6px rgba(255,197,23,.75);">Ver demo</a>
+    </div>
+  </nav>
+</header>
+
+<!-- ============ HERO ============ -->
+<section id="top" style="position:relative;overflow:hidden;background:radial-gradient(120% 90% at 78% 8%,#124a86 0%,#0c2c50 42%,#071a30 78%);">
+  <div style="position:absolute;inset:0;background-image:linear-gradient(rgba(122,250,252,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(122,250,252,.05) 1px,transparent 1px);background-size:56px 56px;animation:syGridPan 22s linear infinite;mask-image:radial-gradient(80% 70% at 60% 20%,#000 30%,transparent 80%);-webkit-mask-image:radial-gradient(80% 70% at 60% 20%,#000 30%,transparent 80%);"></div>
+  <div style="position:absolute;top:-120px;right:-80px;width:520px;height:520px;border-radius:50%;background:radial-gradient(circle,rgba(122,250,252,.28),transparent 62%);filter:blur(20px);animation:syGlow 8s ease-in-out infinite;pointer-events:none;"></div>
+  <div style="position:absolute;bottom:-160px;left:-120px;width:460px;height:460px;border-radius:50%;background:radial-gradient(circle,rgba(36,141,227,.3),transparent 62%);filter:blur(24px);animation:syGlow 10s ease-in-out infinite;pointer-events:none;"></div>
+
+  <div class="sy-hero-grid" style="position:relative;max-width:1240px;margin:0 auto;padding:76px 24px 96px;display:grid;grid-template-columns:1.05fr .95fr;gap:56px;align-items:center;">
+    <div style="min-width:300px;">
+      <div data-reveal style="display:inline-flex;align-items:center;gap:9px;padding:7px 15px;border-radius:999px;border:1px solid rgba(122,250,252,.3);background:rgba(122,250,252,.08);font-family:'Noto Sans',sans-serif;font-weight:600;font-size:12.5px;letter-spacing:.04em;text-transform:uppercase;color:#7AFAFC;">
+        <span style="width:7px;height:7px;border-radius:50%;background:#58BE4D;box-shadow:0 0 10px #58BE4D;"></span>
+        Plataforma de agentes de IA
+      </div>
+      <h1 data-reveal style="font-family:'Noto Sans',sans-serif;font-weight:900;font-size:clamp(38px,5.2vw,68px);line-height:1.03;letter-spacing:-.025em;color:#fff;margin:20px 0 0;text-wrap:balance;">
+        El equipo de IA que<br>atiende tu negocio,<br><span style="background:linear-gradient(100deg,#7AFAFC,#58CDF7 45%,#FFC517);-webkit-background-clip:text;background-clip:text;color:transparent;">día y noche.</span>
+      </h1>
+      <p data-reveal style="font-family:'Roboto',sans-serif;font-size:clamp(16px,1.5vw,19px);line-height:1.6;color:#a9c2e0;margin:24px 0 0;max-width:46ch;">
+        Selyon crea agentes de inteligencia artificial que responden, cotizan, agendan y venden por vos. Empezá con el agente de WhatsApp que ya atiende a clientes reales.
+      </p>
+      <div data-reveal style="display:flex;flex-wrap:wrap;gap:14px;margin-top:34px;">
+        <a href="{{ waDemo }}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:9px;font-family:'Noto Sans',sans-serif;font-weight:700;font-size:16px;color:#0a2038;background:#FFC517;padding:16px 30px;border-radius:999px;box-shadow:0 12px 30px -8px rgba(255,197,23,.55);transition:transform .18s cubic-bezier(.2,0,0,1),box-shadow .18s cubic-bezier(.2,0,0,1);" style-hover="transform:translateY(-2px);box-shadow:0 16px 38px -8px rgba(255,197,23,.7);">
+          Probá la demo en vivo
+          <span style="font-size:18px;">→</span>
+        </a>
+        <a href="#productos" style="display:inline-flex;align-items:center;gap:9px;font-family:'Noto Sans',sans-serif;font-weight:700;font-size:16px;color:#eaf4ff;background:rgba(255,255,255,.06);border:1px solid rgba(122,250,252,.28);padding:16px 30px;border-radius:999px;transition:background .18s,border-color .18s;" style-hover="background:rgba(122,250,252,.12);border-color:rgba(122,250,252,.55);">
+          Ver productos
+        </a>
+      </div>
+      <div data-reveal style="display:flex;flex-wrap:wrap;align-items:center;gap:22px;margin-top:40px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="display:flex;">
+            <span style="width:34px;height:34px;border-radius:50%;background:#5BB0A2;border:2px solid #0c2c50;display:grid;place-items:center;font-family:'Noto Sans',sans-serif;font-weight:700;font-size:12px;color:#062;">LR</span>
+            <span style="width:34px;height:34px;border-radius:50%;background:#58CDF7;border:2px solid #0c2c50;margin-left:-11px;display:grid;place-items:center;font-family:'Noto Sans',sans-serif;font-weight:700;font-size:12px;color:#063;">MC</span>
+            <span style="width:34px;height:34px;border-radius:50%;background:#FFC517;border:2px solid #0c2c50;margin-left:-11px;display:grid;place-items:center;font-family:'Noto Sans',sans-serif;font-weight:700;font-size:12px;color:#5a3f00;">+</span>
+          </div>
+          <span style="font-family:'Roboto',sans-serif;font-size:13.5px;color:#9fb8d6;">Negocios que ya atienden con Selyon</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- phone -->
+    <div style="position:relative;justify-self:center;min-width:290px;">
+      <div style="position:absolute;inset:-30px;border-radius:60px;background:radial-gradient(circle at 50% 40%,rgba(122,250,252,.3),transparent 70%);filter:blur(10px);animation:syGlow 7s ease-in-out infinite;"></div>
+      <div style="position:relative;width:300px;background:linear-gradient(160deg,#16324f,#0a1f38);border-radius:44px;padding:12px;box-shadow:0 40px 90px -30px rgba(0,0,0,.8),0 0 0 1px rgba(122,250,252,.15);animation:syFloat 7s ease-in-out infinite;">
+        <div style="background:#dfeae4;border-radius:33px;overflow:hidden;height:600px;display:flex;flex-direction:column;">
+          <div style="background:#0b5c56;color:#eafcf6;padding:16px 16px 13px;display:flex;align-items:center;gap:11px;">
+            <span style="width:34px;height:34px;border-radius:50%;background:#d4f2e7;color:#0b5c56;display:grid;place-items:center;font-family:'Noto Sans',sans-serif;font-weight:800;font-size:14px;">LR</span>
+            <div style="line-height:1.2;">
+              <div style="font-family:'Noto Sans',sans-serif;font-weight:700;font-size:14.5px;">Lavacar Rosales</div>
+              <div style="font-size:11px;color:#a7e6d8;">en línea · agente IA</div>
+            </div>
+          </div>
+          <div class="sy-chat-live" data-chat style="flex:1;padding:16px 14px;display:flex;flex-direction:column;gap:9px;background:linear-gradient(#dfeae4,#d3e2dc);overflow:hidden;">
+            <div data-b="1" style="align-self:flex-start;max-width:82%;background:#fff;border-radius:14px;border-bottom-left-radius:4px;padding:9px 13px;font-size:13px;color:#12352b;box-shadow:0 1px 2px rgba(0,0,0,.08);display:flex;align-items:center;gap:8px;">
+              <span style="color:#0b7d72;">🎤</span> Nota de voz · 0:08
+            </div>
+            <div data-b="2" style="align-self:flex-end;max-width:85%;background:#d4f2e7;border-radius:14px;border-bottom-right-radius:4px;padding:9px 13px;font-size:13px;line-height:1.42;color:#0f2723;box-shadow:0 1px 2px rgba(0,0,0,.06);">
+              ¡Hola! Por lo que me cuentas es lavado completo + encerado para un sedán: ₡18.000, dura ~1h. ¿Te reservo un espacio?
+            </div>
+            <div data-b="3" style="align-self:flex-start;max-width:80%;background:#fff;border-radius:14px;border-bottom-left-radius:4px;padding:9px 13px;font-size:13px;color:#12352b;box-shadow:0 1px 2px rgba(0,0,0,.08);">
+              Sí, ¿qué horarios hay mañana?
+            </div>
+            <div data-b="4" style="align-self:flex-end;max-width:88%;background:#d4f2e7;border-radius:14px;border-bottom-right-radius:4px;padding:10px 13px;font-size:13px;line-height:1.4;color:#0f2723;box-shadow:0 1px 2px rgba(0,0,0,.06);">
+              Mañana miércoles tengo:
+              <span style="display:flex;flex-direction:column;gap:6px;margin-top:7px;">
+                <span style="background:#fff;border:1px solid #cfe4dc;border-radius:9px;padding:7px 10px;font-size:12.5px;color:#0b5c56;font-weight:600;">9:00 a.m.</span>
+                <span style="background:#fff;border:1px solid #cfe4dc;border-radius:9px;padding:7px 10px;font-size:12.5px;color:#0b5c56;font-weight:600;">11:30 a.m.</span>
+                <span style="background:#fff;border:1px solid #cfe4dc;border-radius:9px;padding:7px 10px;font-size:12.5px;color:#0b5c56;font-weight:600;">2:00 p.m.</span>
+              </span>
+            </div>
+            <div data-b="5" style="align-self:flex-end;max-width:60%;background:#d4f2e7;border-radius:14px;border-bottom-right-radius:4px;padding:9px 13px;font-size:13px;color:#0f2723;box-shadow:0 1px 2px rgba(0,0,0,.06);">
+              11:30 a.m.
+            </div>
+            <div data-b="6" style="align-self:flex-start;max-width:86%;background:#fff;border-radius:14px;border-bottom-left-radius:4px;padding:10px 13px;font-size:13px;line-height:1.42;color:#12352b;box-shadow:0 1px 2px rgba(0,0,0,.08);">
+              Listo ✅ Cita confirmada mañana 11:30 a.m. — lavado + encerado, sedán. Te recuerdo un día antes.
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- floating chips -->
+      <div style="position:absolute;top:64px;left:-46px;background:rgba(255,255,255,.95);border-radius:14px;padding:11px 14px;box-shadow:0 18px 40px -12px rgba(0,0,0,.5);display:flex;align-items:center;gap:9px;animation:syFloat2 6s ease-in-out infinite;">
+        <span style="width:30px;height:30px;border-radius:8px;background:#e7f8ef;color:#58BE4D;display:grid;place-items:center;">✓</span>
+        <div style="line-height:1.15;"><div style="font-family:'Noto Sans',sans-serif;font-weight:800;font-size:13px;color:#103050;">Cita agendada</div><div style="font-size:10.5px;color:#7089a3;">sin intervención humana</div></div>
+      </div>
+      <div style="position:absolute;bottom:88px;right:-40px;background:rgba(255,255,255,.95);border-radius:14px;padding:11px 14px;box-shadow:0 18px 40px -12px rgba(0,0,0,.5);display:flex;align-items:center;gap:9px;animation:syFloat 8s ease-in-out infinite;">
+        <span style="font-family:'Noto Sans',sans-serif;font-weight:900;font-size:20px;color:#248DE3;">69%</span>
+        <div style="line-height:1.15;"><div style="font-family:'Noto Sans',sans-serif;font-weight:700;font-size:12px;color:#103050;">conversión</div><div style="font-size:10.5px;color:#7089a3;">chat → cita</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- logo marquee -->
+  <div style="position:relative;border-top:1px solid rgba(122,250,252,.1);padding:22px 0;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);">
+    <div style="display:flex;gap:56px;width:max-content;animation:syMarquee 30s linear infinite;font-family:'Noto Sans',sans-serif;font-weight:700;font-size:15px;color:#5f7ba0;letter-spacing:.02em;">
+      <span>Lavacar Rosales</span><span>·</span><span>Clínica Dental Vega</span><span>·</span><span>Estética Mare</span><span>·</span><span>Barbería Nómada</span><span>·</span><span>Taller Motorsport CR</span><span>·</span><span>Spa Aurora</span><span>·</span>
+      <span>Lavacar Rosales</span><span>·</span><span>Clínica Dental Vega</span><span>·</span><span>Estética Mare</span><span>·</span><span>Barbería Nómada</span><span>·</span><span>Taller Motorsport CR</span><span>·</span><span>Spa Aurora</span><span>·</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============ METRICS BAND ============ -->
+<section style="background:#0a2038;border-bottom:1px solid rgba(122,250,252,.08);">
+  <div class="sy-4col" style="max-width:1160px;margin:0 auto;padding:52px 24px;display:grid;grid-template-columns:repeat(4,1fr);gap:22px;">
+    <div data-reveal style="text-align:center;">
+      <div style="font-family:'Noto Sans',sans-serif;font-weight:900;font-size:clamp(30px,3.4vw,44px);color:#fff;letter-spacing:-.02em;">24/7</div>
+      <div style="font-family:'Roboto',sans-serif;font-size:14px;color:#8ba6c6;margin-top:4px;">Atención sin pausas</div>
+    </div>
+    <div data-reveal style="text-align:center;">
+      <div style="font-family:'Noto Sans',sans-serif;font-weight:900;font-size:clamp(30px,3.4vw,44px);color:#7AFAFC;letter-spacing:-.02em;">&lt;10s</div>
+      <div style="font-family:'Roboto',sans-serif;font-size:14px;color:#8ba6c6;margin-top:4px;">Tiempo de respuesta</div>
+    </div>
+    <div data-reveal style="text-align:center;">
+      <div style="font-family:'Noto Sans',sans-serif;font-weight:900;font-size:clamp(30px,3.4vw,44px);color:#FFC517;letter-spacing:-.02em;">69%</div>
+      <div style="font-family:'Roboto',sans-serif;font-size:14px;color:#8ba6c6;margin-top:4px;">Chats que terminan en cita</div>
+    </div>
+    <div data-reveal style="text-align:center;">
+      <div style="font-family:'Noto Sans',sans-serif;font-weight:900;font-size:clamp(30px,3.4vw,44px);color:#58CDF7;letter-spacing:-.02em;">0</div>
+      <div style="font-family:'Roboto',sans-serif;font-size:14px;color:#8ba6c6;margin-top:4px;">Clientes sin responder</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PRODUCTOS (SUITE) ============ -->
+<section id="productos" style="background:#f4f7fb;padding:100px 0;">
+  <div style="max-width:1160px;margin:0 auto;padding:0 24px;">
+    <div data-reveal style="text-align:center;max-width:660px;margin:0 auto;">
+      <div style="font-family:'Noto Sans',sans-serif;font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#248DE3;">La suite Selyon</div>
+      <h2 style="font-family:'Noto Sans',sans-serif;font-weight:800;font-size:clamp(28px,3.4vw,44px);letter-spacing:-.02em;color:#103050;margin:12px 0 0;line-height:1.1;">Un producto para cada punto de contacto con tu cliente.</h2>
+      <p style="font-family:'Roboto',sans-serif;font-size:17px;line-height:1.6;color:#5a728d;margin:16px 0 0;">Empezá por donde más lo necesitás. Todos los productos comparten el mismo panel, la misma marca y la misma IA.</p>
+    </div>
+
+    <div class="sy-2col" style="display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-top:52px;">
+      <!-- WhatsApp agent -->
+      <article data-reveal style="background:#fff;border:1px solid #e2e9f1;border-radius:22px;overflow:hidden;box-shadow:0 1px 3px rgba(16,48,80,.06);transition:transform .25s cubic-bezier(.2,0,0,1),box-shadow .25s cubic-bezier(.2,0,0,1);" style-hover="transform:translateY(-6px);box-shadow:0 30px 60px -24px rgba(16,48,80,.3);">
+        <div style="position:relative;background:linear-gradient(135deg,#0b7d72,#0b5c56);padding:30px 30px 0;overflow:hidden;height:210px;">
+          <div style="position:absolute;top:-40px;right:-30px;width:200px;height:200px;border-radius:50%;background:rgba(122,250,252,.16);"></div>
+          <div style="position:relative;display:flex;align-items:center;gap:10px;">
+            <span style="width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,.16);display:grid;place-items:center;color:#eafcf6;">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a9 9 0 0 0-7.7 13.6L3 21l4.6-1.2A9 9 0 1 0 12 3Z" stroke-linejoin="round"/><path d="M8.5 12h.01M12 12h.01M15.5 12h.01" stroke-linecap="round"/></svg>
+            </span>
+            <span style="font-family:'Noto Sans',sans-serif;font-weight:700;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:#bff0e2;background:rgba(255,255,255,.12);padding:5px 11px;border-radius:999px;">Disponible</span>
+          </div>
+          <div style="position:absolute;bottom:0;right:26px;width:190px;background:#12352b;border-radius:18px 18px 0 0;padding:12px;box-shadow:0 -10px 30px rgba(0,0,0,.3);">
+            <div style="background:#d4f2e7;border-radius:10px;border-bottom-right-radius:3px;padding:7px 10px;font-size:11px;color:#0f2723;margin-bottom:5px;">₡18.000, ~1h. ¿Te reservo?</div>
+            <div style="background:#fff;border-radius:10px;border-bottom-left-radius:3px;padding:7px 10px;font-size:11px;color:#12352b;width:70%;">Sí, mañana 11:30</div>
+          </div>
+        </div>
+        <div style="padding:26px 30px 30px;">
+          <h3 style="font-family:'Noto Sans',sans-serif;font-weight:800;font-size:23px;color:#103050;margin:0;">Recepcionista IA</h3>
+          <p style="font-family:'Roboto',sans-serif;font-size:15px;line-height:1.55;color:#5a728d;margin:9px 0 0;">Tu WhatsApp atendido con IA: responde dudas, cotiza, agenda citas y manda recordatorios. Tu equipo lo supervisa todo desde un panel.</p>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 22px;">
+            <span style="font-family:'Roboto',sans-serif;font-size:12.5px;color:#0b5c56;background:#e7f6f1;padding:6px 12px;border-radius:999px;">Agenda automática</span>
+            <span style="font-family:'Roboto',sans-serif;font-size:12.5px;color:#0b5c56;background:#e7f6f1;padding:6px 12px;border-radius:999px;">Notas de voz</span>
+            <span style="font-family:'Roboto',sans-serif;font-size:12.5px;color:#0b5c56;background:#e7f6f1;padding:6px 12px;border-radius:999px;">Recordatorios</span>
+          </div>
+          <a href="#agente" style="display:inline-flex;align-items:center;gap:8px;font-family:'Noto Sans',sans-serif;font-weight:700;font-size:15px;color:#fff;background:#0b7d72;padding:13px 24px;border-radius:999px;transition:background .18s,transform .18s;" style-hover="background:#0b5c56;transform:translateY(-1px);">Ver producto <span>→</span></a>
+        </div>
+      </article>
+
+      <!-- Digital menu -->
+      <article data-reveal style="background:#fff;border:1px solid #e2e9f1;border-radius:22px;overflow:hidden;box-shadow:0 1px 3px rgba(16,48,80,.06);transition:transform .25s cubic-bezier(.2,0,0,1),box-shadow .25s cubic-bezier(.2,0,0,1);" style-hover="transform:translateY(-6px);box-shadow:0 30px 60px -24px rgba(16,48,80,.3);">
+        <div style="position:relative;background:linear-gradient(135deg,#248DE3,#103050);padding:30px 30px 0;overflow:hidden;height:210px;">
+          <div style="position:absolute;top:-40px;right:-30px;width:200px;height:200px;border-radius:50%;background:rgba(122,250,252,.16);"></div>
+          <div style="position:relative;display:flex;align-items:center;gap:10px;">
+            <span style="width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,.16);display:grid;place-items:center;color:#eaf4ff;">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3.5" width="16" height="17" rx="3"/><path d="M8 8.5h8M8 12h6M8 15.5h4" stroke-linecap="round"/></svg>
+            </span>
+            <span style="font-family:'Noto Sans',sans-serif;font-weight:700;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:#0a2038;background:{{ menuBadgeBg }};padding:5px 11px;border-radius:999px;">{{ menuStatus }}</span>
+          </div>
+          <div style="position:absolute;bottom:0;right:26px;width:150px;background:#0a1f38;border-radius:18px 18px 0 0;padding:10px;box-shadow:0 -10px 30px rgba(0,0,0,.3);">
+            <div style="position:relative;border-radius:11px;overflow:hidden;height:78px;background:linear-gradient(135deg,#f2a65a,#e07a3f);display:grid;place-items:center;">
+              <span style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.9);display:grid;place-items:center;color:#e07a3f;">▶</span>
+              <span style="position:absolute;top:7px;left:7px;font-family:'Roboto',sans-serif;font-size:10px;font-weight:700;color:#fff;background:rgba(0,0,0,.4);padding:2px 7px;border-radius:999px;">720 kcal</span>
+            </div>
+            <div style="font-family:'Noto Sans',sans-serif;font-weight:700;font-size:11px;color:#fff;margin-top:6px;">Burger Selyon</div>
+            <div style="font-family:'Roboto',sans-serif;font-size:10px;color:#8ba6c6;">Res 200g · queso · papas</div>
+          </div>
+        </div>
+        <div style="padding:26px 30px 30px;">
+          <h3 style="font-family:'Noto Sans',sans-serif;font-weight:800;font-size:23px;color:#103050;margin:0;">Menú Digital IA</h3>
+          <p style="font-family:'Roboto',sans-serif;font-size:15px;line-height:1.55;color:#5a728d;margin:9px 0 0;">Menú con video de cada plato, calorías y detalles sobre la imagen, y un mesero de IA que recomienda, resuelve dudas y toma el pedido.</p>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 22px;">
+            <span style="font-family:'Roboto',sans-serif;font-size:12.5px;color:#1b5a94;background:#e8f2fc;padding:6px 12px;border-radius:999px;">Videos de platos</span>
+            <span style="font-family:'Roboto',sans-serif;font-size:12.5px;color:#1b5a94;background:#e8f2fc;padding:6px 12px;border-radius:999px;">Mesero IA</span>
+            <span style="font-family:'Roboto',sans-serif;font-size:12.5px;color:#1b5a94;background:#e8f2fc;padding:6px 12px;border-radius:999px;">Calorías</span>
+          </div>
+          <a href="{{ menuLink }}" style="display:inline-flex;align-items:center;gap:8px;font-family:'Noto Sans',sans-serif;font-weight:700;font-size:15px;color:#fff;background:#248DE3;padding:13px 24px;border-radius:999px;transition:background .18s,transform .18s;" style-hover="background:#1b6fc0;transform:translateY(-1px);">Ver menú <span>→</span></a>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============ AGENTE DEEP DIVE ============ -->
+<section id="agente" style="background:#fff;padding:100px 0;">
+  <div style="max-width:1160px;margin:0 auto;padding:0 24px;">
+    <div data-reveal style="max-width:680px;">
+      <div style="font-family:'Noto Sans',sans-serif;font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#0b7d72;">Producto destacado · Recepcionista IA</div>
+      <h2 style="font-family:'Noto Sans',sans-serif;font-weight:800;font-size:clamp(28px,3.4vw,44px);letter-spacing:-.02em;color:#103050;margin:12px 0 0;line-height:1.1;">Todo lo que hoy hacés a mano por WhatsApp, ahora lo hace el agente.</h2>
+      <p style="font-family:'Roboto',sans-serif;font-size:17px;line-height:1.6;color:#5a728d;margin:16px 0 0;">Nada de esto es promesa a futuro: son funciones corriendo hoy con clientes reales.</p>
+    </div>
+
+    <div class="sy-3col" style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:48px;">
+      <article data-reveal style="background:#fff;border:1px solid #e2e9f1;border-radius:18px;padding:28px 26px;">
+        <span style="width:48px;height:48px;border-radius:12px;background:#e7f6f1;color:#0b7d72;display:grid;place-items:center;margin-bottom:16px;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a9 9 0 0 0-7.7 13.6L3 21l4.6-1.2A9 9 0 1 0 12 3Z" stroke-linejoin="round"/><path d="M8.5 12h.01M12 12h.01M15.5 12h.01" stroke-linecap="round"/></svg>
+        </span>
+        <h3 style="font-family:'Noto Sans',sans-serif;font-weight:800;font-size:18px;color:#103050;margin:0;line-height:1.25;">Responde al instante, 24/7</h3>
+        <p style="font-family:'Roboto',sans-serif;font-size:14.5px;line-height:1.55;color:#5a728d;margin:9px 0 0;">Dudas, precios y horarios contestados con IA — entendiendo la pregunta, no un menú de opciones.</p>
+      </article>
+      <article data-reveal style="background:#fff;border:1px solid #e2e9f1;border-radius:18px;padding:28px 26px;">
+        <span style="width:48px;height:48px;border-radius:12px;background:#e8f2fc;color:#248DE3;display:grid;place-items:center;margin-bottom:16px;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 9.5h17M8 3v4M16 3v4" stroke-linecap="round"/><path d="M8.5 13.5l1.8 1.8 3.7-3.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <h3 style="font-family:'Noto Sans',sans-serif;font-weight:800;font-size:18px;color:#103050;margin:0;line-height:1.25;">Agenda, reprograma y cancela sola</h3>
+        <p style="font-family:'Roboto',sans-serif;font-size:14.5px;line-height:1.55;color:#5a728d;margin:9px 0 0;">Sincronizada con Google Calendar: el agente maneja los cambios de cita sin que intervengas.</p>
+      </article>
+      <article data-reveal style="background:#fff;border:1px solid #e2e9f1;border-radius:18px;padding:28px 26px;">
+        <span style="width:48px;height:48px;border-radius:12px;background:#e7f6f1;color:#0b7d72;display:grid;place-items:center;margin-bottom:16px;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3.5" width="16" height="17" rx="3"/><path d="M8 8.5h8M8 12h8M8 15.5h5" stroke-linecap="round"/></svg>
+        </span>
+        <h3 style="font-family:'Noto Sans',sans-serif;font-weight:800;font-size:18px;color:#103050;margin:0;line-height:1.25;">Botones y listas nativas</h3>
+        <p style="font-family:'Roboto',sans-serif;font-size:14.5px;line-height:1.55;color:#5a728d;margin:9px 0 0;">El cliente elige tocando, como en cualquier chat de WhatsApp — nada de escribir horarios a mano.</p>
+      </article>
+      <article data-reveal style="background:#fff;border:1px solid #e2e9f1;border-radius:18px;padding:28px 26px;">
+        <span style="width:48px;height:48px;border-radius:12px;background:#e8f2fc;color:#248DE3;display:grid;place-items:center;margin-bottom:16px;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8.5a6 6 0 0 0-12 0c0 6-2.5 7.5-2.5 7.5h17S18 14.5 18 8.5Z" stroke-linejoin="round"/><path d="M10 19.5a2 2 0 0 0 4 0" stroke-linecap="round"/></svg>
+        </span>
+        <h3 style="font-family:'Noto Sans',sans-serif;font-weight:800;font-size:18px;color:#103050;margin:0;line-height:1.25;">Recordatorios con confirmación</h3>
+        <p style="font-family:'Roboto',sans-serif;font-size:14.5px;line-height:1.55;color:#5a728d;margin:9px 0 0;">Un día antes y el mismo día, pidiendo confirmar — así los no-shows dejan de comerte la agenda.</p>
+      </article>
+      <article data-reveal style="background:#fff;border:1px solid #e2e9f1;border-radius:18px;padding:28px 26px;">
+        <span style="width:48px;height:48px;border-radius:12px;background:#e7f6f1;color:#0b7d72;display:grid;place-items:center;margin-bottom:16px;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v3.5M9.5 20.5h5" stroke-linecap="round"/></svg>
+        </span>
+        <h3 style="font-family:'Noto Sans',sans-serif;font-weight:800;font-size:18px;color:#103050;margin:0;line-height:1.25;">Entiende notas de voz</h3>
+        <p style="font-family:'Roboto',sans-serif;font-size:14.5px;line-height:1.55;color:#5a728d;margin:9px 0 0;">El cliente manda un audio explicando lo que necesita y el agente lo transcribe y lo entiende igual.</p>
+      </article>
+      <article data-reveal style="background:#fff;border:1px solid #e2e9f1;border-radius:18px;padding:28px 26px;">
+        <span style="width:48px;height:48px;border-radius:12px;background:#e8f2fc;color:#248DE3;display:grid;place-items:center;margin-bottom:16px;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="4" width="17" height="13" rx="2.5"/><path d="M8 20.5h8M12 17v3.5" stroke-linecap="round"/><path d="M7 13l2.8-3.2L12 12l2.5-3.5L17 11" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <h3 style="font-family:'Noto Sans',sans-serif;font-weight:800;font-size:18px;color:#103050;margin:0;line-height:1.25;">Panel para tu equipo</h3>
+        <p style="font-family:'Roboto',sans-serif;font-size:14.5px;line-height:1.55;color:#5a728d;margin:9px 0 0;">Bandeja con takeover humano, CRM y métricas — instalable en el celular, con notificaciones.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PANEL ============ -->
+<section style="position:relative;background:radial-gradient(120% 80% at 50% 0%,#0f3560 0%,#0a2038 55%,#071a30 100%);padding:100px 0;overflow:hidden;">
+  <div style="position:absolute;top:0;left:50%;transform:translateX(-50%);width:900px;height:400px;background:radial-gradient(circle,rgba(36,141,227,.25),transparent 68%);filter:blur(30px);"></div>
+  <div style="position:relative;max-width:1160px;margin:0 auto;padding:0 24px;">
+    <div data-reveal style="text-align:center;max-width:640px;margin:0 auto;">
+      <div style="font-family:'Noto Sans',sans-serif;font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#7AFAFC;">El panel de control</div>
+      <h2 style="font-family:'Noto Sans',sans-serif;font-weight:800;font-size:clamp(28px,3.4vw,44px);letter-spacing:-.02em;color:#fff;margin:12px 0 0;line-height:1.1;">Tu equipo ve todo y toma el control cuando quiera.</h2>
+      <p style="font-family:'Roboto',sans-serif;font-size:17px;line-height:1.6;color:#a9c2e0;margin:16px 0 0;">Bandeja de conversaciones, ficha de cada cliente y métricas del negocio. En claro u oscuro, del celular al escritorio.</p>
+    </div>
+
+    <!-- browser frame dashboard -->
+    <div data-reveal style="margin-top:52px;border-radius:16px;overflow:hidden;box-shadow:0 50px 100px -30px rgba(0,0,0,.7),0 0 0 1px rgba(122,250,252,.14);background:#0a2038;">
+      <div style="display:flex;align-items:center;gap:8px;padding:12px 16px;background:#0c2c50;border-bottom:1px solid rgba(122,250,252,.1);">
+        <span style="width:11px;height:11px;border-radius:50%;background:#ff5f57;"></span>
+        <span style="width:11px;height:11px;border-radius:50%;background:#febc2e;"></span>
+        <span style="width:11px;height:11px;border-radius:50%;background:#28c840;"></span>
+        <span style="margin-left:14px;font-family:'Roboto',sans-serif;font-size:12px;color:#7f9bbd;background:rgba(255,255,255,.05);padding:4px 14px;border-radius:6px;">panel.selyon.app/lavacar-rosales</span>
+      </div>
+      <img src="./assets/panel-dashboard-oscuro.webp" alt="Dashboard del panel Selyon: conversaciones, citas agendadas, conversión e ingresos estimados" width="1600" height="960" loading="lazy" style="width:100%;height:auto;display:block;">
+    </div>
+
+    <!-- mobile pair -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:32px;max-width:760px;margin-left:auto;margin-right:auto;">
+      <div data-reveal style="text-align:center;">
+        <div style="border-radius:14px;overflow:hidden;border:1px solid rgba(122,250,252,.14);box-shadow:0 30px 60px -24px rgba(0,0,0,.6);">
+          <img src="./assets/panel-bandeja-claro.webp" alt="Bandeja de conversaciones en modo claro, vista móvil" width="800" height="1000" loading="lazy" style="width:100%;height:auto;display:block;">
+        </div>
+        <p style="font-family:'Roboto',sans-serif;font-size:13.5px;color:#8ba6c6;margin:12px 0 0;">Bandeja + chat · claro</p>
+      </div>
+      <div data-reveal style="text-align:center;">
+        <div style="border-radius:14px;overflow:hidden;border:1px solid rgba(122,250,252,.14);box-shadow:0 30px 60px -24px rgba(0,0,0,.6);">
+          <img src="./assets/panel-bandeja-oscuro.webp" alt="Bandeja de conversaciones en modo oscuro, vista móvil" width="800" height="1000" loading="lazy" style="width:100%;height:auto;display:block;">
+        </div>
+        <p style="font-family:'Roboto',sans-serif;font-size:13.5px;color:#8ba6c6;margin:12px 0 0;">Bandeja + chat · oscuro</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CÓMO FUNCIONA ============ -->
+<section id="como" style="background:#f4f7fb;padding:100px 0;">
+  <div style="max-width:1160px;margin:0 auto;padding:0 24px;">
+    <div data-reveal style="text-align:center;max-width:600px;margin:0 auto;">
+      <div style="font-family:'Noto Sans',sans-serif;font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#248DE3;">Cómo funciona</div>
+      <h2 style="font-family:'Noto Sans',sans-serif;font-weight:800;font-size:clamp(28px,3.4vw,44px);letter-spacing:-.02em;color:#103050;margin:12px 0 0;line-height:1.1;">En marcha en días, no en meses.</h2>
+    </div>
+    <div class="sy-3col" style="display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-top:52px;position:relative;">
+      <div data-reveal style="background:#fff;border:1px solid #e2e9f1;border-radius:18px;padding:32px 28px;position:relative;">
+        <div style="width:46px;height:46px;border-radius:12px;background:#103050;color:#FFC517;display:grid;place-items:center;font-family:'Noto Sans',sans-serif;font-weight:900;font-size:20px;">1</div>
+        <h3 style="font-family:'Noto Sans',sans-serif;font-weight:800;font-size:19px;color:#103050;margin:18px 0 0;">Configuramos tu negocio</h3>
+        <p style="font-family:'Roboto',sans-serif;font-size:15px;line-height:1.55;color:#5a728d;margin:8px 0 0;">Servicios, precios y horarios. Lo que hoy tenés en la cabeza, ahora lo sabe el agente.</p>
+      </div>
+      <div data-reveal style="background:#fff;border:1px solid #e2e9f1;border-radius:18px;padding:32px 28px;position:relative;">
+        <div style="width:46px;height:46px;border-radius:12px;background:#103050;color:#FFC517;display:grid;place-items:center;font-family:'Noto Sans',sans-serif;font-weight:900;font-size:20px;">2</div>
+        <h3 style="font-family:'Noto Sans',sans-serif;font-weight:800;font-size:19px;color:#103050;margin:18px 0 0;">Conectamos tu WhatsApp</h3>
+        <p style="font-family:'Roboto',sans-serif;font-size:15px;line-height:1.55;color:#5a728d;margin:8px 0 0;">Tu mismo número, sin cambios para tus clientes.</p>
+      </div>
+      <div data-reveal style="background:#fff;border:1px solid #e2e9f1;border-radius:18px;padding:32px 28px;position:relative;">
+        <div style="width:46px;height:46px;border-radius:12px;background:#103050;color:#FFC517;display:grid;place-items:center;font-family:'Noto Sans',sans-serif;font-weight:900;font-size:20px;">3</div>
+        <h3 style="font-family:'Noto Sans',sans-serif;font-weight:800;font-size:19px;color:#103050;margin:18px 0 0;">El agente atiende, vos supervisás</h3>
+        <p style="font-family:'Roboto',sans-serif;font-size:15px;line-height:1.55;color:#5a728d;margin:8px 0 0;">Cada conversación y cada cita queda en el panel, en tiempo real.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ TESTIMONIAL ============ -->
+<section style="background:#fff;padding:90px 0;">
+  <div style="max-width:900px;margin:0 auto;padding:0 24px;">
+    <div data-reveal style="background:linear-gradient(135deg,#103050,#0b2947);border-radius:26px;padding:52px 48px;position:relative;overflow:hidden;">
+      <div style="position:absolute;top:-30px;right:-10px;font-family:'Noto Sans',sans-serif;font-weight:900;font-size:180px;color:rgba(122,250,252,.09);line-height:1;">”</div>
+      <div style="position:relative;">
+        <div style="display:flex;gap:4px;margin-bottom:18px;">
+          <span style="color:#FFC517;">★</span><span style="color:#FFC517;">★</span><span style="color:#FFC517;">★</span><span style="color:#FFC517;">★</span><span style="color:#FFC517;">★</span>
+        </div>
+        <p style="font-family:'Noto Sans',sans-serif;font-weight:600;font-size:clamp(20px,2.4vw,28px);line-height:1.4;color:#eaf4ff;margin:0;letter-spacing:-.01em;">"Antes perdíamos clientes por no contestar a tiempo. Ahora el agente responde al instante y llena la agenda solo. Dejé de vivir pegado al teléfono."</p>
+        <div style="display:flex;align-items:center;gap:14px;margin-top:28px;">
+          <span style="width:48px;height:48px;border-radius:50%;background:#5BB0A2;display:grid;place-items:center;font-family:'Noto Sans',sans-serif;font-weight:800;color:#063;">LR</span>
+          <div>
+            <div style="font-family:'Noto Sans',sans-serif;font-weight:700;font-size:16px;color:#fff;">Lavacar Rosales</div>
+            <div style="font-family:'Roboto',sans-serif;font-size:14px;color:#8ba6c6;">San José, Costa Rica · en producción con Selyon</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PRECIOS ============ -->
+<section id="precios" style="background:#f4f7fb;padding:100px 0;">
+  <div style="max-width:900px;margin:0 auto;padding:0 24px;">
+    <div data-reveal style="text-align:center;max-width:560px;margin:0 auto;">
+      <div style="font-family:'Noto Sans',sans-serif;font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#248DE3;">Planes</div>
+      <h2 style="font-family:'Noto Sans',sans-serif;font-weight:800;font-size:clamp(28px,3.4vw,44px);letter-spacing:-.02em;color:#103050;margin:12px 0 0;line-height:1.1;">Precios de lanzamiento.</h2>
+      <p style="font-family:'Roboto',sans-serif;font-size:16px;color:#5a728d;margin:14px 0 0;">Escribinos y los vemos juntos según tu negocio.</p>
+    </div>
+    <div class="sy-2col" style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:48px;align-items:start;">
+      <div data-reveal style="background:#fff;border:1px solid #e2e9f1;border-radius:20px;padding:34px 32px;">
+        <div style="font-family:'Noto Sans',sans-serif;font-weight:800;font-size:26px;color:#103050;">Básico</div>
+        <p style="font-family:'Roboto',sans-serif;font-size:14px;color:#7089a3;margin:6px 0 22px;">Para empezar a atender solo.</p>
+        <div style="display:flex;flex-direction:column;gap:13px;">
+          <div style="display:flex;gap:10px;font-family:'Roboto',sans-serif;font-size:15px;color:#41566e;"><span style="color:#0b7d72;font-weight:700;">✓</span>Agente de WhatsApp con IA</div>
+          <div style="display:flex;gap:10px;font-family:'Roboto',sans-serif;font-size:15px;color:#41566e;"><span style="color:#0b7d72;font-weight:700;">✓</span>Agenda con Google Calendar</div>
+          <div style="display:flex;gap:10px;font-family:'Roboto',sans-serif;font-size:15px;color:#41566e;"><span style="color:#0b7d72;font-weight:700;">✓</span>Recordatorios con confirmación</div>
+          <div style="display:flex;gap:10px;font-family:'Roboto',sans-serif;font-size:15px;color:#41566e;"><span style="color:#0b7d72;font-weight:700;">✓</span>Panel de bandeja y CRM</div>
+        </div>
+        <a href="{{ waBasico }}" target="_blank" rel="noopener" style="display:block;text-align:center;margin-top:28px;font-family:'Noto Sans',sans-serif;font-weight:700;font-size:15px;color:#103050;background:#fff;border:1.5px solid #cdd9e6;padding:14px;border-radius:999px;transition:border-color .18s,color .18s;" style-hover="border-color:#248DE3;color:#248DE3;">Consultar precio</a>
+      </div>
+      <div data-reveal style="background:linear-gradient(160deg,#0f3560,#0a2038);border:1px solid rgba(122,250,252,.2);border-radius:20px;padding:34px 32px;position:relative;box-shadow:0 30px 60px -24px rgba(16,48,80,.5);">
+        <span style="position:absolute;top:20px;right:24px;font-family:'Noto Sans',sans-serif;font-weight:700;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:#0a2038;background:#FFC517;padding:5px 12px;border-radius:999px;">Recomendado</span>
+        <div style="font-family:'Noto Sans',sans-serif;font-weight:800;font-size:26px;color:#fff;">Pro</div>
+        <p style="font-family:'Roboto',sans-serif;font-size:14px;color:#8ba6c6;margin:6px 0 22px;">Para equipos y marca propia.</p>
+        <div style="display:flex;flex-direction:column;gap:13px;">
+          <div style="display:flex;gap:10px;font-family:'Roboto',sans-serif;font-size:15px;color:#d5e3f3;"><span style="color:#7AFAFC;font-weight:700;">✓</span>Todo lo del plan Básico</div>
+          <div style="display:flex;gap:10px;font-family:'Roboto',sans-serif;font-size:15px;color:#d5e3f3;"><span style="color:#7AFAFC;font-weight:700;">✓</span>Campañas por WhatsApp</div>
+          <div style="display:flex;gap:10px;font-family:'Roboto',sans-serif;font-size:15px;color:#d5e3f3;"><span style="color:#7AFAFC;font-weight:700;">✓</span>Multi-usuario para tu equipo</div>
+          <div style="display:flex;gap:10px;font-family:'Roboto',sans-serif;font-size:15px;color:#d5e3f3;"><span style="color:#7AFAFC;font-weight:700;">✓</span>Marca propia en panel y agente</div>
+        </div>
+        <a href="{{ waPro }}" target="_blank" rel="noopener" style="display:block;text-align:center;margin-top:28px;font-family:'Noto Sans',sans-serif;font-weight:700;font-size:15px;color:#0a2038;background:#FFC517;padding:14px;border-radius:999px;transition:transform .18s,box-shadow .18s;" style-hover="transform:translateY(-2px);box-shadow:0 12px 26px -8px rgba(255,197,23,.6);">Consultar precio</a>
+      </div>
+    </div>
+    <p data-reveal style="text-align:center;font-family:'Roboto',sans-serif;font-size:13px;color:#8296ac;margin:24px 0 0;">Precios de lanzamiento — escribinos y armamos el plan a tu medida.</p>
+  </div>
+</section>
+
+<!-- ============ FAQ ============ -->
+<section style="background:#fff;padding:100px 0;">
+  <div style="max-width:800px;margin:0 auto;padding:0 24px;">
+    <div data-reveal style="text-align:center;">
+      <h2 style="font-family:'Noto Sans',sans-serif;font-weight:800;font-size:clamp(26px,3vw,38px);letter-spacing:-.02em;color:#103050;margin:0;">Preguntas frecuentes</h2>
+    </div>
+    <div data-reveal style="display:flex;flex-direction:column;gap:12px;margin-top:40px;">
+      <details style="background:#f4f7fb;border:1px solid #e2e9f1;border-radius:12px;padding:4px 22px;">
+        <summary style="cursor:pointer;list-style:none;font-family:'Noto Sans',sans-serif;font-weight:700;font-size:16.5px;color:#103050;padding:16px 0;display:flex;justify-content:space-between;gap:16px;align-items:center;"><span>¿Necesito cambiar mi número de WhatsApp?</span><span style="color:#248DE3;font-size:22px;flex:none;">+</span></summary>
+        <p style="font-family:'Roboto',sans-serif;font-size:15px;line-height:1.6;color:#5a728d;margin:0 0 18px;">No. Conectamos el agente a tu número actual; tus clientes siguen escribiendo al mismo lugar de siempre.</p>
+      </details>
+      <details style="background:#f4f7fb;border:1px solid #e2e9f1;border-radius:12px;padding:4px 22px;">
+        <summary style="cursor:pointer;list-style:none;font-family:'Noto Sans',sans-serif;font-weight:700;font-size:16.5px;color:#103050;padding:16px 0;display:flex;justify-content:space-between;gap:16px;align-items:center;"><span>¿Y si el agente no sabe algo?</span><span style="color:#248DE3;font-size:22px;flex:none;">+</span></summary>
+        <p style="font-family:'Roboto',sans-serif;font-size:15px;line-height:1.6;color:#5a728d;margin:0 0 18px;">Te avisa y pasa la conversación a un humano — nunca inventa una respuesta.</p>
+      </details>
+      <details style="background:#f4f7fb;border:1px solid #e2e9f1;border-radius:12px;padding:4px 22px;">
+        <summary style="cursor:pointer;list-style:none;font-family:'Noto Sans',sans-serif;font-weight:700;font-size:16.5px;color:#103050;padding:16px 0;display:flex;justify-content:space-between;gap:16px;align-items:center;"><span>¿Puedo responder yo directamente?</span><span style="color:#248DE3;font-size:22px;flex:none;">+</span></summary>
+        <p style="font-family:'Roboto',sans-serif;font-size:15px;line-height:1.6;color:#5a728d;margin:0 0 18px;">Sí. Desde el panel podés tomar cualquier conversación y contestar vos mismo cuando quieras.</p>
+      </details>
+      <details style="background:#f4f7fb;border:1px solid #e2e9f1;border-radius:12px;padding:4px 22px;">
+        <summary style="cursor:pointer;list-style:none;font-family:'Noto Sans',sans-serif;font-weight:700;font-size:16.5px;color:#103050;padding:16px 0;display:flex;justify-content:space-between;gap:16px;align-items:center;"><span>¿Qué pasa con los datos de mis clientes?</span><span style="color:#248DE3;font-size:22px;flex:none;">+</span></summary>
+        <p style="font-family:'Roboto',sans-serif;font-size:15px;line-height:1.6;color:#5a728d;margin:0 0 18px;">Se usan solo para atender su consulta y su cita. Los detalles están en la política de privacidad.</p>
+      </details>
+      <details style="background:#f4f7fb;border:1px solid #e2e9f1;border-radius:12px;padding:4px 22px;">
+        <summary style="cursor:pointer;list-style:none;font-family:'Noto Sans',sans-serif;font-weight:700;font-size:16.5px;color:#103050;padding:16px 0;display:flex;justify-content:space-between;gap:16px;align-items:center;"><span>¿Cuánto tarda en estar funcionando?</span><span style="color:#248DE3;font-size:22px;flex:none;">+</span></summary>
+        <p style="font-family:'Roboto',sans-serif;font-size:15px;line-height:1.6;color:#5a728d;margin:0 0 18px;">Días, no meses — la configuración inicial es cargar tus servicios, precios y horarios.</p>
+      </details>
+      <details style="background:#f4f7fb;border:1px solid #e2e9f1;border-radius:12px;padding:4px 22px;">
+        <summary style="cursor:pointer;list-style:none;font-family:'Noto Sans',sans-serif;font-weight:700;font-size:16.5px;color:#103050;padding:16px 0;display:flex;justify-content:space-between;gap:16px;align-items:center;"><span>¿Sirve para mi tipo de negocio?</span><span style="color:#248DE3;font-size:22px;flex:none;">+</span></summary>
+        <p style="font-family:'Roboto',sans-serif;font-size:15px;line-height:1.6;color:#5a728d;margin:0 0 18px;">Sirve para cualquier negocio que agenda citas o atiende pedidos: lavacares, talleres, clínicas, salones, restaurantes y similares.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CTA FINAL ============ -->
+<section style="background:#071a30;padding:40px 24px 100px;">
+  <div style="position:relative;max-width:1080px;margin:0 auto;border-radius:30px;overflow:hidden;background:radial-gradient(120% 130% at 80% 0%,#1a5aa0,#0f3560 45%,#0a2038 100%);padding:72px 48px;">
+    <div style="position:absolute;inset:0;background-image:linear-gradient(rgba(122,250,252,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(122,250,252,.06) 1px,transparent 1px);background-size:48px 48px;mask-image:radial-gradient(70% 90% at 70% 30%,#000,transparent 75%);-webkit-mask-image:radial-gradient(70% 90% at 70% 30%,#000,transparent 75%);"></div>
+    <div data-reveal style="position:relative;text-align:center;max-width:640px;margin:0 auto;">
+      <h2 style="font-family:'Noto Sans',sans-serif;font-weight:900;font-size:clamp(30px,4vw,50px);letter-spacing:-.025em;color:#fff;line-height:1.06;margin:0;">Dejá que Selyon<br>atienda por vos.</h2>
+      <p style="font-family:'Roboto',sans-serif;font-size:18px;color:#a9c2e0;margin:18px 0 0;">Probá la demo en vivo ahora mismo, sin compromiso ni instalar nada.</p>
+      <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:14px;margin-top:34px;">
+        <a href="{{ waDemo }}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:9px;font-family:'Noto Sans',sans-serif;font-weight:700;font-size:16px;color:#0a2038;background:#FFC517;padding:16px 32px;border-radius:999px;box-shadow:0 12px 30px -8px rgba(255,197,23,.55);transition:transform .18s,box-shadow .18s;" style-hover="transform:translateY(-2px);box-shadow:0 16px 38px -8px rgba(255,197,23,.75);">Probá la demo en vivo <span>→</span></a>
+        <a href="{{ waVentas }}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;font-family:'Noto Sans',sans-serif;font-weight:700;font-size:16px;color:#eaf4ff;background:rgba(255,255,255,.07);border:1px solid rgba(122,250,252,.28);padding:16px 32px;border-radius:999px;transition:background .18s;" style-hover="background:rgba(122,250,252,.14);">Hablar con ventas</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FOOTER ============ -->
+<footer style="background:#071a30;border-top:1px solid rgba(122,250,252,.1);padding:56px 24px 44px;">
+  <div style="max-width:1160px;margin:0 auto;display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:40px;">
+    <div>
+      <a href="#top" style="display:flex;align-items:center;gap:11px;">
+        <span style="display:inline-flex;">{{ logoMark }}</span>
+        <span style="font-family:'Noto Sans',sans-serif;font-weight:800;font-size:22px;letter-spacing:-.02em;color:#fff;">selyon</span>
+      </a>
+      <p style="font-family:'Roboto',sans-serif;font-size:14px;line-height:1.6;color:#7f9bbd;margin:16px 0 0;max-width:34ch;">Agentes de IA que atienden, agendan y venden por tu negocio. Hecho en Costa Rica.</p>
+    </div>
+    <div>
+      <div style="font-family:'Noto Sans',sans-serif;font-weight:700;font-size:13px;letter-spacing:.05em;text-transform:uppercase;color:#5f7ba0;">Productos</div>
+      <div style="display:flex;flex-direction:column;gap:11px;margin-top:16px;">
+        <a href="#agente" style="font-family:'Roboto',sans-serif;font-size:14.5px;color:#a9c2e0;" style-hover="color:#7AFAFC;">Recepcionista IA</a>
+        <a href="{{ menuLink }}" style="font-family:'Roboto',sans-serif;font-size:14.5px;color:#a9c2e0;" style-hover="color:#7AFAFC;">Menú Digital IA</a>
+        <a href="#precios" style="font-family:'Roboto',sans-serif;font-size:14.5px;color:#a9c2e0;" style-hover="color:#7AFAFC;">Precios</a>
+      </div>
+    </div>
+    <div>
+      <div style="font-family:'Noto Sans',sans-serif;font-weight:700;font-size:13px;letter-spacing:.05em;text-transform:uppercase;color:#5f7ba0;">Selyon</div>
+      <div style="display:flex;flex-direction:column;gap:11px;margin-top:16px;">
+        <a href="/privacidad" style="font-family:'Roboto',sans-serif;font-size:14.5px;color:#a9c2e0;" style-hover="color:#7AFAFC;">Política de privacidad</a>
+        <a href="/terminos" style="font-family:'Roboto',sans-serif;font-size:14.5px;color:#a9c2e0;" style-hover="color:#7AFAFC;">Términos del servicio</a>
+        <a href="{{ waVentas }}" target="_blank" rel="noopener" style="font-family:'Roboto',sans-serif;font-size:14.5px;color:#a9c2e0;" style-hover="color:#7AFAFC;">Contacto</a>
+      </div>
+    </div>
+  </div>
+  <div style="max-width:1160px;margin:40px auto 0;padding-top:24px;border-top:1px solid rgba(122,250,252,.08);font-family:'Roboto',sans-serif;font-size:13px;color:#5f7ba0;">© 2026 Selyon. Todos los derechos reservados.</div>
+</footer>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:900},&quot;menuStatus&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;Disponible&quot;,&quot;options&quot;:[&quot;Disponible&quot;,&quot;Próximamente&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Menú Digital IA&quot;},&quot;menuLink&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;menu.html&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Menú Digital IA&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const wa = (t) => "https://wa.me/50683658231?text=" + encodeURIComponent(t);
+    const menuStatus = this.props.menuStatus || "Disponible";
+    const menuBadgeBg = menuStatus === "Disponible" ? "#7AFAFC" : "#FFC517";
+
+    const R = React.createElement;
+
+    const logoMark = R("svg", {width:36,height:36,viewBox:"0 0 36 36",fill:"none"},
+      R("defs", null,
+        R("linearGradient", {id:"syg", x1:"0", y1:"0", x2:"1", y2:"1"},
+          R("stop", {offset:"0", stopColor:"#248DE3"}),
+          R("stop", {offset:"1", stopColor:"#103050"})
+        )
+      ),
+      R("rect", {width:36, height:36, rx:10, fill:"url(#syg)"}),
+      R("path", {d:"M10 24.5 L18 8 L26 24.5", stroke:"#7AFAFC", strokeWidth:2.4, strokeLinecap:"round", strokeLinejoin:"round", fill:"none"}),
+      R("circle", {cx:18, cy:8, r:3, fill:"#FFC517"}),
+      R("circle", {cx:10, cy:24.5, r:2.4, fill:"#7AFAFC"}),
+      R("circle", {cx:26, cy:24.5, r:2.4, fill:"#7AFAFC"})
+    );
+
+    return {
+      logoMark,
+      menuStatus, menuBadgeBg,
+      menuLink: this.props.menuLink || "menu.html",
+      waDemo: wa("Hola, quiero ver la demo de Selyon"),
+      waVentas: wa("Hola, quiero hablar de Selyon para mi negocio"),
+      waBasico: wa("Hola, quiero consultar el precio del plan Básico"),
+      waPro: wa("Hola, quiero consultar el precio del plan Pro")
+    };
+  }
+
+  componentDidMount() {
+    const root = this.el || document;
+    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reveals = Array.from((root.querySelectorAll ? root : document).querySelectorAll("[data-reveal]"));
+    if (reduce) { reveals.forEach(el=>el.classList.add("sy-in")); }
+    else if ("IntersectionObserver" in window) {
+      const io = new IntersectionObserver((entries)=>{
+        entries.forEach(e=>{ if(e.isIntersecting){ e.target.classList.add("sy-in"); io.unobserve(e.target); } });
+      }, {threshold:0.12, rootMargin:"0px 0px -8% 0px"});
+      reveals.forEach(el=>io.observe(el));
+    } else { reveals.forEach(el=>el.classList.add("sy-in")); }
+
+    // chat replay when in view
+    const chat = document.querySelector("[data-chat]");
+    if (chat) {
+      if (reduce) { chat.classList.add("sy-play"); }
+      else if ("IntersectionObserver" in window) {
+        const cio = new IntersectionObserver((entries)=>{
+          entries.forEach(e=>{
+            if (e.isIntersecting) { chat.classList.remove("sy-play"); void chat.offsetWidth; chat.classList.add("sy-play"); }
+            else { chat.classList.remove("sy-play"); }
+          });
+        }, {threshold:0.4});
+        cio.observe(chat);
+      } else { chat.classList.add("sy-play"); }
+    }
+  }
+}
+</script>
+</body>
+</html>

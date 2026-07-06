@@ -33,7 +33,7 @@ const COOKIE_ADMIN = "panel_admin_sesion"; // sesión del superadmin (onboarding
 // Fuentes self-hosted (woff2 y ttf). Se cachean en memoria al primer pedido.
 const fontCache = new Map<string, Buffer>();
 function leerFuente(file: string): { buf: Buffer; mime: string } | null {
-  if (!/^[a-z0-9-]+\.(woff2|ttf)$/.test(file)) return null;
+  if (!/^[A-Za-z0-9-]+\.(woff2|ttf)$/.test(file)) return null;
   const cached = fontCache.get(file);
   const mime = file.endsWith(".ttf") ? "font/ttf" : "font/woff2";
   if (cached) return { buf: cached, mime };
