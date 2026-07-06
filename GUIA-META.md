@@ -78,8 +78,8 @@ semana** — más que suficiente para la etapa SaaS.
 - **App de Meta** con caso de uso WhatsApp (ya existe: es la app del bot) conectada a un
   **portafolio de negocio** (Business Manager).
 - **Negocio verificable**: nombre legal, dirección, teléfono, email con dominio propio y **sitio
-  web** público. _Ojo: hoy no hay landing (C4.4) — el sitio web es requisito práctico de la
-  verificación, así que C4.4 puede necesitar adelantarse a una página mínima._
+  web** público. _La landing ya existe (C4.4, `landing/`): sirve como sitio web público y trae la
+  URL de política de privacidad que pide App Review: `https://<dominio>/privacidad`._
 
 ### Pasos del trámite (en orden)
 
