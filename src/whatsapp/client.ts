@@ -44,6 +44,10 @@ export interface MensajeEntrante {
   messageId?: string;
   /** id del media de audio (cuando msg.type === "audio"). Para transcribir en fase 2. */
   audioId?: string;
+  /** id del media de imagen (cuando msg.type === "image"). Para cotizar con visión en fase 2. */
+  imagenId?: string;
+  /** leyenda opcional que el cliente escribió junto a la foto. */
+  imagenCaption?: string;
   /**
    * id CRUDO de la respuesta interactiva (el `id` que pusimos en el botón/fila),
    * cuando el cliente tocó un botón o una fila de lista. Permite acciones directas
@@ -65,6 +69,8 @@ export function parsearEntrante(body: any): MensajeEntrante | null {
     let esTexto = msg.type === "text";
     let texto = esTexto ? (msg.text?.body ?? "") : "";
     const audioId = msg.type === "audio" ? (msg.audio?.id ? String(msg.audio.id) : undefined) : undefined;
+    const imagenId = msg.type === "image" ? (msg.image?.id ? String(msg.image.id) : undefined) : undefined;
+    const imagenCaption = msg.type === "image" && msg.image?.caption ? String(msg.image.caption) : undefined;
 
     // Respuesta a un mensaje interactivo (el cliente tocó un botón o una fila de
     // lista). La tratamos como TEXTO: la decodificamos a una frase clara para que
@@ -87,6 +93,8 @@ export function parsearEntrante(body: any): MensajeEntrante | null {
       esTexto,
       messageId: msg.id ? String(msg.id) : undefined,
       audioId,
+      imagenId,
+      imagenCaption,
       interactiveId,
     };
   } catch {
@@ -358,7 +366,17 @@ export async function descargarMedia(
   const archivoRes = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
   if (!archivoRes.ok) throw new Error(`Error descargando media (${archivoRes.status})`);
   const buffer = Buffer.from(await archivoRes.arrayBuffer());
-  return { buffer, mimeType: mime_type ?? "audio/ogg" };
+  return { buffer, mimeType: mime_type ?? "application/octet-stream" };
+}
+
+/**
+ * Descarga una foto de WhatsApp y la devuelve como data URL
+ * ("data:image/jpeg;base64,…"), lista para adjuntarla a un mensaje multimodal de
+ * OpenAI (visión, C1.5) o para guardarla/mostrarla tal cual en el panel.
+ */
+export async function descargarImagenComoDataUrl(tenant: Tenant, mediaId: string): Promise<string> {
+  const { buffer, mimeType } = await descargarMedia(tenant, mediaId);
+  return `data:${mimeType};base64,${buffer.toString("base64")}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

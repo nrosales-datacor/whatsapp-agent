@@ -1,6 +1,13 @@
 import type { Conversacion, MensajeConversacion, PendienteSerializado, Repositorio, Tenant } from "./types";
 import { obtenerTenantPorPhoneNumberId, refrescarSiFaltaPhoneNumberId } from "./config/tenantStore";
-import { parsearEntrante, enviarTexto, enviarInteractivo, esConfirmacionCita, type MensajeEntrante } from "./whatsapp/client";
+import {
+  parsearEntrante,
+  enviarTexto,
+  enviarInteractivo,
+  esConfirmacionCita,
+  descargarImagenComoDataUrl,
+  type MensajeEntrante,
+} from "./whatsapp/client";
 import type { MensajeInteractivo } from "./types";
 import { transcribirAudio } from "./whatsapp/transcribir";
 import { correrAgente } from "./agent/runAgent";
@@ -44,6 +51,14 @@ export type Pendiente =
       historialPrevio: MensajeConversacion[];
     }
   | {
+      clase: "imagen";
+      tenant: Tenant;
+      entrante: MensajeEntrante;
+      conv: Conversacion;
+      primerContacto: boolean;
+      historialPrevio: MensajeConversacion[];
+    }
+  | {
       clase: "texto";
       tenant: Tenant;
       entrante: MensajeEntrante;
@@ -72,30 +87,39 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio): Promise
     return null;
   }
 
-  // Mensajes no-texto: audio (notas de voz) los transcribimos en fase 2; el resto
-  // (fotos, stickers, video) se notifica al operador. Igual guardamos un marcador
-  // deduplicado por waMessageId para que el operador vea que llegó algo.
+  // Mensajes no-texto: audio (notas de voz) los transcribimos en fase 2, fotos las
+  // cotizamos con visión (C1.5); el resto (stickers, video) se notifica al operador.
+  // Igual guardamos un marcador deduplicado por waMessageId para que el operador
+  // vea que llegó algo.
   if (!entrante.esTexto || !entrante.texto.trim()) {
     const esAudio = !!entrante.audioId;
+    const esImagen = !!entrante.imagenId;
     const conv = await repo.obtenerOConversacion(tenant.id, entrante.clienteWa);
     const primerContacto = !conv.optInEn;
     const historialPrevio = conv.mensajes.slice();
     const msg: MensajeConversacion = {
       rol: "user",
-      contenido: esAudio ? "[audio]" : "[multimedia]",
+      contenido: esAudio
+        ? "[audio]"
+        : esImagen
+          ? entrante.imagenCaption
+            ? `[foto] ${entrante.imagenCaption}`
+            : "[foto]"
+          : "[multimedia]",
       creadoEn: new Date().toISOString(),
       waMessageId: entrante.messageId,
     };
     const payload: PendienteSerializado = {
-      clase: esAudio ? "audio" : "no-texto",
+      clase: esAudio ? "audio" : esImagen ? "imagen" : "no-texto",
       tenantId: tenant.id,
       entrante,
       conv,
-      ...(esAudio ? { primerContacto, historialPrevio } : {}),
+      ...(esAudio || esImagen ? { primerContacto, historialPrevio } : {}),
     };
     const esNuevo = await repo.guardarEntranteYEncolar(conv.id, msg, payload);
     if (!esNuevo) return null;
     if (esAudio) return { clase: "audio", tenant, entrante, conv, primerContacto, historialPrevio };
+    if (esImagen) return { clase: "imagen", tenant, entrante, conv, primerContacto, historialPrevio };
     return { clase: "no-texto", tenant, entrante, conv };
   }
 
@@ -138,20 +162,117 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio): Promise
  */
 export async function responderEntrante(p: Pendiente, repo: Repositorio): Promise<void> {
   if (p.clase === "no-texto") {
-    // El bot no puede leer fotos, stickers ni video. Le pedimos al cliente que
-    // escriba en qué ayudarle Y avisamos a un humano: el adjunto puede ser
-    // importante (p. ej. la foto del parabrisas a pulir) y no queremos ignorarlo.
+    // El bot no puede leer stickers ni video (las fotos las procesa la rama
+    // "imagen" de abajo, C1.5). Le pedimos al cliente que escriba en qué ayudarle
+    // Y avisamos a un humano: el adjunto puede ser importante y no queremos ignorarlo.
     await enviarTexto(
       p.tenant,
       p.entrante.clienteWa,
-      "¡Hola! 🙂 Por ahora no puedo ver fotos ni stickers. Contame por texto en qué te puedo ayudar (precios, horarios, ubicación o agendar una cita) y con gusto te atiendo.",
+      "¡Hola! 🙂 Por ahora no puedo ver stickers ni videos. Contame por texto (o mandame una foto) en qué te puedo ayudar y con gusto te atiendo.",
     ).catch((e) => console.error("[no-texto] no se pudo responder al cliente:", e));
     await notificarOperador(
       repo,
       p.tenant,
       p.conv,
-      "📎 Llegó un mensaje multimedia que el bot no puede leer (foto/sticker/video).",
+      "📎 Llegó un mensaje multimedia que el bot no puede leer (sticker/video).",
     ).catch((e) => console.error("[no-texto] notificarOperador:", e));
+    return;
+  }
+
+  if (p.clase === "imagen") {
+    const { tenant, entrante, conv, primerContacto, historialPrevio } = p;
+
+    // Descargamos la foto YA (antes de mirar el modo): así el operador la ve en el
+    // panel tanto si la atiende el bot como si la atiende una persona.
+    let imagenDataUrl: string | undefined;
+    try {
+      imagenDataUrl = await descargarImagenComoDataUrl(tenant, entrante.imagenId!);
+      if (entrante.messageId) {
+        await repo
+          .actualizarMediaMensaje(conv.id, entrante.messageId, imagenDataUrl, "imagen")
+          .catch((e) => console.error("[imagen] no se pudo guardar la media en el mensaje:", e));
+      }
+    } catch (e) {
+      console.error("[imagen] no se pudo descargar la foto:", e);
+    }
+
+    if (conv.modo === "humano") {
+      await notificarOperador(repo, tenant, conv, "📷 Foto recibida.").catch((e) =>
+        console.error("[imagen] notificarOperador:", e),
+      );
+      return;
+    }
+
+    if (!imagenDataUrl) {
+      // No pudimos bajar la foto: no dejamos al cliente en silencio ni al bot "adivinar" sin verla.
+      await enviarTexto(
+        tenant,
+        entrante.clienteWa,
+        "¡Hola! 🙂 Recibí tu foto pero tuve un problema para verla. ¿Podés volver a mandarla o contarme por texto en qué te ayudo?",
+      ).catch(() => {});
+      await notificarOperador(repo, tenant, conv, "📷 Foto recibida — no se pudo procesar.").catch(() => {});
+      return;
+    }
+
+    try {
+      const { respuesta, fueraDeAlcance, escalar, motivo, interactivo } = await correrAgente(
+        { tenant, repo, clienteWa: entrante.clienteWa },
+        entrante.imagenCaption?.trim() || "El cliente mandó esta foto sin comentario. Mirala y ayudalo.",
+        historialPrevio,
+        imagenDataUrl,
+      );
+
+      const modoActual = await repo.obtenerModo(tenant.id, conv.id);
+      if (modoActual === "humano") {
+        console.log(`[imagen] respuesta descartada: un humano tomó ${entrante.clienteWa} durante el proceso`);
+        return;
+      }
+
+      if (escalar) {
+        await repo.setModoConversacion(tenant.id, conv.id, "humano");
+        let salida = MENSAJE_ESCALADA;
+        if (primerContacto) salida = `${AVISO_BOT.replace("%NOMBRE%", tenant.nombre)}\n\n${salida}`;
+        await enviarTexto(tenant, entrante.clienteWa, salida);
+        if (primerContacto) await repo.marcarOptIn(conv.id);
+        await repo.guardarMensaje(conv.id, { rol: "assistant", contenido: MENSAJE_ESCALADA, creadoEn: new Date().toISOString() });
+        await notificarOperador(
+          repo,
+          tenant,
+          conv,
+          motivo ? `🙋 El bot pasó este caso (foto): ${motivo}` : "📷 Foto recibida.",
+        );
+        await repo.registrarCalidad({
+          tenantId: tenant.id,
+          clienteWa: entrante.clienteWa,
+          tipo: "fuera_de_alcance",
+          detalle: motivo ? `escalado: ${motivo}` : "escalado a humano (foto)",
+        });
+        return;
+      }
+
+      let salida = respuesta;
+      if (primerContacto) salida = `${AVISO_BOT.replace("%NOMBRE%", tenant.nombre)}\n\n${respuesta}`;
+      await enviarRespuestaBot(tenant, entrante.clienteWa, salida, interactivo);
+      if (primerContacto) await repo.marcarOptIn(conv.id);
+      await repo.guardarMensaje(conv.id, { rol: "assistant", contenido: respuesta, creadoEn: new Date().toISOString() });
+      console.log(`[imagen→saliente] → ${entrante.clienteWa}: "${respuesta.slice(0, 80)}"`);
+      await repo.registrarCalidad({
+        tenantId: tenant.id,
+        clienteWa: entrante.clienteWa,
+        tipo: fueraDeAlcance ? "fuera_de_alcance" : "mensaje_ok",
+      });
+    } catch (e) {
+      console.error("[imagen] error procesando:", e);
+      await repo
+        .registrarCalidad({ tenantId: tenant.id, clienteWa: entrante.clienteWa, tipo: "error", detalle: String(e) })
+        .catch(() => {});
+      await enviarTexto(
+        tenant,
+        entrante.clienteWa,
+        "Disculpá, tuvimos un problemita viendo tu foto. Probá de nuevo en un momento 🙏",
+      ).catch(() => {});
+      await notificarOperador(repo, tenant, conv, "⚠️ El bot no pudo responder a una foto recibida.").catch(() => {});
+    }
     return;
   }
 

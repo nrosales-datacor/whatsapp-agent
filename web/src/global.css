@@ -309,6 +309,7 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .b.bot     { background: var(--accent-soft); border-color: var(--accent-line); align-self: flex-end; }
 .b.humano  { background: var(--surface-2); align-self: flex-end; }
 .b .quien  { font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); margin-bottom: 3px; }
+.b .msg-img { display: block; max-width: 100%; max-height: 320px; border-radius: calc(var(--radius) - 4px); margin-bottom: 4px; object-fit: cover; }
 
 /* Empty state */
 #vacio { flex: 1; display: flex; align-items: center; justify-content: center; padding: var(--space-lg); }
