@@ -6,7 +6,7 @@
 
 **Leyenda:** ✅ hecho · 🔵 en progreso · ⬜ pendiente · 🔴 bloqueante crítico para escalar
 
-**Última actualización:** 2026-07-07 (C2.1 completa — vista Agenda en el panel)
+**Última actualización:** 2026-07-07 (B5 en progreso — pipeline CI/CD con GitHub Actions)
 
 ---
 
@@ -37,7 +37,12 @@ El **código** es sólido para el piloto; lo que no escala todavía es la **topo
 - [x] ✅ **B2 — Tenants y su config → base de datos** + tabla `usuarios`/auth del panel. Tablas `wa_tenants` (config rica como JSONB: horario/servicios/kb + `phone_number_id` único para ruteo) y `wa_usuarios` (login del panel). Se leen vía un **caché en memoria** (`src/config/tenantStore.ts`, accesores síncronos para el hot path) que carga de la base, se refresca cada ~60s y **on-demand** ante un número nuevo (alta sin redeploy), con **fallback hardcodeado** si la base está vacía/caída → la migración no puede causar outage. Login pasa a `usuario → wa_usuarios → tenant` (la sesión sigue firmando `tenant.id`). Seed idempotente `scripts/seedTenants.ts` + DEPLOY.md con orden seguro. Verificado: typecheck + path en memoria (login/me/anti-timing). _Pendiente: la verificación contra Postgres real ocurre en el deploy sembrado (no hay Docker local); el fallback la cubre. El alta self-serve por UI es B3._
 - [x] ✅ **B3 — Onboarding (UI en React, operado por admin).** Área de superadmin en `/panel/admin` (auth por `.env` `PANEL_SUPERADMIN_*`, sesión/cookie aparte `panel_admin_sesion` — no toca el login operador). API `/api/panel/admin/*` (login, me, logout, listar/crear negocios) con CSRF + validación server-side + 409 por duplicados; `crearTenant` transaccional en el store + recarga del caché → el negocio queda vivo sin redeploy. Acá entró **React Router** (`basename=/panel`: `/` operador, `/admin` onboarding) + **fallback SPA** en el server para los deep-links. Formulario MVP (datos + servicios + horario + KB en bloques de texto + usuario). Verificado local: typecheck + build + flujo admin/CSRF/no-sombra/regresión operador (alta real requiere base → se valida en el deploy). _MVP: el alta es por admin (no signup público); editar/borrar negocios y conectar WhatsApp por Embedded Signup quedan para más adelante._
 - [x] ✅ **B4 — Recordatorios safe para N instancias.** Reemplazado el patrón "leer-y-marcar" (carrera read→write con N instancias) por **claim atómico** (`reclamarRecordatorio`: `UPDATE ... WHERE col IS NULL RETURNING id`). Si el envío falla, `revertirRecordatorio` pone la columna a NULL para reintentar. Sin migración nueva (reutiliza `recordatorio_dia_antes_en`/`recordatorio_mismo_dia_en`). Pooler-safe (no usa advisory locks de sesión). _Done:_ correr 2 instancias no duplica recordatorios.
-- [ ] **B5 — Observabilidad + CI/CD.** Sentry (errores), uptime monitor, métricas (msg/s, latencia LLM, profundidad de cola), backups verificados. Pipeline en vez de `git pull && pm2 restart`. _Done:_ alertas activas y deploy automatizado.
+- [ ] 🔵 **B5 — Observabilidad + CI/CD.** Sentry (errores), uptime monitor, métricas (msg/s, latencia LLM, profundidad de cola), backups verificados. Pipeline en vez de `git pull && pm2 restart`. _Done:_ alertas activas y deploy automatizado.
+  - [x] ✅ **Pipeline CI/CD.** `.github/workflows/ci-cd.yml`: en cada push corre typecheck (backend + panel) y build del panel; en `push` a `main` (tras pasar lo anterior) se conecta por SSH al droplet y corre el mismo redeploy que antes era manual (`git pull && npm install && migrar.ts && seedTenants.ts && web:build && pm2 restart`), con smoke test final contra `/salud`. Requiere el secret `DEPLOY_SSH_KEY` (llave dedicada, no la personal de Sebastián) — setup documentado en `DEPLOY.md` §15. El redeploy manual sigue existiendo como red de seguridad si el pipeline falla.
+  - [ ] Sentry (captura de errores no manejados en server/worker).
+  - [ ] Uptime monitor externo contra `/salud`.
+  - [ ] Métricas internas: msg/s, latencia LLM, profundidad de `wa_jobs`.
+  - [ ] Backups verificados (restore probado de Supabase).
 
 ---
 
