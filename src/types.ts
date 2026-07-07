@@ -124,7 +124,7 @@ export type TipoRecordatorio = "dia_antes" | "mismo_dia";
  * whatsapp/client.ts (que importa Tenant desde este mismo módulo).
  */
 export interface PendienteSerializado {
-  clase: "texto" | "no-texto" | "audio";
+  clase: "texto" | "no-texto" | "audio" | "imagen";
   tenantId: string;
   entrante: {
     phoneNumberId: string;
@@ -134,6 +134,10 @@ export interface PendienteSerializado {
     texto: string;
     /** id del media de audio en WhatsApp (solo cuando clase === "audio"). */
     audioId?: string;
+    /** id del media de imagen en WhatsApp (solo cuando clase === "imagen"). Para cotizar con visión (C1.5). */
+    imagenId?: string;
+    /** leyenda opcional que el cliente escribió junto a la foto. */
+    imagenCaption?: string;
     /** id crudo de la respuesta interactiva (botón/lista); habilita acciones directas (C1.3). */
     interactiveId?: string;
   };
@@ -150,6 +154,10 @@ export interface MensajeConversacion {
   porHumano?: boolean;
   /** id del mensaje en WhatsApp (msg.id). Permite deduplicar reintentos de Meta. */
   waMessageId?: string;
+  /** URL de datos ("data:image/...;base64,...") de una foto adjunta del cliente (C1.5). */
+  mediaUrl?: string;
+  /** Tipo de adjunto de `mediaUrl`. Omitido si el mensaje no tiene media. */
+  mediaTipo?: "imagen";
 }
 
 /** Quién atiende la conversación: la IA ("bot") o un humano desde el panel ("humano"). */
@@ -247,6 +255,17 @@ export interface Repositorio {
    */
   guardarMensaje(conversacionId: string, msg: MensajeConversacion): Promise<boolean>;
   marcarOptIn(conversacionId: string): Promise<void>;
+  /**
+   * Adjunta la URL de una foto a un mensaje YA guardado, identificado por su
+   * waMessageId (C1.5). Fase 1 guarda un placeholder de texto rápido; fase 2
+   * descarga la imagen de Meta y la completa acá para que se vea en el panel.
+   */
+  actualizarMediaMensaje(
+    conversacionId: string,
+    waMessageId: string,
+    mediaUrl: string,
+    mediaTipo: "imagen",
+  ): Promise<void>;
 
   citasPorFecha(tenantId: string, fecha: string): Promise<Cita[]>;
   crearCita(cita: Omit<Cita, "id" | "creadaEn" | "estado">): Promise<Cita>;

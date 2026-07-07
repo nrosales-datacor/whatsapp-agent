@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import type { ChatCompletionContentPart, ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import type { Cita, MensajeConversacion, MensajeInteractivo, Repositorio, Tenant } from "../types";
 import { construirSystemPrompt } from "./systemPrompt";
 import { TOOLS } from "./tools";
@@ -272,16 +272,27 @@ export interface ResultadoAgente {
 /**
  * Procesa un mensaje del cliente y devuelve la respuesta del agente.
  * `historial` son los mensajes previos de la conversación (para contexto).
+ * `imagenDataUrl` (C1.5): si el cliente mandó una foto, se adjunta SOLO al turno
+ * actual como contenido multimodal (gpt-4o-mini soporta visión) — no se guarda en
+ * el historial de turnos siguientes para no repetir el mismo blob en cada llamada.
  */
 export async function correrAgente(
   ctx: ContextoAgente,
   textoUsuario: string,
   historial: MensajeConversacion[],
+  imagenDataUrl?: string,
 ): Promise<ResultadoAgente> {
+  const contenidoUsuario: string | ChatCompletionContentPart[] = imagenDataUrl
+    ? [
+        { type: "text", text: textoUsuario },
+        { type: "image_url", image_url: { url: imagenDataUrl } },
+      ]
+    : textoUsuario;
+
   const mensajes: ChatCompletionMessageParam[] = [
     { role: "system", content: construirSystemPrompt(ctx.tenant) },
     ...historial.map((m) => ({ role: m.rol, content: m.contenido }) as ChatCompletionMessageParam),
-    { role: "user", content: textoUsuario },
+    { role: "user", content: contenidoUsuario },
   ];
 
   // Canal de salida lateral para efectos de herramientas (mensaje interactivo).

@@ -97,6 +97,21 @@ export class RepositorioEnMemoria implements Repositorio {
     return true;
   }
 
+  async actualizarMediaMensaje(
+    conversacionId: string,
+    waMessageId: string,
+    mediaUrl: string,
+    mediaTipo: "imagen",
+  ): Promise<void> {
+    const c = this.conversaciones.get(conversacionId);
+    if (!c) return;
+    const msg = c.mensajes.find((m) => m.waMessageId === waMessageId);
+    if (msg) {
+      msg.mediaUrl = mediaUrl;
+      msg.mediaTipo = mediaTipo;
+    }
+  }
+
   async marcarOptIn(conversacionId: string): Promise<void> {
     const c = this.conversaciones.get(conversacionId);
     if (c && !c.optInEn) c.optInEn = new Date().toISOString();

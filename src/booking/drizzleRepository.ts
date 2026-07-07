@@ -85,6 +85,8 @@ export class RepositorioDrizzle implements Repositorio {
         contenido: m.contenido,
         creadoEn: m.creadoEn.toISOString(),
         porHumano: m.porHumano,
+        mediaUrl: m.mediaUrl ?? undefined,
+        mediaTipo: (m.mediaTipo as "imagen" | undefined) ?? undefined,
       })),
     };
   }
@@ -101,10 +103,24 @@ export class RepositorioDrizzle implements Repositorio {
         contenido: msg.contenido,
         porHumano: msg.porHumano ?? false,
         waMessageId: msg.waMessageId ?? null,
+        mediaUrl: msg.mediaUrl ?? null,
+        mediaTipo: msg.mediaTipo ?? null,
       })
       .onConflictDoNothing()
       .returning({ id: waMensajes.id });
     return filas.length > 0;
+  }
+
+  async actualizarMediaMensaje(
+    conversacionId: string,
+    waMessageId: string,
+    mediaUrl: string,
+    mediaTipo: "imagen",
+  ): Promise<void> {
+    await this.db
+      .update(waMensajes)
+      .set({ mediaUrl, mediaTipo })
+      .where(and(eq(waMensajes.conversacionId, conversacionId), eq(waMensajes.waMessageId, waMessageId)));
   }
 
   async marcarOptIn(conversacionId: string): Promise<void> {
@@ -430,6 +446,8 @@ export class RepositorioDrizzle implements Repositorio {
         contenido: m.contenido,
         creadoEn: m.creadoEn.toISOString(),
         porHumano: m.porHumano,
+        mediaUrl: m.mediaUrl ?? undefined,
+        mediaTipo: (m.mediaTipo as "imagen" | undefined) ?? undefined,
       })),
       servicio: citaActiva?.servicioId ?? null,
       tieneCita: !!citaActiva,

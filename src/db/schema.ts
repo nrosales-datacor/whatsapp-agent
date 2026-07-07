@@ -57,6 +57,10 @@ export const waMensajes = pgTable(
     // los reintentos de Meta. Null en los salientes (no vienen de Meta); Postgres
     // permite múltiples NULL en un índice único, así que no chocan entre sí.
     waMessageId: text("wa_message_id"),
+    // Foto adjunta del cliente (C1.5): data URL ("data:image/...;base64,...") para
+    // mostrarla en el panel. Se completa en fase 2, después de descargarla de Meta.
+    mediaUrl: text("media_url"),
+    mediaTipo: text("media_tipo"), // "imagen" | null
   },
   (t) => ({
     idxConv: index("wa_msg_conv_idx").on(t.conversacionId),

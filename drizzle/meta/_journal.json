@@ -57,6 +57,13 @@
       "when": 1783295833895,
       "tag": "0007_confirmada_en",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783438650276,
+      "tag": "0008_third_toad_men",
+      "breakpoints": true
     }
   ]
 }

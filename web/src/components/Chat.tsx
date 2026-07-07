@@ -193,12 +193,15 @@ export default function Chat({ id, resumen, mostrar, onVolver, onVerFicha }: Pro
         <div id="msgs" ref={msgsRef}>
           {conv.mensajes.map((m, i) => {
             const clase = m.rol === "user" ? "cliente" : m.porHumano ? "humano" : "bot";
+            const esImagen = m.mediaTipo === "imagen" && !!m.mediaUrl;
+            const texto = esImagen ? m.contenido.replace(/^\[foto\]\s*/, "") : m.contenido;
             return (
               <div className={"b " + clase} key={i}>
                 {m.rol !== "user" && (
                   <div className="quien">{m.porHumano ? "Agente" : "Bot"}</div>
                 )}
-                {m.contenido}
+                {esImagen && <img src={m.mediaUrl} alt="Foto enviada por el cliente" className="msg-img" />}
+                {texto}
                 <div className="meta">{hora(m.creadoEn)}</div>
               </div>
             );
