@@ -295,6 +295,41 @@ En el celular: abrí ese link → menú del navegador → **"Agregar a pantalla 
 para instalarla como app. Adentro, tocá la 🔔 (arriba a la derecha) para activar las
 notificaciones (te pedirá permiso y te llegará una de prueba).
 
+## 15. CI/CD — deploy automático con GitHub Actions (ROADMAP B5)
+
+Desde que existe `.github/workflows/ci-cd.yml`, **el redeploy manual de la fila de abajo ya no es
+el camino normal**: cada `push` a `main` corre typecheck (backend + panel) y build del panel; si
+todo pasa, se conecta por SSH al droplet y hace exactamente esos mismos pasos, sola. Un `push` a
+cualquier otra rama, o un PR contra `main`, solo corre el typecheck/build (sin tocar el droplet).
+
+### Configuración de una sola vez
+
+1. **Generar una llave SSH dedicada a CI** (no la personal de Sebastián — así se puede revocar sin
+   afectar su acceso):
+   ```bash
+   ssh-keygen -t ed25519 -f deploy_ci -N "" -C "github-actions-deploy"
+   ```
+2. **Agregar la pública al droplet** (usuario `sebastian`):
+   ```bash
+   cat deploy_ci.pub | ssh sebastian@157.230.190.60 "cat >> ~/.ssh/authorized_keys"
+   ```
+3. **Cargar la privada como secret en GitHub**: repo → *Settings* → *Secrets and variables* →
+   *Actions* → *New repository secret* → nombre `DEPLOY_SSH_KEY`, valor el contenido completo de
+   `deploy_ci` (la privada, no la `.pub`). Borrá `deploy_ci`/`deploy_ci.pub` de tu disco después.
+4. Borrá el par de llaves local (`rm deploy_ci deploy_ci.pub`) una vez cargada — ya vive solo en
+   el droplet (pública) y en GitHub (privada).
+
+El host, usuario, carpeta y nombre del proceso PM2 están hardcodeados en el workflow (no son
+secretos: ya están documentados en este mismo archivo, que vive en un repo privado). Si el droplet
+cambia de IP o de carpeta, hay que actualizar `.github/workflows/ci-cd.yml`.
+
+### Si el pipeline falla
+
+`pm2 restart` solo corre si `git pull`/`npm install`/`migrar.ts`/`seedTenants.ts`/`web:build` salieron
+bien (`set -e` en el script remoto) — el bot sigue corriendo con el código viejo hasta que un
+deploy completo tenga éxito. Mirá la pestaña **Actions** del repo para ver en qué paso falló.
+Como red de seguridad, el redeploy manual de la tabla de abajo sigue funcionando igual que siempre.
+
 ## Mantenimiento rápido
 
 | Acción | Comando |
@@ -302,7 +337,7 @@ notificaciones (te pedirá permiso y te llegará una de prueba).
 | Ver estado | `pm2 status` |
 | Ver registros | `pm2 logs whatsapp-bot` |
 | Reiniciar | `pm2 restart whatsapp-bot` |
-| Actualizar el código | `cd ~/lavacar-whatsapp-bot && git pull && npm install && npx tsx scripts/migrar.ts && npx tsx scripts/seedTenants.ts && npm run web:build && pm2 restart whatsapp-bot` |
+| Actualizar el código (manual, red de seguridad — lo normal es el push a `main`) | `cd ~/lavacar-whatsapp-bot && git pull && npm install && npx tsx scripts/migrar.ts && npx tsx scripts/seedTenants.ts && npm run web:build && pm2 restart whatsapp-bot` |
 
 **Landing de venta (ROADMAP C4.4):** vive en `landing/` (HTML/CSS estático, sin build) y la sirve
 el mismo proceso Node en el root del dominio (`GET /`). No agrega pasos al redeploy — el `git pull`

@@ -1,0 +1,72 @@
+name: CI/CD
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verificar:
+    name: Typecheck + build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+
+      - name: Instalar dependencias (backend)
+        run: npm ci
+
+      - name: Typecheck (backend)
+        run: npm run typecheck
+
+      - name: Instalar dependencias (panel)
+        run: npm ci --prefix web
+
+      - name: Typecheck (panel)
+        run: npm run typecheck --prefix web
+
+      - name: Build del panel
+        run: npm run build --prefix web
+
+  desplegar:
+    name: Deploy a producción
+    needs: verificar
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-produccion
+      cancel-in-progress: false
+    env:
+      DEPLOY_HOST: "157.230.190.60"
+      DEPLOY_USER: "sebastian"
+      DEPLOY_DIR: "~/lavacar-whatsapp-bot"
+      DEPLOY_PM2_APP: "whatsapp-bot"
+      SALUD_URL: "https://wabotlavacar.selyon.app/salud"
+    steps:
+      - name: Configurar SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Actualizar código y reiniciar el bot
+        run: |
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "
+            set -e
+            cd $DEPLOY_DIR
+            git pull
+            npm install
+            npx tsx scripts/migrar.ts
+            npx tsx scripts/seedTenants.ts
+            npm run web:build
+            pm2 restart $DEPLOY_PM2_APP
+          "
+
+      - name: Verificar que el bot responde (/salud)
+        run: |
+          sleep 5
+          curl -sf "$SALUD_URL" || (echo "::error::El bot no respondió en /salud tras el deploy" && exit 1)
