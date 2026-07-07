@@ -12,6 +12,7 @@ import { manejarPanel } from "./panel/router";
 import { manejarLanding } from "./landing/servirLanding";
 import { pushConfigurado } from "./panel/push";
 import { iniciarWorker } from "./queue/worker";
+import { iniciarSentry, sentryConfigurado, capturarError } from "./observabilidad/sentry";
 import type { Repositorio } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -19,6 +20,8 @@ import type { Repositorio } from "./types";
 // Si hay DATABASE_URL en el entorno → guarda en PostgreSQL (Drizzle).
 // Si no → usa el repositorio en memoria (ideal para probar; no persiste).
 // ─────────────────────────────────────────────────────────────────────────────
+
+iniciarSentry(); // antes de aceptar tráfico: registra los handlers globales de error (ROADMAP B5).
 
 const PORT = Number(process.env.PORT ?? 3000);
 const RUTA_WEBHOOK = "/webhook";
@@ -92,6 +95,7 @@ const server = http.createServer(async (req, res) => {
       pendiente = await ingerirEntrante(body, repo);
     } catch (e) {
       console.error("[server] no se pudo persistir el mensaje entrante (Meta reintentará):", e);
+      capturarError(e, { ruta: "webhook", fase: 1 });
       res.writeHead(500, { "content-type": "text/plain" });
       res.end("error");
       return;
@@ -103,7 +107,10 @@ const server = http.createServer(async (req, res) => {
     if (pendiente && !db) {
       // Sin base de datos (dev local / sin DATABASE_URL): procesar inline como antes.
       // Con DB el job ya quedó encolado en Fase 1 y el worker lo consume.
-      responderEntrante(pendiente, repo).catch((e) => console.error("[server] responderEntrante:", e));
+      responderEntrante(pendiente, repo).catch((e) => {
+        console.error("[server] responderEntrante:", e);
+        capturarError(e, { ruta: "webhook", fase: 2 });
+      });
     }
     return;
   }
@@ -131,6 +138,7 @@ server.listen(PORT, () => {
   console.log(`Webhook: http://localhost:${PORT}${RUTA_WEBHOOK}  ·  Almacenamiento: ${modo}`);
   console.log(`Google Calendar: ${calendarioConfigurado() ? "conectado ✅" : "no configurado (opcional)"}`);
   console.log(`Notificaciones push: ${pushConfigurado() ? "configuradas ✅" : "no configuradas (faltan llaves VAPID)"}`);
+  console.log(`Sentry: ${sentryConfigurado() ? "activo ✅" : "no configurado (opcional, falta SENTRY_DSN)"}`);
 
   // Cola durable: el worker consume los jobs de wa_jobs. Solo cuando hay DB.
   if (db) iniciarWorker(repo, db);

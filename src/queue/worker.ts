@@ -3,6 +3,7 @@ import type { schema } from "../db/schema";
 import type { Repositorio } from "../types";
 import { obtenerTenantPorPhoneNumberId } from "../config/tenantStore";
 import { responderEntrante } from "../handleWebhook";
+import { capturarError } from "../observabilidad/sentry";
 import { marcarFalloOReintentar, marcarHecho, reencolarVencidos, reclamarUno } from "./cola";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -52,9 +53,15 @@ export function iniciarWorker(repo: Repositorio, db: DB): void {
         } catch (e) {
           await marcarFalloOReintentar(db, job.id, String(e), job.intentos, job.maxIntentos);
           console.error(`[worker] job ${job.id} falló (intento ${job.intentos}/${job.maxIntentos}):`, e);
+          // Solo alertar cuando se agotaron los reintentos: los intermedios son
+          // esperados (backoff) y alertar en cada uno sería ruido.
+          if (job.intentos >= job.maxIntentos) {
+            capturarError(e, { jobId: job.id, tenantId: job.tenantId, intentos: job.intentos });
+          }
         }
       } catch (e) {
         console.error("[worker] error en loop de trabajo:", e);
+        capturarError(e, { loop: "trabajo" });
         await dormir(POLL_MS);
       }
     }
@@ -68,11 +75,18 @@ export function iniciarWorker(repo: Repositorio, db: DB): void {
         if (n > 0) console.log(`[worker] reaper: ${n} job(s) vencido(s) reencolado(s)`);
       } catch (e) {
         console.error("[worker] reaper error:", e);
+        capturarError(e, { loop: "reaper" });
       }
     }
   };
 
-  loopTrabajo().catch((e) => console.error("[worker] loop de trabajo terminó inesperadamente:", e));
-  loopReaper().catch((e) => console.error("[worker] loop reaper terminó inesperadamente:", e));
+  loopTrabajo().catch((e) => {
+    console.error("[worker] loop de trabajo terminó inesperadamente:", e);
+    capturarError(e, { loop: "trabajo", fatal: true });
+  });
+  loopReaper().catch((e) => {
+    console.error("[worker] loop reaper terminó inesperadamente:", e);
+    capturarError(e, { loop: "reaper", fatal: true });
+  });
   console.log(`Worker de cola iniciado (poll cada ${POLL_MS}ms, reaper cada ${REAPER_INTERVAL_MS / 1000}s).`);
 }

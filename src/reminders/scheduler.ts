@@ -1,6 +1,7 @@
 import type { Cita, Repositorio, Tenant, TipoRecordatorio } from "../types";
 import { listarTenants } from "../config/tenantStore";
 import { botonesRecordatorio, enviarBotones, enviarPlantilla } from "../whatsapp/client";
+import { capturarError } from "../observabilidad/sentry";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RECORDATORIOS DE CITA por WhatsApp.
@@ -158,11 +159,22 @@ export function iniciarRecordatorios(repo: Repositorio): void {
         await procesarTenant(tenant, repo);
       } catch (e) {
         console.error(`[recordatorios] error procesando tenant ${tenant.id}:`, e);
+        capturarError(e, { loop: "recordatorios", tenantId: tenant.id });
       }
     }
   };
-  tick().catch((e) => console.error("[recordatorios] primer chequeo:", e));
-  setInterval(() => tick().catch((e) => console.error("[recordatorios] tick:", e)), INTERVALO_MIN * 60 * 1000);
+  tick().catch((e) => {
+    console.error("[recordatorios] primer chequeo:", e);
+    capturarError(e, { loop: "recordatorios", momento: "primer-chequeo" });
+  });
+  setInterval(
+    () =>
+      tick().catch((e) => {
+        console.error("[recordatorios] tick:", e);
+        capturarError(e, { loop: "recordatorios", momento: "tick" });
+      }),
+    INTERVALO_MIN * 60 * 1000,
+  );
   console.log(
     `Recordatorios activos: día antes a partir de las ${DIA_ANTES_HORA} · mismo día ${HORAS_ANTES} h antes · chequeo cada ${INTERVALO_MIN} min.`,
   );
