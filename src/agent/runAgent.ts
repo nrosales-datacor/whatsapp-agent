@@ -6,24 +6,14 @@ import { TOOLS } from "./tools";
 import { opcionHorario } from "../whatsapp/client";
 import { espaciosDisponibles } from "../booking/availability";
 import {
-  actualizarEventoCita,
-  calendarioConfigurado,
-  crearEventoCita,
-  eliminarEventoCita,
-} from "../calendar/googleCalendar";
+  hoyEnTz,
+  sincronizarCancelacionGcal,
+  sincronizarCreacionGcal,
+  sincronizarReprogramacionGcal,
+} from "../booking/gestionCitas";
 
 const MODELO = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const MAX_PASOS = 4; // tope de iteraciones de tool-calling por mensaje
-
-/** "Hoy" ("YYYY-MM-DD") en la zona horaria del tenant (para filtrar citas futuras). */
-function hoyEnTz(timezone: string): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-}
 
 // Inicialización perezosa: el server arranca aunque todavía no haya OPENAI_API_KEY;
 // solo se necesita cuando llega un mensaje real.
@@ -157,14 +147,7 @@ async function ejecutarTool(
 
     // Reflejar la cita en el Google Calendar del negocio (si está configurado).
     // Si Google falla, la cita YA quedó guardada: no se bloquea la respuesta.
-    if (calendarioConfigurado()) {
-      try {
-        const eventId = await crearEventoCita(tenant, cita);
-        if (eventId) await repo.guardarGcalEventId(cita.id, eventId);
-      } catch (e) {
-        console.error(`[gcal] no se pudo crear el evento de la cita ${cita.id}:`, e);
-      }
-    }
+    await sincronizarCreacionGcal(tenant, repo, cita);
 
     return JSON.stringify({ ok: true, cita });
   }
@@ -213,13 +196,7 @@ async function ejecutarTool(
     if (nombre === "cancelar_cita") {
       const cancelada = await repo.cancelarCita(tenant.id, objetivo.id);
       if (!cancelada) return JSON.stringify({ ok: false, motivo: "no se pudo cancelar la cita." });
-      if (cancelada.gcalEventId) {
-        try {
-          await eliminarEventoCita(cancelada.gcalEventId);
-        } catch (e) {
-          console.error(`[gcal] no se pudo borrar el evento de la cita ${cancelada.id}:`, e);
-        }
-      }
+      await sincronizarCancelacionGcal(cancelada);
       return JSON.stringify({ ok: true, cancelada: citaResumen(cancelada) });
     }
 
@@ -242,13 +219,7 @@ async function ejecutarTool(
     const actualizada = await repo.reprogramarCita(tenant.id, objetivo.id, fecha, hora);
     if (!actualizada) return JSON.stringify({ ok: false, motivo: "no se pudo reprogramar la cita." });
     // Reflejar el cambio en Google Calendar (si está configurado y la cita tiene evento).
-    if (calendarioConfigurado() && actualizada.gcalEventId) {
-      try {
-        await actualizarEventoCita(tenant, actualizada);
-      } catch (e) {
-        console.error(`[gcal] no se pudo actualizar el evento de la cita ${actualizada.id}:`, e);
-      }
-    }
+    await sincronizarReprogramacionGcal(tenant, actualizada);
     return JSON.stringify({ ok: true, cita: citaResumen(actualizada) });
   }
 

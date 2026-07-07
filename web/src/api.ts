@@ -8,6 +8,7 @@
 // viaja sola — igual mandamos credentials: "include" por claridad.
 // ─────────────────────────────────────────────────────────────────────────────
 import type {
+  Cita,
   Conversacion,
   FichaCliente,
   HorarioDia,
@@ -19,6 +20,7 @@ import type {
 } from "../../src/types";
 
 export type {
+  Cita,
   Conversacion,
   FichaCliente,
   HorarioDia,
@@ -84,6 +86,8 @@ export interface Sesion {
   tenantId: string;
   /** Clave pública VAPID para suscribir push (null si el server no tiene push). */
   vapidPublica: string | null;
+  /** Catálogo de servicios agendables del negocio (para la Agenda, C2.1). */
+  servicios: Service[];
 }
 
 /** La ficha que devuelve el panel agrega el nombre del servicio a cada ítem del historial. */
@@ -148,6 +152,60 @@ export async function guardarNotas(id: string, notas: string): Promise<void> {
 // ── Métricas ──
 export function obtenerMetricas(): Promise<Metricas> {
   return pedir<{ metricas: Metricas }>("/metricas").then((r) => r.metricas);
+}
+
+// ── Agenda (C2.1) ──
+/** Cita con el nombre del servicio ya resuelto (lo agrega el backend). */
+export interface CitaAgenda extends Cita {
+  servicioNombre: string;
+}
+
+export interface Disponibilidad {
+  libres: string[];
+  ocupadas: { hora: string; citaId: string; clienteNombre: string }[];
+}
+
+export interface DatosCitaManual {
+  clienteNombre: string;
+  clienteWa: string;
+  servicioId: string;
+  fecha: string;
+  hora: string;
+  placa?: string;
+  precio?: number;
+}
+
+export function listarCitasRango(desde: string, hasta: string): Promise<CitaAgenda[]> {
+  const q = new URLSearchParams({ desde, hasta });
+  return pedir<{ citas: CitaAgenda[] }>(`/citas?${q}`).then((r) => r.citas);
+}
+
+export function disponibilidadCita(fecha: string, servicioId: string): Promise<Disponibilidad> {
+  const q = new URLSearchParams({ fecha, servicioId });
+  return pedir<Disponibilidad>(`/citas/disponibilidad?${q}`);
+}
+
+export function crearCitaManual(datos: DatosCitaManual): Promise<Cita> {
+  return pedir<{ cita: Cita }>("/citas", { method: "POST", body: JSON.stringify(datos) }).then((r) => r.cita);
+}
+
+export async function confirmarCitaPanel(id: string): Promise<void> {
+  await pedir(`/citas/${encodeURIComponent(id)}/confirmar`, { method: "POST" });
+}
+
+export async function completarCitaPanel(id: string): Promise<void> {
+  await pedir(`/citas/${encodeURIComponent(id)}/completar`, { method: "POST" });
+}
+
+export async function cancelarCitaPanel(id: string): Promise<void> {
+  await pedir(`/citas/${encodeURIComponent(id)}/cancelar`, { method: "POST" });
+}
+
+export async function reprogramarCitaPanel(id: string, fecha: string, hora: string): Promise<void> {
+  await pedir(`/citas/${encodeURIComponent(id)}/reprogramar`, {
+    method: "POST",
+    body: JSON.stringify({ fecha, hora }),
+  });
 }
 
 // ── Notificaciones push (Web Push) ──

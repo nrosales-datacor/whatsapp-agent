@@ -6,12 +6,13 @@ import Lista from "./Lista";
 import Chat from "./Chat";
 import FichaModal from "./FichaModal";
 import Dashboard from "./Dashboard";
+import Agenda from "./Agenda";
 import BotonNotif from "./BotonNotif";
 import Icono from "./Iconos";
 import { ToastProvider } from "./Toast";
 
 const ANCHO_MOVIL = 760;
-type Vista = "inbox" | "panel";
+type Vista = "inbox" | "panel" | "agenda";
 
 export default function Panel({ sesion }: { sesion: Sesion }) {
   const qc = useQueryClient();
@@ -82,6 +83,14 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
               <Icono id="dash" size={15} />
               Panel
             </button>
+            <button
+              type="button"
+              className={"hd-tab" + (vista === "agenda" ? " activa" : "")}
+              onClick={() => setVista("agenda")}
+            >
+              <Icono id="cal" size={15} />
+              Agenda
+            </button>
           </div>
 
           <div className="hd-acciones">
@@ -126,6 +135,7 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
             </div>
           )}
           {vista === "panel" && <Dashboard nombre={sesion.nombre} />}
+          {vista === "agenda" && <Agenda servicios={sesion.servicios} />}
         </div>
       </div>
 
