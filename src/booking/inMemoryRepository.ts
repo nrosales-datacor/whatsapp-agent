@@ -121,6 +121,12 @@ export class RepositorioEnMemoria implements Repositorio {
     return this.citas.filter((c) => c.tenantId === tenantId && c.fecha === fecha);
   }
 
+  async citasEnRango(tenantId: string, desde: string, hasta: string): Promise<Cita[]> {
+    return this.citas
+      .filter((c) => c.tenantId === tenantId && c.fecha >= desde && c.fecha <= hasta)
+      .sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora));
+  }
+
   async crearCita(cita: Omit<Cita, "id" | "creadaEn" | "estado">): Promise<Cita> {
     const nueva: Cita = {
       ...cita,
@@ -171,6 +177,13 @@ export class RepositorioEnMemoria implements Repositorio {
     const c = this.citas.find((x) => x.id === citaId && x.tenantId === tenantId && x.estado === "agendada");
     if (!c) return null;
     if (!c.confirmadaEn) c.confirmadaEn = new Date().toISOString(); // idempotente: conserva la primera
+    return { ...c };
+  }
+
+  async completarCita(tenantId: string, citaId: string): Promise<Cita | null> {
+    const c = this.citas.find((x) => x.id === citaId && x.tenantId === tenantId && x.estado === "agendada");
+    if (!c) return null;
+    c.estado = "completada";
     return { ...c };
   }
 

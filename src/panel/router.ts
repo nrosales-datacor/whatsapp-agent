@@ -10,7 +10,14 @@ import {
   recargar,
 } from "../config/tenantStore";
 import { enviarTexto } from "../whatsapp/client";
-import type { HorarioDia, KnowledgeBase, Repositorio, Service, Tenant } from "../types";
+import type { Cita, HorarioDia, KnowledgeBase, Repositorio, Service, Tenant } from "../types";
+import { espaciosDisponibles } from "../booking/availability";
+import {
+  hoyEnTz,
+  sincronizarCancelacionGcal,
+  sincronizarCreacionGcal,
+  sincronizarReprogramacionGcal,
+} from "../booking/gestionCitas";
 import {
   crearSesion,
   crearSesionAdmin,
@@ -565,7 +572,13 @@ export async function manejarPanel(
   }
 
   if (ruta === "me" && metodo === "GET") {
-    json(res, 200, { ok: true, nombre: tenant.nombre, tenantId: tenant.id, vapidPublica: clavePublicaVapid() });
+    json(res, 200, {
+      ok: true,
+      nombre: tenant.nombre,
+      tenantId: tenant.id,
+      vapidPublica: clavePublicaVapid(),
+      servicios: tenant.servicios.filter((s) => s.agendable),
+    });
     return true;
   }
 
@@ -609,6 +622,124 @@ export async function manejarPanel(
     m.serviciosTop = m.serviciosTop.map((s) => ({ ...s, nombre: nombreDe(s.servicioId) }));
     json(res, 200, { ok: true, metricas: m });
     return true;
+  }
+
+  // ── Agenda (C2.1) ──
+  const fechaValida = (f: string) => /^\d{4}-\d{2}-\d{2}$/.test(f);
+  const horaValida = (h: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(h);
+
+  if (ruta === "citas" && metodo === "GET") {
+    const q = new URL(req.url ?? "/", "http://panel.local").searchParams;
+    const desde = q.get("desde") ?? "";
+    const hasta = q.get("hasta") ?? "";
+    if (!fechaValida(desde) || !fechaValida(hasta)) {
+      return json(res, 400, { ok: false, error: "desde/hasta inválidos (usar YYYY-MM-DD)" }), true;
+    }
+    const nombreDe = (sid: string) => tenant.servicios.find((s) => s.id === sid)?.nombre ?? sid;
+    const citas = (await repo.citasEnRango(tenant.id, desde, hasta)).map((c) => ({
+      ...c,
+      servicioNombre: nombreDe(c.servicioId),
+    }));
+    return json(res, 200, { ok: true, citas }), true;
+  }
+
+  if (ruta === "citas/disponibilidad" && metodo === "GET") {
+    const q = new URL(req.url ?? "/", "http://panel.local").searchParams;
+    const fecha = q.get("fecha") ?? "";
+    const servicioId = q.get("servicioId") ?? "";
+    if (!fechaValida(fecha)) return json(res, 400, { ok: false, error: "fecha inválida" }), true;
+    const servicio = tenant.servicios.find((s) => s.id === servicioId && s.agendable);
+    if (!servicio) return json(res, 400, { ok: false, error: "Servicio inválido" }), true;
+    const citasDia = await repo.citasPorFecha(tenant.id, fecha);
+    const libres = espaciosDisponibles(tenant, fecha, servicioId, citasDia);
+    const ocupadas = citasDia
+      .filter((c) => c.estado === "agendada")
+      .map((c) => ({ hora: c.hora, citaId: c.id, clienteNombre: c.clienteNombre }));
+    return json(res, 200, { ok: true, libres, ocupadas }), true;
+  }
+
+  if (ruta === "citas" && metodo === "POST") {
+    const body = await leerBody(req);
+    if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
+    const clienteNombre = String(body.clienteNombre ?? "").trim();
+    const clienteWa = String(body.clienteWa ?? "").trim();
+    const servicioId = String(body.servicioId ?? "");
+    const fecha = String(body.fecha ?? "");
+    const hora = String(body.hora ?? "");
+    const placa = body.placa ? String(body.placa).trim() : undefined;
+    const precio =
+      body.precio != null && !Number.isNaN(Number(body.precio)) ? Number(body.precio) : undefined;
+
+    if (!clienteNombre || clienteNombre.length > 200) {
+      return json(res, 400, { ok: false, error: "Nombre del cliente inválido" }), true;
+    }
+    if (!clienteWa || clienteWa.length > 40) {
+      return json(res, 400, { ok: false, error: "Teléfono del cliente inválido" }), true;
+    }
+    const servicio = tenant.servicios.find((s) => s.id === servicioId && s.agendable);
+    if (!servicio) return json(res, 400, { ok: false, error: "Servicio inválido" }), true;
+    if (!fechaValida(fecha) || !horaValida(hora)) {
+      return json(res, 400, { ok: false, error: "Formato de fecha/hora inválido" }), true;
+    }
+    if (fecha < hoyEnTz(tenant.timezone)) {
+      return json(res, 400, { ok: false, error: "No se puede agendar una fecha pasada" }), true;
+    }
+
+    const cita: Cita = await repo.crearCita({
+      tenantId: tenant.id,
+      clienteWa,
+      clienteNombre,
+      servicioId,
+      fecha,
+      hora,
+      placa,
+      precio,
+    });
+    await sincronizarCreacionGcal(tenant, repo, cita);
+    return json(res, 200, { ok: true, cita }), true;
+  }
+
+  // /citas/{id}/{accion}
+  const partesCita = ruta.split("/");
+  if (partesCita[0] === "citas" && partesCita[1]) {
+    const citaId = decodeURIComponent(partesCita[1]);
+    const accion = partesCita[2];
+
+    if (accion === "confirmar" && metodo === "POST") {
+      const cita = await repo.confirmarCita(tenant.id, citaId);
+      if (!cita) return json(res, 404, { ok: false, error: "No existe" }), true;
+      return json(res, 200, { ok: true, cita }), true;
+    }
+
+    if (accion === "completar" && metodo === "POST") {
+      const cita = await repo.completarCita(tenant.id, citaId);
+      if (!cita) return json(res, 404, { ok: false, error: "No existe" }), true;
+      return json(res, 200, { ok: true, cita }), true;
+    }
+
+    if (accion === "cancelar" && metodo === "POST") {
+      const cita = await repo.cancelarCita(tenant.id, citaId);
+      if (!cita) return json(res, 404, { ok: false, error: "No existe" }), true;
+      await sincronizarCancelacionGcal(cita);
+      return json(res, 200, { ok: true, cita }), true;
+    }
+
+    if (accion === "reprogramar" && metodo === "POST") {
+      const body = await leerBody(req);
+      if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
+      const fecha = String(body.fecha ?? "");
+      const hora = String(body.hora ?? "");
+      if (!fechaValida(fecha) || !horaValida(hora)) {
+        return json(res, 400, { ok: false, error: "Formato de fecha/hora inválido" }), true;
+      }
+      if (fecha < hoyEnTz(tenant.timezone)) {
+        return json(res, 400, { ok: false, error: "No se puede reprogramar a una fecha pasada" }), true;
+      }
+      const cita = await repo.reprogramarCita(tenant.id, citaId, fecha, hora);
+      if (!cita) return json(res, 404, { ok: false, error: "No existe" }), true;
+      await sincronizarReprogramacionGcal(tenant, cita);
+      return json(res, 200, { ok: true, cita }), true;
+    }
   }
 
   // /conversaciones/{id} y /conversaciones/{id}/{accion}

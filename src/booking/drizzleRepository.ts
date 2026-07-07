@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { schema, waCitas, waConversaciones, waEventosCalidad, waMensajes, waPushSubs, waJobs } from "../db/schema";
 import type {
@@ -139,6 +139,16 @@ export class RepositorioDrizzle implements Repositorio {
     return rows.map(filaACita);
   }
 
+  async citasEnRango(tenantId: string, desde: string, hasta: string): Promise<Cita[]> {
+    const rows = await this.db
+      .select()
+      .from(waCitas)
+      .where(and(eq(waCitas.tenantId, tenantId), gte(waCitas.fecha, desde), lte(waCitas.fecha, hasta)))
+      .orderBy(waCitas.fecha, waCitas.hora);
+
+    return rows.map(filaACita);
+  }
+
   async crearCita(cita: Omit<Cita, "id" | "creadaEn" | "estado">): Promise<Cita> {
     const [r] = await this.db
       .insert(waCitas)
@@ -214,6 +224,15 @@ export class RepositorioDrizzle implements Repositorio {
     const [r] = await this.db
       .update(waCitas)
       .set({ confirmadaEn: sql`COALESCE(${waCitas.confirmadaEn}, now())` })
+      .where(and(eq(waCitas.id, citaId), eq(waCitas.tenantId, tenantId), eq(waCitas.estado, "agendada")))
+      .returning();
+    return r ? filaACita(r) : null;
+  }
+
+  async completarCita(tenantId: string, citaId: string): Promise<Cita | null> {
+    const [r] = await this.db
+      .update(waCitas)
+      .set({ estado: "completada" })
       .where(and(eq(waCitas.id, citaId), eq(waCitas.tenantId, tenantId), eq(waCitas.estado, "agendada")))
       .returning();
     return r ? filaACita(r) : null;

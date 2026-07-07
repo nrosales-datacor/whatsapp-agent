@@ -398,6 +398,46 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .bv-label { font-size: 8px; color: var(--text-muted); transform: rotate(-32deg); transform-origin: center top; white-space: nowrap; margin-top: 4px; }
 
 /* ══════════════════════════════════════════════════════════════════════════════
+   AGENDA (C2.1) — citas por día/semana + cita manual + estados
+   ══════════════════════════════════════════════════════════════════════════════ */
+#agenda { flex: 1; overflow-y: auto; background: var(--bg); }
+.agenda-vista-toggle { display: flex; gap: 4px; }
+.agenda-dia-vacio { font-size: 11px; color: var(--text-muted); }
+.ficha-modal.agenda-modal { max-width: 480px; }
+.agenda-boton-guardar { margin-top: var(--space-md); }
+.agenda-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); flex-wrap: wrap; margin-bottom: var(--space-md); }
+.agenda-nav { display: flex; align-items: center; gap: var(--space-xs); }
+.agenda-nav-fecha { font-weight: 700; min-width: 150px; text-align: center; }
+
+.agenda-lista { display: flex; flex-direction: column; gap: var(--space-xs); }
+.agenda-fila { display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-sm); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); flex-wrap: wrap; }
+.agenda-fila .agenda-hora { font-weight: 700; min-width: 48px; }
+.agenda-fila .agenda-cliente { flex: 1; min-width: 140px; }
+.agenda-fila .agenda-cliente b { display: block; }
+.agenda-fila .agenda-cliente span { color: var(--text-muted); font-size: var(--step--1); }
+.agenda-acciones { display: flex; gap: var(--space-xs); flex-wrap: wrap; }
+
+.badge-estado { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: var(--radius-pill); border: 1px solid var(--border); color: var(--text-muted); white-space: nowrap; }
+.badge-estado.completada { background: var(--accent-soft); color: var(--accent-strong); border-color: transparent; }
+.badge-estado.cancelada { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
+
+.agenda-semana { display: grid; grid-template-columns: repeat(7, 1fr); gap: var(--space-xs); }
+.agenda-dia-col { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-xs); background: var(--surface); min-height: 120px; }
+.agenda-dia-col.hoy { border-color: var(--accent-line); background: var(--accent-soft); }
+.agenda-dia-col h4 { font-size: var(--step--1); color: var(--text-muted); margin-bottom: var(--space-xs); text-align: center; font-weight: 600; }
+.agenda-chip { display: block; width: 100%; text-align: left; padding: 4px 6px; margin-bottom: 4px; border-radius: var(--radius-sm); font-size: 11px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); }
+.agenda-chip:hover { border-color: var(--accent-line); }
+.agenda-chip.cancelada { text-decoration: line-through; opacity: .6; }
+.agenda-chip.completada { background: var(--accent-soft); border-color: transparent; }
+
+.agenda-advertencia { font-size: var(--step--1); color: var(--warning); margin-top: var(--space-2xs); }
+
+/* Formulario de cita manual / reprogramar — mismo look que #admin, sin depender de ese id */
+#agendaForm label { display: block; font-size: var(--step--1); font-weight: 600; letter-spacing: .03em; color: var(--text-muted); margin: var(--space-md) 0 var(--space-2xs); }
+#agendaForm input, #agendaForm select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); font: inherit; font-size: var(--step-0); color: var(--text); background: var(--surface); transition: border-color .15s, box-shadow .15s; }
+#agendaForm input:focus, #agendaForm select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+/* ══════════════════════════════════════════════════════════════════════════════
    TOAST
    ══════════════════════════════════════════════════════════════════════════════ */
 #toasts { position: fixed; bottom: var(--space-xl); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: var(--space-xs); z-index: 200; pointer-events: none; }
@@ -433,6 +473,8 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
   .kpis { grid-template-columns: repeat(2,1fr); }
   /* Grid de 2 col → 1 col */
   .dash-grid-2 { grid-template-columns: 1fr; }
+  /* Semana de la agenda: 7 columnas no entran en móvil → apilar */
+  .agenda-semana { grid-template-columns: 1fr; }
 
   /* Áreas táctiles ≥44px (WCAG 2.5.5) */
   .btn-ghost, .toggle, .btn-hd-salir, .filtro-pill { min-height: 44px; display: inline-flex; align-items: center; }

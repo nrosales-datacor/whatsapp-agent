@@ -268,6 +268,11 @@ export interface Repositorio {
   ): Promise<void>;
 
   citasPorFecha(tenantId: string, fecha: string): Promise<Cita[]>;
+  /**
+   * Citas del tenant con fecha entre `desde` y `hasta` (inclusive), ordenadas por
+   * fecha/hora ascendente. Base de la vista Agenda del panel (día/semana).
+   */
+  citasEnRango(tenantId: string, desde: string, hasta: string): Promise<Cita[]>;
   crearCita(cita: Omit<Cita, "id" | "creadaEn" | "estado">): Promise<Cita>;
   /** Guarda el id del evento de Google Calendar asociado a la cita. */
   guardarGcalEventId(citaId: string, eventId: string): Promise<void>;
@@ -295,6 +300,12 @@ export interface Repositorio {
    * existe / no es del tenant / no está agendada.
    */
   confirmarCita(tenantId: string, citaId: string): Promise<Cita | null>;
+  /**
+   * Marca una cita como completada (servicio ya realizado), desde el panel.
+   * Scopeada por tenantId. Solo aplica si estaba "agendada". Devuelve la cita, o
+   * null si no existe / no es del tenant / no estaba agendada.
+   */
+  completarCita(tenantId: string, citaId: string): Promise<Cita | null>;
   /** Marca un recordatorio como enviado (para no mandarlo dos veces). */
   marcarRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<void>;
   /**
