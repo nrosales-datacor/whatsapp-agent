@@ -15,6 +15,7 @@
     "web:build": "npm --prefix web install --include=dev && npm --prefix web run build"
   },
   "dependencies": {
+    "@sentry/node": "10.54.0",
     "dotenv": "^16.4.0",
     "drizzle-orm": "^0.45.2",
     "openai": "^6.0.0",

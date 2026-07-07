@@ -330,6 +330,29 @@ bien (`set -e` en el script remoto) — el bot sigue corriendo con el código vi
 deploy completo tenga éxito. Mirá la pestaña **Actions** del repo para ver en qué paso falló.
 Como red de seguridad, el redeploy manual de la tabla de abajo sigue funcionando igual que siempre.
 
+## 16. Sentry — alertas de errores (ROADMAP B5, OPCIONAL)
+
+Sin esto el bot funciona igual, solo que un error en el server o el worker se pierde en
+`pm2 logs` y nadie se entera hasta que un cliente se queja.
+
+1. Creá una cuenta gratis en [sentry.io](https://sentry.io) y un proyecto tipo **Node**.
+2. Copiá el DSN que te da (`https://...@...ingest.sentry.io/...`) y agregalo al `.env`
+   del droplet:
+   ```bash
+   nano .env        # agregá la línea: SENTRY_DSN=https://...
+   pm2 restart whatsapp-bot
+   ```
+3. Confirmá en los logs (`pm2 logs whatsapp-bot`) que aparece `Sentry: activo ✅` al
+   arrancar. Sin el DSN dice "no configurado (opcional)" y el bot sigue igual.
+4. En el dashboard de Sentry, activá alertas por email/Slack para "nuevo issue" del
+   proyecto — así te avisa sin tener que entrar a mirar.
+
+Qué se reporta: excepciones no atrapadas y rechazos de promesa sin manejar (crashean o
+casi crashean el proceso), más los errores ya atrapados que valen alerta (falla
+persistir un mensaje entrante, un job de la cola agota reintentos, un loop del worker o
+de recordatorios muere). Los reintentos intermedios (backoff normal) NO se reportan
+para no generar ruido.
+
 ## Mantenimiento rápido
 
 | Acción | Comando |
