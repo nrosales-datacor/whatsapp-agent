@@ -353,6 +353,28 @@ persistir un mensaje entrante, un job de la cola agota reintentos, un loop del w
 de recordatorios muere). Los reintentos intermedios (backoff normal) NO se reportan
 para no generar ruido.
 
+## 17. Uptime monitor — avisa si el bot se cae (ROADMAP B5, OPCIONAL)
+
+Sentry (§16) avisa de errores mientras el proceso sigue vivo; esto cubre el caso
+distinto: el droplet se cayó, PM2 no pudo revivir el proceso, se acabó el disco, DNS
+roto, etc. — algo que Sentry no puede reportar porque el proceso ni está corriendo.
+
+Con **UptimeRobot** (gratis, no hace falta tarjeta):
+
+1. Creá una cuenta en [uptimerobot.com](https://uptimerobot.com).
+2. **+ Add New Monitor**:
+   - Monitor Type: `HTTP(s)`
+   - Friendly Name: `Lavacar Rosales — bot WhatsApp`
+   - URL: `https://wabotlavacar.selyon.app/salud`
+   - Monitoring Interval: `5 minutes` (el mínimo del free tier)
+3. En **Alert Contacts**, agregá tu email (y opcionalmente Slack/Telegram/SMS si querés
+   más canales) y asignalo al monitor.
+4. Guardá. UptimeRobot pega un GET a `/salud` cada 5 min; si no devuelve `200`
+   (droplet caído, proceso muerto, DNS roto, etc.) manda la alerta.
+
+No requiere ningún cambio de código: `/salud` ya existe y devuelve `200 OK` con texto
+plano (`src/server.ts`). Es 100% configuración externa — no hay nada para deployar.
+
 ## Mantenimiento rápido
 
 | Acción | Comando |
