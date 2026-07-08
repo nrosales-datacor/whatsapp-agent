@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import type { Tenant } from "../types";
+import type { Bloqueo, HorarioDia, KnowledgeBase, Service, Tenant } from "../types";
 import { crearDb } from "../db/client";
 import { waTenants, waUsuarios } from "../db/schema";
 import { TENANT_FALLBACK_ROSALES } from "./tenants";
@@ -69,6 +69,7 @@ function filaATenant(f: typeof waTenants.$inferSelect): Tenant {
     horario: f.horario,
     servicios: f.servicios,
     kb: f.kb,
+    bloqueos: f.bloqueos,
   };
 }
 
@@ -191,9 +192,34 @@ export async function crearTenant(tenant: Tenant, u: NuevoUsuario): Promise<void
       horario: tenant.horario,
       servicios: tenant.servicios,
       kb: tenant.kb,
+      bloqueos: tenant.bloqueos,
     });
     await tx.insert(waUsuarios).values({ usuario: u.usuario, passwordHash: u.passwordHash, tenantId: tenant.id });
   });
+}
+
+/**
+ * Actualiza la config self-service de un negocio (ROADMAP C2.2): horario, servicios, kb y
+ * bloqueos, como un reemplazo completo (mismo patrón "blob JSONB entero" que crearTenant).
+ * El caller debe llamar recargar() después para que el cambio quede visible sin esperar el
+ * refresco periódico. Lanza Error("SIN_DB") si no hay base.
+ */
+export async function actualizarConfigTenant(
+  tenantId: string,
+  patch: { horario: Record<number, HorarioDia>; servicios: Service[]; kb: KnowledgeBase; bloqueos: Bloqueo[] },
+): Promise<void> {
+  if (!hayDb) throw new Error("SIN_DB");
+  const d = obtenerDb();
+  await d
+    .update(waTenants)
+    .set({
+      horario: patch.horario,
+      servicios: patch.servicios,
+      kb: patch.kb,
+      bloqueos: patch.bloqueos,
+      actualizadoEn: new Date(),
+    })
+    .where(eq(waTenants.id, tenantId));
 }
 
 // ── Recarga on-demand ante un phone_number_id desconocido ──

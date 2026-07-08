@@ -1,6 +1,6 @@
 import { pgTable, text, timestamp, integer, boolean, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
-import type { HorarioDia, KnowledgeBase, PendienteSerializado, Service } from "../types";
+import type { Bloqueo, HorarioDia, KnowledgeBase, PendienteSerializado, Service } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Esquema Drizzle del agente de WhatsApp.
@@ -156,6 +156,8 @@ export const waTenants = pgTable(
     horario: jsonb("horario").$type<Record<number, HorarioDia>>().notNull(),
     servicios: jsonb("servicios").$type<Service[]>().notNull(),
     kb: jsonb("kb").$type<KnowledgeBase>().notNull(),
+    // Feriados/vacaciones puntuales (C2.2), fuera del horario semanal recurrente.
+    bloqueos: jsonb("bloqueos").$type<Bloqueo[]>().notNull().default([]),
     activo: boolean("activo").notNull().default(true),
     creadoEn: timestamp("creado_en", { withTimezone: true }).notNull().defaultNow(),
     actualizadoEn: timestamp("actualizado_en", { withTimezone: true }).notNull().defaultNow(),

@@ -38,6 +38,9 @@ export function espaciosDisponibles(
   const h = tenant.horario[dia];
   if (!h || !h.abre || !h.cierra) return []; // cerrado ese día
 
+  // Feriado/vacaciones puntuales (ROADMAP C2.2), fuera del horario semanal recurrente.
+  if (tenant.bloqueos?.some((b) => fecha >= b.desde && fecha <= b.hasta)) return [];
+
   const apertura = aMin(h.abre);
   const cierre = aMin(h.cierra);
   const paso = tenant.intervaloAgendaMin;

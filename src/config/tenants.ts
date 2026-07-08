@@ -171,6 +171,8 @@ const rosales: Tenant = {
       "Si el vidrio ya tiene grietas, rajaduras o despostillados previos, el lavacar NO se hace responsable, porque el calor del pulido puede extender un daño existente. Se revisa el parabrisas junto con el cliente antes de empezar y el cliente decide si se continúa.",
     ],
   },
+
+  bloqueos: [],
 };
 
 // Antes acá vivía el registro de tenants (TENANTS + tenantPorPhoneNumberId). Ahora

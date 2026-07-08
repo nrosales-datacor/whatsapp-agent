@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
+  actualizarConfigTenant,
   crearTenant,
   hayBaseDeDatos,
   listarTenants,
@@ -9,8 +10,9 @@ import {
   obtenerUsuario,
   recargar,
 } from "../config/tenantStore";
+import { limpiarLineas, validarBloqueos, validarFaq, validarHorario, validarServicios } from "../config/validadores";
 import { enviarTexto } from "../whatsapp/client";
-import type { Cita, HorarioDia, KnowledgeBase, Repositorio, Service, Tenant } from "../types";
+import type { Cita, KnowledgeBase, Repositorio, Tenant } from "../types";
 import { espaciosDisponibles } from "../booking/availability";
 import {
   hoyEnTz,
@@ -215,82 +217,12 @@ function esAdmin(req: IncomingMessage): boolean {
 }
 
 // ── Validación del alta de negocios (server-side; no confiar en el cliente) ──
+// Los validadores de horario/servicios/faq/bloqueos viven en ../config/validadores,
+// compartidos con la config self-service (ROADMAP C2.2).
 const RE_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const RE_USUARIO = /^[a-zA-Z0-9._-]{3,40}$/;
-const RE_HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 type ResultadoAlta = { ok: true; tenant: Tenant; usuario: string; password: string } | { ok: false; error: string };
-
-function limpiarLineas(v: unknown): string[] {
-  if (!Array.isArray(v)) return [];
-  return v.map((s) => String(s ?? "").trim()).filter(Boolean);
-}
-
-function validarHorario(v: any): Record<number, HorarioDia> | null {
-  const out: Record<number, HorarioDia> = {};
-  for (let d = 0; d < 7; d++) {
-    const dia = v && typeof v === "object" ? v[d] : undefined;
-    if (dia === undefined || dia === null) {
-      out[d] = { abre: "06:00", cierra: "18:00" }; // default razonable para días sin especificar
-      continue;
-    }
-    const abre = dia.abre ?? null;
-    const cierra = dia.cierra ?? null;
-    if (abre === null && cierra === null) {
-      out[d] = { abre: null, cierra: null }; // cerrado
-      continue;
-    }
-    if (typeof abre !== "string" || typeof cierra !== "string" || !RE_HORA.test(abre) || !RE_HORA.test(cierra)) {
-      return null;
-    }
-    out[d] = { abre, cierra };
-  }
-  return out;
-}
-
-function validarServicios(v: unknown): Service[] | null {
-  if (!Array.isArray(v)) return null;
-  const vistos = new Set<string>();
-  const out: Service[] = [];
-  for (const s of v) {
-    if (!s || typeof s !== "object") return null;
-    const r = s as Record<string, unknown>;
-    const id = String(r.id ?? "").trim();
-    const nombre = String(r.nombre ?? "").trim();
-    const duracionMin = Number(r.duracionMin);
-    if (!RE_SLUG.test(id) || id.length > 50 || vistos.has(id)) return null;
-    if (!nombre || nombre.length > 120) return null;
-    if (!Number.isInteger(duracionMin) || duracionMin <= 0 || duracionMin > 600) return null;
-    vistos.add(id);
-    const serv: Service = { id, nombre, duracionMin };
-    if (r.agendable) serv.agendable = true;
-    if (r.precioVariable) serv.precioVariable = true;
-    if (r.precio !== undefined && r.precio !== null && r.precio !== "") {
-      const p = Number(r.precio);
-      if (!Number.isInteger(p) || p < 0) return null;
-      serv.precio = p;
-    }
-    const precioNota = String(r.precioNota ?? "").trim();
-    if (precioNota) serv.precioNota = precioNota.slice(0, 200);
-    const descripcion = String(r.descripcion ?? "").trim();
-    if (descripcion) serv.descripcion = descripcion.slice(0, 500);
-    out.push(serv);
-  }
-  return out;
-}
-
-function validarFaq(v: unknown): { pregunta: string; respuesta: string }[] {
-  if (!Array.isArray(v)) return [];
-  const out: { pregunta: string; respuesta: string }[] = [];
-  for (const f of v) {
-    if (!f || typeof f !== "object") continue;
-    const r = f as Record<string, unknown>;
-    const pregunta = String(r.pregunta ?? "").trim();
-    const respuesta = String(r.respuesta ?? "").trim();
-    if (pregunta && respuesta) out.push({ pregunta: pregunta.slice(0, 300), respuesta: respuesta.slice(0, 1000) });
-  }
-  return out;
-}
 
 /** Valida y normaliza el cuerpo del alta de negocio. Devuelve el Tenant + credenciales o un error. */
 function validarAltaTenant(body: any): ResultadoAlta {
@@ -344,7 +276,20 @@ function validarAltaTenant(body: any): ResultadoAlta {
   const password = String(body.password ?? "");
   if (password.length < 8) return { ok: false, error: "La contraseña del panel debe tener al menos 8 caracteres" };
 
-  const tenant: Tenant = { id, nombre, phoneNumberId, accessToken, timezone, moneda, ubicacion, intervaloAgendaMin, horario, servicios, kb };
+  const tenant: Tenant = {
+    id,
+    nombre,
+    phoneNumberId,
+    accessToken,
+    timezone,
+    moneda,
+    ubicacion,
+    intervaloAgendaMin,
+    horario,
+    servicios,
+    kb,
+    bloqueos: [],
+  };
   return { ok: true, tenant, usuario, password };
 }
 
@@ -580,6 +525,55 @@ export async function manejarPanel(
       servicios: tenant.servicios.filter((s) => s.agendable),
     });
     return true;
+  }
+
+  // ── Config self-service del negocio (ROADMAP C2.2) ──
+  if (ruta === "config" && metodo === "GET") {
+    json(res, 200, {
+      ok: true,
+      horario: tenant.horario,
+      servicios: tenant.servicios, // catálogo completo, sin filtrar por agendable (a diferencia de "me")
+      kb: tenant.kb,
+      bloqueos: tenant.bloqueos,
+    });
+    return true;
+  }
+
+  if (ruta === "config" && metodo === "POST") {
+    if (!hayBaseDeDatos()) {
+      return json(res, 503, { ok: false, error: "La configuración requiere base de datos (no configurada)." }), true;
+    }
+    const body = await leerBody(req);
+    if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
+
+    const horario = validarHorario(body?.horario);
+    if (!horario) return json(res, 400, { ok: false, error: "Horario inválido (usá formato HH:mm, o vacío para día cerrado)" }), true;
+
+    const servicios = validarServicios(body?.servicios ?? []);
+    if (!servicios) return json(res, 400, { ok: false, error: "Hay un servicio inválido (revisá id único, nombre y duración en minutos)" }), true;
+
+    const bloqueos = validarBloqueos(body?.bloqueos ?? []);
+    if (!bloqueos) return json(res, 400, { ok: false, error: "Hay un bloqueo inválido (fechas YYYY-MM-DD, desde ≤ hasta)" }), true;
+
+    const kb: KnowledgeBase = {
+      faq: validarFaq(body?.kb?.faq),
+      datos: limpiarLineas(body?.kb?.datos),
+      politicas: limpiarLineas(body?.kb?.politicas),
+      tarifas: limpiarLineas(body?.kb?.tarifas),
+      parabrisas: limpiarLineas(body?.kb?.parabrisas),
+    };
+
+    try {
+      await actualizarConfigTenant(tenant.id, { horario, servicios, kb, bloqueos });
+    } catch (e) {
+      if (e instanceof Error && e.message === "SIN_DB") {
+        return json(res, 503, { ok: false, error: "La configuración requiere base de datos." }), true;
+      }
+      console.error("[config] actualizarConfigTenant:", e);
+      return json(res, 500, { ok: false, error: "No se pudo guardar la configuración." }), true;
+    }
+    await recargar(); // el cambio queda visible sin esperar el refresco periódico
+    return json(res, 200, { ok: true }), true;
   }
 
   // ── Notificaciones push ──

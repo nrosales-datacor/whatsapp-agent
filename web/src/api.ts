@@ -8,6 +8,7 @@
 // viaja sola — igual mandamos credentials: "include" por claridad.
 // ─────────────────────────────────────────────────────────────────────────────
 import type {
+  Bloqueo,
   Cita,
   Conversacion,
   FichaCliente,
@@ -20,6 +21,7 @@ import type {
 } from "../../src/types";
 
 export type {
+  Bloqueo,
   Cita,
   Conversacion,
   FichaCliente,
@@ -206,6 +208,22 @@ export async function reprogramarCitaPanel(id: string, fecha: string, hora: stri
     method: "POST",
     body: JSON.stringify({ fecha, hora }),
   });
+}
+
+// ── Config del negocio (C2.2) ──
+export interface ConfigNegocio {
+  horario: Record<number, HorarioDia>;
+  servicios: Service[];
+  kb: KnowledgeBase;
+  bloqueos: Bloqueo[];
+}
+
+export function obtenerConfig(): Promise<ConfigNegocio> {
+  return pedir<ConfigNegocio>("/config");
+}
+
+export async function guardarConfig(config: ConfigNegocio): Promise<void> {
+  await pedir("/config", { method: "POST", body: JSON.stringify(config) });
 }
 
 // ── Notificaciones push (Web Push) ──
