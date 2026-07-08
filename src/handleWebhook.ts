@@ -12,6 +12,7 @@ import type { MensajeInteractivo } from "./types";
 import { transcribirAudio } from "./whatsapp/transcribir";
 import { correrAgente } from "./agent/runAgent";
 import { notificarOperador } from "./panel/notificaciones";
+import { registrarMensaje } from "./observabilidad/metricas";
 
 // Aviso de transparencia que se manda UNA vez por cliente (cumple opt-in/política).
 const AVISO_BOT =
@@ -118,6 +119,7 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio): Promise
     };
     const esNuevo = await repo.guardarEntranteYEncolar(conv.id, msg, payload);
     if (!esNuevo) return null;
+    registrarMensaje();
     if (esAudio) return { clase: "audio", tenant, entrante, conv, primerContacto, historialPrevio };
     if (esImagen) return { clase: "imagen", tenant, entrante, conv, primerContacto, historialPrevio };
     return { clase: "no-texto", tenant, entrante, conv };
@@ -151,6 +153,7 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio): Promise
     console.log(`[webhook] mensaje duplicado ignorado (${entrante.messageId ?? "sin id"})`);
     return null;
   }
+  registrarMensaje();
 
   return { clase: "texto", tenant, entrante, conv, primerContacto, historialPrevio };
 }

@@ -11,6 +11,7 @@ import {
   sincronizarCreacionGcal,
   sincronizarReprogramacionGcal,
 } from "../booking/gestionCitas";
+import { registrarLatenciaAgente } from "../observabilidad/metricas";
 
 const MODELO = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const MAX_PASOS = 4; // tope de iteraciones de tool-calling por mensaje
@@ -248,6 +249,20 @@ export interface ResultadoAgente {
  * el historial de turnos siguientes para no repetir el mismo blob en cada llamada.
  */
 export async function correrAgente(
+  ctx: ContextoAgente,
+  textoUsuario: string,
+  historial: MensajeConversacion[],
+  imagenDataUrl?: string,
+): Promise<ResultadoAgente> {
+  const inicio = Date.now();
+  try {
+    return await correrAgenteInterno(ctx, textoUsuario, historial, imagenDataUrl);
+  } finally {
+    registrarLatenciaAgente(Date.now() - inicio);
+  }
+}
+
+async function correrAgenteInterno(
   ctx: ContextoAgente,
   textoUsuario: string,
   historial: MensajeConversacion[],

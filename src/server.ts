@@ -13,6 +13,7 @@ import { manejarLanding } from "./landing/servirLanding";
 import { pushConfigurado } from "./panel/push";
 import { iniciarWorker } from "./queue/worker";
 import { iniciarSentry, sentryConfigurado, capturarError } from "./observabilidad/sentry";
+import { iniciarReporteMetricas } from "./observabilidad/metricas";
 import type { Repositorio } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -145,4 +146,7 @@ server.listen(PORT, () => {
 
   // Recordatorios de cita por WhatsApp (día antes + mismo día).
   iniciarRecordatorios(repo);
+
+  // Métricas internas: msg/min, latencia del turno del agente, profundidad de cola.
+  iniciarReporteMetricas(db);
 });
