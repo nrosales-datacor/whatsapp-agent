@@ -375,6 +375,20 @@ Con **UptimeRobot** (gratis, no hace falta tarjeta):
 No requiere ningún cambio de código: `/salud` ya existe y devuelve `200 OK` con texto
 plano (`src/server.ts`). Es 100% configuración externa — no hay nada para deployar.
 
+## 18. Métricas internas (ROADMAP B5)
+
+No requiere setup: cada `METRICAS_INTERVALO_MIN` minutos (default 5) el proceso vuelca
+un resumen a los logs. Para verlo:
+
+```bash
+pm2 logs whatsapp-bot | grep metricas
+```
+
+Ejemplo: `[metricas] 3.20 msg/min · turno del bot: avg=1840ms p95=3200ms (n=16) · cola
+pendiente=0`. Si `cola pendiente` crece sostenido, el worker no da abasto (revisar
+`pm2 logs` por errores repetidos). Si la latencia del turno sube mucho, sospechar de
+OpenAI lento o de una herramienta (Calendar/Google) colgándose.
+
 ## Mantenimiento rápido
 
 | Acción | Comando |
