@@ -389,6 +389,68 @@ pendiente=0`. Si `cola pendiente` crece sostenido, el worker no da abasto (revis
 `pm2 logs` por errores repetidos). Si la latencia del turno sube mucho, sospechar de
 OpenAI lento o de una herramienta (Calendar/Google) colgándose.
 
+## 19. Backups verificados (ROADMAP B5)
+
+Supabase **Free** no incluye backups automáticos (eso es de Pro en adelante), así que
+los armamos nosotros con `pg_dump` vía cron + un script (`scripts/backupDb.ts`), y
+después **probamos el restore de verdad** en un destino separado (nunca sobre la base
+real del piloto).
+
+### 19.1 Setup del backup diario (en el droplet)
+
+1. Instalar el cliente de Postgres (trae `pg_dump`/`psql`; no es una dependencia npm):
+   ```bash
+   sudo apt-get update && sudo apt-get install -y postgresql-client
+   ```
+2. Sacar la conexión **DIRECTA** de Supabase (puerto 5432 — NO el pooler 6543 que usa
+   la app): Dashboard del proyecto → **Project Settings → Database → Connection
+   string** → pestaña **URI**, con el toggle en **"Direct connection"** (no
+   "Transaction pooler"). Agregala al `.env` del droplet:
+   ```bash
+   nano .env
+   # BACKUP_DATABASE_URL=postgresql://postgres:TU_PASSWORD@db.xxxxxxxx.supabase.co:5432/postgres
+   ```
+3. Probar a mano:
+   ```bash
+   cd ~/lavacar-whatsapp-bot && npx tsx scripts/backupDb.ts
+   ls -la backups/          # debe aparecer wa_bot_YYYY-MM-DD.sql.gz
+   ```
+4. Programarlo con cron (todos los días a las 3 am, hora del servidor):
+   ```bash
+   crontab -e
+   ```
+   Agregar la línea (ajustá la ruta si tu carpeta es otra):
+   ```
+   0 3 * * * cd ~/lavacar-whatsapp-bot && /usr/bin/npx tsx scripts/backupDb.ts >> backups/backup.log 2>&1
+   ```
+   El script mismo poda los `.sql.gz` de más de `BACKUP_RETENCION_DIAS` (default 14
+   días) — no hace falta limpiar a mano.
+
+### 19.2 Probar el restore (lo que realmente importa)
+
+Tener el `.sql.gz` no sirve de nada si nunca comprobaste que se puede restaurar. Se
+prueba en un **proyecto Supabase nuevo y separado** (gratis) para no arriesgar el
+piloto real:
+
+1. Creá un segundo proyecto en Supabase (plan Free alcanza para esto — es temporal).
+2. Sacá su conexión directa igual que en el paso 19.1.2 (llamalo `RESTORE_TEST_URL`).
+3. Restaurá el dump más reciente ahí:
+   ```bash
+   gunzip -c backups/wa_bot_YYYY-MM-DD.sql.gz | psql "postgresql://postgres:...@db.yyyy.supabase.co:5432/postgres"
+   ```
+4. Verificá que los datos llegaron íntegros comparando conteos contra producción
+   (mismo comando, apuntado a cada URL):
+   ```bash
+   psql "$URL" -c "select count(*) from wa_tenants;"
+   psql "$URL" -c "select count(*) from wa_citas;"
+   psql "$URL" -c "select count(*) from wa_mensajes;"
+   ```
+5. Anotá acá (y en el ROADMAP) la fecha en que se probó con éxito. Borrá el proyecto
+   de prueba después (o dejalo para la próxima verificación).
+
+**Repetir este test de restore cada 2-3 meses** — un backup que nunca se restauró no
+es un backup confiable.
+
 ## Mantenimiento rápido
 
 | Acción | Comando |
