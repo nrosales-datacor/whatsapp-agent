@@ -1,0 +1,1 @@
+ALTER TABLE "wa_tenants" ADD COLUMN "bloqueos" jsonb DEFAULT '[]'::jsonb NOT NULL;

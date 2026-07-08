@@ -40,6 +40,13 @@ export interface KnowledgeBase {
   parabrisas?: string[];
 }
 
+/** Rango de fechas cerrado (feriado, vacaciones, etc.), ambos extremos inclusive. */
+export interface Bloqueo {
+  desde: string; // "YYYY-MM-DD"
+  hasta: string; // "YYYY-MM-DD"
+  motivo?: string;
+}
+
 /** Un negocio conectado al agente. */
 export interface Tenant {
   id: string;
@@ -63,6 +70,8 @@ export interface Tenant {
   intervaloAgendaMin: number;
   servicios: Service[];
   kb: KnowledgeBase;
+  /** Fechas puntuales cerradas (feriados/vacaciones), fuera del horario semanal recurrente. */
+  bloqueos: Bloqueo[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
