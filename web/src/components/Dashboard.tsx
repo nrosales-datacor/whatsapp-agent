@@ -73,6 +73,35 @@ function ServiciosRanking({ items }: { items: ServicioItem[] }) {
   );
 }
 
+// ── Split de dos valores (citas bot/manual, clientes nuevos/recurrentes) ─────
+
+interface SplitItem { label: string; valor: number }
+
+function SplitBar({ items }: { items: [SplitItem, SplitItem] }) {
+  const total = items[0].valor + items[1].valor;
+  if (!total) return <p className="dash-vacio">Sin datos todavía.</p>;
+  return (
+    <div className="split-bar">
+      <div className="split-track">
+        {items.map((it, i) => (
+          <span
+            key={i}
+            className={"split-seg split-seg-" + i}
+            style={{ width: Math.round((it.valor / total) * 100) + "%" }}
+          />
+        ))}
+      </div>
+      <div className="split-leyenda">
+        {items.map((it, i) => (
+          <span key={i} className={"split-item split-item-" + i}>
+            <b>{it.valor}</b> {it.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Horas pico (barras verticales) ───────────────────────────────────────────
 
 const BAR_MAX_H = 96; // px de altura máxima para la barra más alta
@@ -126,6 +155,15 @@ export default function Dashboard({ nombre }: { nombre: string }) {
       delta: m?.deltas?.ingresos,
       hero: true,
     },
+    {
+      icono: "bot", label: "Ahorro del bot (sin humano)",
+      valor: (m?.ahorroBotPct ?? 0) + "%",
+      hero: true,
+    },
+    {
+      icono: "alert", label: "Tasa de no-show",
+      valor: m?.noShowPct != null ? m.noShowPct + "%" : "—",
+    },
   ];
 
   return (
@@ -152,6 +190,27 @@ export default function Dashboard({ nombre }: { nombre: string }) {
           <div className="card">
             <h3>Horas pico</h3>
             <HorasPico items={m?.horasPico ?? []} />
+          </div>
+        </div>
+
+        <div className="dash-grid-2">
+          <div className="card">
+            <h3>Origen de las citas</h3>
+            <SplitBar
+              items={[
+                { label: "por el bot", valor: m?.citasBot ?? 0 },
+                { label: "manuales", valor: m?.citasManuales ?? 0 },
+              ]}
+            />
+          </div>
+          <div className="card">
+            <h3>Clientes nuevos vs. recurrentes</h3>
+            <SplitBar
+              items={[
+                { label: "nuevos", valor: m?.clientesNuevos ?? 0 },
+                { label: "recurrentes", valor: m?.clientesRecurrentes ?? 0 },
+              ]}
+            />
           </div>
         </div>
       </div>

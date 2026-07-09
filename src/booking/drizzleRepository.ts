@@ -37,6 +37,7 @@ function filaACita(r: typeof waCitas.$inferSelect): Cita {
     hora: r.hora,
     placa: r.placa ?? undefined,
     estado: r.estado as Cita["estado"],
+    origen: r.origen as Cita["origen"],
     creadaEn: r.creadaEn.toISOString(),
     precio: r.precio ?? undefined,
     gcalEventId: r.gcalEventId ?? undefined,
@@ -161,6 +162,7 @@ export class RepositorioDrizzle implements Repositorio {
         hora: cita.hora,
         placa: cita.placa,
         precio: cita.precio,
+        origen: cita.origen ?? "bot",
       })
       .returning();
 
@@ -233,6 +235,15 @@ export class RepositorioDrizzle implements Repositorio {
     const [r] = await this.db
       .update(waCitas)
       .set({ estado: "completada" })
+      .where(and(eq(waCitas.id, citaId), eq(waCitas.tenantId, tenantId), eq(waCitas.estado, "agendada")))
+      .returning();
+    return r ? filaACita(r) : null;
+  }
+
+  async marcarNoShow(tenantId: string, citaId: string): Promise<Cita | null> {
+    const [r] = await this.db
+      .update(waCitas)
+      .set({ estado: "no_show" })
       .where(and(eq(waCitas.id, citaId), eq(waCitas.tenantId, tenantId), eq(waCitas.estado, "agendada")))
       .returning();
     return r ? filaACita(r) : null;
@@ -531,11 +542,13 @@ export class RepositorioDrizzle implements Repositorio {
 
     // Totales all-time + conteo por período para deltas (en paralelo).
     const [aggResult, citas, periodoResult] = await Promise.all([
-      // Total de conversaciones all-time + cuántas en modo humano.
+      // Total de conversaciones all-time + cuántas en modo humano + cuántas NUNCA
+      // escalaron (humano_en IS NULL → el bot las resolvió solo, para "ahorro". C3.3).
       this.db.execute(sql`
-        SELECT count(*) AS total, count(*) FILTER (WHERE modo = 'humano') AS humano
+        SELECT count(*) AS total, count(*) FILTER (WHERE modo = 'humano') AS humano,
+               count(*) FILTER (WHERE humano_en IS NULL) AS sin_escalar
         FROM wa_conversaciones WHERE tenant_id = ${tenantId}
-      `) as unknown as Promise<Array<{ total: number | string; humano: number | string }>>,
+      `) as unknown as Promise<Array<{ total: number | string; humano: number | string; sin_escalar: number | string }>>,
       // Todas las citas (para calcularMetricas all-time). Incluye creadaEn para deltas.
       this.db
         .select({
@@ -544,6 +557,8 @@ export class RepositorioDrizzle implements Repositorio {
           servicioId: waCitas.servicioId,
           fecha: waCitas.fecha,
           hora: waCitas.hora,
+          clienteWa: waCitas.clienteWa,
+          origen: waCitas.origen,
           creadaEn: waCitas.creadaEn,
         })
         .from(waCitas)
@@ -559,7 +574,7 @@ export class RepositorioDrizzle implements Repositorio {
 
     const agg = aggResult[0];
     const periodo = periodoResult[0];
-    const base = calcularMetricas(Number(agg.total), Number(agg.humano), citas);
+    const base = calcularMetricas(Number(agg.total), Number(agg.humano), Number(agg.sin_escalar), citas);
 
     // Citas del período actual (últimos 7 días) y previo (7-14 días atrás) por creación.
     const citasActivas = (c: typeof citas[0]) => c.estado !== "cancelada";

@@ -1,0 +1,1 @@
+ALTER TABLE "wa_citas" ADD COLUMN "origen" text DEFAULT 'bot' NOT NULL;

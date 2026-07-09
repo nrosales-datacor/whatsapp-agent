@@ -203,6 +203,10 @@ export async function cancelarCitaPanel(id: string): Promise<void> {
   await pedir(`/citas/${encodeURIComponent(id)}/cancelar`, { method: "POST" });
 }
 
+export async function marcarNoShowPanel(id: string): Promise<void> {
+  await pedir(`/citas/${encodeURIComponent(id)}/no-show`, { method: "POST" });
+}
+
 export async function reprogramarCitaPanel(id: string, fecha: string, hora: string): Promise<void> {
   await pedir(`/citas/${encodeURIComponent(id)}/reprogramar`, {
     method: "POST",

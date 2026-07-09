@@ -7,6 +7,7 @@ import {
   crearCitaManual,
   disponibilidadCita,
   listarCitasRango,
+  marcarNoShowPanel,
   reprogramarCitaPanel,
   type CitaAgenda,
   type Service,
@@ -88,7 +89,14 @@ export default function Agenda({ servicios }: Props) {
       flash("Cita cancelada");
     },
   });
-  const pendiente = confirmar.isPending || completar.isPending || cancelar.isPending;
+  const noShow = useMutation({
+    mutationFn: marcarNoShowPanel,
+    onSuccess: () => {
+      invalidar();
+      flash("Cita marcada como no-show");
+    },
+  });
+  const pendiente = confirmar.isPending || completar.isPending || cancelar.isPending || noShow.isPending;
 
   function mover(saltos: number) {
     setFechaBase((f) => sumarDias(f, vista === "dia" ? saltos : saltos * 7));
@@ -155,6 +163,7 @@ export default function Agenda({ servicios }: Props) {
                   onConfirmar={() => confirmar.mutate(c.id)}
                   onCompletar={() => completar.mutate(c.id)}
                   onCancelar={() => cancelar.mutate(c.id)}
+                  onNoShow={() => noShow.mutate(c.id)}
                   onReprogramar={() => setModal({ cita: c })}
                 />
               ))}
@@ -215,10 +224,13 @@ interface FilaProps {
   onConfirmar: () => void;
   onCompletar: () => void;
   onCancelar: () => void;
+  onNoShow: () => void;
   onReprogramar: () => void;
 }
 
-function FilaCita({ cita, pendiente, onConfirmar, onCompletar, onCancelar, onReprogramar }: FilaProps) {
+const ETIQUETA_ESTADO: Record<string, string> = { no_show: "No-show" };
+
+function FilaCita({ cita, pendiente, onConfirmar, onCompletar, onCancelar, onNoShow, onReprogramar }: FilaProps) {
   const activa = cita.estado === "agendada";
   return (
     <div className="agenda-fila">
@@ -230,7 +242,9 @@ function FilaCita({ cita, pendiente, onConfirmar, onCompletar, onCancelar, onRep
           {cita.placa ? ` · ${cita.placa}` : ""}
         </span>
       </div>
-      {cita.estado !== "agendada" && <span className={"badge-estado " + cita.estado}>{cita.estado}</span>}
+      {cita.estado !== "agendada" && (
+        <span className={"badge-estado " + cita.estado}>{ETIQUETA_ESTADO[cita.estado] ?? cita.estado}</span>
+      )}
       {cita.confirmadaEn && <span className="pill-cita confirmada">✅ Confirmada</span>}
       {activa && (
         <div className="agenda-acciones">
@@ -244,6 +258,9 @@ function FilaCita({ cita, pendiente, onConfirmar, onCompletar, onCancelar, onRep
           </button>
           <button type="button" className="accion accion-outline accion-check" disabled={pendiente} onClick={onCompletar}>
             Completar
+          </button>
+          <button type="button" className="accion accion-outline accion-alerta" disabled={pendiente} onClick={onNoShow}>
+            No se presentó
           </button>
           <button type="button" className="accion accion-outline" disabled={pendiente} onClick={onCancelar}>
             Cancelar
