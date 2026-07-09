@@ -130,6 +130,7 @@ export class RepositorioEnMemoria implements Repositorio {
   async crearCita(cita: Omit<Cita, "id" | "creadaEn" | "estado">): Promise<Cita> {
     const nueva: Cita = {
       ...cita,
+      origen: cita.origen ?? "bot",
       id: `cita_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       estado: "agendada",
       creadaEn: new Date().toISOString(),
@@ -184,6 +185,13 @@ export class RepositorioEnMemoria implements Repositorio {
     const c = this.citas.find((x) => x.id === citaId && x.tenantId === tenantId && x.estado === "agendada");
     if (!c) return null;
     c.estado = "completada";
+    return { ...c };
+  }
+
+  async marcarNoShow(tenantId: string, citaId: string): Promise<Cita | null> {
+    const c = this.citas.find((x) => x.id === citaId && x.tenantId === tenantId && x.estado === "agendada");
+    if (!c) return null;
+    c.estado = "no_show";
     return { ...c };
   }
 
@@ -341,7 +349,8 @@ export class RepositorioEnMemoria implements Repositorio {
   async metricas(tenantId: string): Promise<Metricas> {
     const convs = [...this.conversaciones.values()].filter((c) => c.tenantId === tenantId);
     const citas = this.citas.filter((c) => c.tenantId === tenantId);
-    return calcularMetricas(convs.length, convs.filter((c) => c.modo === "humano").length, citas);
+    const sinEscalar = convs.filter((c) => !c.humanoEn).length;
+    return calcularMetricas(convs.length, convs.filter((c) => c.modo === "humano").length, sinEscalar, citas);
   }
 
   // ── Notificaciones push ──

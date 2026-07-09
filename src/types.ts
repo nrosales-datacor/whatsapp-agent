@@ -98,7 +98,7 @@ export interface MensajeInteractivo {
   opciones: OpcionInteractiva[];
 }
 
-export type EstadoCita = "agendada" | "cancelada" | "completada";
+export type EstadoCita = "agendada" | "cancelada" | "completada" | "no_show";
 
 export interface Cita {
   id: string;
@@ -112,6 +112,12 @@ export interface Cita {
   placa?: string;
   estado: EstadoCita;
   creadaEn: string; // ISO
+  /**
+   * Quién la generó: "bot" (agendado por WhatsApp) o "manual" (creada en la Agenda
+   * del panel, C2.1). Undefined = fila vieja anterior a este campo → se trata como
+   * "bot" (todas las citas eran del bot antes de que existiera la Agenda). C3.3.
+   */
+  origen?: "bot" | "manual";
   /** Precio cotizado al agendar (colones). Para métricas de ingresos. */
   precio?: number;
   /** id del evento creado en Google Calendar (si la integración está configurada). */
@@ -228,6 +234,19 @@ export interface Metricas {
   citasPorDia: { fecha: string; cantidad: number }[];
   horasPico: { hora: string; cantidad: number }[];
   /**
+   * % de citas pasadas resueltas (completadas + no-show) que terminaron en
+   * no-show. undefined si todavía no hay ninguna cita resuelta. C3.3.
+   */
+  noShowPct?: number;
+  /** Citas activas (no canceladas/no-show) agendadas por el bot vs. creadas a mano en la Agenda. C3.3. */
+  citasBot: number;
+  citasManuales: number;
+  /** Clientes con una sola cita registrada vs. con dos o más (fidelización). C3.3. */
+  clientesNuevos: number;
+  clientesRecurrentes: number;
+  /** % de conversaciones que el bot resolvió SIN pasar nunca a modo humano. C3.3. */
+  ahorroBotPct: number;
+  /**
    * Variación vs. los 7 días anteriores ("+12%", "-5%", "+∞").
    * Omitido si no hay período comparable (p. ej. repo en memoria).
    */
@@ -315,6 +334,12 @@ export interface Repositorio {
    * null si no existe / no es del tenant / no estaba agendada.
    */
   completarCita(tenantId: string, citaId: string): Promise<Cita | null>;
+  /**
+   * Marca una cita como no-show (el cliente no se presentó), desde el panel.
+   * Scopeada por tenantId. Solo aplica si estaba "agendada". Devuelve la cita, o
+   * null si no existe / no es del tenant / no estaba agendada. C3.3.
+   */
+  marcarNoShow(tenantId: string, citaId: string): Promise<Cita | null>;
   /** Marca un recordatorio como enviado (para no mandarlo dos veces). */
   marcarRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<void>;
   /**

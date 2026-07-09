@@ -300,6 +300,9 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .accion-check { color: var(--success); border-color: #c5e8bf; }
 .accion-check:hover:not(:disabled) { background: #f0fae8; }
 [data-tema="oscuro"] .accion-check:hover:not(:disabled) { background: #1a3017; }
+.accion-alerta { color: var(--warning); border-color: #fcd9a8; }
+.accion-alerta:hover:not(:disabled) { background: #fef1de; }
+[data-tema="oscuro"] .accion-alerta:hover:not(:disabled) { background: #3a2a13; }
 
 /* Mensajes */
 #msgs { flex: 1; overflow-y: auto; padding: var(--space-lg) 8vw; display: flex; flex-direction: column; gap: var(--space-xs); }
@@ -397,6 +400,16 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .bv-bar { width: 100%; background: var(--accent); border-radius: 3px 3px 0 0; min-height: 2px; }
 .bv-label { font-size: 8px; color: var(--text-muted); transform: rotate(-32deg); transform-origin: center top; white-space: nowrap; margin-top: 4px; }
 
+/* Split de dos valores (citas bot/manual, clientes nuevos/recurrentes) — C3.3 */
+.split-track { display: flex; height: 10px; background: var(--surface-2); border-radius: var(--radius-pill); overflow: hidden; }
+.split-seg { display: block; height: 100%; min-width: 2px; }
+.split-seg-0 { background: var(--accent); }
+.split-seg-1 { background: var(--human); }
+.split-leyenda { display: flex; gap: var(--space-md); margin-top: var(--space-sm); font-size: var(--step--1); color: var(--text-muted); }
+.split-item b { color: var(--text); font-weight: 700; }
+.split-item-0::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 5px; }
+.split-item-1::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--human); margin-right: 5px; }
+
 /* ══════════════════════════════════════════════════════════════════════════════
    AGENDA (C2.1) — citas por día/semana + cita manual + estados
    ══════════════════════════════════════════════════════════════════════════════ */
@@ -420,6 +433,7 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .badge-estado { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: var(--radius-pill); border: 1px solid var(--border); color: var(--text-muted); white-space: nowrap; }
 .badge-estado.completada { background: var(--accent-soft); color: var(--accent-strong); border-color: transparent; }
 .badge-estado.cancelada { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
+.badge-estado.no_show { background: #fdecd2; color: var(--warning); border-color: transparent; }
 
 .agenda-semana { display: grid; grid-template-columns: repeat(7, 1fr); gap: var(--space-xs); }
 .agenda-dia-col { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-xs); background: var(--surface); min-height: 120px; }
@@ -429,6 +443,7 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .agenda-chip:hover { border-color: var(--accent-line); }
 .agenda-chip.cancelada { text-decoration: line-through; opacity: .6; }
 .agenda-chip.completada { background: var(--accent-soft); border-color: transparent; }
+.agenda-chip.no_show { background: #fdecd2; border-color: transparent; }
 
 .agenda-advertencia { font-size: var(--step--1); color: var(--warning); margin-top: var(--space-2xs); }
 

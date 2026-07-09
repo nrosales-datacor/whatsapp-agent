@@ -79,7 +79,10 @@ export const waCitas = pgTable(
     fecha: text("fecha").notNull(), // "YYYY-MM-DD"
     hora: text("hora").notNull(), // "HH:mm"
     placa: text("placa"),
-    estado: text("estado").notNull().default("agendada"),
+    estado: text("estado").notNull().default("agendada"), // agendada|cancelada|completada|no_show
+    // Quién la generó: "bot" (WhatsApp) o "manual" (Agenda del panel, C2.1). Default
+    // "bot" porque todas las citas eran del bot antes de que existiera la Agenda.
+    origen: text("origen").notNull().default("bot"),
     creadaEn: timestamp("creada_en", { withTimezone: true }).notNull().defaultNow(),
     // Precio cotizado al agendar (colones). Para métricas de ingresos. Puede ser null.
     precio: integer("precio"),

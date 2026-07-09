@@ -688,6 +688,7 @@ export async function manejarPanel(
       hora,
       placa,
       precio,
+      origen: "manual",
     });
     await sincronizarCreacionGcal(tenant, repo, cita);
     return json(res, 200, { ok: true, cita }), true;
@@ -715,6 +716,12 @@ export async function manejarPanel(
       const cita = await repo.cancelarCita(tenant.id, citaId);
       if (!cita) return json(res, 404, { ok: false, error: "No existe" }), true;
       await sincronizarCancelacionGcal(cita);
+      return json(res, 200, { ok: true, cita }), true;
+    }
+
+    if (accion === "no-show" && metodo === "POST") {
+      const cita = await repo.marcarNoShow(tenant.id, citaId);
+      if (!cita) return json(res, 404, { ok: false, error: "No existe" }), true;
       return json(res, 200, { ok: true, cita }), true;
     }
 

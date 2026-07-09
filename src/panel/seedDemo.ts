@@ -143,20 +143,32 @@ const CONVERSACIONES: Conv[] = [
   },
 ];
 
-type Reserva = { wa: string; nombre: string; servicioId: string; fecha: string; hora: string; placa: string; precio: number };
+type Reserva = {
+  wa: string;
+  nombre: string;
+  servicioId: string;
+  fecha: string;
+  hora: string;
+  placa: string;
+  precio: number;
+  origen?: "bot" | "manual";
+  /** Estado final a aplicar tras crearla (ya pasó la fecha). undefined = queda "agendada". */
+  resultado?: "completada" | "no_show";
+};
 
 const CITAS: Reserva[] = [
-  { wa: "50687123344", nombre: "Diego Ramírez", servicioId: "lavado_pulido_sellador", fecha: dia(-1), hora: "08:00", placa: "C 162345", precio: 22000 },
+  { wa: "50687123344", nombre: "Diego Ramírez", servicioId: "lavado_pulido_sellador", fecha: dia(-1), hora: "08:00", placa: "C 162345", precio: 22000, resultado: "completada" },
   { wa: "50662445566", nombre: "Rafael Jiménez", servicioId: "lavado_pulido_sellador", fecha: dia(1), hora: "09:30", placa: "BHL089", precio: 18000 },
   { wa: "50683221100", nombre: "Andrea Campos", servicioId: "pulido_focos", fecha: dia(2), hora: "08:00", placa: "BMW234", precio: 12000 },
   { wa: "50661778822", nombre: "Mauricio Lépiz", servicioId: "pulido_sellador", fecha: dia(3), hora: "14:30", placa: "SJB1198", precio: 15000 },
   { wa: "50688777001", nombre: "Tatiana Vega", servicioId: "lavado_pulido_sellador", fecha: dia(4), hora: "08:00", placa: "CMP445", precio: 20000 },
   { wa: "50687001122", nombre: "Andrés Cordero", servicioId: "pulido_sellador", fecha: dia(5), hora: "09:30", placa: "BNK332", precio: 15000 },
   { wa: "50689443322", nombre: "Marcela Ríos", servicioId: "pulido_focos", fecha: dia(2), hora: "14:30", placa: "GBT810", precio: 10000 },
-  { wa: "50688456677", nombre: "Gabriela Mora", servicioId: "lavado_pulido_sellador", fecha: dia(6), hora: "10:00", placa: "BST770", precio: 20000 },
+  { wa: "50688456677", nombre: "Gabriela Mora", servicioId: "lavado_pulido_sellador", fecha: dia(6), hora: "10:00", placa: "BST770", precio: 20000, origen: "manual" },
   { wa: "50688221144", nombre: "Natalia Rojas", servicioId: "lavado_pulido_sellador", fecha: dia(7), hora: "11:00", placa: "HJP620", precio: 21000 },
   { wa: "50670112233", nombre: "Esteban Soto", servicioId: "pulido_focos", fecha: dia(8), hora: "16:00", placa: "MGL047", precio: 12000 },
   { wa: "50687123344", nombre: "Diego Ramírez", servicioId: "pulido_sellador", fecha: dia(20), hora: "10:00", placa: "C 162345", precio: 15000 },
+  { wa: "50664556677", nombre: "Pablo Arce", servicioId: "lavado_pulido_sellador", fecha: dia(-2), hora: "09:00", placa: "PJK330", precio: 22000, resultado: "no_show" },
 ];
 
 export async function seedDemo(repo: Repositorio): Promise<void> {
@@ -176,7 +188,7 @@ export async function seedDemo(repo: Repositorio): Promise<void> {
     if (c.leido) await repo.marcarLeidas(tid, conv.id);
   }
   for (const k of CITAS) {
-    await repo.crearCita({
+    const cita = await repo.crearCita({
       tenantId: tid,
       clienteWa: k.wa,
       clienteNombre: k.nombre,
@@ -185,7 +197,10 @@ export async function seedDemo(repo: Repositorio): Promise<void> {
       hora: k.hora,
       placa: k.placa,
       precio: k.precio,
+      origen: k.origen,
     });
+    if (k.resultado === "completada") await repo.completarCita(tid, cita.id);
+    if (k.resultado === "no_show") await repo.marcarNoShow(tid, cita.id);
   }
   console.log(`[seed] ${CONVERSACIONES.length} conversaciones y ${CITAS.length} citas de demo cargadas`);
 }
