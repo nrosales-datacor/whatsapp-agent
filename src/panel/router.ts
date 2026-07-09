@@ -3,16 +3,19 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   actualizarConfigTenant,
+  actualizarUsuarioTenant,
   crearTenant,
+  crearUsuarioTenant,
   hayBaseDeDatos,
   listarTenants,
+  listarUsuariosDeTenant,
   obtenerTenantPorId,
   obtenerUsuario,
   recargar,
 } from "../config/tenantStore";
 import { limpiarLineas, validarBloqueos, validarFaq, validarHorario, validarServicios } from "../config/validadores";
 import { enviarTexto } from "../whatsapp/client";
-import type { Cita, KnowledgeBase, Repositorio, Tenant } from "../types";
+import type { Cita, EstadoConversacion, KnowledgeBase, Repositorio, Rol, Tenant } from "../types";
 import { espaciosDisponibles } from "../booking/availability";
 import {
   hoyEnTz,
@@ -204,11 +207,20 @@ function mismoOrigen(req: IncomingMessage): boolean {
   }
 }
 
-/** Devuelve el tenant de la sesión, o null si no está autenticado. */
-function tenantDeSesion(req: IncomingMessage): Tenant | null {
-  const tid = verificarSesion(leerCookies(req)[COOKIE]);
-  if (!tid) return null;
-  return obtenerTenantPorId(tid) ?? null;
+/** Sesión de operador ya resuelta contra el tenantStore (tenant + quién + su rol). */
+interface SesionPanel {
+  tenant: Tenant;
+  usuarioId: string;
+  rol: Rol;
+}
+
+/** Devuelve la sesión del operador (tenant, usuarioId, rol), o null si no está autenticado. */
+function sesionDeOperador(req: IncomingMessage): SesionPanel | null {
+  const s = verificarSesion(leerCookies(req)[COOKIE]);
+  if (!s) return null;
+  const tenant = obtenerTenantPorId(s.tenantId);
+  if (!tenant) return null;
+  return { tenant, usuarioId: s.usuarioId, rol: s.rol };
 }
 
 /** true si el request trae una sesión de superadmin válida (onboarding, ROADMAP B3). */
@@ -494,7 +506,7 @@ export async function manejarPanel(
       json(res, 401, { ok: false, error: "Usuario o contraseña incorrectos" });
       return true;
     }
-    const cookie = `${COOKIE}=${crearSesion(tenant.id)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${7 * 24 * 60 * 60}`;
+    const cookie = `${COOKIE}=${crearSesion(tenant.id, cuenta.id, cuenta.rol)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${7 * 24 * 60 * 60}`;
     res.writeHead(200, { "content-type": "application/json; charset=utf-8", "set-cookie": cookie });
     res.end(JSON.stringify({ ok: true, nombre: tenant.nombre, vapidPublica: clavePublicaVapid() }));
     return true;
@@ -510,21 +522,116 @@ export async function manejarPanel(
   }
 
   // ── A partir de acá, todo requiere sesión ──
-  const tenant = tenantDeSesion(req);
-  if (!tenant) {
+  const sesion = sesionDeOperador(req);
+  if (!sesion) {
     json(res, 401, { ok: false, error: "No autenticado" });
     return true;
   }
+  const { tenant, rol } = sesion;
 
   if (ruta === "me" && metodo === "GET") {
     json(res, 200, {
       ok: true,
       nombre: tenant.nombre,
       tenantId: tenant.id,
+      rol,
       vapidPublica: clavePublicaVapid(),
       servicios: tenant.servicios.filter((s) => s.agendable),
     });
     return true;
+  }
+
+  // ── Usuarios del panel del negocio (ROADMAP C2.3) — solo dueño ──
+  if (ruta === "usuarios" || ruta.startsWith("usuarios/")) {
+    if (rol !== "dueno") {
+      json(res, 403, { ok: false, error: "Solo el dueño del negocio puede gestionar usuarios" });
+      return true;
+    }
+    // A diferencia de "config" (que lee del tenant ya cacheado), esto consulta la base
+    // directo: sin DATABASE_URL (dev local sin DB) no hay dónde leer/escribir usuarios.
+    if (!hayBaseDeDatos()) {
+      return json(res, 503, { ok: false, error: "La gestión de usuarios requiere base de datos (no configurada)." }), true;
+    }
+
+    if (ruta === "usuarios" && metodo === "GET") {
+      const usuarios = await listarUsuariosDeTenant(tenant.id);
+      return json(res, 200, { ok: true, usuarios }), true;
+    }
+
+    if (ruta === "usuarios" && metodo === "POST") {
+      const body = await leerBody(req);
+      if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
+      const usuario = String(body?.usuario ?? "").trim();
+      if (!RE_USUARIO.test(usuario)) {
+        return json(res, 400, { ok: false, error: "Usuario inválido (3 a 40 caracteres: letras, números, . _ -)" }), true;
+      }
+      if (usuario === process.env.PANEL_SUPERADMIN_USUARIO) {
+        return json(res, 400, { ok: false, error: "Ese usuario está reservado" }), true;
+      }
+      const password = String(body?.password ?? "");
+      if (password.length < 8) return json(res, 400, { ok: false, error: "La contraseña debe tener al menos 8 caracteres" }), true;
+      const nuevoRol: Rol = body?.rol === "dueno" ? "dueno" : "operador";
+      try {
+        await crearUsuarioTenant(tenant.id, { usuario, passwordHash: hashearPassword(password), rol: nuevoRol });
+      } catch (e) {
+        if ((e as { code?: string }).code === "23505") return json(res, 409, { ok: false, error: "Ese usuario de panel ya existe" }), true;
+        if (e instanceof Error && e.message === "SIN_DB") {
+          return json(res, 503, { ok: false, error: "La gestión de usuarios requiere base de datos." }), true;
+        }
+        console.error("[usuarios] crearUsuarioTenant:", e);
+        return json(res, 500, { ok: false, error: "No se pudo crear el usuario." }), true;
+      }
+      await recargar();
+      return json(res, 201, { ok: true }), true;
+    }
+
+    // /usuarios/{id}: actualizar rol/activo
+    const partesUsuario = ruta.split("/");
+    if (partesUsuario[0] === "usuarios" && partesUsuario[1] && metodo === "POST") {
+      const usuarioId = decodeURIComponent(partesUsuario[1]);
+      const body = await leerBody(req);
+      if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
+
+      const patch: { rol?: Rol; activo?: boolean } = {};
+      if (body?.rol !== undefined) {
+        if (body.rol !== "dueno" && body.rol !== "operador") return json(res, 400, { ok: false, error: "rol inválido" }), true;
+        patch.rol = body.rol;
+      }
+      if (body?.activo !== undefined) {
+        if (typeof body.activo !== "boolean") return json(res, 400, { ok: false, error: "activo inválido" }), true;
+        patch.activo = body.activo;
+      }
+      if (patch.rol === undefined && patch.activo === undefined) {
+        return json(res, 400, { ok: false, error: "Nada para actualizar" }), true;
+      }
+
+      // Guard: siempre debe quedar al menos un dueño activo (si no, el negocio queda
+      // sin nadie que pueda gestionar usuarios ni "Mi negocio").
+      const dejariaSinDueno =
+        (patch.rol === "operador" || patch.activo === false) &&
+        (await (async () => {
+          const equipo = await listarUsuariosDeTenant(tenant.id);
+          const otrosDuenosActivos = equipo.filter((u) => u.id !== usuarioId && u.rol === "dueno" && u.activo);
+          return otrosDuenosActivos.length === 0;
+        })());
+      if (dejariaSinDueno) {
+        return json(res, 400, { ok: false, error: "Debe quedar al menos un dueño activo" }), true;
+      }
+
+      try {
+        await actualizarUsuarioTenant(tenant.id, usuarioId, patch);
+      } catch (e) {
+        if (e instanceof Error && e.message === "SIN_DB") {
+          return json(res, 503, { ok: false, error: "La gestión de usuarios requiere base de datos." }), true;
+        }
+        console.error("[usuarios] actualizarUsuarioTenant:", e);
+        return json(res, 500, { ok: false, error: "No se pudo actualizar el usuario." }), true;
+      }
+      await recargar();
+      return json(res, 200, { ok: true }), true;
+    }
+
+    return json(res, 404, { ok: false, error: "Ruta no encontrada" }), true;
   }
 
   // ── Config self-service del negocio (ROADMAP C2.2) ──
@@ -540,6 +647,12 @@ export async function manejarPanel(
   }
 
   if (ruta === "config" && metodo === "POST") {
+    // Editar "Mi negocio" es solo del dueño (C2.3) — igual que gestionar usuarios. No
+    // alcanza con esconder la pestaña en el frontend: sin este check, un operador podría
+    // mandar el POST a mano y editarla igual.
+    if (rol !== "dueno") {
+      return json(res, 403, { ok: false, error: "Solo el dueño del negocio puede editar la configuración" }), true;
+    }
     if (!hayBaseDeDatos()) {
       return json(res, 503, { ok: false, error: "La configuración requiere base de datos (no configurada)." }), true;
     }
@@ -793,6 +906,17 @@ export async function manejarPanel(
       const { modo } = body;
       if (modo !== "bot" && modo !== "humano") return json(res, 400, { ok: false, error: "modo inválido" }), true;
       await repo.setModoConversacion(tenant.id, conv.id, modo);
+      return json(res, 200, { ok: true }), true;
+    }
+
+    if (accion === "estado" && metodo === "POST") {
+      const conv = await repo.obtenerConversacionPorId(tenant.id, convId);
+      if (!conv) return json(res, 404, { ok: false, error: "No existe" }), true;
+      const body = await leerBody(req);
+      if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
+      const estado: EstadoConversacion = body?.estado;
+      if (estado !== "abierta" && estado !== "atendida") return json(res, 400, { ok: false, error: "estado inválido" }), true;
+      await repo.marcarEstadoConversacion(tenant.id, conv.id, estado);
       return json(res, 200, { ok: true }), true;
     }
 

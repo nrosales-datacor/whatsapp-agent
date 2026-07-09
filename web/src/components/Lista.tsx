@@ -10,13 +10,14 @@ interface Props {
   onAbrir: (id: string) => void;
 }
 
-type Filtro = "todos" | "bot" | "humano" | "sin_resp";
+type Filtro = "todos" | "bot" | "humano" | "sin_resp" | "atendida";
 
 const FILTROS: { key: Filtro; label: string }[] = [
   { key: "todos",    label: "Todos" },
   { key: "bot",      label: "Bot" },
   { key: "humano",   label: "Humano" },
   { key: "sin_resp", label: "Sin resp." },
+  { key: "atendida", label: "Atendidas" },
 ];
 
 function scoreClase(s: number) {
@@ -34,6 +35,7 @@ export default function Lista({ conversaciones, abiertaId, escondida, onAbrir }:
     bot:      conversaciones.filter(c => c.modo === "bot").length,
     humano:   conversaciones.filter(c => c.modo === "humano").length,
     sin_resp: conversaciones.filter(c => c.sinLeer > 0).length,
+    atendida: conversaciones.filter(c => c.estado === "atendida").length,
   }), [conversaciones]);
 
   const filtradas = useMemo(() => {
@@ -48,6 +50,7 @@ export default function Lista({ conversaciones, abiertaId, escondida, onAbrir }:
     if (filtro === "bot")      r = r.filter(c => c.modo === "bot");
     else if (filtro === "humano")   r = r.filter(c => c.modo === "humano");
     else if (filtro === "sin_resp") r = r.filter(c => c.sinLeer > 0);
+    else if (filtro === "atendida") r = r.filter(c => c.estado === "atendida");
     return r;
   }, [conversaciones, busqueda, filtro]);
 

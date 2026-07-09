@@ -133,6 +133,12 @@ export interface Cita {
 export type TipoRecordatorio = "dia_antes" | "mismo_dia";
 
 /**
+ * Rol de un usuario del panel dentro de su negocio (C2.3): "dueno" puede editar
+ * "Mi negocio" y gestionar usuarios; "operador" solo atiende bandeja/agenda.
+ */
+export type Rol = "dueno" | "operador";
+
+/**
  * Payload serializable de un Pendiente para la cola durable (wa_jobs).
  * No incluye el `tenant`; el worker lo relee del tenantStore por phoneNumberId.
  * Los campos de `entrante` se inlinean para evitar dependencia circular con
@@ -178,6 +184,13 @@ export interface MensajeConversacion {
 /** Quién atiende la conversación: la IA ("bot") o un humano desde el panel ("humano"). */
 export type ModoConversacion = "bot" | "humano";
 
+/**
+ * Cola de trabajo del operador (C2.3): "abierta" = necesita atención, "atendida" =
+ * el operador la cerró. Vuelve a "abierta" sola en cuanto el cliente escribe de
+ * nuevo, sin importar que estuviera "atendida".
+ */
+export type EstadoConversacion = "abierta" | "atendida";
+
 export interface Conversacion {
   id: string;
   tenantId: string;
@@ -185,6 +198,8 @@ export interface Conversacion {
   optInEn: string | null;
   /** "bot" => responde la IA. "humano" => la IA se calla y atiende una persona. */
   modo: ModoConversacion;
+  /** Cola de trabajo (C2.3): "abierta" | "atendida". */
+  estado: EstadoConversacion;
   mensajes: MensajeConversacion[];
   /** Nombre del servicio de la cita activa más próxima (o null si no tiene). */
   servicio?: string | null;
@@ -199,6 +214,8 @@ export interface ResumenConversacion {
   id: string;
   clienteWa: string;
   modo: ModoConversacion;
+  /** Cola de trabajo (C2.3): "abierta" | "atendida". */
+  estado: EstadoConversacion;
   ultimoMensaje: string | null;
   ultimaActividadEn: string | null; // ISO
   /** Mensajes del cliente sin "ver" por el operador (para el badge). */
@@ -378,6 +395,8 @@ export interface Repositorio {
   // negocios la hace la capa de datos, no solo el router (defensa en profundidad).
   /** Cambia quién atiende la conversación (bot ↔ humano). */
   setModoConversacion(tenantId: string, conversacionId: string, modo: ModoConversacion): Promise<void>;
+  /** Cambia el estado de la cola de trabajo (abierta ↔ atendida), a mano desde el panel (C2.3). */
+  marcarEstadoConversacion(tenantId: string, conversacionId: string, estado: EstadoConversacion): Promise<void>;
   /** Lista las conversaciones del negocio para la bandeja (más reciente primero). */
   listarConversaciones(tenantId: string): Promise<ResumenConversacion[]>;
   /** Trae una conversación con su historial por id (null si no existe o no es del tenant). */

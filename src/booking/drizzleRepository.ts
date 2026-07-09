@@ -4,6 +4,7 @@ import { schema, waCitas, waConversaciones, waEventosCalidad, waMensajes, waPush
 import type {
   Cita,
   Conversacion,
+  EstadoConversacion,
   FichaCliente,
   MensajeConversacion,
   Metricas,
@@ -81,6 +82,7 @@ export class RepositorioDrizzle implements Repositorio {
       clienteWa: conv.clienteWa,
       optInEn: conv.optInEn ? conv.optInEn.toISOString() : null,
       modo: conv.modo as ModoConversacion,
+      estado: conv.estado as EstadoConversacion,
       mensajes: msgs.map((m) => ({
         rol: m.rol as "user" | "assistant",
         contenido: m.contenido,
@@ -307,6 +309,10 @@ export class RepositorioDrizzle implements Repositorio {
         .insert(waJobs)
         .values({ tenantId: payload.tenantId, payload, waMessageId: msg.waMessageId ?? null })
         .onConflictDoNothing(); // idempotencia extra por waMessageId
+      // Cola de trabajo (C2.3): un mensaje nuevo del cliente reabre la conversación,
+      // aunque el operador la hubiera marcado "atendida". Misma transacción: atómico
+      // con el insert del mensaje.
+      await tx.update(waConversaciones).set({ estado: "abierta" }).where(eq(waConversaciones.id, conversacionId));
       encolado = true;
     });
     return encolado;
@@ -336,6 +342,13 @@ export class RepositorioDrizzle implements Repositorio {
       .where(and(eq(waConversaciones.id, conversacionId), eq(waConversaciones.tenantId, tenantId)));
   }
 
+  async marcarEstadoConversacion(tenantId: string, conversacionId: string, estado: EstadoConversacion): Promise<void> {
+    await this.db
+      .update(waConversaciones)
+      .set({ estado })
+      .where(and(eq(waConversaciones.id, conversacionId), eq(waConversaciones.tenantId, tenantId)));
+  }
+
   async listarConversaciones(tenantId: string): Promise<ResumenConversacion[]> {
     // Una sola consulta: por cada conversación trae su último mensaje vía LATERAL
     // (usa el índice wa_msg_conv_idx). Evita el patrón N+1 (1 query por conversación)
@@ -349,6 +362,7 @@ export class RepositorioDrizzle implements Repositorio {
         c.id,
         c.cliente_wa,
         c.modo,
+        c.estado,
         c.creada_en,
         m.contenido AS ultimo_mensaje,
         m.rol AS ultimo_rol,
@@ -387,6 +401,7 @@ export class RepositorioDrizzle implements Repositorio {
       id: string;
       cliente_wa: string;
       modo: string;
+      estado: string;
       sin_leer: number | string;
       ultimo_mensaje: string | null;
       ultimo_rol: string | null;
@@ -415,6 +430,7 @@ export class RepositorioDrizzle implements Repositorio {
         id: r.id,
         clienteWa: r.cliente_wa,
         modo: r.modo as ModoConversacion,
+        estado: r.estado as EstadoConversacion,
         ultimoMensaje: r.ultimo_mensaje ?? null,
         ultimaActividadEn: ultimaActividad.toISOString(),
         sinLeer: Number(r.sin_leer),
@@ -471,6 +487,7 @@ export class RepositorioDrizzle implements Repositorio {
       clienteWa: conv.clienteWa,
       optInEn: conv.optInEn ? conv.optInEn.toISOString() : null,
       modo: conv.modo as ModoConversacion,
+      estado: conv.estado as EstadoConversacion,
       mensajes: msgs.map((m) => ({
         rol: m.rol as "user" | "assistant",
         contenido: m.contenido,

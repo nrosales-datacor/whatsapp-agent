@@ -11,11 +11,13 @@ import type {
   Bloqueo,
   Cita,
   Conversacion,
+  EstadoConversacion,
   FichaCliente,
   HorarioDia,
   KnowledgeBase,
   Metricas,
   ModoConversacion,
+  Rol,
   ResumenConversacion,
   Service,
 } from "../../src/types";
@@ -24,11 +26,13 @@ export type {
   Bloqueo,
   Cita,
   Conversacion,
+  EstadoConversacion,
   FichaCliente,
   HorarioDia,
   KnowledgeBase,
   Metricas,
   ModoConversacion,
+  Rol,
   ResumenConversacion,
   Service,
 };
@@ -86,6 +90,8 @@ async function pedir<T = unknown>(path: string, init?: RequestInit): Promise<T> 
 export interface Sesion {
   nombre: string;
   tenantId: string;
+  /** Rol del usuario logueado (C2.3): "dueno" ve "Mi negocio" y "Usuarios"; "operador" no. */
+  rol: Rol;
   /** Clave pública VAPID para suscribir push (null si el server no tiene push). */
   vapidPublica: string | null;
   /** Catálogo de servicios agendables del negocio (para la Agenda, C2.1). */
@@ -135,6 +141,14 @@ export async function cambiarModo(id: string, modo: ModoConversacion): Promise<v
   await pedir(`/conversaciones/${encodeURIComponent(id)}/modo`, {
     method: "POST",
     body: JSON.stringify({ modo }),
+  });
+}
+
+/** Cola de trabajo (C2.3): marcar una conversación como atendida, o reabrirla. */
+export async function cambiarEstadoConversacion(id: string, estado: EstadoConversacion): Promise<void> {
+  await pedir(`/conversaciones/${encodeURIComponent(id)}/estado`, {
+    method: "POST",
+    body: JSON.stringify({ estado }),
   });
 }
 
@@ -299,4 +313,25 @@ export function adminListarTenants(): Promise<TenantResumen[]> {
 
 export function adminCrearTenant(body: AltaTenant): Promise<{ tenantId: string }> {
   return pedir<{ tenantId: string }>("/admin/tenants", { method: "POST", body: JSON.stringify(body) });
+}
+
+// ── Usuarios del panel del negocio (ROADMAP C2.3, solo dueño) ──
+export interface UsuarioTenant {
+  id: string;
+  usuario: string;
+  rol: Rol;
+  activo: boolean;
+  creadoEn: string;
+}
+
+export function listarUsuarios(): Promise<UsuarioTenant[]> {
+  return pedir<{ usuarios: UsuarioTenant[] }>("/usuarios").then((r) => r.usuarios);
+}
+
+export async function crearUsuario(usuario: string, password: string, rol: Rol): Promise<void> {
+  await pedir("/usuarios", { method: "POST", body: JSON.stringify({ usuario, password, rol }) });
+}
+
+export async function actualizarUsuario(id: string, patch: { rol?: Rol; activo?: boolean }): Promise<void> {
+  await pedir(`/usuarios/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify(patch) });
 }

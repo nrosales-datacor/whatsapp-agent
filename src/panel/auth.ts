@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import type { Rol } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Autenticación del panel: contraseña por negocio (hash scrypt) + sesión firmada
@@ -53,26 +54,44 @@ export function verificarPassword(password: string, guardado: string | undefined
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-/** Crea un token de sesión firmado para un negocio (va en una cookie). */
-export function crearSesion(tenantId: string): string {
-  const payload = `${tenantId}.${Date.now() + DURACION_MS}.${SESSION_VERSION}`;
+/** Sesión decodificada de un operador del panel (C2.3: incluye quién y su rol). */
+export interface SesionOperador {
+  tenantId: string;
+  usuarioId: string;
+  rol: Rol;
+}
+
+/**
+ * Crea un token de sesión firmado para un operador (va en una cookie). Lleva tenantId +
+ * usuarioId + rol (C2.3): el rol gatea qué puede ver/hacer en el panel (p. ej. "Mi
+ * negocio" y la gestión de usuarios son solo para "dueno").
+ */
+export function crearSesion(tenantId: string, usuarioId: string, rol: Rol): string {
+  const payload = `${tenantId}.${usuarioId}.${rol}.${Date.now() + DURACION_MS}.${SESSION_VERSION}`;
   const firma = crypto.createHmac("sha256", SECRET).update(payload).digest("hex");
   return Buffer.from(`${payload}.${firma}`).toString("base64url");
 }
 
-/** Verifica el token de sesión y devuelve el tenantId, o null si es inválido/venció. */
-export function verificarSesion(token: string | undefined): string | null {
+/**
+ * Verifica el token de sesión y devuelve tenantId/usuarioId/rol, o null si es
+ * inválido/venció. Cambiar el formato del payload (como acá, al agregar usuarioId/rol)
+ * invalida sola cualquier sesión previa: los tokens viejos no calzan con el split nuevo.
+ */
+export function verificarSesion(token: string | undefined): SesionOperador | null {
   if (!token) return null;
   try {
-    const [tenantId, exp, ver, firma] = Buffer.from(token, "base64url").toString().split(".");
-    if (!tenantId || !exp || !ver || !firma) return null;
+    const [tenantId, usuarioId, rol, exp, ver, firma] = Buffer.from(token, "base64url").toString().split(".");
+    if (!tenantId || !usuarioId || !rol || !exp || !ver || !firma) return null;
     if (ver !== SESSION_VERSION) return null; // sesión de una versión anterior → fuera
-    const esperada = crypto.createHmac("sha256", SECRET).update(`${tenantId}.${exp}.${ver}`).digest("hex");
+    const esperada = crypto
+      .createHmac("sha256", SECRET)
+      .update(`${tenantId}.${usuarioId}.${rol}.${exp}.${ver}`)
+      .digest("hex");
     const a = Buffer.from(firma);
     const b = Buffer.from(esperada);
     if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
     if (Date.now() > Number(exp)) return null;
-    return tenantId;
+    return { tenantId, usuarioId, rol: rol as Rol };
   } catch {
     return null;
   }
