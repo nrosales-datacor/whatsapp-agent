@@ -1,6 +1,7 @@
 import type {
   Cita,
   Conversacion,
+  EstadoConversacion,
   FichaCliente,
   MensajeConversacion,
   Metricas,
@@ -50,6 +51,7 @@ export class RepositorioEnMemoria implements Repositorio {
       clienteWa: c.clienteWa,
       optInEn: c.optInEn,
       modo: c.modo,
+      estado: c.estado,
       // porHumano normalizado a boolean (paridad con Drizzle, que nunca es undefined).
       mensajes: c.mensajes.slice(-limite).map((m) => ({ ...m, porHumano: m.porHumano ?? false })),
     };
@@ -65,6 +67,7 @@ export class RepositorioEnMemoria implements Repositorio {
         clienteWa,
         optInEn: null,
         modo: "bot",
+        estado: "abierta",
         mensajes: [],
         notas: "",
         creadaEn: new Date().toISOString(),
@@ -229,7 +232,14 @@ export class RepositorioEnMemoria implements Repositorio {
     _payload: PendienteSerializado,
   ): Promise<boolean> {
     // Sin base de datos no hay cola: solo guardamos el mensaje (comportamiento de dev).
-    return this.guardarMensaje(conversacionId, msg);
+    const guardado = await this.guardarMensaje(conversacionId, msg);
+    // Cola de trabajo (C2.3): un mensaje nuevo del cliente reabre la conversación,
+    // aunque el operador la hubiera marcado "atendida".
+    if (guardado) {
+      const c = this.conversaciones.get(conversacionId);
+      if (c) c.estado = "abierta";
+    }
+    return guardado;
   }
 
   async registrarCalidad(evento: {
@@ -249,6 +259,12 @@ export class RepositorioEnMemoria implements Repositorio {
     c.modo = modo;
     // Marca el primer traspaso a humano y NO la borra al volver a bot (paridad con Drizzle).
     if (modo === "humano" && !c.humanoEn) c.humanoEn = new Date().toISOString();
+  }
+
+  async marcarEstadoConversacion(tenantId: string, conversacionId: string, estado: EstadoConversacion): Promise<void> {
+    const c = this.conversaciones.get(conversacionId);
+    if (!c || c.tenantId !== tenantId) return;
+    c.estado = estado;
   }
 
   async listarConversaciones(tenantId: string): Promise<ResumenConversacion[]> {
@@ -284,6 +300,7 @@ export class RepositorioEnMemoria implements Repositorio {
           id: c.id,
           clienteWa: c.clienteWa,
           modo: c.modo,
+          estado: c.estado,
           ultimoMensaje: ult ? ult.contenido : null,
           ultimaActividadEn,
           sinLeer,

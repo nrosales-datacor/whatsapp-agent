@@ -1,5 +1,5 @@
-import { eq } from "drizzle-orm";
-import type { Bloqueo, HorarioDia, KnowledgeBase, Service, Tenant } from "../types";
+import { and, eq } from "drizzle-orm";
+import type { Bloqueo, HorarioDia, KnowledgeBase, Rol, Service, Tenant } from "../types";
 import { crearDb } from "../db/client";
 import { waTenants, waUsuarios } from "../db/schema";
 import { TENANT_FALLBACK_ROSALES } from "./tenants";
@@ -16,8 +16,11 @@ import { TENANT_FALLBACK_ROSALES } from "./tenants";
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface CuentaUsuario {
+  id: string;
   tenantId: string;
   passwordHash: string;
+  /** Rol dentro del negocio (C2.3): "dueno" edita "Mi negocio" y gestiona usuarios. */
+  rol: Rol;
 }
 
 interface Cache {
@@ -33,7 +36,7 @@ let hayDb = false;
 
 function construirCache(
   tenants: Tenant[],
-  usuarios: { usuario: string; tenantId: string; passwordHash: string }[],
+  usuarios: { id: string; usuario: string; tenantId: string; passwordHash: string; rol: Rol }[],
 ): Cache {
   const porPnid = new Map<string, Tenant>();
   const porId = new Map<string, Tenant>();
@@ -42,17 +45,18 @@ function construirCache(
     porPnid.set(t.phoneNumberId, t);
   }
   const us = new Map<string, CuentaUsuario>();
-  for (const u of usuarios) us.set(u.usuario, { tenantId: u.tenantId, passwordHash: u.passwordHash });
+  for (const u of usuarios) us.set(u.usuario, { id: u.id, tenantId: u.tenantId, passwordHash: u.passwordHash, rol: u.rol });
   return { porPnid, porId, usuarios: us };
 }
 
 // Caché de emergencia: el tenant hardcodeado + un usuario sintético desde el hash
 // de .env. Mantiene el bot atendiendo a rosales si la base aún no está sembrada.
+// Es el único login del negocio → dueño.
 function cacheFallback(): Cache {
   const t = TENANT_FALLBACK_ROSALES;
   const usuarios = [];
   const hash = process.env.PANEL_PASSWORD_HASH_ROSALES;
-  if (hash) usuarios.push({ usuario: t.id, tenantId: t.id, passwordHash: hash });
+  if (hash) usuarios.push({ id: "fallback", usuario: t.id, tenantId: t.id, passwordHash: hash, rol: "dueno" as Rol });
   return construirCache([t], usuarios);
 }
 
@@ -90,7 +94,7 @@ async function recargarDesdeDb(): Promise<void> {
     }
     cache = construirCache(
       tenants.map(filaATenant),
-      usuarios.map((u) => ({ usuario: u.usuario, tenantId: u.tenantId, passwordHash: u.passwordHash })),
+      usuarios.map((u) => ({ id: u.id, usuario: u.usuario, tenantId: u.tenantId, passwordHash: u.passwordHash, rol: u.rol as Rol })),
     );
   } catch (e) {
     activarFallback(`no se pudo leer la base (${e instanceof Error ? e.message : String(e)})`);
@@ -194,7 +198,8 @@ export async function crearTenant(tenant: Tenant, u: NuevoUsuario): Promise<void
       kb: tenant.kb,
       bloqueos: tenant.bloqueos,
     });
-    await tx.insert(waUsuarios).values({ usuario: u.usuario, passwordHash: u.passwordHash, tenantId: tenant.id });
+    // El usuario del alta es, por definición, el dueño del negocio recién creado.
+    await tx.insert(waUsuarios).values({ usuario: u.usuario, passwordHash: u.passwordHash, tenantId: tenant.id, rol: "dueno" });
   });
 }
 
@@ -220,6 +225,69 @@ export async function actualizarConfigTenant(
       actualizadoEn: new Date(),
     })
     .where(eq(waTenants.id, tenantId));
+}
+
+// ── Usuarios del panel por tenant (ROADMAP C2.3, "Mi negocio" → pestaña Usuarios) ──
+// A diferencia del caché (que solo indexa usuarios ACTIVOS por username, para el login),
+// estas lecturas/escrituras van directo a la base: son de baja frecuencia (las abre el
+// dueño desde una pestaña de administración, no el hot path del webhook).
+
+export interface UsuarioTenant {
+  id: string;
+  usuario: string;
+  rol: Rol;
+  activo: boolean;
+  creadoEn: string; // ISO
+}
+
+/** Todos los usuarios (activos e inactivos) de un negocio, para la pestaña "Usuarios". */
+export async function listarUsuariosDeTenant(tenantId: string): Promise<UsuarioTenant[]> {
+  const d = obtenerDb();
+  const filas = await d.select().from(waUsuarios).where(eq(waUsuarios.tenantId, tenantId));
+  return filas.map((f) => ({
+    id: f.id,
+    usuario: f.usuario,
+    rol: f.rol as Rol,
+    activo: f.activo,
+    creadoEn: f.creadoEn.toISOString(),
+  }));
+}
+
+interface NuevoUsuarioTenant {
+  usuario: string;
+  passwordHash: string;
+  rol: Rol;
+}
+
+/**
+ * Da de alta un usuario adicional del panel para un negocio ya existente (dueño
+ * gestionando su equipo, C2.3). Lanza Error("SIN_DB") si no hay base. Deja propagar
+ * el error de Postgres "23505" (usuario duplicado) para que el router lo mapee a 409.
+ */
+export async function crearUsuarioTenant(tenantId: string, u: NuevoUsuarioTenant): Promise<void> {
+  if (!hayDb) throw new Error("SIN_DB");
+  const d = obtenerDb();
+  await d.insert(waUsuarios).values({ usuario: u.usuario, passwordHash: u.passwordHash, tenantId, rol: u.rol });
+}
+
+/**
+ * Actualiza rol y/o estado activo de un usuario del panel. Scopeada por tenantId en el
+ * WHERE (defensa en profundidad: un dueño no puede tocar usuarios de otro negocio aunque
+ * conozca el id). El guard de "al menos un dueño activo" lo valida el router ANTES de
+ * llamar acá (necesita leer el resto del equipo para decidir). Lanza Error("SIN_DB") si
+ * no hay base.
+ */
+export async function actualizarUsuarioTenant(
+  tenantId: string,
+  usuarioId: string,
+  patch: { rol?: Rol; activo?: boolean },
+): Promise<void> {
+  if (!hayDb) throw new Error("SIN_DB");
+  const d = obtenerDb();
+  await d
+    .update(waUsuarios)
+    .set(patch)
+    .where(and(eq(waUsuarios.id, usuarioId), eq(waUsuarios.tenantId, tenantId)));
 }
 
 // ── Recarga on-demand ante un phone_number_id desconocido ──

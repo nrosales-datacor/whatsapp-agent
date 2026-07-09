@@ -300,6 +300,7 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .accion-check { color: var(--success); border-color: #c5e8bf; }
 .accion-check:hover:not(:disabled) { background: #f0fae8; }
 [data-tema="oscuro"] .accion-check:hover:not(:disabled) { background: #1a3017; }
+.accion-check.activa { background: rgba(88,190,77,.14); border-color: var(--success); }
 .accion-alerta { color: var(--warning); border-color: #fcd9a8; }
 .accion-alerta:hover:not(:disabled) { background: #fef1de; }
 [data-tema="oscuro"] .accion-alerta:hover:not(:disabled) { background: #3a2a13; }

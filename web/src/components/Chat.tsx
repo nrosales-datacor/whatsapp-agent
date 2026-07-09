@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { cambiarModo, obtenerConversacion, responder, type ResumenConversacion } from "../api";
+import {
+  cambiarEstadoConversacion,
+  cambiarModo,
+  obtenerConversacion,
+  responder,
+  type ResumenConversacion,
+} from "../api";
 import { fmtNum, hora } from "../lib/formato";
 import Icono from "./Iconos";
 import { useToast } from "./Toast";
@@ -51,6 +57,14 @@ export default function Chat({ id, resumen, mostrar, onVolver, onVerFicha }: Pro
     onSuccess: invalidar,
   });
 
+  const alternarEstado = useMutation({
+    mutationFn: (estado: "abierta" | "atendida") => cambiarEstadoConversacion(id!, estado),
+    onSuccess: (_data, estado) => {
+      invalidar();
+      flash(estado === "atendida" ? "Conversación marcada como atendida ✓" : "Conversación reabierta");
+    },
+  });
+
   const msgs = conv?.mensajes ?? [];
   const ultimoTs = msgs.length ? msgs[msgs.length - 1].creadoEn : null;
   useEffect(() => {
@@ -86,11 +100,12 @@ export default function Chat({ id, resumen, mostrar, onVolver, onVerFicha }: Pro
   }
 
   function accionAtendido() {
-    qc.invalidateQueries({ queryKey: ["conversaciones"] });
-    flash("Conversación marcada como atendida ✓");
+    if (!id || alternarEstado.isPending) return;
+    alternarEstado.mutate(conv?.estado === "atendida" ? "abierta" : "atendida");
   }
 
   const humano = conv?.modo === "humano";
+  const atendida = conv?.estado === "atendida";
   const score = resumen?.leadScore;
   const tieneCita = conv?.tieneCita ?? resumen?.tieneCita;
   const citaConfirmada = conv?.citaConfirmada ?? resumen?.citaConfirmada;
@@ -166,11 +181,12 @@ export default function Chat({ id, resumen, mostrar, onVolver, onVerFicha }: Pro
           </button>
           <button
             type="button"
-            className="accion accion-outline accion-check"
+            className={"accion accion-outline accion-check" + (atendida ? " activa" : "")}
             onClick={accionAtendido}
+            disabled={alternarEstado.isPending}
           >
             <Icono id="check2" size={14} sw={2.2} />
-            Atendido
+            {atendida ? "Reabrir" : "Atendido"}
           </button>
         </div>
       )}

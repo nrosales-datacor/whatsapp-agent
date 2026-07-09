@@ -25,6 +25,10 @@ export const waConversaciones = pgTable(
     // Panel / bandeja humana.
     modo: text("modo").notNull().default("bot"), // "bot" | "humano"
     humanoEn: timestamp("humano_en", { withTimezone: true }),
+    // Cola de trabajo del operador (C2.3): "abierta" (necesita atención) | "atendida"
+    // (el operador la cerró). Vuelve a "abierta" sola cuando el cliente escribe de
+    // nuevo (ver guardarEntranteYEncolar), sin importar que estuviera "atendida".
+    estado: text("estado").notNull().default("abierta"),
     // DEPRECADO: ya no se usa. El código calcula "sin leer" desde leido_hasta. Se deja
     // la columna para que la migración sea ADITIVA (sin DROP, sin perder datos en prod);
     // se puede eliminar más adelante con un `drizzle-kit generate` interactivo.
@@ -181,6 +185,9 @@ export const waUsuarios = pgTable(
     tenantId: text("tenant_id")
       .notNull()
       .references(() => waTenants.id, { onDelete: "cascade" }),
+    // Rol dentro del negocio (C2.3): "dueno" puede editar "Mi negocio" y gestionar
+    // usuarios; "operador" solo atiende la bandeja/agenda.
+    rol: text("rol").notNull().default("operador"),
     activo: boolean("activo").notNull().default(true),
     creadoEn: timestamp("creado_en", { withTimezone: true }).notNull().defaultNow(),
   },
