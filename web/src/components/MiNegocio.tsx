@@ -86,6 +86,7 @@ export default function MiNegocio() {
   const [politicas, setPoliticas] = useState("");
   const [tarifas, setTarifas] = useState("");
   const [parabrisas, setParabrisas] = useState("");
+  const [linkResenas, setLinkResenas] = useState("");
 
   // Seedear el form UNA sola vez al llegar la config: un refetch de fondo no debe
   // pisar lo que el operador está escribiendo.
@@ -99,6 +100,7 @@ export default function MiNegocio() {
     setPoliticas((q.data.kb.politicas ?? []).join("\n"));
     setTarifas((q.data.kb.tarifas ?? []).join("\n"));
     setParabrisas((q.data.kb.parabrisas ?? []).join("\n"));
+    setLinkResenas(q.data.linkResenas ?? "");
     setCargado(true);
   }, [q.data, cargado]);
 
@@ -163,7 +165,13 @@ export default function MiNegocio() {
       tarifas: lineas(tarifas),
       parabrisas: lineas(parabrisas),
     };
-    guardar.mutate({ horario: construirHorario(), servicios: construirServicios(), kb, bloqueos: construirBloqueos() });
+    guardar.mutate({
+      horario: construirHorario(),
+      servicios: construirServicios(),
+      kb,
+      bloqueos: construirBloqueos(),
+      linkResenas: linkResenas.trim(),
+    });
   }
 
   if (q.isLoading) {
@@ -303,6 +311,19 @@ export default function MiNegocio() {
           >
             + Agregar bloqueo
           </button>
+        </div>
+
+        <div className="card admin-form">
+          <h3>Reseñas de Google</h3>
+          <div className="campo">
+            <label htmlFor="cLinkResenas">Link para pedir reseña (Google Maps → "Escribir reseña")</label>
+            <input
+              id="cLinkResenas"
+              placeholder="https://g.page/r/..."
+              value={linkResenas}
+              onChange={(e) => setLinkResenas(e.target.value)}
+            />
+          </div>
         </div>
 
         <div className="card admin-form">

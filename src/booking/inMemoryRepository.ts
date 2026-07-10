@@ -203,7 +203,8 @@ export class RepositorioEnMemoria implements Repositorio {
     if (!c) return;
     const ahora = new Date().toISOString();
     if (tipo === "dia_antes") c.recordatorioDiaAntesEn = ahora;
-    else c.recordatorioMismoDiaEn = ahora;
+    else if (tipo === "mismo_dia") c.recordatorioMismoDiaEn = ahora;
+    else c.postServicioEn = ahora;
   }
 
   async reclamarRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<boolean> {
@@ -212,9 +213,12 @@ export class RepositorioEnMemoria implements Repositorio {
     if (tipo === "dia_antes") {
       if (c.recordatorioDiaAntesEn) return false;
       c.recordatorioDiaAntesEn = new Date().toISOString();
-    } else {
+    } else if (tipo === "mismo_dia") {
       if (c.recordatorioMismoDiaEn) return false;
       c.recordatorioMismoDiaEn = new Date().toISOString();
+    } else {
+      if (c.postServicioEn) return false;
+      c.postServicioEn = new Date().toISOString();
     }
     return true;
   }
@@ -223,7 +227,8 @@ export class RepositorioEnMemoria implements Repositorio {
     const c = this.citas.find((x) => x.id === citaId);
     if (!c) return;
     if (tipo === "dia_antes") c.recordatorioDiaAntesEn = null;
-    else c.recordatorioMismoDiaEn = null;
+    else if (tipo === "mismo_dia") c.recordatorioMismoDiaEn = null;
+    else c.postServicioEn = null;
   }
 
   async guardarEntranteYEncolar(

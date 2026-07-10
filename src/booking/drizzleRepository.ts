@@ -45,6 +45,7 @@ function filaACita(r: typeof waCitas.$inferSelect): Cita {
     recordatorioDiaAntesEn: r.recordatorioDiaAntesEn ? r.recordatorioDiaAntesEn.toISOString() : null,
     recordatorioMismoDiaEn: r.recordatorioMismoDiaEn ? r.recordatorioMismoDiaEn.toISOString() : null,
     confirmadaEn: r.confirmadaEn ? r.confirmadaEn.toISOString() : null,
+    postServicioEn: r.postServicioEn ? r.postServicioEn.toISOString() : null,
   };
 }
 
@@ -255,18 +256,27 @@ export class RepositorioDrizzle implements Repositorio {
     const cambio =
       tipo === "dia_antes"
         ? { recordatorioDiaAntesEn: new Date() }
-        : { recordatorioMismoDiaEn: new Date() };
+        : tipo === "mismo_dia"
+          ? { recordatorioMismoDiaEn: new Date() }
+          : { postServicioEn: new Date() };
     await this.db.update(waCitas).set(cambio).where(eq(waCitas.id, citaId));
   }
 
   async reclamarRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<boolean> {
     // UPDATE ... WHERE col IS NULL RETURNING id — atómico: solo una instancia pasa
     // de NULL a timestamp; las demás obtienen 0 filas → claim perdido → continue.
-    const col = tipo === "dia_antes" ? waCitas.recordatorioDiaAntesEn : waCitas.recordatorioMismoDiaEn;
+    const col =
+      tipo === "dia_antes"
+        ? waCitas.recordatorioDiaAntesEn
+        : tipo === "mismo_dia"
+          ? waCitas.recordatorioMismoDiaEn
+          : waCitas.postServicioEn;
     const cambio =
       tipo === "dia_antes"
         ? { recordatorioDiaAntesEn: new Date() }
-        : { recordatorioMismoDiaEn: new Date() };
+        : tipo === "mismo_dia"
+          ? { recordatorioMismoDiaEn: new Date() }
+          : { postServicioEn: new Date() };
     const filas = await this.db
       .update(waCitas)
       .set(cambio)
@@ -279,7 +289,9 @@ export class RepositorioDrizzle implements Repositorio {
     const cambio =
       tipo === "dia_antes"
         ? { recordatorioDiaAntesEn: null }
-        : { recordatorioMismoDiaEn: null };
+        : tipo === "mismo_dia"
+          ? { recordatorioMismoDiaEn: null }
+          : { postServicioEn: null };
     await this.db.update(waCitas).set(cambio).where(eq(waCitas.id, citaId));
   }
 

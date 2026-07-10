@@ -234,6 +234,8 @@ export interface ConfigNegocio {
   servicios: Service[];
   kb: KnowledgeBase;
   bloqueos: Bloqueo[];
+  /** Link para pedir reseña de Google (Maps / "Escribir reseña"). "" = sin configurar. */
+  linkResenas: string;
 }
 
 export function obtenerConfig(): Promise<ConfigNegocio> {

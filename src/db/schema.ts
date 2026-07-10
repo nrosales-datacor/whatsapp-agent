@@ -97,6 +97,9 @@ export const waCitas = pgTable(
     // Cuándo el cliente CONFIRMÓ la cita (tocando el botón del recordatorio). null =
     // sin confirmar. Anti no-show: el dueño ve qué citas de mañana están confirmadas (C1.3).
     confirmadaEn: timestamp("confirmada_en", { withTimezone: true }),
+    // Cuándo se envió el seguimiento post-servicio (satisfacción + reseña, C3.1).
+    // null = pendiente.
+    postServicioEn: timestamp("post_servicio_en", { withTimezone: true }),
   },
   (t) => ({
     idxTenantFecha: index("wa_citas_tenant_fecha_idx").on(t.tenantId, t.fecha),
@@ -165,6 +168,9 @@ export const waTenants = pgTable(
     kb: jsonb("kb").$type<KnowledgeBase>().notNull(),
     // Feriados/vacaciones puntuales (C2.2), fuera del horario semanal recurrente.
     bloqueos: jsonb("bloqueos").$type<Bloqueo[]>().notNull().default([]),
+    // Link para pedir reseña de Google (Maps / "Escribir reseña"), usado en el
+    // seguimiento post-servicio (C3.1). null = sin configurar (no se pide reseña).
+    linkResenas: text("link_resenas"),
     activo: boolean("activo").notNull().default(true),
     creadoEn: timestamp("creado_en", { withTimezone: true }).notNull().defaultNow(),
     actualizadoEn: timestamp("actualizado_en", { withTimezone: true }).notNull().defaultNow(),

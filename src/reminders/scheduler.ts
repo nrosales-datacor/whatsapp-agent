@@ -1,6 +1,6 @@
 import type { Cita, Repositorio, Tenant, TipoRecordatorio } from "../types";
 import { listarTenants } from "../config/tenantStore";
-import { botonesRecordatorio, enviarBotones, enviarPlantilla } from "../whatsapp/client";
+import { botonesPostServicio, botonesRecordatorio, enviarBotones, enviarPlantilla } from "../whatsapp/client";
 import { capturarError } from "../observabilidad/sentry";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -13,6 +13,12 @@ import { capturarError } from "../observabilidad/sentry";
 //   • MISMO DÍA: RECORDATORIO_HORAS_ANTES horas antes de la cita (default 2),
 //     nunca antes de las 6:00 am.
 // Cada envío se marca en la cita (recordatorio_*_en) para no duplicar.
+//
+// Además, se revisan las citas de HOY y AYER para el SEGUIMIENTO POST-SERVICIO
+// (C3.1, anti reseña negativa): POST_SERVICIO_HORAS_DESPUES horas después de la
+// hora de la cita (default 3), se pregunta si todo salió bien. "Bien" pide la
+// reseña de Google (si el negocio configuró el link en "Mi negocio"); "mal"
+// escala a un humano ANTES de que el cliente deje una reseña negativa.
 //
 // ⚠️ VENTANA DE 24 H DE META: WhatsApp solo permite texto libre dentro de las
 // 24 h posteriores al último mensaje DEL CLIENTE. Como el recordatorio del día
@@ -30,6 +36,7 @@ const INTERVALO_MIN = Number(process.env.RECORDATORIOS_INTERVALO_MIN ?? 5);
 const DIA_ANTES_HORA = process.env.RECORDATORIO_DIA_ANTES_HORA ?? "17:00";
 const HORAS_ANTES = Number(process.env.RECORDATORIO_HORAS_ANTES ?? 2);
 const NO_ANTES_DE_MIN = 6 * 60; // nunca despertar al cliente antes de las 6:00 am
+const POST_SERVICIO_HORAS_DESPUES = Number(process.env.POST_SERVICIO_HORAS_DESPUES ?? 3);
 
 function aMin(hhmm: string): number {
   const [h, m] = hhmm.split(":").map(Number);
@@ -103,10 +110,25 @@ async function enviarRecordatorio(tenant: Tenant, cita: Cita, tipo: TipoRecordat
   await enviarBotones(tenant, cita.clienteWa, cuerpo, botonesRecordatorio(cita.id));
 }
 
+/**
+ * Envía el seguimiento post-servicio (C3.1): pregunta si todo salió bien. La
+ * respuesta la maneja handleWebhook como acción directa (respuestaPostServicio),
+ * igual que la confirmación del recordatorio (C1.3). Mismo caveat de la ventana de
+ * 24 h que enviarRecordatorio: sin plantilla aprobada, el texto libre con botones
+ * solo llega si el cliente escribió en las últimas 24 h (o con el número de prueba).
+ */
+async function enviarPostServicio(tenant: Tenant, cita: Cita): Promise<void> {
+  const servicio = tenant.servicios.find((s) => s.id === cita.servicioId);
+  const nombreServicio = servicio?.nombre ?? cita.servicioId;
+  const cuerpo = `¡Hola ${cita.clienteNombre}! 👋 ¿Cómo te fue con tu ${nombreServicio} en ${tenant.nombre}? 🚗`;
+  await enviarBotones(tenant, cita.clienteWa, cuerpo, botonesPostServicio(cita.id));
+}
+
 /** Revisa las citas de un tenant y envía los recordatorios que tocan. */
 async function procesarTenant(tenant: Tenant, repo: Repositorio): Promise<void> {
   const { fecha: hoy, minutos: ahoraMin } = ahoraEnTz(tenant.timezone);
   const manana = fechaMasDias(hoy, 1);
+  const ayer = fechaMasDias(hoy, -1);
   const haceUnaHora = Date.now() - 60 * 60 * 1000;
 
   // ── DÍA ANTES: citas de mañana, a partir de DIA_ANTES_HORA de hoy ──────────
@@ -144,6 +166,27 @@ async function procesarTenant(tenant: Tenant, repo: Repositorio): Promise<void> 
     } catch (e) {
       await repo.revertirRecordatorio(cita.id, "mismo_dia");
       console.error(`[recordatorios] error (mismo día, cita ${cita.id}):`, e);
+    }
+  }
+
+  // ── POST-SERVICIO (C3.1): citas de HOY y AYER, POST_SERVICIO_HORAS_DESPUES horas
+  // después de la hora de la cita. Se manda tanto para "agendada" (el dueño no
+  // siempre entra al panel a marcar "completada": se asume completada al pasar la
+  // hora) como para "completada"; se excluyen "cancelada" y "no_show".
+  for (const [fechaCita, diasAtras] of [[ayer, 1], [hoy, 0]] as const) {
+    for (const cita of await repo.citasPorFecha(tenant.id, fechaCita)) {
+      if (cita.estado !== "agendada" && cita.estado !== "completada") continue;
+      if (cita.postServicioEn) continue;
+      const minutosTranscurridos = diasAtras * 24 * 60 + ahoraMin - aMin(cita.hora);
+      if (minutosTranscurridos < POST_SERVICIO_HORAS_DESPUES * 60) continue;
+      if (!(await repo.reclamarRecordatorio(cita.id, "post_servicio"))) continue;
+      try {
+        await enviarPostServicio(tenant, cita);
+        console.log(`[recordatorios] post-servicio → cita ${cita.id} (${cita.clienteWa})`);
+      } catch (e) {
+        await repo.revertirRecordatorio(cita.id, "post_servicio");
+        console.error(`[recordatorios] error (post-servicio, cita ${cita.id}):`, e);
+      }
     }
   }
 }
