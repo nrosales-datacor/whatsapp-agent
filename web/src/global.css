@@ -558,6 +558,17 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .admin-submit { margin-top: var(--space-lg); }
 .admin-error { color: var(--destructive); font-size: var(--step--1); margin-top: var(--space-sm); }
 .admin-ok { color: var(--accent-strong); font-size: var(--step--1); margin-top: var(--space-sm); }
+/* Embedded Signup (C4.2): conectar WhatsApp por el popup de Meta. */
+.admin-conectar { display: flex; flex-direction: column; gap: var(--space-xs); align-items: flex-start; }
+.admin-conectado { display: flex; flex-direction: column; gap: var(--space-xs); font-size: var(--step--1); }
+.admin-conectado code, .admin-conectar code { font-family: var(--mono, monospace); }
+.admin-hint { font-size: var(--step--1); color: var(--text-muted); margin: 0; }
+.admin-manual { margin-top: var(--space-xs); }
+.admin-manual summary { font-size: var(--step--1); color: var(--text-muted); cursor: pointer; }
+.admin-manual .admin-grid { margin-top: var(--space-sm); }
+.btn-fb { background: #1877f2; color: #fff; padding: 12px 18px; border-radius: var(--radius); font-weight: 600; font-size: var(--step-0); transition: background .15s; }
+.btn-fb:hover:not(:disabled) { background: #145dc0; }
+.btn-fb:disabled { opacity: .6; cursor: default; }
 .admin-tabla-scroll { overflow-x: auto; }
 .admin-tabla { width: 100%; border-collapse: collapse; font-size: var(--step--1); }
 .admin-tabla th, .admin-tabla td { text-align: left; padding: var(--space-xs) var(--space-sm); border-bottom: 1px solid var(--border); white-space: nowrap; }

@@ -25,6 +25,15 @@ import {
   validarServicios,
 } from "../config/validadores";
 import { enviarTexto } from "../whatsapp/client";
+import {
+  configPublica as esConfigPublica,
+  embeddedSignupConfigurado,
+  guardarTokenTemporal,
+  intercambiarCodigo,
+  registrarNumero,
+  suscribirApp,
+  tomarToken,
+} from "../whatsapp/embeddedSignup";
 import type { Cita, EstadoConversacion, KnowledgeBase, Repositorio, Rol, SegmentoFiltro, Tenant } from "../types";
 import {
   cancelarCampania,
@@ -506,6 +515,42 @@ export async function manejarPanel(
       return true;
     }
 
+    // ── Embedded Signup (ROADMAP C4.2) ──
+    // Config pública para que el frontend arme el popup (nunca el app secret).
+    if (ruta === "admin/embedded-signup/config" && metodo === "GET") {
+      json(res, 200, { ok: true, configurado: embeddedSignupConfigurado(), config: esConfigPublica() });
+      return true;
+    }
+
+    // Conecta un número: canjea el código del popup por un token, suscribe la app al
+    // WABA y registra el número. El token queda en un stash del server; devolvemos un
+    // handle opaco que el alta canjea al confirmar (el token NUNCA vuelve al navegador).
+    if (ruta === "admin/embedded-signup/conectar" && metodo === "POST") {
+      if (!embeddedSignupConfigurado()) {
+        return json(res, 503, { ok: false, error: "Embedded Signup no está configurado en este servidor." }), true;
+      }
+      const body = await leerBody(req);
+      if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
+      const code = String(body?.code ?? "").trim();
+      const phoneNumberId = String(body?.phoneNumberId ?? "").trim();
+      const wabaId = String(body?.wabaId ?? "").trim();
+      if (!code || code.length > 1024) return json(res, 400, { ok: false, error: "Código de autorización inválido" }), true;
+      if (!/^\d{5,30}$/.test(phoneNumberId)) return json(res, 400, { ok: false, error: "phone_number_id inválido" }), true;
+      if (!/^\d{5,30}$/.test(wabaId)) return json(res, 400, { ok: false, error: "waba_id inválido" }), true;
+
+      let token: string;
+      try {
+        token = await intercambiarCodigo(code);
+      } catch (e) {
+        return json(res, 502, { ok: false, error: e instanceof Error ? e.message : "No se pudo conectar con Meta." }), true;
+      }
+      // Suscripción de webhooks y registro del número: best-effort (no abortan el alta).
+      const suscrito = await suscribirApp(wabaId, token);
+      const registrado = await registrarNumero(phoneNumberId, token);
+      const tokenHandle = guardarTokenTemporal({ token, phoneNumberId, wabaId });
+      return json(res, 200, { ok: true, phoneNumberId, wabaId, tokenHandle, suscrito, registrado }), true;
+    }
+
     if (ruta === "admin/tenants" && metodo === "GET") {
       // Resumen liviano: NUNCA exponemos accessToken por la API.
       const tenants = listarTenants().map((t) => ({
@@ -526,6 +571,16 @@ export async function manejarPanel(
       }
       const body = await leerBody(req);
       if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
+      // Alta vía Embedded Signup (C4.2): el token no viaja por el navegador. Llegó un
+      // `tokenHandle` que canjeamos por el token (y el phone_number_id verificado)
+      // stasheado del lado del server, y lo inyectamos antes de validar.
+      if (body && typeof body === "object" && typeof body.tokenHandle === "string" && body.tokenHandle) {
+        const conexion = tomarToken(body.tokenHandle);
+        if (!conexion) {
+          return json(res, 400, { ok: false, error: "La conexión de WhatsApp venció; reconectá el número antes de crear el negocio." }), true;
+        }
+        body.tenant = { ...(body.tenant ?? {}), accessToken: conexion.token, phoneNumberId: conexion.phoneNumberId };
+      }
       const v = validarAltaTenant(body);
       if (!v.ok) return json(res, 400, { ok: false, error: v.error }), true;
       try {
