@@ -68,5 +68,13 @@ jobs:
 
       - name: Verificar que el bot responde (/salud)
         run: |
-          sleep 5
-          curl -sf "$SALUD_URL" || (echo "::error::El bot no respondió en /salud tras el deploy" && exit 1)
+          for i in $(seq 1 10); do
+            if curl -sf "$SALUD_URL" > /dev/null; then
+              echo "✅ /salud respondió OK (intento $i de 10)"
+              exit 0
+            fi
+            echo "intento $i de 10: /salud no respondió aún, reintento en 3s…"
+            sleep 3
+          done
+          echo "::error::El bot no respondió en /salud tras el deploy (30s de reintentos)"
+          exit 1
