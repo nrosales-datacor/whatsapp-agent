@@ -3,12 +3,12 @@
 > Dos trámites que corren por fuera del código y conviene arrancar YA porque tienen tiempos de
 > espera de Meta. Esta guía deja los pasos exactos. Actualizá el estado acá cuando avance cada uno.
 
-**Última actualización:** 2026-07-09 (C3.2: agregado trámite C, plantilla MARKETING para campañas)
+**Última actualización:** 2026-07-10 (C4.2: código de Embedded Signup implementado; falta el trámite Meta + las env vars)
 
 | Trámite | Estado | Bloquea |
 |---|---|---|
 | A. Plantilla Utility `recordatorio_cita` | ⏳ esperando aprobación de Meta | Recordatorios fuera de 24h (y C1.3/C3.1 construyen encima) |
-| B. Tech Provider + Embedded Signup | ⬜ sin empezar | C4.2 (alta self-serve). No bloquea nada del piloto |
+| B. Tech Provider + Embedded Signup | ⬜ trámite Meta sin empezar (⚠️ el **código** de C4.2 ya está listo) | Que el botón "Conectar WhatsApp" del onboarding funcione contra Meta. No bloquea nada del piloto (el alta manual sigue). |
 | C. Plantilla MARKETING para campañas | ⬜ sin empezar | Envío real de campañas (C3.2). El código y el panel ya están listos; sin la plantilla aprobada, "Campañas" queda configurada pero no puede enviar. |
 
 ---
@@ -99,14 +99,33 @@ semana** — más que suficiente para la etapa SaaS.
 4. **Elegir modalidad**: Tech Provider independiente (nuestro caso — cada negocio paga su propia
    cuenta de WhatsApp con su método de pago) — NO hace falta Solution Partner.
 5. **Access Verification** (aparece tras el App Review) para subir el límite de onboarding a 200/semana.
-6. Con todo aprobado: implementar el flujo técnico (Facebook Login for Business + config de
-   Embedded Signup + intercambio de token → guardar `phone_number_id` + token en `wa_tenants`).
-   **Eso es C4.2 del `PLAN-VALOR-PRODUCTO.md`** — el alta sin redeploy ya quedó lista con B2/B3.
+6. **Crear una "configuración de Embedded Signup"** (en la app de Meta → WhatsApp → Configuración de
+   Embedded Signup): define qué permisos y qué pasos ve el negocio en el popup. Anotá su **config id**.
+
+### El código de C4.2 ya está implementado
+
+El flujo técnico ya vive en el repo (no espera al trámite): el onboarding (`/panel/admin`) muestra
+un botón **"Conectar WhatsApp con Meta"** que abre el popup (FB Login for Business), y el backend
+canjea el código por el token, suscribe la app a los webhooks del WABA y registra el número —
+guardando todo en `wa_tenants` con el alta sin redeploy de B2/B3. Piezas: `src/whatsapp/embeddedSignup.ts`,
+rutas `/api/panel/admin/embedded-signup/*` en `src/panel/router.ts`, y `web/src/lib/embeddedSignup.ts`.
+
+**Para activarlo** (una vez aprobado el trámite de arriba), en el `.env` del droplet:
+
+```
+META_APP_ID=<id público de la app de Meta>
+META_ES_CONFIG_ID=<config id del paso 6>
+WHATSAPP_REGISTER_PIN=<PIN de 6 dígitos para registrar el número; elegilo y guardalo>
+# (WHATSAPP_APP_SECRET ya está: se reutiliza para el intercambio del código)
+```
+
+Con esas variables presentes, el botón aparece solo en el onboarding. Sin ellas es un **no-op total**:
+el formulario cae al ingreso manual de `phone_number_id` + `accessToken` de siempre.
 
 ### Mientras tanto
 
-El alta asistida por admin (`/panel/admin`) sigue siendo el camino: funciona hoy y no depende de
-este trámite.
+El alta asistida por admin (`/panel/admin`) con ingreso manual sigue siendo el camino: funciona hoy y
+no depende de este trámite (y queda como fallback "avanzado" incluso con Embedded Signup activo).
 
 **Fuentes:** [Become a Tech Provider (Meta)](https://developers.facebook.com/documentation/business-messaging/whatsapp/solution-providers/get-started-for-tech-providers) ·
 [Embedded Signup overview (Meta)](https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/overview) ·

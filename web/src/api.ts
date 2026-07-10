@@ -320,6 +320,33 @@ export interface AltaTenant {
   };
   usuario: string;
   password: string;
+  /**
+   * Alta vía Embedded Signup (C4.2): en vez de mandar el accessToken por el navegador,
+   * se manda el handle que devolvió /admin/embedded-signup/conectar. El backend lo
+   * canjea por el token (stasheado del lado del server) y por el phone_number_id.
+   */
+  tokenHandle?: string;
+}
+
+// ── Embedded Signup de Meta (ROADMAP C4.2) ──
+/** Config pública para armar el popup (null si el server no tiene ES configurado). */
+export interface EmbeddedSignupConfig {
+  appId: string;
+  configId: string;
+  graphVersion: string;
+}
+
+export function adminEmbeddedSignupConfig(): Promise<{ configurado: boolean; config: EmbeddedSignupConfig | null }> {
+  return pedir<{ configurado: boolean; config: EmbeddedSignupConfig | null }>("/admin/embedded-signup/config");
+}
+
+/** Canjea el resultado del popup por un handle de token (el token no vuelve al navegador). */
+export function adminConectarWhatsapp(datos: {
+  code: string;
+  phoneNumberId: string;
+  wabaId: string;
+}): Promise<{ phoneNumberId: string; wabaId: string; tokenHandle: string; suscrito: boolean; registrado: boolean }> {
+  return pedir("/admin/embedded-signup/conectar", { method: "POST", body: JSON.stringify(datos) });
 }
 
 export function adminLogin(usuario: string, password: string) {
