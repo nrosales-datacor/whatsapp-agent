@@ -12,6 +12,7 @@ export const RE_HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
 export const RE_FECHA = /^\d{4}-\d{2}-\d{2}$/;
 export const RE_URL_HTTP = /^https?:\/\/.+/i;
 export const RE_NOMBRE_PLANTILLA = /^[a-z0-9_]+$/;
+export const RE_COLOR_HEX = /^#[0-9a-f]{6}$/i;
 
 export function limpiarLineas(v: unknown): string[] {
   if (!Array.isArray(v)) return [];
@@ -131,5 +132,29 @@ export function validarNombrePlantillaMarketing(v: unknown): string | null {
   const s = String(v ?? "").trim().toLowerCase();
   if (!s) return "";
   if (s.length > 80 || !RE_NOMBRE_PLANTILLA.test(s)) return null;
+  return s;
+}
+
+/**
+ * Valida un color de marca en hex "#rrggbb" (white-label, ROADMAP C4.1). Vacío = sin
+ * configurar (el panel usa la paleta verde default). Devuelve null si viene algo no
+ * vacío pero con un formato distinto.
+ */
+export function validarColorHex(v: unknown): string | null {
+  const s = String(v ?? "").trim();
+  if (!s) return "";
+  if (!RE_COLOR_HEX.test(s)) return null;
+  return s.toLowerCase();
+}
+
+/**
+ * Valida la URL del logo del negocio (white-label, ROADMAP C4.1). Vacío = sin
+ * configurar (el panel muestra las iniciales del nombre). Mismo criterio que
+ * validarLinkResenas: solo URLs http(s) (no hay upload de archivos en el repo).
+ */
+export function validarLogoUrl(v: unknown): string | null {
+  const s = String(v ?? "").trim();
+  if (!s) return "";
+  if (s.length > 500 || !RE_URL_HTTP.test(s)) return null;
   return s;
 }

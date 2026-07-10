@@ -88,6 +88,9 @@ export default function MiNegocio() {
   const [parabrisas, setParabrisas] = useState("");
   const [linkResenas, setLinkResenas] = useState("");
   const [plantillaMarketing, setPlantillaMarketing] = useState("");
+  const [colorAcento, setColorAcento] = useState("");
+  const [colorHeader, setColorHeader] = useState("");
+  const [logoUrl, setLogoUrl] = useState("");
 
   // Seedear el form UNA sola vez al llegar la config: un refetch de fondo no debe
   // pisar lo que el operador está escribiendo.
@@ -103,6 +106,9 @@ export default function MiNegocio() {
     setParabrisas((q.data.kb.parabrisas ?? []).join("\n"));
     setLinkResenas(q.data.linkResenas ?? "");
     setPlantillaMarketing(q.data.plantillaMarketing ?? "");
+    setColorAcento(q.data.colorAcento ?? "");
+    setColorHeader(q.data.colorHeader ?? "");
+    setLogoUrl(q.data.logoUrl ?? "");
     setCargado(true);
   }, [q.data, cargado]);
 
@@ -174,6 +180,9 @@ export default function MiNegocio() {
       bloqueos: construirBloqueos(),
       linkResenas: linkResenas.trim(),
       plantillaMarketing: plantillaMarketing.trim(),
+      colorAcento: colorAcento.trim(),
+      colorHeader: colorHeader.trim(),
+      logoUrl: logoUrl.trim(),
     });
   }
 
@@ -201,6 +210,49 @@ export default function MiNegocio() {
       <div className="dash-body">
         <div className="dash-titulo">
           <h2>Mi negocio</h2>
+        </div>
+
+        <div className="card admin-form">
+          <h3>Marca</h3>
+          <div className="campo">
+            <label htmlFor="cLogoUrl">URL del logo (imagen cuadrada; sin logo se muestran las iniciales)</label>
+            <input
+              id="cLogoUrl"
+              placeholder="https://..."
+              value={logoUrl}
+              onChange={(e) => setLogoUrl(e.target.value)}
+            />
+          </div>
+          <div className="admin-servicio">
+            <div className="campo campo-inline">
+              <label htmlFor="cColorAcento">Color de acento</label>
+              <input
+                id="cColorAcento"
+                type="color"
+                value={colorAcento || "#0b7d72"}
+                onChange={(e) => setColorAcento(e.target.value)}
+              />
+            </div>
+            <div className="campo campo-inline">
+              <label htmlFor="cColorHeader">Color del encabezado</label>
+              <input
+                id="cColorHeader"
+                type="color"
+                value={colorHeader || "#0b5c56"}
+                onChange={(e) => setColorHeader(e.target.value)}
+              />
+            </div>
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => {
+                setColorAcento("");
+                setColorHeader("");
+              }}
+            >
+              Restaurar colores por defecto
+            </button>
+          </div>
         </div>
 
         <div className="card">

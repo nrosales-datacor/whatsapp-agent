@@ -16,9 +16,11 @@ import {
 import {
   limpiarLineas,
   validarBloqueos,
+  validarColorHex,
   validarFaq,
   validarHorario,
   validarLinkResenas,
+  validarLogoUrl,
   validarNombrePlantillaMarketing,
   validarServicios,
 } from "../config/validadores";
@@ -589,6 +591,12 @@ export async function manejarPanel(
       rol,
       vapidPublica: clavePublicaVapid(),
       servicios: tenant.servicios.filter((s) => s.agendable),
+      // White-label (C4.1): el panel se pinta con esto al cargar (ver web/src/lib/marca.ts).
+      marca: {
+        colorAcento: tenant.colorAcento ?? null,
+        colorHeader: tenant.colorHeader ?? null,
+        logoUrl: tenant.logoUrl ?? null,
+      },
     });
     return true;
   }
@@ -783,6 +791,9 @@ export async function manejarPanel(
       bloqueos: tenant.bloqueos,
       linkResenas: tenant.linkResenas ?? "",
       plantillaMarketing: tenant.plantillaMarketing ?? "",
+      colorAcento: tenant.colorAcento ?? "",
+      colorHeader: tenant.colorHeader ?? "",
+      logoUrl: tenant.logoUrl ?? "",
     });
     return true;
   }
@@ -817,6 +828,15 @@ export async function manejarPanel(
       return json(res, 400, { ok: false, error: "Nombre de plantilla inválido (minúsculas, números y guiones bajos)" }), true;
     }
 
+    const colorAcento = validarColorHex(body?.colorAcento);
+    if (colorAcento === null) return json(res, 400, { ok: false, error: "Color de acento inválido (formato #rrggbb)" }), true;
+
+    const colorHeader = validarColorHex(body?.colorHeader);
+    if (colorHeader === null) return json(res, 400, { ok: false, error: "Color de encabezado inválido (formato #rrggbb)" }), true;
+
+    const logoUrl = validarLogoUrl(body?.logoUrl);
+    if (logoUrl === null) return json(res, 400, { ok: false, error: "URL del logo inválida (debe ser una URL http o https)" }), true;
+
     const kb: KnowledgeBase = {
       faq: validarFaq(body?.kb?.faq),
       datos: limpiarLineas(body?.kb?.datos),
@@ -833,6 +853,9 @@ export async function manejarPanel(
         bloqueos,
         linkResenas: linkResenas || null,
         plantillaMarketing: plantillaMarketing || null,
+        colorAcento: colorAcento || null,
+        colorHeader: colorHeader || null,
+        logoUrl: logoUrl || null,
       });
     } catch (e) {
       if (e instanceof Error && e.message === "SIN_DB") {

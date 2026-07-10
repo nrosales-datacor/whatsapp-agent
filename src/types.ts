@@ -82,6 +82,12 @@ export interface Tenant {
    * segmentadas, C3.2). undefined = sin configurar (no se pueden enviar campañas).
    */
   plantillaMarketing?: string;
+  /** Color de acento del panel (hex "#rrggbb"), white-label C4.1. undefined = paleta default. */
+  colorAcento?: string;
+  /** Color del encabezado del panel (hex "#rrggbb"), white-label C4.1. undefined = paleta default. */
+  colorHeader?: string;
+  /** URL del logo del negocio, white-label C4.1. undefined = se muestran las iniciales del nombre. */
+  logoUrl?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
