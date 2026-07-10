@@ -94,6 +94,13 @@ async function pedir<T = unknown>(path: string, init?: RequestInit): Promise<T> 
   return cuerpo as T;
 }
 
+/** White-label por tenant (ROADMAP C4.1). Todo null = paleta verde default del panel. */
+export interface Marca {
+  colorAcento: string | null;
+  colorHeader: string | null;
+  logoUrl: string | null;
+}
+
 // ── Tipos de respuesta que enriquecen los del dominio ──
 export interface Sesion {
   nombre: string;
@@ -104,6 +111,8 @@ export interface Sesion {
   vapidPublica: string | null;
   /** Catálogo de servicios agendables del negocio (para la Agenda, C2.1). */
   servicios: Service[];
+  /** White-label (C4.1): color de acento/encabezado y logo del negocio. */
+  marca: Marca;
 }
 
 /** La ficha que devuelve el panel agrega el nombre del servicio a cada ítem del historial. */
@@ -246,6 +255,12 @@ export interface ConfigNegocio {
   linkResenas: string;
   /** Nombre de la plantilla MARKETING aprobada en Meta (C3.2). "" = sin configurar. */
   plantillaMarketing: string;
+  /** Color de acento del panel (hex "#rrggbb", C4.1). "" = paleta default. */
+  colorAcento: string;
+  /** Color del encabezado del panel (hex "#rrggbb", C4.1). "" = paleta default. */
+  colorHeader: string;
+  /** URL del logo del negocio (C4.1). "" = se muestran las iniciales del nombre. */
+  logoUrl: string;
 }
 
 export function obtenerConfig(): Promise<ConfigNegocio> {

@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listarConversaciones, logout, type Sesion, type ResumenConversacion } from "../api";
 import { useTema } from "../lib/tema";
+import { aplicarMarca, resetMarca } from "../lib/marca";
+import { iniciales } from "../lib/formato";
 import Lista from "./Lista";
 import Chat from "./Chat";
 import FichaModal from "./FichaModal";
@@ -31,6 +33,13 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
     refetchInterval: 4000,
   });
 
+  // White-label (C4.1): pinta el panel con la marca de este tenant; al desmontar
+  // (logout) vuelve a la paleta default para no filtrar colores a la próxima sesión.
+  useEffect(() => {
+    aplicarMarca(sesion.marca);
+    return () => resetMarca();
+  }, [sesion.marca?.colorAcento, sesion.marca?.colorHeader]);
+
   const salir = useMutation({
     mutationFn: logout,
     onSettled: () => {
@@ -59,7 +68,11 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
       <div id="app">
         <header id="appHeader">
           <div className="hd-marca">
-            <div className="marca-chip">LR</div>
+            {sesion.marca.logoUrl ? (
+              <img src={sesion.marca.logoUrl} alt={sesion.nombre} className="marca-chip marca-logo" />
+            ) : (
+              <div className="marca-chip">{iniciales(sesion.nombre)}</div>
+            )}
             <div className="hd-marca-txt">
               <div className="hd-nombre">{sesion.nombre}</div>
               <div className="hd-sub">WhatsApp Business</div>

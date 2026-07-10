@@ -177,6 +177,11 @@ export const waTenants = pgTable(
     // Nombre de la plantilla MARKETING aprobada en Meta para este tenant (C3.2, campañas
     // segmentadas). null = sin configurar (el dueño no puede enviar campañas todavía).
     plantillaMarketing: text("plantilla_marketing"),
+    // White-label (C4.1): color de acento/encabezado (hex "#rrggbb") y logo (URL). null =
+    // sin configurar → el panel usa la paleta verde default de global.css.
+    colorAcento: text("color_acento"),
+    colorHeader: text("color_header"),
+    logoUrl: text("logo_url"),
     activo: boolean("activo").notNull().default(true),
     creadoEn: timestamp("creado_en", { withTimezone: true }).notNull().defaultNow(),
     actualizadoEn: timestamp("actualizado_en", { withTimezone: true }).notNull().defaultNow(),
