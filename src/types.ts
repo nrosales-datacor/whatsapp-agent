@@ -72,6 +72,11 @@ export interface Tenant {
   kb: KnowledgeBase;
   /** Fechas puntuales cerradas (feriados/vacaciones), fuera del horario semanal recurrente. */
   bloqueos: Bloqueo[];
+  /**
+   * Link para pedir reseña de Google (Maps / "Escribir reseña"), usado en el
+   * seguimiento post-servicio (C3.1). undefined = sin configurar (no se pide reseña).
+   */
+  linkResenas?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -128,9 +133,14 @@ export interface Cita {
   recordatorioMismoDiaEn?: string | null;
   /** Cuándo el cliente confirmó la cita tocando el botón del recordatorio (ISO). null = sin confirmar. */
   confirmadaEn?: string | null;
+  /**
+   * Cuándo se envió el seguimiento post-servicio (satisfacción + reseña, C3.1).
+   * null/undefined = pendiente.
+   */
+  postServicioEn?: string | null;
 }
 
-export type TipoRecordatorio = "dia_antes" | "mismo_dia";
+export type TipoRecordatorio = "dia_antes" | "mismo_dia" | "post_servicio";
 
 /**
  * Rol de un usuario del panel dentro de su negocio (C2.3): "dueno" puede editar

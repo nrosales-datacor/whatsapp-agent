@@ -13,7 +13,7 @@ import {
   obtenerUsuario,
   recargar,
 } from "../config/tenantStore";
-import { limpiarLineas, validarBloqueos, validarFaq, validarHorario, validarServicios } from "../config/validadores";
+import { limpiarLineas, validarBloqueos, validarFaq, validarHorario, validarLinkResenas, validarServicios } from "../config/validadores";
 import { enviarTexto } from "../whatsapp/client";
 import type { Cita, EstadoConversacion, KnowledgeBase, Repositorio, Rol, Tenant } from "../types";
 import { espaciosDisponibles } from "../booking/availability";
@@ -642,6 +642,7 @@ export async function manejarPanel(
       servicios: tenant.servicios, // catálogo completo, sin filtrar por agendable (a diferencia de "me")
       kb: tenant.kb,
       bloqueos: tenant.bloqueos,
+      linkResenas: tenant.linkResenas ?? "",
     });
     return true;
   }
@@ -668,6 +669,9 @@ export async function manejarPanel(
     const bloqueos = validarBloqueos(body?.bloqueos ?? []);
     if (!bloqueos) return json(res, 400, { ok: false, error: "Hay un bloqueo inválido (fechas YYYY-MM-DD, desde ≤ hasta)" }), true;
 
+    const linkResenas = validarLinkResenas(body?.linkResenas);
+    if (linkResenas === null) return json(res, 400, { ok: false, error: "Link de reseñas inválido (debe ser una URL http o https)" }), true;
+
     const kb: KnowledgeBase = {
       faq: validarFaq(body?.kb?.faq),
       datos: limpiarLineas(body?.kb?.datos),
@@ -677,7 +681,7 @@ export async function manejarPanel(
     };
 
     try {
-      await actualizarConfigTenant(tenant.id, { horario, servicios, kb, bloqueos });
+      await actualizarConfigTenant(tenant.id, { horario, servicios, kb, bloqueos, linkResenas: linkResenas || null });
     } catch (e) {
       if (e instanceof Error && e.message === "SIN_DB") {
         return json(res, 503, { ok: false, error: "La configuración requiere base de datos." }), true;

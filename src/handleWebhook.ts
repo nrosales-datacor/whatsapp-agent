@@ -5,6 +5,7 @@ import {
   enviarTexto,
   enviarInteractivo,
   esConfirmacionCita,
+  respuestaPostServicio,
   descargarImagenComoDataUrl,
   type MensajeEntrante,
 } from "./whatsapp/client";
@@ -410,6 +411,39 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
       console.log(`[confirmacion] cita ${citaAConfirmar} ${confirmada ? "confirmada" : "no encontrada"} (${entrante.clienteWa})`);
     } catch (e) {
       console.error(`[confirmacion] no se pudo confirmar la cita ${citaAConfirmar}:`, e);
+    }
+    return;
+  }
+
+  // SEGUIMIENTO POST-SERVICIO (C3.1): el cliente tocó "Todo bien" o "Tuve un
+  // problema" en el mensaje que manda el scheduler unas horas después de la cita.
+  // También es acción directa (no pasa por el agente ni por la ventana de modo
+  // humano): "bien" pide la reseña de Google (si el negocio la configuró en "Mi
+  // negocio"); "mal" escala a un humano ANTES de que se convierta en reseña negativa.
+  const postServicio = respuestaPostServicio(entrante.interactiveId);
+  if (postServicio) {
+    try {
+      if (postServicio.bien) {
+        const ack = tenant.linkResenas
+          ? `¡Qué alegría! 🙌 Si tenés un minuto, nos ayudaría muchísimo que dejaras una reseña en Google: ${tenant.linkResenas}`
+          : "¡Qué alegría! 🙌 Gracias por la confianza.";
+        await enviarTexto(tenant, entrante.clienteWa, ack);
+        await repo.guardarMensaje(conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
+      } else {
+        await repo.setModoConversacion(tenant.id, conv.id, "humano");
+        const ack = "Lamentamos escuchar eso 🙏 Ya le avisamos a una persona del equipo para que te contacte.";
+        await enviarTexto(tenant, entrante.clienteWa, ack);
+        await repo.guardarMensaje(conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
+        await notificarOperador(
+          repo,
+          tenant,
+          conv,
+          `⚠️ Cliente insatisfecho tras el servicio (cita ${postServicio.citaId}) — contactalo antes de que quede una reseña negativa.`,
+        );
+      }
+      console.log(`[post-servicio] cita ${postServicio.citaId} → ${postServicio.bien ? "bien" : "mal"} (${entrante.clienteWa})`);
+    } catch (e) {
+      console.error(`[post-servicio] no se pudo procesar la respuesta de la cita ${postServicio.citaId}:`, e);
     }
     return;
   }

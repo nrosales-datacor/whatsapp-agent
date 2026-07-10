@@ -139,6 +139,29 @@ export function esConfirmacionCita(interactiveId: string | undefined): string | 
   return tipo === "confirmar" && citaId ? citaId : null;
 }
 
+/** Botones del seguimiento post-servicio (C3.1): satisfacción del cliente. */
+export function botonesPostServicio(citaId: string): OpcionInteractiva[] {
+  return [
+    { id: `postbien|${citaId}`, titulo: "Todo bien 👍" },
+    { id: `postmal|${citaId}`, titulo: "Tuve un problema" },
+  ];
+}
+
+/**
+ * Si la respuesta interactiva es del seguimiento post-servicio (C3.1), devuelve la
+ * cita y si el cliente marcó que todo salió bien. Acción directa (no pasa por el
+ * agente): "bien" pide la reseña, "mal" escala a un humano ANTES de que se
+ * convierta en reseña negativa.
+ */
+export function respuestaPostServicio(interactiveId: string | undefined): { citaId: string; bien: boolean } | null {
+  if (!interactiveId) return null;
+  const [tipo, citaId] = interactiveId.split("|");
+  if (!citaId) return null;
+  if (tipo === "postbien") return { citaId, bien: true };
+  if (tipo === "postmal") return { citaId, bien: false };
+  return null;
+}
+
 /**
  * Traduce el `id` de una respuesta interactiva a la frase que "diría" el cliente,
  * para inyectarla al agente como si la hubiera escrito. Si el id no matchea ninguna
@@ -156,6 +179,10 @@ function decodificarRespuestaInteractiva(id: string, titulo: string): string {
   // Pedido de reprogramar desde el recordatorio: fluye al agente, que arranca el
   // flujo de reprogramación (C1.1) identificando la cita por el número del cliente.
   if (tipo === "mover") return "Quiero reprogramar mi cita.";
+  // Seguimiento post-servicio (C3.1): también son acción directa en handleWebhook,
+  // pero dejamos un texto legible para el historial del panel.
+  if (tipo === "postbien") return "Todo bien con el servicio 👍";
+  if (tipo === "postmal") return "Tuve un problema con el servicio 😕";
   return titulo;
 }
 

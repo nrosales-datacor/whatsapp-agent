@@ -10,6 +10,7 @@ import type { Bloqueo, HorarioDia, Service } from "../types";
 export const RE_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const RE_HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
 export const RE_FECHA = /^\d{4}-\d{2}-\d{2}$/;
+export const RE_URL_HTTP = /^https?:\/\/.+/i;
 
 export function limpiarLineas(v: unknown): string[] {
   if (!Array.isArray(v)) return [];
@@ -103,4 +104,17 @@ export function validarBloqueos(v: unknown): Bloqueo[] | null {
     out.push(bloqueo);
   }
   return out;
+}
+
+/**
+ * Valida el link de reseñas de Google (Maps / "Escribir reseña"), usado en el
+ * seguimiento post-servicio (ROADMAP C3.1). Vacío = sin configurar (válido: el
+ * seguimiento simplemente no pide reseña). Devuelve null si viene algo no vacío
+ * pero inválido.
+ */
+export function validarLinkResenas(v: unknown): string | null {
+  const s = String(v ?? "").trim();
+  if (!s) return "";
+  if (s.length > 500 || !RE_URL_HTTP.test(s)) return null;
+  return s;
 }
