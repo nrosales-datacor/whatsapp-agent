@@ -87,6 +87,7 @@ export default function MiNegocio() {
   const [tarifas, setTarifas] = useState("");
   const [parabrisas, setParabrisas] = useState("");
   const [linkResenas, setLinkResenas] = useState("");
+  const [plantillaMarketing, setPlantillaMarketing] = useState("");
 
   // Seedear el form UNA sola vez al llegar la config: un refetch de fondo no debe
   // pisar lo que el operador está escribiendo.
@@ -101,6 +102,7 @@ export default function MiNegocio() {
     setTarifas((q.data.kb.tarifas ?? []).join("\n"));
     setParabrisas((q.data.kb.parabrisas ?? []).join("\n"));
     setLinkResenas(q.data.linkResenas ?? "");
+    setPlantillaMarketing(q.data.plantillaMarketing ?? "");
     setCargado(true);
   }, [q.data, cargado]);
 
@@ -171,6 +173,7 @@ export default function MiNegocio() {
       kb,
       bloqueos: construirBloqueos(),
       linkResenas: linkResenas.trim(),
+      plantillaMarketing: plantillaMarketing.trim(),
     });
   }
 
@@ -323,6 +326,23 @@ export default function MiNegocio() {
               value={linkResenas}
               onChange={(e) => setLinkResenas(e.target.value)}
             />
+          </div>
+        </div>
+
+        <div className="card admin-form">
+          <h3>Campañas</h3>
+          <div className="campo">
+            <label htmlFor="cPlantillaMkt">Plantilla de marketing aprobada (nombre exacto en Meta)</label>
+            <input
+              id="cPlantillaMkt"
+              placeholder="promo_general"
+              value={plantillaMarketing}
+              onChange={(e) => setPlantillaMarketing(e.target.value)}
+            />
+            <p className="campo-ayuda">
+              Necesaria para enviar campañas desde la pestaña "Campañas". Ver <code>GUIA-META.md</code> §C para
+              crearla en WhatsApp Manager.
+            </p>
           </div>
         </div>
 

@@ -504,6 +504,13 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
   /* Tabs más compactas */
   .hd-tab { padding: 6px 10px; }
 
+  /* Con 6 tabs (dueño) el texto ya no cabe en 390px: en vez de desbordar la
+     página entera (rompiendo el header y forzando scroll horizontal de TODO
+     el panel), la tira de tabs se vuelve su propia franja con scroll
+     horizontal — el header se mantiene sólido de borde a borde. */
+  .hd-tabs { flex-shrink: 1; min-width: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .hd-tabs::-webkit-scrollbar { display: none; }
+
   /* El nombre del negocio no cabe junto a las tabs: solo chip de marca */
   .hd-marca-txt { display: none; }
 
@@ -539,6 +546,7 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .admin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-xs) var(--space-md); }
 .campo { min-width: 0; }
 .campo-inline { display: inline-block; margin-right: var(--space-md); }
+.campo-ayuda { font-size: var(--step--1); color: var(--text-muted); margin-top: var(--space-2xs); }
 .admin-horario { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-sm) var(--space-md); }
 .admin-dias { display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: center; }
 .admin-dia { display: inline-flex; align-items: center; gap: 4px; font-size: var(--step--1); color: var(--text); margin: 0; }

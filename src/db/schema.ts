@@ -1,6 +1,6 @@
 import { pgTable, text, timestamp, integer, boolean, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
-import type { Bloqueo, HorarioDia, KnowledgeBase, PendienteSerializado, Service } from "../types";
+import type { Bloqueo, HorarioDia, KnowledgeBase, PendienteSerializado, SegmentoFiltro, Service } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Esquema Drizzle del agente de WhatsApp.
@@ -21,6 +21,9 @@ export const waConversaciones = pgTable(
     tenantId: text("tenant_id").notNull(),
     clienteWa: text("cliente_wa").notNull(),
     optInEn: timestamp("opt_in_en", { withTimezone: true }),
+    // Opt-out de CAMPAÑAS de marketing (C3.2): el cliente escribió "BAJA". No afecta
+    // recordatorios ni seguimiento post-servicio (son mensajes de servicio, no marketing).
+    optOutEn: timestamp("opt_out_en", { withTimezone: true }),
     creadaEn: timestamp("creada_en", { withTimezone: true }).notNull().defaultNow(),
     // Panel / bandeja humana.
     modo: text("modo").notNull().default("bot"), // "bot" | "humano"
@@ -171,6 +174,9 @@ export const waTenants = pgTable(
     // Link para pedir reseña de Google (Maps / "Escribir reseña"), usado en el
     // seguimiento post-servicio (C3.1). null = sin configurar (no se pide reseña).
     linkResenas: text("link_resenas"),
+    // Nombre de la plantilla MARKETING aprobada en Meta para este tenant (C3.2, campañas
+    // segmentadas). null = sin configurar (el dueño no puede enviar campañas todavía).
+    plantillaMarketing: text("plantilla_marketing"),
     activo: boolean("activo").notNull().default(true),
     creadoEn: timestamp("creado_en", { withTimezone: true }).notNull().defaultNow(),
     actualizadoEn: timestamp("actualizado_en", { withTimezone: true }).notNull().defaultNow(),
@@ -235,4 +241,72 @@ export const waJobs = pgTable(
   }),
 );
 
-export const schema = { waConversaciones, waMensajes, waCitas, waEventosCalidad, waPushSubs, waTenants, waUsuarios, waJobs };
+// ─────────────────────────────────────────────────────────────────────────────
+// Campañas segmentadas (ROADMAP C3.2). Envío masivo de plantilla MARKETING a un
+// segmento del CRM. Cola INDEPENDIENTE de wa_jobs: wa_jobs.payload está tipado
+// hard a PendienteSerializado y su worker asume siempre "responder_entrante" —
+// forzar un tipo de job nuevo ahí arriesga la pieza de fiabilidad más crítica
+// del sistema (B1) para una feature que no es tiempo-crítica. wa_campania_envios
+// se reclama con el mismo patrón FOR UPDATE SKIP LOCKED (src/campaigns/cola.ts)
+// pero en un worker propio, con throttling entre envíos.
+// ─────────────────────────────────────────────────────────────────────────────
+export const waCampanias = pgTable(
+  "wa_campanias",
+  {
+    id: id(),
+    tenantId: text("tenant_id").notNull(),
+    nombre: text("nombre").notNull(),
+    // Texto libre que llena la variable {{2}} de la plantilla (mismo cliente para
+    // todos los destinatarios; {{1}} es el nombre del cliente, por destinatario).
+    mensaje: text("mensaje").notNull(),
+    segmentoTipo: text("segmento_tipo").notNull(), // "todos" | "inactivos" | "servicio_antiguo"
+    segmentoParametros: jsonb("segmento_parametros").$type<SegmentoFiltro>().notNull(),
+    // borrador → (programada) → enviando → completada | cancelada
+    estado: text("estado").notNull().default("borrador"),
+    programadaPara: timestamp("programada_para", { withTimezone: true }),
+    creadaEn: timestamp("creada_en", { withTimezone: true }).notNull().defaultNow(),
+    iniciadaEn: timestamp("iniciada_en", { withTimezone: true }),
+    completadaEn: timestamp("completada_en", { withTimezone: true }),
+    totalDestinatarios: integer("total_destinatarios").notNull().default(0),
+  },
+  (t) => ({
+    idxTenant: index("wa_campanias_tenant_idx").on(t.tenantId, t.creadaEn),
+  }),
+);
+
+export const waCampaniaEnvios = pgTable(
+  "wa_campania_envios",
+  {
+    id: id(),
+    campaniaId: text("campania_id")
+      .notNull()
+      .references(() => waCampanias.id, { onDelete: "cascade" }),
+    tenantId: text("tenant_id").notNull(),
+    clienteWa: text("cliente_wa").notNull(),
+    clienteNombre: text("cliente_nombre").notNull(),
+    // pendiente → procesando → enviado | error (reintenta si quedan intentos) | omitido_opt_out
+    estado: text("estado").notNull().default("pendiente"),
+    intentos: integer("intentos").notNull().default(0),
+    error: text("error"),
+    enviadoEn: timestamp("enviado_en", { withTimezone: true }),
+    creadoEn: timestamp("creado_en", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    // Idempotencia: el segmento no puede insertar dos veces al mismo cliente en la misma campaña.
+    uqCampaniaCliente: uniqueIndex("wa_campania_envios_campania_cliente_uq").on(t.campaniaId, t.clienteWa),
+    idxClaim: index("wa_campania_envios_claim_idx").on(t.estado),
+  }),
+);
+
+export const schema = {
+  waConversaciones,
+  waMensajes,
+  waCitas,
+  waEventosCalidad,
+  waPushSubs,
+  waTenants,
+  waUsuarios,
+  waJobs,
+  waCampanias,
+  waCampaniaEnvios,
+};

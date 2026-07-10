@@ -13,9 +13,25 @@ import {
   obtenerUsuario,
   recargar,
 } from "../config/tenantStore";
-import { limpiarLineas, validarBloqueos, validarFaq, validarHorario, validarLinkResenas, validarServicios } from "../config/validadores";
+import {
+  limpiarLineas,
+  validarBloqueos,
+  validarFaq,
+  validarHorario,
+  validarLinkResenas,
+  validarNombrePlantillaMarketing,
+  validarServicios,
+} from "../config/validadores";
 import { enviarTexto } from "../whatsapp/client";
-import type { Cita, EstadoConversacion, KnowledgeBase, Repositorio, Rol, Tenant } from "../types";
+import type { Cita, EstadoConversacion, KnowledgeBase, Repositorio, Rol, SegmentoFiltro, Tenant } from "../types";
+import {
+  cancelarCampania,
+  confirmarEnvioCampania,
+  crearCampania,
+  listarCampanias,
+  obtenerCampania,
+} from "../campaigns/campanias";
+import { previsualizarSegmento } from "../campaigns/segmentos";
 import { espaciosDisponibles } from "../booking/availability";
 import {
   hoyEnTz,
@@ -306,6 +322,42 @@ function validarAltaTenant(body: any): ResultadoAlta {
 }
 
 /** Mapea un choque de índice único de Postgres (23505) a un mensaje claro. */
+/** Arma y valida un SegmentoFiltro (ROADMAP C3.2) desde un `URLSearchParams` (preview). */
+function leerSegmentoFiltro(q: URLSearchParams, tenant: Tenant): SegmentoFiltro | null {
+  return validarSegmentoFiltro(
+    { tipo: q.get("tipo"), dias: q.get("dias"), servicioId: q.get("servicioId"), meses: q.get("meses") },
+    tenant,
+  );
+}
+
+/** Misma validación, desde el body JSON de crear campaña. */
+function leerSegmentoFiltroDeBody(body: any, tenant: Tenant): SegmentoFiltro | null {
+  return validarSegmentoFiltro(
+    { tipo: body?.segmentoTipo, dias: body?.dias, servicioId: body?.servicioId, meses: body?.meses },
+    tenant,
+  );
+}
+
+function validarSegmentoFiltro(
+  raw: { tipo: unknown; dias: unknown; servicioId: unknown; meses: unknown },
+  tenant: Tenant,
+): SegmentoFiltro | null {
+  const tipo = raw.tipo;
+  if (tipo !== "todos" && tipo !== "inactivos" && tipo !== "servicio_antiguo") return null;
+  if (tipo === "todos") return { tipo };
+  if (tipo === "inactivos") {
+    const dias = Number(raw.dias);
+    if (!Number.isInteger(dias) || dias < 1 || dias > 3650) return null;
+    return { tipo, dias };
+  }
+  // "servicio_antiguo"
+  const servicioId = String(raw.servicioId ?? "");
+  if (!tenant.servicios.some((s) => s.id === servicioId)) return null;
+  const meses = Number(raw.meses);
+  if (!Number.isInteger(meses) || meses < 1 || meses > 120) return null;
+  return { tipo, servicioId, meses };
+}
+
 function mensajeConflicto(e: unknown): string {
   const nombre = (e as { constraint_name?: string }).constraint_name;
   if (nombre === "wa_tenants_pkey") return "Ya existe un negocio con ese id";
@@ -634,6 +686,93 @@ export async function manejarPanel(
     return json(res, 404, { ok: false, error: "Ruta no encontrada" }), true;
   }
 
+  // ── Campañas segmentadas (ROADMAP C3.2) — solo dueño, requiere base de datos ──
+  if (ruta === "campanias" || ruta.startsWith("campanias/")) {
+    if (rol !== "dueno") {
+      return json(res, 403, { ok: false, error: "Solo el dueño del negocio puede gestionar campañas" }), true;
+    }
+    if (!hayBaseDeDatos()) {
+      return json(res, 503, { ok: false, error: "Las campañas requieren base de datos (no configurada)." }), true;
+    }
+
+    if (ruta === "campanias" && metodo === "GET") {
+      const campanias = await listarCampanias(tenant.id);
+      return json(res, 200, { ok: true, campanias }), true;
+    }
+
+    if (ruta === "campanias/segmento/preview" && metodo === "GET") {
+      const q = new URL(req.url ?? "/", "http://panel.local").searchParams;
+      const filtro = leerSegmentoFiltro(q, tenant);
+      if (!filtro) return json(res, 400, { ok: false, error: "Segmento inválido" }), true;
+      const destinatarios = await previsualizarSegmento(tenant.id, filtro);
+      return json(res, 200, { ok: true, total: destinatarios.length, muestra: destinatarios.slice(0, 20) }), true;
+    }
+
+    if (ruta === "campanias" && metodo === "POST") {
+      const body = await leerBody(req);
+      if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
+
+      const nombre = String(body?.nombre ?? "").trim();
+      if (!nombre || nombre.length > 80) {
+        return json(res, 400, { ok: false, error: "Nombre inválido (1 a 80 caracteres)" }), true;
+      }
+      const mensaje = String(body?.mensaje ?? "").trim();
+      if (!mensaje || mensaje.length > 300) {
+        return json(res, 400, { ok: false, error: "Mensaje inválido (1 a 300 caracteres)" }), true;
+      }
+      const filtro = leerSegmentoFiltroDeBody(body, tenant);
+      if (!filtro) return json(res, 400, { ok: false, error: "Segmento inválido" }), true;
+
+      const campania = await crearCampania(tenant.id, { nombre, mensaje, segmentoTipo: filtro.tipo, segmentoParametros: filtro });
+      return json(res, 201, { ok: true, campania }), true;
+    }
+
+    // /campanias/{id} y /campanias/{id}/{accion}
+    const partes = ruta.split("/");
+    const campaniaId = partes[1] ? decodeURIComponent(partes[1]) : null;
+    if (!campaniaId) return json(res, 404, { ok: false, error: "Ruta no encontrada" }), true;
+
+    if (partes.length === 2 && metodo === "GET") {
+      const campania = await obtenerCampania(tenant.id, campaniaId);
+      if (!campania) return json(res, 404, { ok: false, error: "Campaña no encontrada" }), true;
+      return json(res, 200, { ok: true, campania }), true;
+    }
+
+    if (partes.length === 3 && partes[2] === "enviar" && metodo === "POST") {
+      if (!tenant.plantillaMarketing) {
+        return json(res, 400, {
+          ok: false,
+          error: "Configurá la plantilla de marketing en \"Mi negocio\" antes de enviar campañas",
+        }), true;
+      }
+      const body = await leerBody(req);
+      if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
+      const programadaPara = body?.programadaPara ? String(body.programadaPara) : null;
+      if (programadaPara && Number.isNaN(new Date(programadaPara).getTime())) {
+        return json(res, 400, { ok: false, error: "Fecha de programación inválida" }), true;
+      }
+      try {
+        const campania = await confirmarEnvioCampania(tenant.id, campaniaId, programadaPara);
+        return json(res, 200, { ok: true, campania }), true;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg === "NO_ENCONTRADA") return json(res, 404, { ok: false, error: "Campaña no encontrada" }), true;
+        if (msg === "YA_ENVIADA") return json(res, 400, { ok: false, error: "Esa campaña ya se envió o está en curso" }), true;
+        if (msg === "SIN_DESTINATARIOS") return json(res, 400, { ok: false, error: "El segmento no tiene destinatarios" }), true;
+        console.error("[campanias] confirmarEnvioCampania:", e);
+        return json(res, 500, { ok: false, error: "No se pudo confirmar el envío." }), true;
+      }
+    }
+
+    if (partes.length === 3 && partes[2] === "cancelar" && metodo === "POST") {
+      const campania = await cancelarCampania(tenant.id, campaniaId);
+      if (!campania) return json(res, 404, { ok: false, error: "Campaña no encontrada o ya finalizada" }), true;
+      return json(res, 200, { ok: true, campania }), true;
+    }
+
+    return json(res, 404, { ok: false, error: "Ruta no encontrada" }), true;
+  }
+
   // ── Config self-service del negocio (ROADMAP C2.2) ──
   if (ruta === "config" && metodo === "GET") {
     json(res, 200, {
@@ -643,6 +782,7 @@ export async function manejarPanel(
       kb: tenant.kb,
       bloqueos: tenant.bloqueos,
       linkResenas: tenant.linkResenas ?? "",
+      plantillaMarketing: tenant.plantillaMarketing ?? "",
     });
     return true;
   }
@@ -672,6 +812,11 @@ export async function manejarPanel(
     const linkResenas = validarLinkResenas(body?.linkResenas);
     if (linkResenas === null) return json(res, 400, { ok: false, error: "Link de reseñas inválido (debe ser una URL http o https)" }), true;
 
+    const plantillaMarketing = validarNombrePlantillaMarketing(body?.plantillaMarketing);
+    if (plantillaMarketing === null) {
+      return json(res, 400, { ok: false, error: "Nombre de plantilla inválido (minúsculas, números y guiones bajos)" }), true;
+    }
+
     const kb: KnowledgeBase = {
       faq: validarFaq(body?.kb?.faq),
       datos: limpiarLineas(body?.kb?.datos),
@@ -681,7 +826,14 @@ export async function manejarPanel(
     };
 
     try {
-      await actualizarConfigTenant(tenant.id, { horario, servicios, kb, bloqueos, linkResenas: linkResenas || null });
+      await actualizarConfigTenant(tenant.id, {
+        horario,
+        servicios,
+        kb,
+        bloqueos,
+        linkResenas: linkResenas || null,
+        plantillaMarketing: plantillaMarketing || null,
+      });
     } catch (e) {
       if (e instanceof Error && e.message === "SIN_DB") {
         return json(res, 503, { ok: false, error: "La configuración requiere base de datos." }), true;

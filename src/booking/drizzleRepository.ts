@@ -82,6 +82,7 @@ export class RepositorioDrizzle implements Repositorio {
       tenantId: conv.tenantId,
       clienteWa: conv.clienteWa,
       optInEn: conv.optInEn ? conv.optInEn.toISOString() : null,
+      optOutEn: conv.optOutEn ? conv.optOutEn.toISOString() : null,
       modo: conv.modo as ModoConversacion,
       estado: conv.estado as EstadoConversacion,
       mensajes: msgs.map((m) => ({
@@ -131,6 +132,13 @@ export class RepositorioDrizzle implements Repositorio {
     await this.db
       .update(waConversaciones)
       .set({ optInEn: new Date() })
+      .where(eq(waConversaciones.id, conversacionId));
+  }
+
+  async marcarOptOut(conversacionId: string): Promise<void> {
+    await this.db
+      .update(waConversaciones)
+      .set({ optOutEn: new Date() })
       .where(eq(waConversaciones.id, conversacionId));
   }
 
@@ -498,6 +506,7 @@ export class RepositorioDrizzle implements Repositorio {
       tenantId: conv.tenantId,
       clienteWa: conv.clienteWa,
       optInEn: conv.optInEn ? conv.optInEn.toISOString() : null,
+      optOutEn: conv.optOutEn ? conv.optOutEn.toISOString() : null,
       modo: conv.modo as ModoConversacion,
       estado: conv.estado as EstadoConversacion,
       mensajes: msgs.map((m) => ({

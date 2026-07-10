@@ -11,6 +11,7 @@ export const RE_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const RE_HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
 export const RE_FECHA = /^\d{4}-\d{2}-\d{2}$/;
 export const RE_URL_HTTP = /^https?:\/\/.+/i;
+export const RE_NOMBRE_PLANTILLA = /^[a-z0-9_]+$/;
 
 export function limpiarLineas(v: unknown): string[] {
   if (!Array.isArray(v)) return [];
@@ -116,5 +117,19 @@ export function validarLinkResenas(v: unknown): string | null {
   const s = String(v ?? "").trim();
   if (!s) return "";
   if (s.length > 500 || !RE_URL_HTTP.test(s)) return null;
+  return s;
+}
+
+/**
+ * Valida el nombre de la plantilla MARKETING aprobada en Meta para campañas
+ * segmentadas (ROADMAP C3.2). Vacío = sin configurar (el dueño no puede enviar
+ * campañas todavía). Devuelve null si viene algo no vacío pero inválido (mismo
+ * formato de nombre de plantilla que exige WhatsApp Manager: minúsculas, números
+ * y guiones bajos — ver GUIA-META.md).
+ */
+export function validarNombrePlantillaMarketing(v: unknown): string | null {
+  const s = String(v ?? "").trim().toLowerCase();
+  if (!s) return "";
+  if (s.length > 80 || !RE_NOMBRE_PLANTILLA.test(s)) return null;
   return s;
 }

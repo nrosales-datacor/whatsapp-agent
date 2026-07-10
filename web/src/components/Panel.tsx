@@ -9,12 +9,13 @@ import Dashboard from "./Dashboard";
 import Agenda from "./Agenda";
 import MiNegocio from "./MiNegocio";
 import Usuarios from "./Usuarios";
+import Campanias from "./Campanias";
 import BotonNotif from "./BotonNotif";
 import Icono from "./Iconos";
 import { ToastProvider } from "./Toast";
 
 const ANCHO_MOVIL = 760;
-type Vista = "inbox" | "panel" | "agenda" | "config" | "usuarios";
+type Vista = "inbox" | "panel" | "agenda" | "config" | "usuarios" | "campanias";
 
 export default function Panel({ sesion }: { sesion: Sesion }) {
   const qc = useQueryClient();
@@ -113,6 +114,16 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
                 Usuarios
               </button>
             )}
+            {sesion.rol === "dueno" && (
+              <button
+                type="button"
+                className={"hd-tab" + (vista === "campanias" ? " activa" : "")}
+                onClick={() => setVista("campanias")}
+              >
+                <Icono id="send" size={15} />
+                Campañas
+              </button>
+            )}
           </div>
 
           <div className="hd-acciones">
@@ -160,6 +171,7 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
           {vista === "agenda" && <Agenda servicios={sesion.servicios} />}
           {vista === "config" && sesion.rol === "dueno" && <MiNegocio />}
           {vista === "usuarios" && sesion.rol === "dueno" && <Usuarios />}
+          {vista === "campanias" && sesion.rol === "dueno" && <Campanias />}
         </div>
       </div>
 

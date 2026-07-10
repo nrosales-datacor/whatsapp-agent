@@ -9,7 +9,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import type {
   Bloqueo,
+  Campania,
+  CampaniaConDetalle,
   Cita,
+  ClienteSegmento,
   Conversacion,
   EstadoConversacion,
   FichaCliente,
@@ -19,12 +22,16 @@ import type {
   ModoConversacion,
   Rol,
   ResumenConversacion,
+  SegmentoFiltro,
   Service,
 } from "../../src/types";
 
 export type {
   Bloqueo,
+  Campania,
+  CampaniaConDetalle,
   Cita,
+  ClienteSegmento,
   Conversacion,
   EstadoConversacion,
   FichaCliente,
@@ -34,6 +41,7 @@ export type {
   ModoConversacion,
   Rol,
   ResumenConversacion,
+  SegmentoFiltro,
   Service,
 };
 
@@ -236,6 +244,8 @@ export interface ConfigNegocio {
   bloqueos: Bloqueo[];
   /** Link para pedir reseña de Google (Maps / "Escribir reseña"). "" = sin configurar. */
   linkResenas: string;
+  /** Nombre de la plantilla MARKETING aprobada en Meta (C3.2). "" = sin configurar. */
+  plantillaMarketing: string;
 }
 
 export function obtenerConfig(): Promise<ConfigNegocio> {
@@ -336,4 +346,54 @@ export async function crearUsuario(usuario: string, password: string, rol: Rol):
 
 export async function actualizarUsuario(id: string, patch: { rol?: Rol; activo?: boolean }): Promise<void> {
   await pedir(`/usuarios/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify(patch) });
+}
+
+// ── Campañas segmentadas (ROADMAP C3.2, solo dueño) ──
+export interface NuevaCampania {
+  nombre: string;
+  mensaje: string;
+  segmentoTipo: SegmentoFiltro["tipo"];
+  dias?: number;
+  servicioId?: string;
+  meses?: number;
+}
+
+export interface PreviewSegmento {
+  total: number;
+  muestra: ClienteSegmento[];
+}
+
+export function listarCampanias(): Promise<Campania[]> {
+  return pedir<{ campanias: Campania[] }>("/campanias").then((r) => r.campanias);
+}
+
+export function obtenerCampania(id: string): Promise<CampaniaConDetalle> {
+  return pedir<{ campania: CampaniaConDetalle }>(`/campanias/${encodeURIComponent(id)}`).then((r) => r.campania);
+}
+
+export function crearCampania(datos: NuevaCampania): Promise<Campania> {
+  return pedir<{ campania: Campania }>("/campanias", { method: "POST", body: JSON.stringify(datos) }).then(
+    (r) => r.campania,
+  );
+}
+
+export function previsualizarSegmento(filtro: SegmentoFiltro): Promise<PreviewSegmento> {
+  const q = new URLSearchParams({ tipo: filtro.tipo });
+  if (filtro.dias !== undefined) q.set("dias", String(filtro.dias));
+  if (filtro.servicioId !== undefined) q.set("servicioId", filtro.servicioId);
+  if (filtro.meses !== undefined) q.set("meses", String(filtro.meses));
+  return pedir<PreviewSegmento>(`/campanias/segmento/preview?${q}`);
+}
+
+export function enviarCampania(id: string, programadaPara: string | null): Promise<Campania> {
+  return pedir<{ campania: Campania }>(`/campanias/${encodeURIComponent(id)}/enviar`, {
+    method: "POST",
+    body: JSON.stringify({ programadaPara }),
+  }).then((r) => r.campania);
+}
+
+export function cancelarCampania(id: string): Promise<Campania> {
+  return pedir<{ campania: Campania }>(`/campanias/${encodeURIComponent(id)}/cancelar`, { method: "POST" }).then(
+    (r) => r.campania,
+  );
 }
