@@ -1,6 +1,14 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { adminCrearTenant, type AltaTenant, type KnowledgeBase, type Service } from "../../api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  adminConectarWhatsapp,
+  adminCrearTenant,
+  adminEmbeddedSignupConfig,
+  type AltaTenant,
+  type KnowledgeBase,
+  type Service,
+} from "../../api";
+import { lanzarEmbeddedSignup } from "../../lib/embeddedSignup";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Formulario MVP de alta de negocio (ROADMAP B3). Arma el payload de AltaTenant y lo
@@ -70,6 +78,44 @@ export default function FormularioNegocio({ hayDb }: { hayDb: boolean }) {
 
   const [okMsg, setOkMsg] = useState("");
 
+  // Embedded Signup (C4.2): si el server lo tiene configurado, el número se conecta
+  // por el popup de Meta en vez de pegar phone_number_id + token a mano.
+  const esCfg = useQuery({ queryKey: ["adminEsConfig"], queryFn: adminEmbeddedSignupConfig });
+  const usarEs = !!(esCfg.data?.configurado && esCfg.data.config);
+  const [tokenHandle, setTokenHandle] = useState<string | null>(null);
+  const [conectando, setConectando] = useState(false);
+  const [errConexion, setErrConexion] = useState("");
+  const [avisoConexion, setAvisoConexion] = useState("");
+
+  async function conectarWhatsapp() {
+    const config = esCfg.data?.config;
+    if (!config) return;
+    setErrConexion("");
+    setAvisoConexion("");
+    setConectando(true);
+    try {
+      const sesion = await lanzarEmbeddedSignup(config);
+      const conex = await adminConectarWhatsapp(sesion);
+      setPhoneNumberId(conex.phoneNumberId);
+      setTokenHandle(conex.tokenHandle);
+      const notas: string[] = [];
+      if (!conex.suscrito) notas.push("no se pudieron suscribir los webhooks del WABA");
+      if (!conex.registrado) notas.push("el número quedó sin registrar (falta WHATSAPP_REGISTER_PIN)");
+      setAvisoConexion(notas.length ? notas.join("; ") : "");
+    } catch (e) {
+      setErrConexion(e instanceof Error ? e.message : "No se pudo conectar.");
+    } finally {
+      setConectando(false);
+    }
+  }
+
+  function desconectar() {
+    setTokenHandle(null);
+    setPhoneNumberId("");
+    setAvisoConexion("");
+    setErrConexion("");
+  }
+
   const crear = useMutation({
     mutationFn: (body: AltaTenant) => adminCrearTenant(body),
     onSuccess: (r) => {
@@ -79,6 +125,7 @@ export default function FormularioNegocio({ hayDb }: { hayDb: boolean }) {
       setNombre(""); setId(""); setIdTocado(false); setPhoneNumberId(""); setAccessToken("");
       setUbicacion(""); setServicios([]); setFaqs([]); setDatos(""); setPoliticas("");
       setTarifas(""); setParabrisas(""); setUsuario(""); setPassword("");
+      setTokenHandle(null); setAvisoConexion(""); setErrConexion("");
     },
   });
 
@@ -134,12 +181,30 @@ export default function FormularioNegocio({ hayDb }: { hayDb: boolean }) {
       },
       usuario: usuario.trim(),
       password,
+      // Vía Embedded Signup: el backend canjea el handle por el token + phone_number_id
+      // verificados (no viajan por el navegador).
+      tokenHandle: tokenHandle || undefined,
     };
     crear.mutate(body);
   }
 
   const setServ = (i: number, campo: keyof ServicioForm, valor: string | boolean) =>
     setServicios((prev) => prev.map((s, idx) => (idx === i ? { ...s, [campo]: valor } : s)));
+
+  // Entrada manual del número (sin Embedded Signup, o como fallback avanzado). Sin
+  // `required`: puede vivir dentro de un <details> colapsado, y el backend revalida.
+  const camposManuales = (
+    <div className="admin-grid">
+      <div className="campo">
+        <label htmlFor="oPnid">phone_number_id (WhatsApp)</label>
+        <input id="oPnid" value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value)} placeholder="solo números" />
+      </div>
+      <div className="campo">
+        <label htmlFor="oToken">accessToken (opcional)</label>
+        <input id="oToken" value={accessToken} onChange={(e) => setAccessToken(e.target.value)} placeholder="vacío usa el número de prueba" />
+      </div>
+    </div>
+  );
 
   return (
     <form
@@ -170,14 +235,6 @@ export default function FormularioNegocio({ hayDb }: { hayDb: boolean }) {
           />
         </div>
         <div className="campo">
-          <label htmlFor="oPnid">phone_number_id (WhatsApp)</label>
-          <input id="oPnid" value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value)} placeholder="solo números" required />
-        </div>
-        <div className="campo">
-          <label htmlFor="oToken">accessToken (opcional)</label>
-          <input id="oToken" value={accessToken} onChange={(e) => setAccessToken(e.target.value)} placeholder="vacío usa el número de prueba" />
-        </div>
-        <div className="campo">
           <label htmlFor="oTz">Zona horaria</label>
           <input id="oTz" value={timezone} onChange={(e) => setTimezone(e.target.value)} />
         </div>
@@ -190,6 +247,38 @@ export default function FormularioNegocio({ hayDb }: { hayDb: boolean }) {
           <input id="oIntervalo" type="number" value={intervaloAgendaMin} onChange={(e) => setIntervaloAgendaMin(e.target.value)} />
         </div>
       </div>
+
+      <h4>WhatsApp</h4>
+      {usarEs ? (
+        tokenHandle ? (
+          <div className="admin-conectado">
+            <div>
+              ✅ Número conectado (phone_number_id <code>{phoneNumberId}</code>).{" "}
+              <button type="button" className="btn-ghost" onClick={desconectar}>
+                Cambiar
+              </button>
+            </div>
+            {avisoConexion && <div className="admin-aviso">⚠️ {avisoConexion}</div>}
+          </div>
+        ) : (
+          <div className="admin-conectar">
+            <button type="button" className="btn-fb" onClick={conectarWhatsapp} disabled={conectando}>
+              {conectando ? "Conectando…" : "Conectar WhatsApp con Meta"}
+            </button>
+            <p className="admin-hint">
+              Se abrirá una ventana de Facebook para que el negocio conecte su WhatsApp Business. No hace falta copiar
+              ningún token.
+            </p>
+            {errConexion && <div className="admin-error">{errConexion}</div>}
+            <details className="admin-manual">
+              <summary>Conectar manualmente (avanzado)</summary>
+              {camposManuales}
+            </details>
+          </div>
+        )
+      ) : (
+        camposManuales
+      )}
 
       <div className="campo">
         <label htmlFor="oUbic">Ubicación</label>
