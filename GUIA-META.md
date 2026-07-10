@@ -3,12 +3,13 @@
 > Dos trámites que corren por fuera del código y conviene arrancar YA porque tienen tiempos de
 > espera de Meta. Esta guía deja los pasos exactos. Actualizá el estado acá cuando avance cada uno.
 
-**Última actualización:** 2026-07-03
+**Última actualización:** 2026-07-09 (C3.2: agregado trámite C, plantilla MARKETING para campañas)
 
 | Trámite | Estado | Bloquea |
 |---|---|---|
 | A. Plantilla Utility `recordatorio_cita` | ⏳ esperando aprobación de Meta | Recordatorios fuera de 24h (y C1.3/C3.1 construyen encima) |
 | B. Tech Provider + Embedded Signup | ⬜ sin empezar | C4.2 (alta self-serve). No bloquea nada del piloto |
+| C. Plantilla MARKETING para campañas | ⬜ sin empezar | Envío real de campañas (C3.2). El código y el panel ya están listos; sin la plantilla aprobada, "Campañas" queda configurada pero no puede enviar. |
 
 ---
 
@@ -110,3 +111,57 @@ este trámite.
 **Fuentes:** [Become a Tech Provider (Meta)](https://developers.facebook.com/documentation/business-messaging/whatsapp/solution-providers/get-started-for-tech-providers) ·
 [Embedded Signup overview (Meta)](https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/overview) ·
 [Guía del programa Tech Provider (Twilio)](https://www.twilio.com/docs/whatsapp/isv/tech-provider-program/integration-guide)
+
+---
+
+## C. Plantilla MARKETING para campañas segmentadas (para C3.2)
+
+### Qué es y por qué
+
+Las campañas del panel ("Campañas" → armar un segmento del CRM y mandarle una promo) salen
+SIEMPRE por plantilla **MARKETING** — a diferencia del recordatorio (Utility), acá SÍ es
+publicidad, así que Meta exige la categoría correcta. El código y el panel ya están listos
+(`src/campaigns/`, pestaña "Campañas"); sin la plantilla aprobada, el dueño puede armar y
+previsualizar campañas pero no enviarlas.
+
+Cada tenant necesita **su propia** plantilla aprobada en su propio WhatsApp Manager (no se
+comparte entre negocios) — el nombre se configura por negocio en el panel, pestaña "Mi negocio"
+→ "Plantilla de marketing aprobada".
+
+### Contenido exacto para crearla
+
+En **WhatsApp Manager** (business.facebook.com → cuenta de WhatsApp del negocio) → *Herramientas
+de cuenta* → *Plantillas de mensaje* → **Crear plantilla**:
+
+- **Categoría:** Marketing.
+- **Nombre:** el que prefieras (minúsculas y guiones bajos, ej. `promo_general`); ese nombre exacto
+  va en "Mi negocio" → "Plantilla de marketing aprobada".
+- **Idioma:** Español (`es`).
+- **Cuerpo** (2 variables: `{{1}}` nombre del cliente, `{{2}}` el mensaje libre que el dueño escribe
+  al armar cada campaña). El opt-out DEBE estar en el texto que Meta aprueba (no alcanza con
+  manejarlo aparte en el código):
+
+  > ¡Hola {{1}}! {{2}} Escribinos si querés agendar. Para no recibir más promociones de nuestra
+  > parte, respondé *BAJA*.
+
+- **Ejemplos de variables**: `{{1}}` = "María", `{{2}}` = "Tenemos 20% de descuento en pulido de
+  parabrisas esta semana 🚗✨".
+- **Sin botones**: el opt-out es por palabra clave ("BAJA", que el bot ya detecta como comando
+  exacto — ver `handleWebhook.ts`), no por botón — más simple de aprobar y de mantener.
+
+### Cómo verificar la aprobación y activarla
+
+1. El estado se ve en WhatsApp Manager → Plantillas. Marketing tarda un poco más que Utility en
+   aprobarse (puede pasar de horas a 1-2 días); si la rechazan, casi siempre es por texto ambiguo
+   o por faltar la opción de baja explícita.
+2. Aprobada → en el panel del negocio, pestaña "Mi negocio" → "Plantilla de marketing aprobada" →
+   escribir el nombre exacto (ej. `promo_general`) → Guardar. Sin redeploy: el cambio queda activo
+   apenas se guarda (mismo mecanismo que el resto de "Mi negocio", C2.2).
+3. Probar con una campaña chica (2-3 destinatarios de prueba, ej. tu propio número) antes de
+   mandarla a un segmento real.
+
+### Si la rechazan
+
+Igual que la Utility: quitar ambigüedad, dejar el opt-out ("BAJA") explícito en el cuerpo, y
+re-someter. Meta es más estricto con Marketing que con Utility — evitar mayúsculas sostenidas,
+signos de exclamación excesivos o lenguaje que suene a spam.

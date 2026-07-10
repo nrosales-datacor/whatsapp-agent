@@ -77,6 +77,11 @@ export interface Tenant {
    * seguimiento post-servicio (C3.1). undefined = sin configurar (no se pide reseña).
    */
   linkResenas?: string;
+  /**
+   * Nombre de la plantilla MARKETING aprobada en Meta para este tenant (campañas
+   * segmentadas, C3.2). undefined = sin configurar (no se pueden enviar campañas).
+   */
+  plantillaMarketing?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -206,6 +211,12 @@ export interface Conversacion {
   tenantId: string;
   clienteWa: string;
   optInEn: string | null;
+  /**
+   * Opt-out de CAMPAÑAS de marketing (C3.2): cuándo el cliente escribió "BAJA".
+   * null = sigue recibiendo campañas. NO afecta recordatorios ni seguimiento
+   * post-servicio (son mensajes de servicio ligados a una cita, no marketing).
+   */
+  optOutEn?: string | null;
   /** "bot" => responde la IA. "humano" => la IA se calla y atiende una persona. */
   modo: ModoConversacion;
   /** Cola de trabajo (C2.3): "abierta" | "atendida". */
@@ -285,6 +296,79 @@ export interface Metricas {
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Campañas segmentadas (C3.2): envío masivo de plantilla MARKETING a un segmento
+// del CRM. Viven en un módulo aparte (src/campaigns/), DB-directo, gateado por
+// hayBaseDeDatos() — mismo precedente que "Usuarios" (C2.3) en tenantStore.ts.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Cómo se arma la lista de destinatarios de una campaña. */
+export type SegmentoTipo = "todos" | "inactivos" | "servicio_antiguo";
+
+export interface SegmentoFiltro {
+  tipo: SegmentoTipo;
+  /** "inactivos": última cita hace ≥ `dias` días. */
+  dias?: number;
+  /** "servicio_antiguo": servicio a considerar. */
+  servicioId?: string;
+  /** "servicio_antiguo": última cita completada de ese servicio hace ≥ `meses` meses. */
+  meses?: number;
+}
+
+/** Cliente que calificó para el segmento de una campaña (preview o materializado). */
+export interface ClienteSegmento {
+  clienteWa: string;
+  nombre: string;
+  ultimaVisita: string | null; // "YYYY-MM-DD"
+}
+
+export type EstadoCampania = "borrador" | "programada" | "enviando" | "completada" | "cancelada";
+
+export interface Campania {
+  id: string;
+  tenantId: string;
+  nombre: string;
+  mensaje: string;
+  segmentoTipo: SegmentoTipo;
+  segmentoParametros: SegmentoFiltro;
+  estado: EstadoCampania;
+  programadaPara: string | null;
+  creadaEn: string;
+  iniciadaEn: string | null;
+  completadaEn: string | null;
+  totalDestinatarios: number;
+}
+
+export type EstadoEnvioCampania = "pendiente" | "procesando" | "enviado" | "error" | "omitido_opt_out";
+
+export interface CampaniaEnvio {
+  id: string;
+  campaniaId: string;
+  clienteWa: string;
+  clienteNombre: string;
+  estado: EstadoEnvioCampania;
+  intentos: number;
+  error: string | null;
+  enviadoEn: string | null;
+}
+
+/** Métricas de una campaña, calculadas sobre wa_campania_envios + mensajes/citas posteriores. */
+export interface MetricasCampania {
+  destinatarios: number;
+  enviados: number;
+  fallidos: number;
+  omitidosOptOut: number;
+  /** Clientes distintos que escribieron algo después de recibir el envío. */
+  respuestas: number;
+  /** Citas nuevas creadas por clientes de la campaña después de recibir el envío. */
+  citasGeneradas: number;
+}
+
+export interface CampaniaConDetalle extends Campania {
+  metricas: MetricasCampania;
+  envios: CampaniaEnvio[];
+}
+
 /** Ficha (mini-CRM) de un cliente: datos agregados para el panel. */
 export interface FichaCliente {
   clienteWa: string;
@@ -310,6 +394,12 @@ export interface Repositorio {
    */
   guardarMensaje(conversacionId: string, msg: MensajeConversacion): Promise<boolean>;
   marcarOptIn(conversacionId: string): Promise<void>;
+  /**
+   * Opt-out de CAMPAÑAS de marketing (C3.2): el cliente escribió "BAJA". Marca
+   * `optOutEn` en la conversación; el segmento de cualquier campaña futura lo
+   * excluye. No afecta recordatorios ni seguimiento post-servicio.
+   */
+  marcarOptOut(conversacionId: string): Promise<void>;
   /**
    * Adjunta la URL de una foto a un mensaje YA guardado, identificado por su
    * waMessageId (C1.5). Fase 1 guarda un placeholder de texto rápido; fase 2

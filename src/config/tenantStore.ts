@@ -75,6 +75,7 @@ function filaATenant(f: typeof waTenants.$inferSelect): Tenant {
     kb: f.kb,
     bloqueos: f.bloqueos,
     linkResenas: f.linkResenas ?? undefined,
+    plantillaMarketing: f.plantillaMarketing ?? undefined,
   };
 }
 
@@ -199,6 +200,7 @@ export async function crearTenant(tenant: Tenant, u: NuevoUsuario): Promise<void
       kb: tenant.kb,
       bloqueos: tenant.bloqueos,
       linkResenas: tenant.linkResenas ?? null,
+      plantillaMarketing: tenant.plantillaMarketing ?? null,
     });
     // El usuario del alta es, por definición, el dueño del negocio recién creado.
     await tx.insert(waUsuarios).values({ usuario: u.usuario, passwordHash: u.passwordHash, tenantId: tenant.id, rol: "dueno" });
@@ -219,6 +221,7 @@ export async function actualizarConfigTenant(
     kb: KnowledgeBase;
     bloqueos: Bloqueo[];
     linkResenas: string | null;
+    plantillaMarketing: string | null;
   },
 ): Promise<void> {
   if (!hayDb) throw new Error("SIN_DB");
@@ -231,6 +234,7 @@ export async function actualizarConfigTenant(
       kb: patch.kb,
       bloqueos: patch.bloqueos,
       linkResenas: patch.linkResenas,
+      plantillaMarketing: patch.plantillaMarketing,
       actualizadoEn: new Date(),
     })
     .where(eq(waTenants.id, tenantId));

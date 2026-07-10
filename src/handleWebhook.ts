@@ -448,6 +448,25 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
     return;
   }
 
+  // OPT-OUT DE CAMPAÑAS (C3.2): comando exacto "BAJA" (no una palabra suelta en una
+  // frase, para evitar falsos positivos). Es acción directa: no pasa por el agente
+  // ni depende del modo (humano/bot) — un cliente puede pedir baja aunque lo esté
+  // atendiendo una persona. Detiene SOLO campañas de marketing; los recordatorios y
+  // el seguimiento post-servicio siguen llegando (son mensajes de servicio, no
+  // marketing, ligados a una cita que el cliente ya agendó).
+  if (entrante.texto.trim().toLowerCase() === "baja") {
+    try {
+      await repo.marcarOptOut(conv.id);
+      const ack = "Listo, no vas a recibir más promociones de nuestra parte. Si necesitás algo más, escribinos por acá 🙂";
+      await enviarTexto(tenant, entrante.clienteWa, ack);
+      await repo.guardarMensaje(conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
+      console.log(`[opt-out] ${entrante.clienteWa} pidió baja de campañas`);
+    } catch (e) {
+      console.error(`[opt-out] no se pudo procesar la baja de ${entrante.clienteWa}:`, e);
+    }
+    return;
+  }
+
   // Si la conversación YA está en modo humano, el bot NO responde: el mensaje ya
   // quedó guardado; solo avisamos al operador para que conteste del panel.
   if (conv.modo === "humano") {

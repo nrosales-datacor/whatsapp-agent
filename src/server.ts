@@ -12,6 +12,7 @@ import { manejarPanel } from "./panel/router";
 import { manejarLanding } from "./landing/servirLanding";
 import { pushConfigurado } from "./panel/push";
 import { iniciarWorker } from "./queue/worker";
+import { iniciarCampanias } from "./campaigns/worker";
 import { iniciarSentry, sentryConfigurado, capturarError } from "./observabilidad/sentry";
 import { iniciarReporteMetricas } from "./observabilidad/metricas";
 import type { Repositorio } from "./types";
@@ -143,6 +144,10 @@ server.listen(PORT, () => {
 
   // Cola durable: el worker consume los jobs de wa_jobs. Solo cuando hay DB.
   if (db) iniciarWorker(repo, db);
+
+  // Envío de campañas segmentadas (C3.2): cola independiente, solo cuando hay DB
+  // (no tiene sentido en modo demo/memoria — ver src/campaigns/db.ts).
+  if (db) iniciarCampanias();
 
   // Recordatorios de cita por WhatsApp (día antes + mismo día).
   iniciarRecordatorios(repo);

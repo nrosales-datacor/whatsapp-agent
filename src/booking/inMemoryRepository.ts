@@ -50,6 +50,7 @@ export class RepositorioEnMemoria implements Repositorio {
       tenantId: c.tenantId,
       clienteWa: c.clienteWa,
       optInEn: c.optInEn,
+      optOutEn: c.optOutEn ?? null,
       modo: c.modo,
       estado: c.estado,
       // porHumano normalizado a boolean (paridad con Drizzle, que nunca es undefined).
@@ -66,6 +67,7 @@ export class RepositorioEnMemoria implements Repositorio {
         tenantId,
         clienteWa,
         optInEn: null,
+        optOutEn: null,
         modo: "bot",
         estado: "abierta",
         mensajes: [],
@@ -118,6 +120,11 @@ export class RepositorioEnMemoria implements Repositorio {
   async marcarOptIn(conversacionId: string): Promise<void> {
     const c = this.conversaciones.get(conversacionId);
     if (c && !c.optInEn) c.optInEn = new Date().toISOString();
+  }
+
+  async marcarOptOut(conversacionId: string): Promise<void> {
+    const c = this.conversaciones.get(conversacionId);
+    if (c && !c.optOutEn) c.optOutEn = new Date().toISOString();
   }
 
   async citasPorFecha(tenantId: string, fecha: string): Promise<Cita[]> {
