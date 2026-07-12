@@ -298,8 +298,9 @@ function validarAltaTenant(body: any): ResultadoAlta {
   const horario = validarHorario(t.horario);
   if (!horario) return { ok: false, error: "Horario inválido (usá formato HH:mm, o vacío para día cerrado)" };
 
-  const servicios = validarServicios(t.servicios ?? []);
-  if (!servicios) return { ok: false, error: "Hay un servicio inválido (revisá id único, nombre y duración en minutos)" };
+  const resServicios = validarServicios(t.servicios ?? []);
+  if (!resServicios.ok) return { ok: false, error: resServicios.error };
+  const servicios = resServicios.servicios;
 
   const kb: KnowledgeBase = {
     faq: validarFaq(t.kb?.faq),
@@ -869,8 +870,9 @@ export async function manejarPanel(
     const horario = validarHorario(body?.horario);
     if (!horario) return json(res, 400, { ok: false, error: "Horario inválido (usá formato HH:mm, o vacío para día cerrado)" }), true;
 
-    const servicios = validarServicios(body?.servicios ?? []);
-    if (!servicios) return json(res, 400, { ok: false, error: "Hay un servicio inválido (revisá id único, nombre y duración en minutos)" }), true;
+    const resServicios = validarServicios(body?.servicios ?? []);
+    if (!resServicios.ok) return json(res, 400, { ok: false, error: resServicios.error }), true;
+    const servicios = resServicios.servicios;
 
     const bloqueos = validarBloqueos(body?.bloqueos ?? []);
     if (!bloqueos) return json(res, 400, { ok: false, error: "Hay un bloqueo inválido (fechas YYYY-MM-DD, desde ≤ hasta)" }), true;
