@@ -39,6 +39,14 @@ function fechaCorta(iso: string | null): string {
   return new Date(iso).toLocaleString("es-CR", { dateStyle: "short", timeStyle: "short" });
 }
 
+/** "Ahora" en hora local, formateado para el atributo `min` de un input datetime-local. */
+function minFechaLocal(): string {
+  const d = new Date();
+  d.setSeconds(0, 0);
+  const offset = d.getTimezoneOffset();
+  return new Date(d.getTime() - offset * 60000).toISOString().slice(0, 16);
+}
+
 export default function Campanias() {
   const qc = useQueryClient();
   const { flash } = useToast();
@@ -351,15 +359,24 @@ function DetalleCampania({ id, onCerrar, onCambio }: { id: string; onCerrar: () 
                     <input
                       id="campFechaEnvio"
                       type="datetime-local"
+                      min={minFechaLocal()}
                       value={fechaHora}
                       onChange={(e) => setFechaHora(e.target.value)}
                     />
+                    {fechaHora && new Date(fechaHora).getTime() <= Date.now() && (
+                      <p className="admin-error">
+                        Elegí una fecha futura — una fecha pasada envía la campaña de inmediato.
+                      </p>
+                    )}
                   </div>
                 )}
                 <button
                   type="button"
                   className="accion accion-primaria"
-                  disabled={enviar.isPending || (programar && !fechaHora)}
+                  disabled={
+                    enviar.isPending ||
+                    (programar && (!fechaHora || new Date(fechaHora).getTime() <= Date.now()))
+                  }
                   onClick={() => enviar.mutate()}
                 >
                   {enviar.isPending ? "Confirmando…" : programar ? "Programar envío" : "Enviar ahora"}
