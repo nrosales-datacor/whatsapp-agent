@@ -81,7 +81,7 @@ function SplitBar({ items }: { items: [SplitItem, SplitItem] }) {
   const total = items[0].valor + items[1].valor;
   if (!total) return <p className="dash-vacio">Sin datos todavía.</p>;
   return (
-    <div className="split-bar">
+    <div>
       <div className="split-track">
         {items.map((it, i) => (
           <span
