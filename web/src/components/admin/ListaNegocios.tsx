@@ -10,7 +10,11 @@ export default function ListaNegocios() {
   return (
     <div className="card">
       <h3>Negocios ({tenants.length})</h3>
-      {tenants.length === 0 ? (
+      {q.isLoading ? (
+        <div className="admin-vacio">Cargando…</div>
+      ) : q.isError ? (
+        <div className="admin-error">No se pudieron cargar los negocios.</div>
+      ) : tenants.length === 0 ? (
         <div className="admin-vacio">Todavía no hay negocios dados de alta.</div>
       ) : (
         <div className="admin-tabla-scroll">

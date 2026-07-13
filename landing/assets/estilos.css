@@ -153,6 +153,8 @@ a { color: inherit; text-decoration: none; }
 .boton-verde:hover { background: var(--verde-hover); transform: translateY(-1px); }
 .boton-azul { color: #fff; background: var(--azul); font-size: 15px; padding: 13px 24px; }
 .boton-azul:hover { background: var(--azul-hover); transform: translateY(-1px); }
+.boton-disabled { cursor: default; opacity: .55; pointer-events: none; }
+.boton-disabled:hover { transform: none; }
 .boton-linea {
   display: block; text-align: center; color: var(--titulo); background: var(--superficie);
   border: 1.5px solid var(--borde-suave); font-size: 15px; padding: 14px;
@@ -502,6 +504,7 @@ a { color: inherit; text-decoration: none; }
 .pie-enlaces { display: flex; flex-direction: column; gap: 11px; margin-top: 16px; }
 .pie-enlaces a { font-size: 14.5px; color: var(--texto-en-oscuro-2); transition: color .18s var(--ease); }
 .pie-enlaces a:hover { color: var(--cian); }
+.pie-enlace-proximamente { font-size: 14.5px; color: var(--tenue-en-oscuro-3); cursor: default; }
 .pie-bottom { max-width: var(--ancho-seccion); margin: 40px auto 0; padding-top: 24px; border-top: 1px solid rgba(122,250,252,.08); font-size: 13px; color: var(--tenue-en-oscuro-3); }
 
 /* ── Páginas legales (privacidad, términos) ── */

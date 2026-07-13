@@ -12,7 +12,12 @@ import { useToast } from "./Toast";
 
 const RE_USUARIO = /^[a-zA-Z0-9._-]{3,40}$/;
 
-export default function Usuarios() {
+interface Props {
+  /** Id del usuario logueado — evita que se degrade/desactive a sí mismo (auto-lockout). */
+  usuarioActualId: string;
+}
+
+export default function Usuarios({ usuarioActualId }: Props) {
   const qc = useQueryClient();
   const { flash } = useToast();
   const q = useQuery({ queryKey: ["usuarios"], queryFn: listarUsuarios });
@@ -97,32 +102,50 @@ export default function Usuarios() {
                   </tr>
                 </thead>
                 <tbody>
-                  {usuarios.map((u) => (
-                    <tr key={u.id}>
-                      <td>{u.usuario}</td>
-                      <td>
-                        <select
-                          value={u.rol}
-                          disabled={actualizar.isPending}
-                          onChange={(e) => actualizar.mutate({ id: u.id, patch: { rol: e.target.value as Rol } })}
-                        >
-                          <option value="dueno">Dueño</option>
-                          <option value="operador">Operador</option>
-                        </select>
-                      </td>
-                      <td>{u.activo ? "Activo" : "Inactivo"}</td>
-                      <td>
-                        <button
-                          type="button"
-                          className="btn-ghost"
-                          disabled={actualizar.isPending}
-                          onClick={() => actualizar.mutate({ id: u.id, patch: { activo: !u.activo } })}
-                        >
-                          {u.activo ? "Desactivar" : "Reactivar"}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {usuarios.map((u) => {
+                    const esYo = u.id === usuarioActualId;
+                    // Fila pendiente: solo deshabilita ESTA fila mientras la mutación corre
+                    // (antes cualquier acción bloqueaba los controles de toda la tabla).
+                    const filaPendiente = actualizar.isPending && actualizar.variables?.id === u.id;
+                    return (
+                      <tr key={u.id}>
+                        <td>{u.usuario}{esYo && " (vos)"}</td>
+                        <td>
+                          <select
+                            value={u.rol}
+                            title="Rol del usuario"
+                            disabled={filaPendiente || esYo}
+                            onChange={(e) => {
+                              const nuevoRol = e.target.value as Rol;
+                              if (!window.confirm(`¿Cambiar el rol de "${u.usuario}" a ${nuevoRol === "dueno" ? "Dueño" : "Operador"}?`)) return;
+                              actualizar.mutate({ id: u.id, patch: { rol: nuevoRol } });
+                            }}
+                          >
+                            <option value="dueno">Dueño</option>
+                            <option value="operador">Operador</option>
+                          </select>
+                        </td>
+                        <td>{u.activo ? "Activo" : "Inactivo"}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn-ghost"
+                            disabled={filaPendiente || esYo}
+                            title={esYo ? "No podés desactivarte a vos mismo" : undefined}
+                            onClick={() => {
+                              const mensaje = u.activo
+                                ? `¿Desactivar a "${u.usuario}"? No podrá volver a iniciar sesión.`
+                                : `¿Reactivar a "${u.usuario}"?`;
+                              if (!window.confirm(mensaje)) return;
+                              actualizar.mutate({ id: u.id, patch: { activo: !u.activo } });
+                            }}
+                          >
+                            {u.activo ? "Desactivar" : "Reactivar"}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -140,7 +163,7 @@ export default function Usuarios() {
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="new-password"
             />
-            <select value={rol} onChange={(e) => setRol(e.target.value as Rol)}>
+            <select value={rol} title="Rol del nuevo usuario" onChange={(e) => setRol(e.target.value as Rol)}>
               <option value="operador">Operador</option>
               <option value="dueno">Dueño</option>
             </select>

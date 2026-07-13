@@ -105,6 +105,8 @@ export interface Marca {
 export interface Sesion {
   nombre: string;
   tenantId: string;
+  /** Id del usuario logueado (para que "Usuarios" pueda identificar la propia fila y evitar auto-lockout). */
+  usuarioId: string;
   /** Rol del usuario logueado (C2.3): "dueno" ve "Mi negocio" y "Usuarios"; "operador" no. */
   rol: Rol;
   /** Clave pública VAPID para suscribir push (null si el server no tiene push). */

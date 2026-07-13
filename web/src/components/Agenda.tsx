@@ -68,12 +68,15 @@ export default function Agenda({ servicios }: Props) {
     qc.invalidateQueries({ queryKey: ["citas"] });
   }
 
+  const errorGenerico = (e: unknown) => flash(e instanceof Error ? e.message : "No se pudo actualizar la cita");
+
   const confirmar = useMutation({
     mutationFn: confirmarCitaPanel,
     onSuccess: () => {
       invalidar();
       flash("Cita confirmada");
     },
+    onError: errorGenerico,
   });
   const completar = useMutation({
     mutationFn: completarCitaPanel,
@@ -81,6 +84,7 @@ export default function Agenda({ servicios }: Props) {
       invalidar();
       flash("Cita marcada como completada");
     },
+    onError: errorGenerico,
   });
   const cancelar = useMutation({
     mutationFn: cancelarCitaPanel,
@@ -88,6 +92,7 @@ export default function Agenda({ servicios }: Props) {
       invalidar();
       flash("Cita cancelada");
     },
+    onError: errorGenerico,
   });
   const noShow = useMutation({
     mutationFn: marcarNoShowPanel,
@@ -95,6 +100,7 @@ export default function Agenda({ servicios }: Props) {
       invalidar();
       flash("Cita marcada como no-show");
     },
+    onError: errorGenerico,
   });
   const pendiente = confirmar.isPending || completar.isPending || cancelar.isPending || noShow.isPending;
 
@@ -281,6 +287,7 @@ interface ModalProps {
 }
 
 function ModalCita({ servicios, cita, onCerrar, onGuardado }: ModalProps) {
+  const { flash } = useToast();
   const modoReprogramar = !!cita;
 
   const [clienteNombre, setClienteNombre] = useState(cita?.clienteNombre ?? "");
@@ -304,8 +311,15 @@ function ModalCita({ servicios, cita, onCerrar, onGuardado }: ModalProps) {
     enabled: !!fecha && !!servicioId,
   });
 
-  const horasOcupadas = disp.data?.ocupadas ?? [];
-  const horas = Array.from(new Set([...(disp.data?.libres ?? []), ...horasOcupadas.map((o) => o.hora)])).sort();
+  // Al reprogramar, la cita ocupa su propio slot: si no se excluye, el backend
+  // la devuelve como "ocupada" y el operador ve su propia cita como un choque.
+  // Si sigue en la misma fecha, tampoco vendrá en "libres" (el backend no sabe
+  // que se está liberando) — se agrega a mano para que quede seleccionable.
+  const horasOcupadas = (disp.data?.ocupadas ?? []).filter((o) => o.citaId !== cita?.id);
+  const horaPropiaDisponible = modoReprogramar && cita && cita.fecha === fecha ? [cita.hora] : [];
+  const horas = Array.from(
+    new Set([...(disp.data?.libres ?? []), ...horasOcupadas.map((o) => o.hora), ...horaPropiaDisponible]),
+  ).sort();
   const ocupadaElegida = horasOcupadas.find((o) => o.hora === hora);
 
   const guardar = useMutation({
@@ -325,7 +339,7 @@ function ModalCita({ servicios, cita, onCerrar, onGuardado }: ModalProps) {
       }
     },
     onSuccess: () => onGuardado(modoReprogramar ? "Cita reprogramada" : "Cita creada"),
-    onError: (e) => alert(e instanceof Error ? e.message : "No se pudo guardar la cita"),
+    onError: (e) => flash(e instanceof Error ? e.message : "No se pudo guardar la cita"),
   });
 
   const listo = modoReprogramar
@@ -367,7 +381,11 @@ function ModalCita({ servicios, cita, onCerrar, onGuardado }: ModalProps) {
               />
 
               <label htmlFor="aServicio">Servicio</label>
-              <select id="aServicio" value={servicioId} onChange={(e) => setServicioId(e.target.value)}>
+              <select
+                id="aServicio"
+                value={servicioId}
+                onChange={(e) => { setServicioId(e.target.value); setHora(""); }}
+              >
                 {servicios.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.nombre}
@@ -378,7 +396,13 @@ function ModalCita({ servicios, cita, onCerrar, onGuardado }: ModalProps) {
           )}
 
           <label htmlFor="aFecha">Fecha</label>
-          <input id="aFecha" type="date" value={fecha} onChange={(e) => { setFecha(e.target.value); setHora(""); }} />
+          <input
+            id="aFecha"
+            type="date"
+            min={hoyISO()}
+            value={fecha}
+            onChange={(e) => { setFecha(e.target.value); setHora(""); }}
+          />
 
           <label htmlFor="aHora">Hora</label>
           <select id="aHora" value={hora} onChange={(e) => setHora(e.target.value)}>
