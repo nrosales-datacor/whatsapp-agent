@@ -200,6 +200,15 @@ a { color: inherit; text-decoration: none; }
 }
 .nav-enlace:hover::after { right: 0; }
 
+/* Botón hamburguesa — solo visible bajo 820px (ver breakpoint más abajo) */
+.nav-burger {
+  display: inline-grid; place-items: center; width: 42px; height: 42px;
+  border: 1px solid rgba(122,250,252,.28); background: rgba(255,255,255,.06);
+  color: var(--texto-en-oscuro); border-radius: 12px; font-size: 20px; line-height: 1;
+  cursor: pointer; transition: background .18s var(--ease), border-color .18s var(--ease);
+}
+.nav-burger:hover { background: rgba(122,250,252,.12); border-color: rgba(122,250,252,.55); }
+
 /* ── Hero ── */
 .hero {
   position: relative; overflow: hidden;
@@ -367,7 +376,7 @@ a { color: inherit; text-decoration: none; }
 .preview-plato-nombre { font-family: var(--font-display); font-weight: 700; font-size: 11px; color: #fff; margin-top: 6px; }
 .preview-plato-desc { font-size: 10px; color: var(--tenue-en-oscuro); }
 .tarjeta-producto-body { padding: 26px 30px 30px; }
-.tarjeta-producto-body h3 { font-weight: 800; font-size: 23px; }
+.tarjeta-producto-body h3 { font-weight: 800; font-size: clamp(20px, 5vw, 23px); }
 .tarjeta-producto-body p { font-size: 15px; line-height: 1.55; color: var(--cuerpo); margin-top: 9px; }
 .tarjeta-producto-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 22px; }
 
@@ -404,7 +413,8 @@ a { color: inherit; text-decoration: none; }
 .navegador-punto--verde { background: #28c840; }
 .navegador-url { margin-left: 14px; font-size: 12px; color: var(--tenue-en-oscuro-2); background: rgba(255,255,255,.05); padding: 4px 14px; border-radius: 6px; }
 .navegador-marco img { width: 100%; height: auto; display: block; }
-.panel-mobile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 32px auto 0; max-width: var(--ancho-nav); }
+.panel-mobile-grid { display: grid; grid-template-columns: 1fr; gap: 24px; margin: 32px auto 0; }
+@media (min-width: 640px) { .panel-mobile-grid { grid-template-columns: 1fr 1fr; } }
 .panel-mobile-item { text-align: center; }
 .panel-mobile-figura { border-radius: 14px; overflow: hidden; border: 1px solid rgba(122,250,252,.14); box-shadow: 0 30px 60px -24px rgba(0,0,0,.6); }
 .panel-mobile-figura img { width: 100%; height: auto; display: block; }
@@ -448,7 +458,7 @@ a { color: inherit; text-decoration: none; }
   letter-spacing: .05em; text-transform: uppercase; color: var(--oscuro); background: var(--amarillo);
   padding: 5px 12px; border-radius: var(--radio-pill);
 }
-.plan-nombre { font-family: var(--font-display); font-weight: 800; font-size: 26px; }
+.plan-nombre { font-family: var(--font-display); font-weight: 800; font-size: clamp(22px, 5vw, 26px); }
 .plan--basico .plan-nombre { color: var(--titulo); }
 .plan--pro .plan-nombre { color: #fff; }
 .plan-tagline { font-size: 14px; margin: 6px 0 22px; }
@@ -520,9 +530,22 @@ a { color: inherit; text-decoration: none; }
 .legal a.volver { display: inline-block; margin-bottom: 24px; font-size: 14px; color: var(--azul); }
 .legal a.volver:hover { text-decoration: underline; }
 
+/* ── Menú móvil desplegable (bajo 820px, cuando el header tiene .nav-abierta) ── */
+@media (max-width: 819.98px) {
+  header.nav-abierta .nav-enlaces {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+    position: absolute; top: 100%; left: 0; right: 0;
+    background: var(--oscuro); padding: 16px 24px 20px;
+    border-bottom: 1px solid rgba(122,250,252,.12);
+    box-shadow: 0 24px 40px -16px rgba(0,0,0,.6);
+  }
+  header.nav-abierta .nav-enlace { padding: 10px 0; font-size: 16px; }
+}
+
 /* ── Breakpoints (desktop-first: 900px layout, 720px nav) ── */
 @media (min-width: 820px) {
   .nav-enlaces { display: flex; }
+  .nav-burger { display: none; }
 }
 @media (min-width: 900px) {
   .hero-grid { grid-template-columns: 1.05fr .95fr; padding: 76px 24px 96px; }
@@ -532,4 +555,16 @@ a { color: inherit; text-decoration: none; }
   .como-grid { grid-template-columns: repeat(3,1fr); }
   .planes-grid { grid-template-columns: 1fr 1fr; }
   .pie-grid { grid-template-columns: 1.4fr 1fr 1fr; }
+}
+
+/* ── Ajustes móvil (pulido) ── */
+@media (max-width: 899.98px) {
+  /* Los chips flotantes del teléfono se salían del viewport a la izquierda/derecha */
+  .telefono-chip--1 { left: -10px; }
+  .telefono-chip--2 { right: -10px; }
+}
+@media (max-width: 640px) {
+  .testimonio-tarjeta { padding: 36px 24px; }
+  /* Los <br> forzados estorban a text-wrap:balance en pantallas angostas */
+  .solo-desktop { display: none; }
 }

@@ -36,13 +36,14 @@
       <span class="marca-texto">selyon</span>
     </a>
     <div class="nav-derecha">
-      <nav class="nav-enlaces">
+      <nav class="nav-enlaces" id="navMenu">
         <a class="nav-enlace" href="#productos">Productos</a>
         <a class="nav-enlace" href="#agente">Agente WhatsApp</a>
         <a class="nav-enlace" href="#como">Cómo funciona</a>
         <a class="nav-enlace" href="#precios">Precios</a>
       </nav>
       <a class="boton boton-amarillo boton-amarillo--chico" href="https://wa.me/50683658231?text=Hola%2C%20quiero%20ver%20la%20demo%20de%20Selyon" target="_blank" rel="noopener">Ver demo</a>
+      <button class="nav-burger" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="navMenu">☰</button>
     </div>
   </div>
 </header>
@@ -60,7 +61,7 @@
           <span class="hero-etiqueta-punto"></span>
           Plataforma de agentes de IA
         </div>
-        <h1 class="hero-titulo" data-reveal>El equipo de IA que<br>atiende tu negocio,<br><span class="hero-titulo-gradiente">día y noche.</span></h1>
+        <h1 class="hero-titulo" data-reveal>El equipo de IA que<br class="solo-desktop">atiende tu negocio,<br class="solo-desktop"><span class="hero-titulo-gradiente">día y noche.</span></h1>
         <p class="hero-sub" data-reveal>Selyon crea agentes de inteligencia artificial que responden, cotizan, agendan y venden por vos. Empezá con el agente de WhatsApp que ya atiende a clientes reales.</p>
         <div class="hero-ctas" data-reveal>
           <a class="boton boton-amarillo" href="https://wa.me/50683658231?text=Hola%2C%20quiero%20ver%20la%20demo%20de%20Selyon" target="_blank" rel="noopener">Probá la demo en vivo <span>→</span></a>
@@ -440,7 +441,7 @@
     <div class="cta-final">
       <div class="cta-final-grilla" aria-hidden="true"></div>
       <div class="cta-final-contenido" data-reveal>
-        <h2>Dejá que Selyon<br>atienda por vos.</h2>
+        <h2>Dejá que Selyon<br class="solo-desktop">atienda por vos.</h2>
         <p>Probá la demo en vivo ahora mismo, sin compromiso ni instalar nada.</p>
         <div class="cta-final-ctas">
           <a class="boton boton-amarillo" href="https://wa.me/50683658231?text=Hola%2C%20quiero%20ver%20la%20demo%20de%20Selyon" target="_blank" rel="noopener">Probá la demo en vivo <span>→</span></a>
@@ -505,6 +506,25 @@
       });
     }, { threshold: 0.12, rootMargin: "0px 0px -8% 0px" });
     reveals.forEach(function (el) { io.observe(el); });
+  }
+
+  // Menú hamburguesa (móvil): togglea .nav-abierta en el <header>
+  var burger = document.querySelector(".nav-burger");
+  var header = document.querySelector(".cabecera");
+  if (burger && header) {
+    burger.addEventListener("click", function () {
+      var abierto = header.classList.toggle("nav-abierta");
+      burger.setAttribute("aria-expanded", abierto ? "true" : "false");
+      burger.setAttribute("aria-label", abierto ? "Cerrar menú" : "Abrir menú");
+    });
+    // Al tocar un enlace del menú, cerrarlo
+    header.querySelectorAll(".nav-enlace").forEach(function (a) {
+      a.addEventListener("click", function () {
+        header.classList.remove("nav-abierta");
+        burger.setAttribute("aria-expanded", "false");
+        burger.setAttribute("aria-label", "Abrir menú");
+      });
+    });
   }
 
   var chat = document.querySelector("[data-chat]");
