@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import type { Bloqueo, HorarioDia, KnowledgeBase, Rol, Service, Tenant } from "../types";
+import type { Bloqueo, EstadoFacturacion, HorarioDia, KnowledgeBase, Plan, Rol, Service, Tenant } from "../types";
 import { crearDb } from "../db/client";
 import { waTenants, waUsuarios } from "../db/schema";
 import { TENANT_FALLBACK_ROSALES } from "./tenants";
@@ -79,6 +79,11 @@ function filaATenant(f: typeof waTenants.$inferSelect): Tenant {
     colorAcento: f.colorAcento ?? undefined,
     colorHeader: f.colorHeader ?? undefined,
     logoUrl: f.logoUrl ?? undefined,
+    plan: (f.plan as Plan | undefined) ?? "pro",
+    stripeCustomerId: f.stripeCustomerId ?? undefined,
+    stripeSubscriptionId: f.stripeSubscriptionId ?? undefined,
+    estadoFacturacion: (f.estadoFacturacion as EstadoFacturacion | null) ?? undefined,
+    facturacionPeriodoFin: f.facturacionPeriodoFin?.toISOString() ?? undefined,
   };
 }
 
@@ -207,6 +212,11 @@ export async function crearTenant(tenant: Tenant, u: NuevoUsuario): Promise<void
       colorAcento: tenant.colorAcento ?? null,
       colorHeader: tenant.colorHeader ?? null,
       logoUrl: tenant.logoUrl ?? null,
+      plan: tenant.plan,
+      stripeCustomerId: tenant.stripeCustomerId ?? null,
+      stripeSubscriptionId: tenant.stripeSubscriptionId ?? null,
+      estadoFacturacion: tenant.estadoFacturacion ?? null,
+      facturacionPeriodoFin: tenant.facturacionPeriodoFin ? new Date(tenant.facturacionPeriodoFin) : null,
     });
     // El usuario del alta es, por definición, el dueño del negocio recién creado.
     await tx.insert(waUsuarios).values({ usuario: u.usuario, passwordHash: u.passwordHash, tenantId: tenant.id, rol: "dueno" });
@@ -313,6 +323,43 @@ export async function actualizarUsuarioTenant(
     .update(waUsuarios)
     .set(patch)
     .where(and(eq(waUsuarios.id, usuarioId), eq(waUsuarios.tenantId, tenantId)));
+}
+
+// ── Facturación (C4.3, Stripe) — escritas por src/billing/webhook.ts ──
+
+/**
+ * Sincroniza el espejo local del estado de facturación de un tenant (plan + ids/estado de
+ * Stripe), a partir de un evento de webhook ya procesado. El caller debe llamar recargar()
+ * después para que el cambio quede visible sin esperar el refresco periódico (mismo
+ * patrón que actualizarConfigTenant/actualizarUsuarioTenant). Lanza Error("SIN_DB") si no
+ * hay base — en dev sin DB no hay dónde reflejar el webhook (no debería llamarse: el
+ * endpoint del webhook ya devuelve 503 sin STRIPE_* configurado, y Stripe solo llega con
+ * una base real detrás).
+ */
+export async function actualizarFacturacionTenant(
+  tenantId: string,
+  patch: {
+    plan?: Plan;
+    stripeCustomerId?: string;
+    stripeSubscriptionId?: string;
+    estadoFacturacion?: EstadoFacturacion;
+    facturacionPeriodoFin?: Date;
+  },
+): Promise<void> {
+  if (!hayDb) throw new Error("SIN_DB");
+  const d = obtenerDb();
+  await d.update(waTenants).set(patch).where(eq(waTenants.id, tenantId));
+}
+
+/**
+ * Resuelve qué tenant corresponde a un customer de Stripe (los webhooks de suscripción
+ * solo traen el customer id, no nuestro tenantId). Lectura directa a la base — baja
+ * frecuencia (un webhook por evento de Stripe), no pasa por el caché en memoria.
+ */
+export async function buscarTenantIdPorStripeCustomer(stripeCustomerId: string): Promise<string | null> {
+  const d = obtenerDb();
+  const filas = await d.select({ id: waTenants.id }).from(waTenants).where(eq(waTenants.stripeCustomerId, stripeCustomerId)).limit(1);
+  return filas[0]?.id ?? null;
 }
 
 // ── Recarga on-demand ante un phone_number_id desconocido ──

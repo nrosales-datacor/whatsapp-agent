@@ -173,6 +173,11 @@ const rosales: Tenant = {
   },
 
   bloqueos: [],
+
+  // Grandfathering (C4.3): el piloto nace en "pro" — no le falta nada hoy porque nunca
+  // pasó por Checkout. El gating de campañas/multi-usuario/white-label solo aplica a un
+  // tenant que activamente termine en "basico".
+  plan: "pro",
 };
 
 // Antes acá vivía el registro de tenants (TENANTS + tenantPorPhoneNumberId). Ahora

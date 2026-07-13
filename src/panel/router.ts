@@ -329,6 +329,10 @@ function validarAltaTenant(body: any): ResultadoAlta {
     servicios,
     kb,
     bloqueos: [],
+    // C4.3: los negocios nuevos arrancan en Básico — Pro se desbloquea pagando desde la
+    // pestaña "Facturación" del panel (el piloto ya existente quedó en "pro" gratis por
+    // la migración aditiva, esto NO afecta tenants ya creados).
+    plan: "basico",
   };
   return { ok: true, tenant, usuario, password };
 }
@@ -637,13 +641,14 @@ export async function manejarPanel(
     json(res, 401, { ok: false, error: "No autenticado" });
     return true;
   }
-  const { tenant, rol } = sesion;
+  const { tenant, rol, usuarioId } = sesion;
 
   if (ruta === "me" && metodo === "GET") {
     json(res, 200, {
       ok: true,
       nombre: tenant.nombre,
       tenantId: tenant.id,
+      usuarioId,
       rol,
       vapidPublica: clavePublicaVapid(),
       servicios: tenant.servicios.filter((s) => s.agendable),

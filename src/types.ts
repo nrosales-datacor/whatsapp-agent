@@ -88,6 +88,19 @@ export interface Tenant {
   colorHeader?: string;
   /** URL del logo del negocio, white-label C4.1. undefined = se muestran las iniciales del nombre. */
   logoUrl?: string;
+  /**
+   * Plan de suscripción (C4.3, Stripe): gobierna campañas/multi-usuario/white-label
+   * (ver src/billing/planes.ts). Default "pro" — ver nota de grandfathering en el schema.
+   */
+  plan: Plan;
+  /** Id del customer en Stripe. undefined = nunca pasó por Checkout. */
+  stripeCustomerId?: string;
+  /** Id de la suscripción activa/última en Stripe. */
+  stripeSubscriptionId?: string;
+  /** Espejo local del status de la suscripción de Stripe. undefined = nunca se suscribió. */
+  estadoFacturacion?: EstadoFacturacion;
+  /** current_period_end de la suscripción (ISO), para mostrar "próximo cobro" en el panel. */
+  facturacionPeriodoFin?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -158,6 +171,20 @@ export type TipoRecordatorio = "dia_antes" | "mismo_dia" | "post_servicio";
  * "Mi negocio" y gestionar usuarios; "operador" solo atiende bandeja/agenda.
  */
 export type Rol = "dueno" | "operador";
+
+/**
+ * Plan de suscripción del negocio (C4.3): "basico" (bot + panel + agenda) o "pro" (suma
+ * campañas segmentadas, multi-usuario y white-label). Ver src/billing/planes.ts.
+ */
+export type Plan = "basico" | "pro";
+
+/**
+ * Espejo local del status de la suscripción de Stripe (src/billing/webhook.ts sincroniza
+ * esto ante cada webhook). "atrasado" = pago falló pero Stripe sigue reintentando (el bot
+ * y el panel NO se ven afectados); "cancelado" = Stripe agotó los reintentos o el dueño
+ * canceló desde el Customer Portal (downgrade suave a plan "basico").
+ */
+export type EstadoFacturacion = "trial" | "activo" | "atrasado" | "cancelado";
 
 /**
  * Payload serializable de un Pendiente para la cola durable (wa_jobs).
