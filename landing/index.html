@@ -190,9 +190,9 @@
         </article>
 
         <!-- CONFIG Menú Digital IA: la página aún no existe en el repo — badge "proximamente"
-             y link placeholder "menu.html". Cuando el producto esté listo: cambiar la clase del
-             badge a "tarjeta-producto-badge--disponible", el texto a "Disponible" y el href al
-             real. -->
+             y botón inerte (sin href, clase "boton-disabled"). Cuando el producto esté listo:
+             cambiar la clase del badge a "tarjeta-producto-badge--disponible", el texto a
+             "Disponible", volver el botón a <a> con el href real y quitar "boton-disabled". -->
         <article class="tarjeta-producto" data-reveal>
           <div class="tarjeta-producto-header tarjeta-producto-header--azul">
             <div class="tarjeta-producto-decoracion" aria-hidden="true"></div>
@@ -219,7 +219,7 @@
               <span class="chip chip--azul">Mesero IA</span>
               <span class="chip chip--azul">Calorías</span>
             </div>
-            <a class="boton boton-azul" href="menu.html">Ver menú <span>→</span></a>
+            <span class="boton boton-azul boton-disabled" role="button" aria-disabled="true" title="Disponible próximamente">Próximamente <span>→</span></span>
           </div>
         </article>
       </div>
@@ -471,7 +471,7 @@
       <div class="pie-titulo-col">Productos</div>
       <nav class="pie-enlaces">
         <a href="#agente">Recepcionista IA</a>
-        <a href="menu.html">Menú Digital IA</a>
+        <span class="pie-enlace-proximamente" title="Disponible próximamente">Menú Digital IA (pronto)</span>
         <a href="#precios">Precios</a>
       </nav>
     </div>

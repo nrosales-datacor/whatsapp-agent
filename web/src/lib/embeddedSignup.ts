@@ -69,10 +69,19 @@ export function lanzarEmbeddedSignup(cfg: EsConfig): Promise<EsResultado> {
         let sesion: { phoneNumberId: string; wabaId: string } | null = null;
         let terminado = false;
 
+        // Salvavidas: si llega una sola pieza (code o FINISH) y la otra nunca aparece
+        // (p. ej. el usuario cierra el popup en el momento exacto entre ambas señales),
+        // sin esto la promesa queda colgada para siempre y el botón del formulario
+        // se queda en "Conectando…" sin poder reintentar salvo recargar la página.
+        const timeoutId = window.setTimeout(() => {
+          abortar("La conexión con Meta tardó demasiado. Cerrá el popup si sigue abierto e intentá de nuevo.");
+        }, 120_000);
+
         const finalizar = () => {
           if (terminado) return;
           if (code && sesion) {
             terminado = true;
+            window.clearTimeout(timeoutId);
             window.removeEventListener("message", onMessage);
             resolve({ code, phoneNumberId: sesion.phoneNumberId, wabaId: sesion.wabaId });
           }
@@ -81,6 +90,7 @@ export function lanzarEmbeddedSignup(cfg: EsConfig): Promise<EsResultado> {
         const abortar = (msg: string) => {
           if (terminado) return;
           terminado = true;
+          window.clearTimeout(timeoutId);
           window.removeEventListener("message", onMessage);
           reject(new Error(msg));
         };
