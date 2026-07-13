@@ -298,8 +298,9 @@ function validarAltaTenant(body: any): ResultadoAlta {
   const horario = validarHorario(t.horario);
   if (!horario) return { ok: false, error: "Horario inválido (usá formato HH:mm, o vacío para día cerrado)" };
 
-  const servicios = validarServicios(t.servicios ?? []);
-  if (!servicios) return { ok: false, error: "Hay un servicio inválido (revisá id único, nombre y duración en minutos)" };
+  const resServicios = validarServicios(t.servicios ?? []);
+  if (!resServicios.ok) return { ok: false, error: resServicios.error };
+  const servicios = resServicios.servicios;
 
   const kb: KnowledgeBase = {
     faq: validarFaq(t.kb?.faq),
@@ -328,6 +329,10 @@ function validarAltaTenant(body: any): ResultadoAlta {
     servicios,
     kb,
     bloqueos: [],
+    // C4.3: los negocios nuevos arrancan en Básico — Pro se desbloquea pagando desde la
+    // pestaña "Facturación" del panel (el piloto ya existente quedó en "pro" gratis por
+    // la migración aditiva, esto NO afecta tenants ya creados).
+    plan: "basico",
   };
   return { ok: true, tenant, usuario, password };
 }
@@ -636,13 +641,14 @@ export async function manejarPanel(
     json(res, 401, { ok: false, error: "No autenticado" });
     return true;
   }
-  const { tenant, rol } = sesion;
+  const { tenant, rol, usuarioId } = sesion;
 
   if (ruta === "me" && metodo === "GET") {
     json(res, 200, {
       ok: true,
       nombre: tenant.nombre,
       tenantId: tenant.id,
+      usuarioId,
       rol,
       vapidPublica: clavePublicaVapid(),
       servicios: tenant.servicios.filter((s) => s.agendable),
@@ -869,8 +875,9 @@ export async function manejarPanel(
     const horario = validarHorario(body?.horario);
     if (!horario) return json(res, 400, { ok: false, error: "Horario inválido (usá formato HH:mm, o vacío para día cerrado)" }), true;
 
-    const servicios = validarServicios(body?.servicios ?? []);
-    if (!servicios) return json(res, 400, { ok: false, error: "Hay un servicio inválido (revisá id único, nombre y duración en minutos)" }), true;
+    const resServicios = validarServicios(body?.servicios ?? []);
+    if (!resServicios.ok) return json(res, 400, { ok: false, error: resServicios.error }), true;
+    const servicios = resServicios.servicios;
 
     const bloqueos = validarBloqueos(body?.bloqueos ?? []);
     if (!bloqueos) return json(res, 400, { ok: false, error: "Hay un bloqueo inválido (fechas YYYY-MM-DD, desde ≤ hasta)" }), true;

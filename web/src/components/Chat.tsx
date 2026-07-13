@@ -49,8 +49,12 @@ export default function Chat({ id, resumen, mostrar, onVolver, onVerFicha }: Pro
   const enviar = useMutation({
     mutationFn: (t: string) => responder(id!, t),
     onSuccess: () => { setTexto(""); invalidar(); },
-    onError: (e) => alert(e instanceof Error ? e.message : "No se pudo enviar"),
+    onError: (e) => flash(e instanceof Error ? e.message : "No se pudo enviar"),
   });
+
+  // El borrador es por conversación: si se cambia de chat sin enviar, no debe
+  // arrastrarse ni terminar mandándose a la conversación equivocada.
+  useEffect(() => setTexto(""), [id]);
 
   const alternarModo = useMutation({
     mutationFn: (modo: "bot" | "humano") => cambiarModo(id!, modo),
@@ -85,15 +89,26 @@ export default function Chat({ id, resumen, mostrar, onVolver, onVerFicha }: Pro
     enviar.mutate(t);
   }
 
+  // El backend pasa la conversación a modo humano en cuanto un operador responde
+  // (misma ruta que "responder"). Si el bot todavía la estaba atendiendo, avisamos
+  // antes de apagarlo — si no, este botón lo desactivaba sin que el operador
+  // lo pidiera ni se enterara.
+  function confirmarSiApagaBot(): boolean {
+    if (!humano) {
+      return window.confirm("Esto pasa la conversación a modo humano (el bot deja de responder). ¿Continuar?");
+    }
+    return true;
+  }
+
   function accionCita() {
-    if (!id || enviar.isPending) return;
+    if (!id || enviar.isPending || !confirmarSiApagaBot()) return;
     enviar.mutate("Podemos agendar tu cita 📅 ¿Qué servicio necesitás y qué día te queda bien?", {
       onSuccess: () => flash("Mensaje de cita enviado"),
     });
   }
 
   function accionCotizacion() {
-    if (!id || enviar.isPending) return;
+    if (!id || enviar.isPending || !confirmarSiApagaBot()) return;
     enviar.mutate("Con gusto te preparamos una cotización 📋 ¿Qué servicio necesitás para tu vehículo?", {
       onSuccess: () => flash("Mensaje de cotización enviado"),
     });

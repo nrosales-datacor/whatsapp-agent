@@ -41,26 +41,43 @@ export function validarHorario(v: any): Record<number, HorarioDia> | null {
   return out;
 }
 
-export function validarServicios(v: unknown): Service[] | null {
-  if (!Array.isArray(v)) return null;
+export type ResultadoServicios = { ok: true; servicios: Service[] } | { ok: false; error: string };
+
+/** Igual que antes pero con mensajes de error puntuales (qué servicio y qué regla falló),
+ * para que el operador en "Mi negocio" sepa cuál corregir en vez de un error genérico. */
+export function validarServicios(v: unknown): ResultadoServicios {
+  if (!Array.isArray(v)) return { ok: false, error: "La lista de servicios debe ser un arreglo" };
   const vistos = new Set<string>();
   const out: Service[] = [];
-  for (const s of v) {
-    if (!s || typeof s !== "object") return null;
+  for (let i = 0; i < v.length; i++) {
+    const s = v[i];
+    if (!s || typeof s !== "object") return { ok: false, error: `El servicio #${i + 1} tiene datos inválidos` };
     const r = s as Record<string, unknown>;
     const id = String(r.id ?? "").trim();
     const nombre = String(r.nombre ?? "").trim();
     const duracionMin = Number(r.duracionMin);
-    if (!RE_SLUG.test(id) || id.length > 50 || vistos.has(id)) return null;
-    if (!nombre || nombre.length > 120) return null;
-    if (!Number.isInteger(duracionMin) || duracionMin <= 0 || duracionMin > 600) return null;
+    const etiqueta = nombre || id || `#${i + 1}`;
+    if (!RE_SLUG.test(id) || id.length > 50) {
+      return { ok: false, error: `El id del servicio "${etiqueta}" debe usar solo minúsculas, números y guiones (sin espacios, acentos ni mayúsculas)` };
+    }
+    if (vistos.has(id)) {
+      return { ok: false, error: `El id "${id}" está repetido en más de un servicio` };
+    }
+    if (!nombre || nombre.length > 120) {
+      return { ok: false, error: `El servicio "${etiqueta}" necesita un nombre (1 a 120 caracteres)` };
+    }
+    if (!Number.isInteger(duracionMin) || duracionMin <= 0 || duracionMin > 600) {
+      return { ok: false, error: `La duración del servicio "${etiqueta}" debe ser un número entero de minutos (1 a 600)` };
+    }
     vistos.add(id);
     const serv: Service = { id, nombre, duracionMin };
     if (r.agendable) serv.agendable = true;
     if (r.precioVariable) serv.precioVariable = true;
     if (r.precio !== undefined && r.precio !== null && r.precio !== "") {
       const p = Number(r.precio);
-      if (!Number.isInteger(p) || p < 0) return null;
+      if (!Number.isInteger(p) || p < 0) {
+        return { ok: false, error: `El precio del servicio "${etiqueta}" debe ser un número entero positivo` };
+      }
       serv.precio = p;
     }
     const precioNota = String(r.precioNota ?? "").trim();
@@ -69,7 +86,7 @@ export function validarServicios(v: unknown): Service[] | null {
     if (descripcion) serv.descripcion = descripcion.slice(0, 500);
     out.push(serv);
   }
-  return out;
+  return { ok: true, servicios: out };
 }
 
 export function validarFaq(v: unknown): { pregunta: string; respuesta: string }[] {

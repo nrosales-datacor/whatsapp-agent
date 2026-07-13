@@ -182,12 +182,25 @@ export const waTenants = pgTable(
     colorAcento: text("color_acento"),
     colorHeader: text("color_header"),
     logoUrl: text("logo_url"),
+    // Facturación (C4.3, Stripe): plan vigente + espejo local del estado de la
+    // suscripción (la fuente de verdad es Stripe; esto es un caché de lectura rápida
+    // para el gating de features, igual que el resto de la config del tenant). Nace
+    // en "pro" para no sacarle nada a ningún tenant existente (grandfathering) — el
+    // gating solo aplica a quien termine en "basico" tras pasar por Checkout/Portal.
+    plan: text("plan").notNull().default("pro"), // "basico" | "pro"
+    stripeCustomerId: text("stripe_customer_id"),
+    stripeSubscriptionId: text("stripe_subscription_id"),
+    // "trial" | "activo" | "atrasado" | "cancelado". null = nunca se suscribió.
+    estadoFacturacion: text("estado_facturacion"),
+    // current_period_end de la suscripción de Stripe (para mostrar "próximo cobro").
+    facturacionPeriodoFin: timestamp("facturacion_periodo_fin", { withTimezone: true }),
     activo: boolean("activo").notNull().default(true),
     creadoEn: timestamp("creado_en", { withTimezone: true }).notNull().defaultNow(),
     actualizadoEn: timestamp("actualizado_en", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     uqPnid: uniqueIndex("wa_tenants_pnid_uq").on(t.phoneNumberId),
+    uqStripeCustomer: uniqueIndex("wa_tenants_stripe_customer_uq").on(t.stripeCustomerId),
   }),
 );
 

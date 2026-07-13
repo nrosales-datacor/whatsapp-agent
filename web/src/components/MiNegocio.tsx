@@ -47,6 +47,30 @@ const DIAS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "
 
 const lineas = (s: string): string[] => s.split("\n").map((l) => l.trim()).filter(Boolean);
 
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 50);
+}
+
+/** Arma los ids finales de los servicios: normaliza a slug (el operador puede escribir
+ * mayúsculas/acentos/espacios sin que el guardado falle) y desambigua colisiones. */
+function idsUnicos(items: { id: string; nombre: string }[]): string[] {
+  const vistos = new Set<string>();
+  return items.map((it) => {
+    const base = slugify(it.id) || slugify(it.nombre) || "servicio";
+    let candidato = base;
+    let n = 2;
+    while (vistos.has(candidato)) candidato = `${base}-${n++}`;
+    vistos.add(candidato);
+    return candidato;
+  });
+}
+
 function serviciosAForm(servicios: Service[]): ServicioForm[] {
   return servicios.map((s) => ({
     id: s.id,
@@ -132,17 +156,22 @@ export default function MiNegocio() {
     setBloqueos((prev) => prev.map((b, idx) => (idx === i ? { ...b, [campo]: valor } : b)));
 
   function construirServicios(): Service[] {
-    return servicios
-      .filter((s) => s.id.trim() && s.nombre.trim())
-      .map((s) => {
-        const serv: Service = { id: s.id.trim(), nombre: s.nombre.trim(), duracionMin: Number(s.duracionMin) || 60 };
-        if (s.agendable) serv.agendable = true;
-        if (s.precioVariable) serv.precioVariable = true;
-        else if (s.precio.trim()) serv.precio = Number(s.precio);
-        if (s.precioNota.trim()) serv.precioNota = s.precioNota.trim();
-        if (s.descripcion.trim()) serv.descripcion = s.descripcion.trim();
-        return serv;
-      });
+    const validos = servicios.filter((s) => s.nombre.trim());
+    const ids = idsUnicos(validos);
+    return validos.map((s, i) => {
+      const duracion = Math.round(Number(s.duracionMin));
+      const serv: Service = {
+        id: ids[i],
+        nombre: s.nombre.trim(),
+        duracionMin: Number.isFinite(duracion) && duracion > 0 ? duracion : 60,
+      };
+      if (s.agendable) serv.agendable = true;
+      if (s.precioVariable) serv.precioVariable = true;
+      else if (s.precio.trim()) serv.precio = Math.round(Number(s.precio));
+      if (s.precioNota.trim()) serv.precioNota = s.precioNota.trim();
+      if (s.descripcion.trim()) serv.descripcion = s.descripcion.trim();
+      return serv;
+    });
   }
 
   function construirHorario(): Record<number, HorarioDia> {
