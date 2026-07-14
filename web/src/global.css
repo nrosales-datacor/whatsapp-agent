@@ -168,14 +168,19 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
   /* Safe area: se sobreescribe con la regla de env() al final del archivo */
 }
 
-/* Marca — izquierda */
-.hd-marca { display: flex; align-items: center; gap: var(--space-sm); flex: 1; min-width: 0; }
+/* Marca — izquierda. Sin min-width:0 explícito: el mínimo automático de flex
+   (= ancho del logo, que no encoge) evita que las tabs lo tapen al achicar
+   la ventana; el texto igual puede colapsar via .hd-marca-txt. */
+.hd-marca { display: flex; align-items: center; gap: var(--space-sm); flex: 1; }
 .hd-marca-txt { min-width: 0; overflow: hidden; }
 .hd-nombre { font-family: var(--font-display); font-size: var(--step-0); font-weight: 700; color: var(--header-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hd-sub { font-size: var(--step--1); color: var(--header-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* Tabs segmentadas — centro */
-.hd-tabs { display: flex; gap: 2px; background: rgba(255,255,255,.10); border-radius: var(--radius-sm); padding: 3px; flex-shrink: 0; }
+/* Tabs segmentadas — centro. Si no caben, la tira scrollea horizontal en su
+   propia franja en vez de desbordar el header entero (a cualquier ancho, no
+   solo en móvil). */
+.hd-tabs { display: flex; gap: 2px; background: rgba(255,255,255,.10); border-radius: var(--radius-sm); padding: 3px; flex-shrink: 1; min-width: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.hd-tabs::-webkit-scrollbar { display: none; }
 .hd-tab {
   display: flex; align-items: center; gap: 6px;
   padding: 6px 16px; border-radius: 8px;
@@ -183,6 +188,7 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
   color: rgba(255,255,255,.65);
   transition: background .15s, color .15s;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .hd-tab:hover { background: rgba(255,255,255,.12); color: rgba(255,255,255,.9); }
 .hd-tab.activa { background: var(--header-fg); color: var(--header-bg); }
@@ -219,9 +225,10 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .buscador input { flex: 1; border: none; background: none; font: inherit; font-size: var(--step--1); color: var(--text); outline: none; }
 .buscador input::placeholder { color: var(--text-muted); }
 
-/* Filtros pill */
-.filtros-pill { display: flex; gap: 4px; padding: var(--space-xs) var(--space-md); overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--border); }
-.filtros-pill::-webkit-scrollbar { display: none; }
+/* Filtros pill — con flex-wrap en vez de scroll horizontal: en pantallas
+   angostas antes se cortaban pastillas fuera de vista sin ninguna pista de
+   que había scroll; ahora siempre se ven todas, cayendo a una 2ª fila. */
+.filtros-pill { display: flex; flex-wrap: wrap; gap: 4px 6px; padding: var(--space-xs) var(--space-md); border-bottom: 1px solid var(--border); }
 .filtro-pill { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: var(--radius-pill); font-size: var(--step--1); font-weight: 600; color: var(--text-muted); background: var(--surface-2); border: 1px solid var(--border); white-space: nowrap; transition: background .12s, color .12s, border-color .12s; }
 .filtro-pill:hover { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
 .filtro-pill.activo { background: var(--accent); border-color: transparent; color: var(--accent-fg); }
@@ -503,15 +510,8 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
   .btn-hd-salir span { display: none; }
   .btn-hd-salir { padding: 0; }
 
-  /* Tabs más compactas */
+  /* Tabs más compactas (el scroll horizontal de la franja ya es global, ver arriba) */
   .hd-tab { padding: 6px 10px; }
-
-  /* Con 6 tabs (dueño) el texto ya no cabe en 390px: en vez de desbordar la
-     página entera (rompiendo el header y forzando scroll horizontal de TODO
-     el panel), la tira de tabs se vuelve su propia franja con scroll
-     horizontal — el header se mantiene sólido de borde a borde. */
-  .hd-tabs { flex-shrink: 1; min-width: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
-  .hd-tabs::-webkit-scrollbar { display: none; }
 
   /* El nombre del negocio no cabe junto a las tabs: solo chip de marca */
   .hd-marca-txt { display: none; }
