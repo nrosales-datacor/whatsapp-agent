@@ -13,11 +13,22 @@ import MiNegocio from "./MiNegocio";
 import Usuarios from "./Usuarios";
 import Campanias from "./Campanias";
 import BotonNotif from "./BotonNotif";
-import Icono from "./Iconos";
+import Icono, { type IconoId } from "./Iconos";
 import { ToastProvider } from "./Toast";
 
 const ANCHO_MOVIL = 760;
 type Vista = "inbox" | "panel" | "agenda" | "config" | "usuarios" | "campanias";
+
+// Navegación principal. En desktop se pinta como tabs segmentadas en el header;
+// en móvil, como barra inferior (bottom nav) — ver .hd-tabs en global.css.
+const TABS: { id: Vista; icono: IconoId; label: string; soloDueno?: boolean }[] = [
+  { id: "inbox", icono: "chat", label: "Inbox" },
+  { id: "panel", icono: "dash", label: "Panel" },
+  { id: "agenda", icono: "cal", label: "Agenda" },
+  { id: "config", icono: "gear", label: "Mi negocio", soloDueno: true },
+  { id: "usuarios", icono: "user", label: "Usuarios", soloDueno: true },
+  { id: "campanias", icono: "send", label: "Campañas", soloDueno: true },
+];
 
 export default function Panel({ sesion }: { sesion: Sesion }) {
   const qc = useQueryClient();
@@ -80,65 +91,22 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
             </div>
           </div>
 
-          <div className="hd-tabs">
-            <button
-              type="button"
-              className={"hd-tab" + (vista === "inbox" ? " activa" : "")}
-              onClick={() => setVista("inbox")}
-            >
-              <Icono id="chat" size={15} />
-              Inbox
-              {totalSinLeer > 0 && (
-                <span className="badge badge-naranja">{totalSinLeer}</span>
-              )}
-            </button>
-            <button
-              type="button"
-              className={"hd-tab" + (vista === "panel" ? " activa" : "")}
-              onClick={() => setVista("panel")}
-            >
-              <Icono id="dash" size={15} />
-              Panel
-            </button>
-            <button
-              type="button"
-              className={"hd-tab" + (vista === "agenda" ? " activa" : "")}
-              onClick={() => setVista("agenda")}
-            >
-              <Icono id="cal" size={15} />
-              Agenda
-            </button>
-            {sesion.rol === "dueno" && (
+          <nav className="hd-tabs">
+            {TABS.filter((t) => !t.soloDueno || sesion.rol === "dueno").map((t) => (
               <button
+                key={t.id}
                 type="button"
-                className={"hd-tab" + (vista === "config" ? " activa" : "")}
-                onClick={() => setVista("config")}
+                className={"hd-tab" + (vista === t.id ? " activa" : "")}
+                onClick={() => setVista(t.id)}
               >
-                <Icono id="gear" size={15} />
-                Mi negocio
+                <Icono id={t.icono} size={15} />
+                <span className="hd-tab-label">{t.label}</span>
+                {t.id === "inbox" && totalSinLeer > 0 && (
+                  <span className="badge badge-naranja">{totalSinLeer}</span>
+                )}
               </button>
-            )}
-            {sesion.rol === "dueno" && (
-              <button
-                type="button"
-                className={"hd-tab" + (vista === "usuarios" ? " activa" : "")}
-                onClick={() => setVista("usuarios")}
-              >
-                <Icono id="user" size={15} />
-                Usuarios
-              </button>
-            )}
-            {sesion.rol === "dueno" && (
-              <button
-                type="button"
-                className={"hd-tab" + (vista === "campanias" ? " activa" : "")}
-                onClick={() => setVista("campanias")}
-              >
-                <Icono id="send" size={15} />
-                Campañas
-              </button>
-            )}
-          </div>
+            ))}
+          </nav>
 
           <div className="hd-acciones">
             <BotonNotif vapidPublica={sesion.vapidPublica} />
