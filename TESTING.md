@@ -6,7 +6,7 @@
 > **Este doc es un plan, no un estado.** A medida que se implemente cada ángulo, marcar su casilla y anotar
 > el comando/archivo real. Mantener vivo igual que `ROADMAP.md`.
 >
-> **Última actualización:** 2026-07-14 (ángulo 1 implementado)
+> **Última actualización:** 2026-07-14 (ángulos 1 y 2 implementados)
 
 ---
 
@@ -56,12 +56,22 @@ el ángulo 3 (E2E del webhook), ya que necesita repo en memoria + Graph API mock
 
 **Meta:** convertir los sanity scripts ya descritos en el ROADMAP en tests **permanentes**. Logrado para lo determinista.
 
-### 2. ⬜ Invariante multi-tenant (SEGURIDAD)
+### 2. ✅ Invariante multi-tenant (SEGURIDAD)
 
-- Sembrar **2 tenants** en el repo en memoria y afirmar que **ninguna** operación del tenant A
-  ve/escribe datos del B: `citasActivasCliente`, `citasEnRango`, conversaciones, ficha, métricas,
-  usuarios, config, campañas.
-- Test parametrizado que recorra cada método del `Repositorio` con el `tenantId` equivocado y espere vacío/rechazo.
+Suite en `test/tenant/aislamiento.test.ts` (corre en CI vía `npm test`; el glob ya incluye `test/tenant/*.test.ts`).
+Siembra **2 tenants** con el **mismo número de cliente** (la prueba más dura de la clave `tenantId:clienteWa`) y afirma:
+
+- **Lecturas scopeadas:** un tenant sin datos no ve NADA del otro — `citasPorFecha`, `citasEnRango`,
+  `citasActivasCliente`, `listarConversaciones`, `obtenerConversacionPorId`, `obtenerModo`, `fichaCliente`,
+  `listarPushSubs`, `metricas`. Y con el mismo cliente en ambos, cada uno ve **solo lo suyo** (nombre/ficha/servicio/subs).
+- **Escrituras rechazadas:** test parametrizado que recorre cada mutación con el `tenantId` equivocado y espera
+  rechazo + estado intacto: mutaciones de cita (`reprogramar`/`cancelar`/`confirmar`/`completar`/`marcarNoShow`
+  → `null`) y de conversación (`setModo`/`marcarEstado`/`guardarNotas`/`marcarLeidas` → no-op). Cada test tiene
+  su **control positivo**: el dueño legítimo SÍ puede, para no pasar por un bug genérico.
+- **Recordatorios** (sin `tenantId`, keyed por `citaId` único): el claim de una cita no bloquea la del otro tenant.
+
+**Fuera de alcance de este repo:** `usuarios` / `config` / `campañas` viven en auth y stores propios (no en
+`RepositorioEnMemoria`); su aislamiento se cubre en el panel E2E (ángulo 6, guards de rol 403).
 - **Una fuga acá es un incidente, no un bug cosmético.** Bloque propio, sin excepciones.
 
 ### 3. ⬜ End-to-end del webhook (in-process, sin red)
