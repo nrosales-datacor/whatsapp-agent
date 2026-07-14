@@ -1,6 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { waCampaniaEnvios, schema } from "../db/schema";
+import { filasDe } from "../db/filas";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mini-cola de envíos de campaña (ROADMAP C3.2), sobre wa_campania_envios.
@@ -35,15 +36,7 @@ export interface EnvioReclamado {
  */
 export async function reclamarEnvio(db: DB): Promise<EnvioReclamado | null> {
   return db.transaction(async (tx) => {
-    const rows = (await tx.execute(sql`
-      SELECT e.id, e.campania_id, e.tenant_id, e.cliente_wa, e.cliente_nombre, e.intentos, c.mensaje
-        FROM wa_campania_envios e
-        JOIN wa_campanias c ON c.id = e.campania_id
-       WHERE e.estado = 'pendiente' AND c.estado = 'enviando'
-       ORDER BY e.creado_en ASC
-       FOR UPDATE OF e SKIP LOCKED
-       LIMIT 1
-    `)) as unknown as Array<{
+    const rows = filasDe<{
       id: string;
       campania_id: string;
       tenant_id: string;
@@ -51,7 +44,17 @@ export async function reclamarEnvio(db: DB): Promise<EnvioReclamado | null> {
       cliente_nombre: string;
       intentos: number;
       mensaje: string;
-    }>;
+    }>(
+      await tx.execute(sql`
+      SELECT e.id, e.campania_id, e.tenant_id, e.cliente_wa, e.cliente_nombre, e.intentos, c.mensaje
+        FROM wa_campania_envios e
+        JOIN wa_campanias c ON c.id = e.campania_id
+       WHERE e.estado = 'pendiente' AND c.estado = 'enviando'
+       ORDER BY e.creado_en ASC
+       FOR UPDATE OF e SKIP LOCKED
+       LIMIT 1
+    `),
+    );
 
     if (rows.length === 0) return null;
     const r = rows[0];
@@ -105,8 +108,10 @@ export async function marcarFalloOReintentar(db: DB, id: string, error: string, 
 
 /** true si ya no quedan envíos "pendiente" para esa campaña (para marcarla "completada"). */
 export async function quedanPendientes(db: DB, campaniaId: string): Promise<boolean> {
-  const rows = (await db.execute(sql`
+  const rows = filasDe(
+    await db.execute(sql`
     SELECT 1 FROM wa_campania_envios WHERE campania_id = ${campaniaId} AND estado = 'pendiente' LIMIT 1
-  `)) as unknown as Array<unknown>;
+  `),
+  );
   return rows.length > 0;
 }

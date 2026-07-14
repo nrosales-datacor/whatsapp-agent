@@ -1,6 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { waJobs, schema } from "../db/schema";
+import { filasDe } from "../db/filas";
 import type { PendienteSerializado } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -36,20 +37,22 @@ export interface Job {
  */
 export async function reclamarUno(db: DB): Promise<Job | null> {
   return db.transaction(async (tx) => {
-    const rows = (await tx.execute(sql`
+    const rows = filasDe<{
+      id: string;
+      tenant_id: string;
+      intentos: number;
+      max_intentos: number;
+      payload: PendienteSerializado;
+    }>(
+      await tx.execute(sql`
       SELECT id, tenant_id, intentos, max_intentos, payload
         FROM wa_jobs
        WHERE estado = 'pendiente' AND ejecutar_despues_de <= now()
        ORDER BY ejecutar_despues_de ASC
        FOR UPDATE SKIP LOCKED
        LIMIT 1
-    `)) as unknown as Array<{
-      id: string;
-      tenant_id: string;
-      intentos: number;
-      max_intentos: number;
-      payload: PendienteSerializado;
-    }>;
+    `),
+    );
 
     if (rows.length === 0) return null;
     const r = rows[0];
@@ -123,12 +126,14 @@ export async function marcarFalloOReintentar(
  * Devuelve la cantidad reencolada (para loguear).
  */
 export async function reencolarVencidos(db: DB, umbralSeg = 180): Promise<number> {
-  const rows = (await db.execute(sql`
+  const rows = filasDe<{ id: string }>(
+    await db.execute(sql`
     UPDATE wa_jobs
        SET estado = 'pendiente', locked_at = NULL
      WHERE estado = 'procesando'
        AND locked_at < now() - ${umbralSeg} * interval '1 second'
     RETURNING id
-  `)) as unknown as Array<{ id: string }>;
+  `),
+  );
   return rows.length;
 }
