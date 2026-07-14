@@ -6,7 +6,7 @@
 > **Este doc es un plan, no un estado.** A medida que se implemente cada ángulo, marcar su casilla y anotar
 > el comando/archivo real. Mantener vivo igual que `ROADMAP.md`.
 >
-> **Última actualización:** 2026-07-14 (ángulos 1 y 2 implementados)
+> **Última actualización:** 2026-07-14 (ángulos 1, 2 y 3 implementados)
 
 ---
 
@@ -51,8 +51,8 @@ Runner `node:test` vía `tsx --test`, script `npm test` (corre en CI antes del t
 `calcularSegmento(citas, conversaciones, filtro, hoy)` y `calcularBackoffSeg`/`agotoIntentos` (mismo patrón que
 `calcularMetricas`, ya puro) para poder probarlas sin mockear Postgres/Drizzle. Comportamiento sin cambios.
 
-**Pendiente de este ángulo:** `handleWebhook` completo (el handler que orquesta parseo + dedup + cola) queda para
-el ángulo 3 (E2E del webhook), ya que necesita repo en memoria + Graph API mockeado.
+**Pendiente de este ángulo:** ~~`handleWebhook` completo (el handler que orquesta parseo + dedup + cola) queda para
+el ángulo 3 (E2E del webhook), ya que necesita repo en memoria + Graph API mockeado.~~ → Resuelto en el ángulo 3.
 
 **Meta:** convertir los sanity scripts ya descritos en el ROADMAP en tests **permanentes**. Logrado para lo determinista.
 
@@ -74,18 +74,28 @@ Siembra **2 tenants** con el **mismo número de cliente** (la prueba más dura d
 `RepositorioEnMemoria`); su aislamiento se cubre en el panel E2E (ángulo 6, guards de rol 403).
 - **Una fuga acá es un incidente, no un bug cosmético.** Bloque propio, sin excepciones.
 
-### 3. ⬜ End-to-end del webhook (in-process, sin red)
+### 3. ✅ End-to-end del webhook (in-process, sin red)
 
-Repo en memoria + Graph API mockeado. Simular entrantes y afirmar la salida de `responderEntrante`:
+Suite en `test/e2e-webhook/webhook.test.ts` (15 casos, corre en CI vía `npm test`). Repo en memoria + `global.fetch`
+mockeado (`test/helpers/webhookMock.ts`) que atiende los tres destinos del flujo SIN red: Graph API (envíos, capturados
+para afirmar qué respondió el bot), descarga de media (bytes falsos, para visión), y OpenAI (turnos **programados** por el
+test → agente 100% determinista). `test/helpers/setupEnv.ts` fija `OPENAI_API_KEY` dummy antes de importar el server
+(módulos como `whatsapp/transcribir.ts` construyen su cliente OpenAI en el load). Se afirma la salida de `responderEntrante`
+(a quién/qué se respondió, qué quedó en el repo, y si el agente se invocó o no):
 
-- [ ] Cotiza con precio del prompt (no alucinado) ante texto y ante **foto** (visión).
-- [ ] Agenda: ofrece horarios (lista), confirma con tap, sincroniza (mock) Calendar.
-- [ ] Reprograma / cancela por el bot (C1.1) y **reinicia recordatorios**.
-- [ ] **Escala a humano** cuando corresponde; respeta la ventana de modo humano.
-- [ ] **`BAJA`** marca opt-out y NO pasa al agente; "bajar" en una frase NO es falso positivo.
-- [ ] Confirmación de cita por botón (C1.3) es **acción directa** (no pasa por el agente).
-- [ ] Post-servicio (C3.1): "Todo bien" manda link reseñas; "Tuve un problema" escala + notifica.
-- [ ] **Dedup por `wamid`**: reenviar el mismo mensaje no re-procesa.
+- [x] Cotiza con el texto del agente ante **texto** y ante **foto** (visión): la foto se descarga, se adjunta al LLM como
+  `image_url` y se guarda en el mensaje (relay fiel — que el precio sea correcto es del ángulo 4, evals).
+- [x] Agenda: el agente ofrece horarios como **lista** tocable (slots codificados `slot|fecha|hora`); el **tap** crea la cita.
+- [x] Reprograma por el bot (C1.1) y **reinicia los recordatorios** (`recordatorioDiaAntesEn` → null).
+- [x] **Escala a humano**: escotilla por texto ("agente"), `escalar_a_humano` del agente, y respeta la **ventana humana**
+  (si un humano toma la conversación mientras el LLM piensa, se descarta la respuesta).
+- [x] **`BAJA`** (exacto) marca opt-out sin agente; "baja" en una frase NO es falso positivo (pasa al agente).
+- [x] Confirmación de cita por botón (C1.3) es **acción directa** (no pasa por el agente).
+- [x] Post-servicio (C3.1): "Todo bien" manda link de reseñas; "Tuve un problema" escala a humano.
+- [x] **Dedup por `wamid`**: reenviar el mismo mensaje no re-procesa (`ingerirEntrante` devuelve null la 2ª vez).
+
+**Nota:** la sincronización a Google Calendar en `agendar_cita` es no-op sin `GCAL_*` (no se ejerce acá); su lógica pura
+ya está cubierta indirectamente por el repo. `notificarOperador` sin VAPID solo loguea, así que tampoco toca red.
 
 ### 4. ⬜ Evals del agente (LLM — no determinista, corre aparte)
 
