@@ -176,17 +176,11 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .hd-nombre { font-family: var(--font-display); font-size: var(--step-0); font-weight: 700; color: var(--header-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hd-sub { font-size: var(--step--1); color: var(--header-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* Tabs segmentadas — centro. Si no caben, la tira scrollea horizontal en su
-   propia franja en vez de desbordar el header entero (a cualquier ancho, no
-   solo en móvil). La scrollbar queda visible (delgada) a propósito: sin ella
-   no hay ninguna pista de que hay más tabs, y el mouse wheel se traduce a
-   scroll horizontal en Panel.tsx para que también se pueda alcanzar sin mouse
-   con scroll horizontal nativo. */
-.hd-tabs { display: flex; gap: 2px; background: rgba(255,255,255,.10); border-radius: var(--radius-sm); padding: 3px; flex-shrink: 1; min-width: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.4) transparent; }
-.hd-tabs::-webkit-scrollbar { height: 5px; }
-.hd-tabs::-webkit-scrollbar-track { background: transparent; }
-.hd-tabs::-webkit-scrollbar-thumb { background: rgba(255,255,255,.4); border-radius: var(--radius-pill); }
-.hd-tabs::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.6); }
+/* Tabs segmentadas — centro. Si no caben en una fila, caen a una 2ª (el
+   header no tiene alto fijo, así que crece solo) — igual que .filtros-pill,
+   en vez de depender de un scroll horizontal que en la práctica nadie
+   descubre (ni con mouse ni con touch). */
+.hd-tabs { display: flex; flex-wrap: wrap; gap: 2px; background: rgba(255,255,255,.10); border-radius: var(--radius-sm); padding: 3px; flex-shrink: 1; min-width: 0; }
 .hd-tab {
   display: flex; align-items: center; gap: 6px;
   padding: 6px 16px; border-radius: 8px;
