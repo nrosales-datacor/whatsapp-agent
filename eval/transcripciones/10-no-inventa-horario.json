@@ -1,0 +1,15 @@
+{
+  "nombre": "no-inventa-disponibilidad",
+  "descripcion": "Pregunta por una hora puntual: verifica con la herramienta antes de afirmar que hay campo (no inventa)",
+  "historial": [
+    { "rol": "user", "contenido": "Quiero un pulido de parabrisas para mi sedán." },
+    { "rol": "assistant", "contenido": "¡Claro! Son ₡15.000 y toma como 1 hora. ¿Qué día y hora te sirve?" }
+  ],
+  "usuario": "¿Tenés campo mañana a las 3 de la tarde?",
+  "espera": {
+    "herramientaAlguna": ["consultar_disponibilidad", "ofrecer_horarios"],
+    "fechaAnioActual": true,
+    "escala": false,
+    "fueraDeAlcance": false
+  }
+}

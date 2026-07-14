@@ -1,0 +1,8 @@
+{
+  "nombre": "escala-pregunta-de-negocio-desconocida",
+  "descripcion": "Pregunta SOBRE EL NEGOCIO que no está en la KB (convenio con aseguradora): escala a humano, no inventa",
+  "usuario": "¿Ustedes tienen convenio con el INS para cobrarle el pulido directamente a mi seguro?",
+  "espera": {
+    "escala": true
+  }
+}

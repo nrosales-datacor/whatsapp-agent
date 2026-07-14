@@ -1,0 +1,15 @@
+{
+  "nombre": "ofrece-horarios-como-lista",
+  "descripcion": "Ya definido servicio y día: ofrece los horarios como lista tocable (ofrecer_horarios) con la fecha del año actual",
+  "historial": [
+    { "rol": "user", "contenido": "Quiero agendar un pulido de parabrisas para mi sedán." },
+    { "rol": "assistant", "contenido": "¡Con gusto! El pulido de parabrisas de sedán son ₡15.000 y dura como 1 hora. ¿Para qué día lo querés?" }
+  ],
+  "usuario": "Para mañana",
+  "espera": {
+    "herramientaAlguna": ["ofrecer_horarios", "consultar_disponibilidad"],
+    "fechaAnioActual": true,
+    "escala": false,
+    "fueraDeAlcance": false
+  }
+}

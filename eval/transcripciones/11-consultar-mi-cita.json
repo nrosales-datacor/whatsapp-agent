@@ -1,0 +1,11 @@
+{
+  "nombre": "consultar-mi-cita",
+  "descripcion": "Cliente con una cita futura sembrada pregunta cuándo es: usa consultar_mi_cita (identifica por su número, no pide datos)",
+  "seedCitas": [{ "servicioId": "pulido_parabrisas", "enDias": 3, "hora": "09:00" }],
+  "usuario": "¿Cuándo tengo mi cita del pulido?",
+  "espera": {
+    "herramienta": "consultar_mi_cita",
+    "escala": false,
+    "fueraDeAlcance": false
+  }
+}

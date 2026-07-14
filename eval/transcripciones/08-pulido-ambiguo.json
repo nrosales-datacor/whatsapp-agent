@@ -1,0 +1,11 @@
+{
+  "nombre": "pulido-ambiguo-pregunta-cual",
+  "descripcion": "Dice 'pulido' a secas: no asume; pregunta si es de parabrisas o de focos antes de seguir",
+  "usuario": "Hola, quiero información de un pulido",
+  "espera": {
+    "sinHerramienta": true,
+    "escala": false,
+    "fueraDeAlcance": false,
+    "contiene": ["parabrisas", "focos"]
+  }
+}
