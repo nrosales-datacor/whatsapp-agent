@@ -6,7 +6,7 @@
 > **Este doc es un plan, no un estado.** A medida que se implemente cada ángulo, marcar su casilla y anotar
 > el comando/archivo real. Mantener vivo igual que `ROADMAP.md`.
 >
-> **Última actualización:** 2026-07-14 (ángulos 1, 2 y 3 implementados)
+> **Última actualización:** 2026-07-14 (ángulos 1, 2, 3, 4 y 5 implementados)
 
 ---
 
@@ -97,20 +97,53 @@ test → agente 100% determinista). `test/helpers/setupEnv.ts` fija `OPENAI_API_
 **Nota:** la sincronización a Google Calendar en `agendar_cita` es no-op sin `GCAL_*` (no se ejerce acá); su lógica pura
 ya está cubierta indirectamente por el repo. `notificarOperador` sin VAPID solo loguea, así que tampoco toca red.
 
-### 4. ⬜ Evals del agente (LLM — no determinista, corre aparte)
+### 4. ✅ Evals del agente (LLM — no determinista, corre aparte)
 
-- Set de transcripciones fijas (JSON) → correr `correrAgente` contra OpenAI (real o grabado).
-- Aserciones **laxas**: ¿tool correcta? ¿precio del prompt? ¿escaló ante lo desconocido? ¿no inventó horarios?
-- **No en cada push** (cuesta tokens): job nocturno o manual (`npm run eval`).
+Harness en `eval/correrEval.ts` (`npm run eval`), tenant de fixture con KB completa en `eval/fixtureEval.ts`,
+11 transcripciones fijas en `eval/transcripciones/*.json`. Corre `correrAgente` contra **OpenAI real** (necesita
+`OPENAI_API_KEY`; sin ella aborta con código 2) sobre un repo en memoria — **nunca toca producción**. Observa qué
+herramienta eligió el agente espiando `globalThis.fetch` (lee los `tool_calls` de la respuesta sobre un clon, sin
+tocar el flujo real).
+
+- Aserciones **laxas** (vocabulario en `Espera`): `herramienta`/`herramientaAlguna`/`herramientaNo`/`sinHerramienta`,
+  `escala`, `fueraDeAlcance`, `interactivo`, `contiene`/`contieneAlguno`/`noContiene`, y `fechaAnioActual`
+  (verifica que no inventó el año en los args de fecha).
+- Casos cubren: cotiza lavado y **pulido con el precio fijo del prompt**, lavado **no se agenda** (orden de llegada),
+  **fuera de alcance** (no escala), **escala** ante pregunta de negocio desconocida, **carrocería** se revisa en persona,
+  **repelente ≠ pulido**, pulido ambiguo pregunta cuál, **ofrece horarios** como lista, **no inventa disponibilidad**,
+  y **consultar_mi_cita** con cita sembrada. Los 11 pasan en verde contra `gpt-4o-mini`.
+- **No en cada push** (cuesta tokens): manual o job nocturno. `EVAL_REPETICIONES=N` mide la tasa ante no determinismo
+  (marca ⚠️ inestable si pasa en unas y falla en otras); `EVAL_CASO=<substr>` filtra un caso al iterar. Exit ≠ 0 si algún
+  caso no fue verde en todas sus repeticiones.
 - Es el ángulo de **calidad/valor** que ningún unit test cubre.
 
-### 5. ⬜ Fiabilidad y concurrencia (validar lo que B1/B4 prometen)
+### 5. ✅ Fiabilidad y concurrencia (validar lo que B1/B4 prometen)
 
-- [ ] Cola durable: un entrante sobrevive a "restart" (dejar job pendiente, re-arrancar worker, se procesa).
-- [ ] **2 instancias no duplican recordatorios** (claim atómico B4) — simular carrera.
-- [ ] **2 instancias no duplican envíos de campaña** (mini-cola `wa_campania_envios`).
-- [ ] Throttling de campañas respeta `CAMPANIA_ENVIO_INTERVALO_MS`.
-- [ ] Reaper recupera jobs colgados.
+Suite en `test/reliability/*.test.ts` (corre en CI vía `npm test`; el glob ya la incluye). Corre contra un **Postgres
+efímero in-process (PGlite)** — Postgres real compilado a WASM, sin servidor ni Docker — al que se le aplican las
+migraciones reales de `./drizzle` (helper `test/helpers/pgliteDb.ts`). Así se ejerce el **SQL de producción**
+(`FOR UPDATE SKIP LOCKED`, CAS de recordatorios, backoff, reaper), no una reimplementación en memoria.
+
+- [x] **Cola durable** (`colaDurable.test.ts`): un job pendiente se reclama **exactamente una vez** (un 2º worker no lo
+  re-entrega); al fallar reencola con **backoff** (no reclamable antes de `ejecutar_despues_de`) y al agotar intentos
+  queda en `error`; `guardarEntranteYEncolar` es **idempotente por `wamid`** (un reintento de Meta no duplica el job).
+- [x] **2 instancias no duplican recordatorios** (`recordatorios.test.ts`): claim atómico B4 — 8 intentos concurrentes
+  por `citaId`/tipo → **un solo ganador**; `revertir` (envío falló) permite reintentar; el claim de una cita no bloquea otra.
+- [x] **2 instancias no duplican envíos de campaña** (`campanias.test.ts`): cada envío se reclama una sola vez al drenar
+  la cola y ante claims concurrentes; **no se reclama si la campaña no está `enviando`** (cancelada a mitad).
+- [x] **Throttling de campañas** respeta `CAMPANIA_ENVIO_INTERVALO_MS`: se extrajo `elegirEsperaMs(huboEnvio, intervalo, poll)`
+  (pura, mismo patrón que el ángulo 1) y se prueba la política; el loop del worker la usa.
+- [x] **Reaper recupera jobs colgados**: un job `procesando` con `locked_at` viejo se reencola (`reencolarVencidos`); uno
+  con lock reciente no se toca.
+
+**Gotcha de driver:** `db.execute(sql\`…\`)` devuelve formas distintas según el driver (postgres.js → arreglo; PGlite →
+`{ rows }`). Se absorbe con `src/db/filas.ts` (`filasDe`), dejando las colas agnósticas del driver — comportamiento en
+producción sin cambios (con postgres.js el resultado ya es el arreglo).
+
+**Fidelidad / fuera de alcance:** PGlite es de **una sola conexión**, así que las corridas "concurrentes" (`Promise.all`)
+se serializan. Eso NO debilita el invariante que importa: la atomicidad del `UPDATE` de una fila y el CAS los garantiza
+Postgres igual en serie. La **contención real de 2 backends en paralelo** (que atraparía una regresión que quite el
+`FOR UPDATE SKIP LOCKED`) necesita un Postgres multi-conexión y se cubriría en el job de **Postgres efímera del ángulo 7**.
 
 ### 6. ⬜ Panel E2E (Playwright — formalizar lo que hoy es manual)
 

@@ -1,5 +1,6 @@
 import { and, eq, lte, sql } from "drizzle-orm";
 import { waCampanias } from "../db/schema";
+import { filasDe } from "../db/filas";
 import { obtenerTenantPorId } from "../config/tenantStore";
 import { enviarPlantilla } from "../whatsapp/client";
 import { capturarError } from "../observabilidad/sentry";
@@ -20,6 +21,16 @@ const INTERVALO_ENVIO_MS = Number(process.env.CAMPANIA_ENVIO_INTERVALO_MS ?? 120
 
 const dormir = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/**
+ * Cuánto esperar antes del próximo tick del loop. Si acabo de procesar un envío,
+ * respeto el THROTTLE entre envíos (`intervaloEnvioMs`, conservador frente al
+ * límite de WhatsApp); si no había nada, uso el poll normal (`pollMs`). Extraída
+ * como función pura para poder probar la política del throttle sin arrancar el loop.
+ */
+export function elegirEsperaMs(huboEnvio: boolean, intervaloEnvioMs: number, pollMs: number): number {
+  return huboEnvio ? intervaloEnvioMs : pollMs;
+}
+
 /** Pasa a "enviando" las campañas "programada" cuya hora ya llegó. */
 async function activarProgramadas(): Promise<void> {
   const d = obtenerDb();
@@ -36,11 +47,13 @@ async function activarProgramadas(): Promise<void> {
  */
 async function siguioOptOut(tenantId: string, clienteWa: string): Promise<boolean> {
   const d = obtenerDb();
-  const rows = (await d.execute(sql`
+  const rows = filasDe(
+    await d.execute(sql`
     SELECT 1 FROM wa_conversaciones
      WHERE tenant_id = ${tenantId} AND cliente_wa = ${clienteWa} AND opt_out_en IS NOT NULL
      LIMIT 1
-  `)) as unknown as Array<unknown>;
+  `),
+  );
   return rows.length > 0;
 }
 
@@ -87,7 +100,7 @@ export function iniciarCampanias(): void {
       try {
         await activarProgramadas();
         const proceso = await procesarUno();
-        await dormir(proceso ? INTERVALO_ENVIO_MS : POLL_MS);
+        await dormir(elegirEsperaMs(proceso, INTERVALO_ENVIO_MS, POLL_MS));
       } catch (e) {
         console.error("[campanias] error en el loop:", e);
         capturarError(e, { loop: "campanias" });
