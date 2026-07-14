@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listarConversaciones, logout, type Sesion, type ResumenConversacion } from "../api";
 import { useTema } from "../lib/tema";
@@ -26,6 +26,7 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
   const [abiertaId, setAbiertaId] = useState<string | null>(null);
   const [mostrarChatMovil, setMostrarChatMovil] = useState(false);
   const [fichaAbierta, setFichaAbierta] = useState(false);
+  const hdTabsRef = useRef<HTMLDivElement>(null);
 
   const convs = useQuery({
     queryKey: ["conversaciones"],
@@ -52,6 +53,24 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
     setAbiertaId(id);
     if (window.innerWidth <= ANCHO_MOVIL) setMostrarChatMovil(true);
   }
+  // Con muchas tabs (rol dueño) la tira scrollea horizontal en pantallas
+  // angostas; el mouse wheel solo scrollea vertical por defecto, así que
+  // traducimos la rueda a scroll horizontal para que se puedan alcanzar.
+  // Listener nativo (no el onWheel de React) porque React lo adjunta como
+  // passive: preventDefault() ahí no tiene efecto y solo tira un warning.
+  useEffect(() => {
+    const el = hdTabsRef.current;
+    if (!el) return;
+    function onWheel(e: WheelEvent) {
+      if (!el || el.scrollWidth <= el.clientWidth) return;
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      e.preventDefault();
+      el.scrollLeft += e.deltaY;
+    }
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
   function volver() {
     setMostrarChatMovil(false);
     setAbiertaId(null);
@@ -79,7 +98,7 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
             </div>
           </div>
 
-          <div className="hd-tabs">
+          <div className="hd-tabs" ref={hdTabsRef}>
             <button
               type="button"
               className={"hd-tab" + (vista === "inbox" ? " activa" : "")}
