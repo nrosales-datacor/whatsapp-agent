@@ -6,7 +6,7 @@
 
 **Leyenda:** ✅ hecho · 🔵 en progreso · ⬜ pendiente · 🔴 bloqueante crítico para escalar
 
-**Última actualización:** 2026-07-13 (C4.3: base de facturación Stripe — schema/tipos/cliente listos, rutas HTTP pendientes)
+**Última actualización:** 2026-07-13 (Carril D: plan comercial "Selyon Features Faltantes" agregado — Fase 0 bloqueante para vender los 3 planes)
 
 ---
 
@@ -86,6 +86,45 @@ El **código** es sólido para el piloto; lo que no escala todavía es la **topo
   campañas/usuarios/white-label, y la pestaña "Facturación" en el panel.
 - [x] ✅ **C4.4 — Landing de venta** ("Recepcionista IA", HTML/CSS estático en `landing/`, sin build ni deps nuevas — plan completo en `PLAN-C4.4-LANDING.md`). El **root del dominio** ahora sirve la landing (`GET /`) en vez del texto de salud, que se movió a `GET /salud`; nuevo handler `src/landing/servirLanding.ts` (mismo patrón allowlist/caché de `panel/router.ts`) atiende `/`, `/privacidad`, `/terminos`, `/landing/*` (assets), `/robots.txt` y `/favicon.svg`, sin tocar `/panel`, `/api/panel/*` ni `/webhook`. Contenido: hero con mock de chat de WhatsApp animado (CSS, respeta `prefers-reduced-motion`), 6 features reales (no prometidas), 4 screenshots reales del panel (claro/oscuro, móvil/desktop, capturados con Playwright vía `SEED_DEMO`), planes sin montos, FAQ y CTAs `wa.me` al bot piloto (Lavacar Rosales). `privacidad.html`/`terminos.html` cumplen el requisito de sitio público + política de privacidad de `GUIA-META.md` §B (URL: `/privacidad`) — **desbloquea también C4.2**. Verificado: typecheck, checklist de curl (rutas nuevas + regresión de `/panel`/`/webhook`/`/api/panel/me`), `design-verify` en 390/1440px (corregido padding del CTA final que quedaba pegado al borde en mobile). Placeholders marcados `[PENDIENTE-NATHAN]` en comentarios HTML (nombre legal, email, dominio propio, número de ventas): no bloquean, son un buscar-y-reemplazar. _Pendiente (F6, no bloquea):_ bot vendedor como tenant propio — requiere número nuevo en la WABA.
   - **2026-07-06 — rediseño "Selyon"**: la landing se reposicionó como **Selyon**, marca paraguas que lleva al agente de WhatsApp (hoy "Recepcionista IA") y previsualiza un segundo producto, **Menú Digital IA** (tarjeta en `#productos` con badge "Próximamente" y link placeholder `menu.html` — página aún no existe, es de un carril futuro). Handoff de diseño en `design_handoff_selyon_landing/` (prototipo hifi + README con tokens exactos). Rediseño completo de `landing/index.html` + `landing/assets/estilos.css`: hero oscuro con grillas/glows animados y mock de chat con replay por `IntersectionObserver`, franja de métricas, suite de productos, deep-dive de features, showcase del panel (capturas reales), pasos, testimonio, precios con plan Pro destacado, FAQ y footer de 3 columnas — mismo patrón plain HTML/CSS/JS vanilla, cero deps nuevas. `privacidad.html`/`terminos.html` actualizados solo en la cabecera/pie compartidos (marca Selyon) para no romper el link desde el footer/FAQ. De paso se corrigió un bug real en `src/panel/router.ts` (`leerFuente`): el regex de nombres de fuente solo aceptaba minúsculas y por eso los `.ttf` de Noto Sans (`NotoSans-Regular.ttf`, etc., con mayúsculas) devolvían 404 en `/panel/fonts/*` — afectaba también al panel React (`web/src/global.css`), no solo a la landing. Verificado con `design-verify` en 390/760/900/1440px (sin overflow horizontal, breakpoint de nav subido a 820px para evitar wrap de los links, offset de los chips flotantes del hero corregido para no tapar el mock de chat) y `tsc --noEmit`.
+
+## Carril D — Plan comercial: Selyon Features Faltantes (plan detallado: `PLAN-FEATURES-FALTANTES.md`)
+
+> Plan para poder vender los 3 planes (Básico ₡35.000 / Pro ₡60.000 / Premium ₡95.000) con las
+> features prometidas. **Fase 0 es lo único bloqueante para vender**; el resto se construye con
+> clientes ya pagando. El detalle completo de cada ítem (datos, backend, panel, aceptación,
+> estimados) vive en el plan; acá solo el tracking de alto nivel.
+>
+> **Se solapa con trabajo ya hecho en Carril C** — antes de arrancar cada ítem, revisar si ya
+> existe: **0.1** (planes/gating) reusa las columnas `plan`/`estadoFacturacion`/Stripe que ya
+> están en el schema por **C4.3** (Stripe, todavía sin cerrar) — conviene resolver 0.1 y C4.3
+> juntos con el mismo modelo de datos, no dos sistemas de plan paralelos. **1.3** (motor de
+> reseñas) extiende el post-servicio que ya existe (**C3.1**, botones Todo bien/Problema +
+> link de reseñas) — falta la estructura de 3 botones, Places API y snapshot de reputación, no
+> el flujo base. **1.1** (rescate de cotizaciones) y **2.2**/**3.1** (paquetes/membresías) siguen
+> el patrón de mini-cola independiente ya usado en **C3.2** (campañas) — no tocar `wa_jobs`/B1
+> (ver [[patron-colas-independientes]]).
+
+- [ ] 🔴 **Fase 0 — Hardening pre-venta** (bloqueante para vender los 3 planes)
+  - [ ] 0.1 Infraestructura de planes/estado + `hasFeature` + gating (unificar con C4.3/Stripe)
+  - [ ] 0.2 Contadores de uso mensual por tenant (conversaciones/mensajes/plantillas)
+  - [ ] 0.3 Indicador de ventana de 24h en la bandeja (chip + bloqueo de input fuera de ventana)
+  - [ ] 0.4 Pulido de bandeja y ficha (nombres, tooltip lead score, fechas, `<ErrorState>`, botón Guardar)
+  - [ ] 0.5 Reset de contraseña desde el admin (clave temporal + forzar cambio)
+  - [ ] 0.6 Proceso de cobro manual (documento operativo, sin código)
+- [ ] ⬜ **Fase 1 — Plan Pro** (semanas 3–6)
+  - [ ] 1.1 Rescate de cotizaciones abandonadas (mini-cola propia, 2 toques, tarjeta "₡ recuperados")
+  - [ ] 1.2 Upsell inteligente al agendar (add-on por servicio, tarjeta "Ticket promedio")
+  - [ ] 1.3 Motor de reseñas de Google completo (extiende C3.1: 3 botones, Places API, snapshot)
+- [ ] ⬜ **Fase 2 — Premium quick-wins** (semanas 7–8)
+  - [ ] 2.1 Atribución de anuncios Click-to-WhatsApp (CTWA, `referral` del webhook)
+  - [ ] 2.2 Paquetes prepagados (compra → confirmación manual → consumo por cita)
+- [ ] ⬜ **Fase 3 — Premium grande** (semanas 9–14, arrancar solo con cliente Premium real)
+  - [ ] 3.1 Membresías recurrentes (extiende 2.2 con ciclo/renovación)
+  - [ ] 3.2 Multicanal Instagram DM (requiere App Review de Meta — trámite largo)
+  - [ ] 3.3 Agenda multi-empleado (retrocompatible con negocio de 1 empleado)
+- [ ] ⬜ **Fase 4 — Backlog por demanda** (14 features, ver tabla completa en el plan; construir solo cuando un cliente lo pida/pague)
+
+---
 
 ## Fiabilidad / hardening
 
