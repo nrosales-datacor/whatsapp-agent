@@ -405,8 +405,8 @@ function ModalCita({ servicios, cita, onCerrar, onGuardado }: ModalProps) {
           />
 
           <label htmlFor="aHora">Hora</label>
-          <select id="aHora" value={hora} onChange={(e) => setHora(e.target.value)}>
-            <option value="">Elegí un horario…</option>
+          <select id="aHora" value={hora} onChange={(e) => setHora(e.target.value)} disabled={disp.isLoading}>
+            <option value="">{disp.isLoading ? "Cargando horarios…" : "Elegí un horario…"}</option>
             {horas.map((h) => {
               const ocupada = horasOcupadas.find((o) => o.hora === h);
               return (
@@ -417,6 +417,14 @@ function ModalCita({ servicios, cita, onCerrar, onGuardado }: ModalProps) {
               );
             })}
           </select>
+          {disp.isError && (
+            <p className="agenda-advertencia">
+              ⚠️ No se pudieron cargar los horarios: {disp.error instanceof Error ? disp.error.message : "error desconocido"}.
+            </p>
+          )}
+          {!disp.isLoading && !disp.isError && horas.length === 0 && (
+            <p className="agenda-advertencia">⚠️ No hay horarios disponibles para esa fecha y servicio.</p>
+          )}
           {ocupadaElegida && (
             <p className="agenda-advertencia">
               ⚠️ Ese horario ya tiene una cita con {ocupadaElegida.clienteNombre}. Se puede guardar igual.
