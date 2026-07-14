@@ -78,6 +78,16 @@ export async function marcarHecho(db: DB, id: string): Promise<void> {
     .where(eq(waJobs.id, id));
 }
 
+/** true si ya no quedan reintentos (se marca "error" definitivo). */
+export function agotoIntentos(intentos: number, maxIntentos: number): boolean {
+  return intentos >= maxIntentos;
+}
+
+/** Backoff exponencial en segundos para el próximo reintento: min(2^intentos, 60). */
+export function calcularBackoffSeg(intentos: number): number {
+  return Math.min(Math.pow(2, intentos), 60);
+}
+
 /**
  * Si quedan intentos, reencola con backoff exponencial (min(2^intentos, 60)s).
  * Si se agotaron, marca como "error" definitivo.
@@ -89,14 +99,14 @@ export async function marcarFalloOReintentar(
   intentos: number,
   maxIntentos: number,
 ): Promise<void> {
-  if (intentos >= maxIntentos) {
+  if (agotoIntentos(intentos, maxIntentos)) {
     await db
       .update(waJobs)
       .set({ estado: "error", ultimoError: error, finalizadoEn: new Date(), lockedAt: null })
       .where(eq(waJobs.id, id));
     return;
   }
-  const retrasoSeg = Math.min(Math.pow(2, intentos), 60);
+  const retrasoSeg = calcularBackoffSeg(intentos);
   await db.execute(sql`
     UPDATE wa_jobs
        SET estado = 'pendiente',

@@ -14,9 +14,8 @@ const DIAS_POR_MES = 30;
 const DEFAULT_DIAS_INACTIVOS = 60;
 const DEFAULT_MESES_SERVICIO = 6;
 
-/** "YYYY-MM-DD" de hace `dias` días (aritmética UTC al mediodía: sin sorpresas de DST). */
-function fechaHaceDias(dias: number): string {
-  const hoy = new Date().toISOString().slice(0, 10);
+/** "YYYY-MM-DD" de hace `dias` días respecto de `hoy` (aritmética UTC al mediodía: sin sorpresas de DST). */
+function fechaHaceDias(dias: number, hoy: string): string {
   const d = new Date(`${hoy}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() - dias);
   return d.toISOString().slice(0, 10);
@@ -30,17 +29,22 @@ interface AgregadoCliente {
   ultimaCompletadaPorServicio: Map<string, string>; // servicioId -> última fecha completada
 }
 
-/**
- * Arma la lista de destinatarios que califican para el segmento de una campaña.
- * Excluye SIEMPRE a los clientes que pidieron baja ("BAJA", opt-out de marketing).
- */
-export async function previsualizarSegmento(tenantId: string, filtro: SegmentoFiltro): Promise<ClienteSegmento[]> {
-  const d = obtenerDb();
-  const [citas, conversaciones] = await Promise.all([
-    d.select().from(waCitas).where(eq(waCitas.tenantId, tenantId)),
-    d.select().from(waConversaciones).where(eq(waConversaciones.tenantId, tenantId)),
-  ]);
+type CitaSegmento = { clienteWa: string; clienteNombre: string; fecha: string; estado: string; servicioId: string };
+type ConversacionSegmento = { clienteWa: string; optOutEn: unknown };
 
+/**
+ * Agrega citas + conversaciones y arma la lista de destinatarios que califican
+ * para el segmento de una campaña. Pura (sin I/O): mismo estilo que
+ * calcularMetricas (src/panel/metricas.ts). Excluye SIEMPRE a los clientes que
+ * pidieron baja ("BAJA", opt-out de marketing). `hoy` ("YYYY-MM-DD") es
+ * inyectable para pruebas deterministas; por defecto la fecha actual.
+ */
+export function calcularSegmento(
+  citas: CitaSegmento[],
+  conversaciones: ConversacionSegmento[],
+  filtro: SegmentoFiltro,
+  hoy: string = new Date().toISOString().slice(0, 10),
+): ClienteSegmento[] {
   const optOut = new Set(conversaciones.filter((c) => c.optOutEn).map((c) => c.clienteWa));
 
   const porCliente = new Map<string, AgregadoCliente>();
@@ -77,14 +81,14 @@ export async function previsualizarSegmento(tenantId: string, filtro: SegmentoFi
       return { clienteWa: conv.clienteWa, nombre: a?.nombre ?? "estimado cliente", ultimaVisita: a?.ultimaVisita ?? null };
     });
   } else if (filtro.tipo === "inactivos") {
-    const corte = fechaHaceDias(filtro.dias ?? DEFAULT_DIAS_INACTIVOS);
+    const corte = fechaHaceDias(filtro.dias ?? DEFAULT_DIAS_INACTIVOS, hoy);
     resultado = [...porCliente.values()]
       .filter((a) => a.ultimaVisita !== null && a.ultimaVisita <= corte)
       .map((a) => ({ clienteWa: a.clienteWa, nombre: a.nombre, ultimaVisita: a.ultimaVisita }));
   } else {
     // "servicio_antiguo"
     if (!filtro.servicioId) return [];
-    const corte = fechaHaceDias((filtro.meses ?? DEFAULT_MESES_SERVICIO) * DIAS_POR_MES);
+    const corte = fechaHaceDias((filtro.meses ?? DEFAULT_MESES_SERVICIO) * DIAS_POR_MES, hoy);
     resultado = [...porCliente.values()]
       .filter((a) => {
         const f = a.ultimaCompletadaPorServicio.get(filtro.servicioId!);
@@ -96,4 +100,17 @@ export async function previsualizarSegmento(tenantId: string, filtro: SegmentoFi
   return resultado
     .filter((r) => !optOut.has(r.clienteWa))
     .sort((a, b) => (b.ultimaVisita ?? "").localeCompare(a.ultimaVisita ?? ""));
+}
+
+/**
+ * Arma la lista de destinatarios que califican para el segmento de una campaña.
+ * Excluye SIEMPRE a los clientes que pidieron baja ("BAJA", opt-out de marketing).
+ */
+export async function previsualizarSegmento(tenantId: string, filtro: SegmentoFiltro): Promise<ClienteSegmento[]> {
+  const d = obtenerDb();
+  const [citas, conversaciones] = await Promise.all([
+    d.select().from(waCitas).where(eq(waCitas.tenantId, tenantId)),
+    d.select().from(waConversaciones).where(eq(waConversaciones.tenantId, tenantId)),
+  ]);
+  return calcularSegmento(citas, conversaciones, filtro);
 }
