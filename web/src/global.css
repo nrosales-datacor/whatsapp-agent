@@ -492,7 +492,11 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
   #chat header { padding-top: env(safe-area-inset-top); min-height: calc(60px + env(safe-area-inset-top)); }
 
   #msgs { padding: var(--space-md); }
-  .dash-body { padding: var(--space-md); }
+  /* Espacio inferior extra para que el contenido no quede tapado por la barra
+     de navegación fija (bottom nav) — todas las vistas usan .dash-body y la
+     bandeja usa #convs. */
+  .dash-body { padding: var(--space-md); padding-bottom: calc(70px + env(safe-area-inset-bottom)); }
+  #convs { padding-bottom: calc(70px + env(safe-area-inset-bottom)); }
 
   /* KPIs: 2 col en móvil */
   .kpis { grid-template-columns: repeat(2,1fr); }
@@ -510,17 +514,38 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
   .btn-hd-salir span { display: none; }
   .btn-hd-salir { padding: 0; }
 
-  /* Tabs más compactas (el scroll horizontal de la franja ya es global, ver arriba) */
-  .hd-tab { padding: 6px 10px; }
+  /* ── Navegación principal como BARRA INFERIOR (bottom nav) en móvil ──
+     Apilar las tabs dentro del header las hacía crecer en varias filas y se
+     veía mal. El patrón nativo en móvil (y esto es una PWA instalable) es una
+     barra fija abajo, al alcance del pulgar: ícono + etiqueta, repartidas, sin
+     apilarse ni depender de scroll. En desktop siguen siendo tabs en el header.
+     z-index 9 (< 10 del #chat): al abrir un chat a pantalla completa, el chat
+     tapa la barra — no hace falta esconderla por JS. */
+  .hd-tabs {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 9;
+    flex-wrap: nowrap; justify-content: space-around; gap: 0;
+    padding: 4px 2px; padding-bottom: calc(4px + env(safe-area-inset-bottom));
+    background: var(--surface); border-top: 1px solid var(--border);
+    border-radius: 0; box-shadow: 0 -2px 12px rgba(15,39,35,.06);
+  }
+  .hd-tab {
+    flex: 1 1 0; min-width: 0; position: relative;
+    flex-direction: column; gap: 2px;
+    padding: 6px 2px; border-radius: var(--radius-sm);
+    color: var(--text-muted);
+  }
+  .hd-tab svg { width: 22px; height: 22px; }
+  .hd-tab-label { font-size: 10px; font-weight: 600; line-height: 1; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hd-tab:hover { background: transparent; color: var(--text-muted); }
+  .hd-tab.activa { background: transparent; color: var(--accent); }
+  /* Badge de no-leídos: chip pequeño en la esquina del ícono (no en línea). */
+  .hd-tab .badge-naranja { position: absolute; top: 2px; left: 50%; transform: translateX(3px); }
 
-  /* El nombre del negocio no cabe junto a las tabs: solo chip de marca */
-  .hd-marca-txt { display: none; }
+  /* Header sin tabs: hay lugar para mostrar el nombre del negocio otra vez. */
+  .hd-marca-txt { display: block; }
 
   /* El botón volver en el chat se muestra */
   .volver { display: grid; }
-
-  /* La marca no debe robar ancho a las tabs (su texto ya se oculta arriba) */
-  .hd-marca { flex: 0 0 auto; }
 
   /* Header del chat: dejar que el toggle "Atender yo/Devolver" baje a 2ª fila */
   #chat header { flex-wrap: wrap; row-gap: 6px; }
