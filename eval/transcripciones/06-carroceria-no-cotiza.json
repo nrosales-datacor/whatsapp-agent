@@ -1,0 +1,12 @@
+{
+  "nombre": "carroceria-se-revisa-en-persona",
+  "descripcion": "Pulido de CARROCERÍA: es servicio nuestro pero no se cotiza ni agenda en línea; invita a llevar el carro. No es fuera de alcance ni escala",
+  "usuario": "Quiero agendar un pulido de la pintura de la carrocería de mi carro, ¿cuánto sale?",
+  "espera": {
+    "herramientaNo": "agendar_cita",
+    "interactivo": false,
+    "escala": false,
+    "fueraDeAlcance": false,
+    "contieneAlguno": ["en persona", "revisar", "revisamos", "traé", "traer", "llevar", "pasá", "al momento"]
+  }
+}

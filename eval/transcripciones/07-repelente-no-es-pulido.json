@@ -1,0 +1,11 @@
+{
+  "nombre": "repelente-no-es-pulido",
+  "descripcion": "Cree que el repelente deja el vidrio como nuevo: aclara que repelente NO es pulido (no quita manchas/gota seca)",
+  "usuario": "El tratamiento repelente de agua me deja el parabrisas como nuevo y me quita las manchas, ¿verdad?",
+  "espera": {
+    "escala": false,
+    "fueraDeAlcance": false,
+    "contiene": ["pulido"],
+    "contieneAlguno": ["no quita", "no incluye", "no es pulido", "solo repelente", "no las quita", "no elimina"]
+  }
+}
