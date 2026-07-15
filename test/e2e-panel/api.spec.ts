@@ -22,6 +22,16 @@ function mintSesion(rol: "operador" | "dueno"): string {
 const cookie = (rol: "operador" | "dueno") => `panel_sesion=${mintSesion(rol)}`;
 const fechaFutura = (dias: number) => new Date(Date.now() + dias * 86_400_000).toISOString().slice(0, 10);
 
+// Mintea una cookie de superadmin (onboarding), igual que auth.ts::crearSesionAdmin.
+// verificarSesionAdmin solo valida firma+versión+vencimiento (no depende del .env), así
+// que con el mismo secreto podemos ejercer las rutas /api/panel/admin/*.
+function mintAdmin(): string {
+  const exp = Date.now() + 60 * 60 * 1000;
+  const payload = `__superadmin__.${exp}.1`;
+  const firma = crypto.createHmac("sha256", E2E.secret).update(payload).digest("hex");
+  return `panel_admin_sesion=${Buffer.from(`${payload}.${firma}`).toString("base64url")}`;
+}
+
 // Helpers de la agenda (POST autenticado como dueño, mismo origen).
 async function crearCita(request: APIRequestContext, fecha: string, hora: string) {
   const res = await request.post("/api/panel/citas", {
@@ -87,6 +97,35 @@ test.describe("Guards de rol (no basta con esconder la pestaña)", () => {
     expect(res.status()).toBe(200);
     const body = await res.json();
     expect(body.rol).toBe("dueno");
+  });
+});
+
+test.describe("Seguridad: el accessToken de WhatsApp nunca vuelve al navegador (C4.2, ángulo 8)", () => {
+  // El accessToken es el secreto más sensible del tenant: quien lo tenga puede enviar
+  // mensajes en su nombre. Ninguna respuesta de la API que consume el frontend debe
+  // incluirlo. Sembramos un token conocido en el server E2E y afirmamos que no aparece.
+  const TOKEN = "e2e-token-dummy"; // = WHATSAPP_ACCESS_TOKEN del server E2E (ver servidor.ts)
+
+  test("GET admin/tenants no expone accessToken en el resumen", async ({ request }) => {
+    const res = await request.get("/api/panel/admin/tenants", { headers: { cookie: mintAdmin() } });
+    expect(res.status()).toBe(200);
+    const texto = await res.text();
+    expect(texto).not.toContain("accessToken");
+    expect(texto).not.toContain(TOKEN);
+    for (const t of (await res.json()).tenants) expect(t.accessToken).toBeUndefined();
+  });
+
+  test("GET me y GET config (dueño) no exponen accessToken", async ({ request }) => {
+    const me = await request.get("/api/panel/me", { headers: { cookie: cookie("dueno") } });
+    expect(me.status()).toBe(200);
+    expect(await me.text()).not.toContain(TOKEN);
+    expect((await me.json()).accessToken).toBeUndefined();
+
+    const cfg = await request.get("/api/panel/config", { headers: { cookie: cookie("dueno") } });
+    expect(cfg.status()).toBe(200);
+    const cfgTexto = await cfg.text();
+    expect(cfgTexto).not.toContain("accessToken");
+    expect(cfgTexto).not.toContain(TOKEN);
   });
 });
 

@@ -6,8 +6,9 @@
 > **Este doc es un plan, no un estado.** A medida que se implemente cada ángulo, marcar su casilla y anotar
 > el comando/archivo real. Mantener vivo igual que `ROADMAP.md`.
 >
-> **Última actualización:** 2026-07-14 (ángulos 1–5 y 7 completos; ángulo 6 implementado por la UI
-> in-memory — los flujos que exigen base de datos quedan documentados para la corrida con Postgres)
+> **Última actualización:** 2026-07-14 (ángulos 1–5, 7, 8 y 9 completos; ángulo 6 implementado por la
+> UI in-memory — los flujos que exigen base de datos quedan documentados para la corrida con Postgres;
+> ángulo 10 es QA manual en dispositivo, no automatizable)
 
 ---
 
@@ -183,17 +184,43 @@ sin red. `workers:1` porque todas las specs comparten el repo en memoria del pro
   migraciones reales de `./drizzle` en cada push. Por eso el guardrail acá se enfoca en el drift, que es el modo
   de fallo caro y silencioso; no hace falta un service container solo para esto.
 
-### 8. ⬜ Seguridad
+### 8. ✅ Seguridad
 
-- [ ] `/security-review` sobre el diff antes de cada merge grande.
-- [ ] Auth: anti-timing en login, sesión firmada, token de WhatsApp **nunca** vuelve al navegador (C4.2).
-- [ ] CSRF en rutas admin; validación server-side (no confiar en el front).
-- [ ] Verificación de firma del webhook de Meta (`WHATSAPP_APP_SECRET`).
+Suite pura en `test/security/seguridad.test.ts` (17 casos, corre en CI vía `npm test`; el glob ya la incluye)
+para los invariantes de crypto, más una aserción a nivel HTTP en el E2E del panel (ángulo 6) para el aislamiento
+del token. Se apoya en el `PANEL_SESSION_SECRET` fijado antes de importar `auth.ts` (secreto determinista, no el
+aleatorio-por-arranque del modo dev).
 
-### 9. ⬜ Smoke test post-deploy
+- [x] **Auth — sesión firmada (HMAC):** round-trip devuelve `tenantId/usuarioId/rol`; y se rechaza (→ `null`) todo
+  intento de **forjar/manipular** el token: firma alterada, **escalar rol** operador→dueño sin re-firmar, **cambiar
+  tenantId** (no cruza tenants), **extender el vencimiento**, token vencido (con firma legítima), y **versión** distinta
+  (re-login global). Ídem para la sesión del **superadmin** (una sesión de operador NO cuela como admin).
+- [x] **Auth — anti-timing en login:** `HASH_DUMMY` es un `salt:hash` válido (16 B : 64 B) → el path de "usuario
+  inexistente" corre el **mismo scrypt** que el válido (no cortocircuita); `verificarPassword` usa `timingSafeEqual`
+  y rechaza hash ausente/mal formado sin lanzar; cada `hashearPassword` usa un salt distinto.
+- [x] **Token de WhatsApp nunca vuelve al navegador (C4.2):** en `test/e2e-panel/api.spec.ts`, `GET admin/tenants`,
+  `GET me` y `GET config` **no** exponen `accessToken` (ni la clave ni el valor sembrado). Regresión cara: filtrar el
+  token deja enviar mensajes en nombre del negocio.
+- [x] **CSRF + validación server-side + guards de rol:** cubiertos a nivel HTTP en el ángulo 6 (POST con `Origin`
+  ajeno → 403; operador → 403 en `usuarios`/`config`; el front no se confía — se le pega directo a la API).
+- [x] **Firma del webhook de Meta (`WHATSAPP_APP_SECRET`):** `firmaValida` acepta la legítima y rechaza al impostor
+  (firmado con otro secreto), la ausente/vacía y la mal formada — comparación en **tiempo constante**.
+- [ ] `/security-review` sobre el diff antes de cada merge grande **es un paso de proceso** (no un test automatizable);
+  el slash-command `/security-review` queda como checklist previo a merges grandes.
 
-- [ ] Ampliar el smoke del pipeline (`/salud`) a: `/me` responde, un login real de demo funciona,
-      el bundle React sirve (no cae al 503 por falta de build).
+### 9. ✅ Smoke test post-deploy
+
+En `.github/workflows/ci-cd.yml`, paso **"Smoke post-deploy"** del job `desplegar` (corre tras el `/salud` contra
+la URL pública de producción). Solo golpea superficies que **no tocan datos ni requieren credenciales reales**, así que
+es seguro contra producción:
+
+- [x] **El bundle React sirve** (`/panel` → 200 y contiene `<div id="root">`) — atrapa la regresión de "falta el
+  build → 503" que dejaría el panel inservible.
+- [x] **La API del panel está viva y exige auth** (`/api/panel/me` sin cookie → **401**, no 500/404).
+- [x] **Login vivo + tenantStore/DB sanos** (`/api/panel/login` con `Origin` del host y credenciales falsas → **401**;
+  un 500/503 delataría que la base o el store se rompieron). Es el **proxy seguro** de "un login real funciona" sin
+  meter credenciales de demo en producción.
+- Si cualquiera falla, el paso sale con código ≠ 0 y marca el deploy en rojo.
 
 ### 10. ⬜ QA manual en dispositivo (lo único que no se automatiza barato)
 
@@ -211,6 +238,7 @@ test/
   tenant/          # aislamiento multi-tenant
   e2e-webhook/     # responderEntrante con repo en memoria + fetch mockeado
   reliability/     # cola, recordatorios, campañas (concurrencia)
+  security/        # sesión firmada, anti-timing, firma del webhook (ángulo 8)
   e2e-panel/       # Playwright: servidor.ts (server E2E), *.spec.ts, constantes.ts
   helpers/         # fabricadores de tenant/cita/conversación, mock de Graph/OpenAI
 eval/
@@ -224,7 +252,7 @@ scripts/
 `package.json`:
 ```jsonc
 "scripts": {
-  "test": "tsx --test test/unit/*.test.ts test/tenant/*.test.ts test/e2e-webhook/*.test.ts test/reliability/*.test.ts",
+  "test": "tsx --test test/unit/*.test.ts test/tenant/*.test.ts test/e2e-webhook/*.test.ts test/reliability/*.test.ts test/security/*.test.ts",
   "test:e2e": "npm run web:build && playwright test",  // panel (build + Playwright)
   "db:check": "tsx scripts/verificarMigraciones.ts",   // drift de schema (ángulo 7)
   "eval": "tsx eval/correrEval.ts"                      // LLM, manual/nocturno
