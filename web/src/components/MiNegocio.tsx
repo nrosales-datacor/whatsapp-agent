@@ -5,6 +5,7 @@ import {
   guardarConfig,
   type Bloqueo,
   type ConfigNegocio,
+  type Features,
   type HorarioDia,
   type KnowledgeBase,
   type Service,
@@ -96,7 +97,7 @@ function bloqueosAForm(bloqueos: Bloqueo[]): BloqueoForm[] {
   return bloqueos.map((b) => ({ desde: b.desde, hasta: b.hasta, motivo: b.motivo ?? "" }));
 }
 
-export default function MiNegocio() {
+export default function MiNegocio({ features }: { features: Features }) {
   const qc = useQueryClient();
   const { flash } = useToast();
   const q = useQuery({ queryKey: ["config"], queryFn: obtenerConfig });
@@ -209,9 +210,11 @@ export default function MiNegocio() {
       bloqueos: construirBloqueos(),
       linkResenas: linkResenas.trim(),
       plantillaMarketing: plantillaMarketing.trim(),
-      colorAcento: colorAcento.trim(),
-      colorHeader: colorHeader.trim(),
-      logoUrl: logoUrl.trim(),
+      // Sin plan Pro los inputs de marca están ocultos (arriba); no reenviar un valor
+      // viejo que el backend rechazaría por el gating de whiteLabel (0.1).
+      colorAcento: features.whiteLabel ? colorAcento.trim() : "",
+      colorHeader: features.whiteLabel ? colorHeader.trim() : "",
+      logoUrl: features.whiteLabel ? logoUrl.trim() : "",
     });
   }
 
@@ -242,46 +245,56 @@ export default function MiNegocio() {
         </div>
 
         <div className="card admin-form">
-          <h3>Marca</h3>
-          <div className="campo">
-            <label htmlFor="cLogoUrl">URL del logo (imagen cuadrada; sin logo se muestran las iniciales)</label>
-            <input
-              id="cLogoUrl"
-              placeholder="https://..."
-              value={logoUrl}
-              onChange={(e) => setLogoUrl(e.target.value)}
-            />
-          </div>
-          <div className="admin-servicio">
-            <div className="campo campo-inline">
-              <label htmlFor="cColorAcento">Color de acento</label>
-              <input
-                id="cColorAcento"
-                type="color"
-                value={colorAcento || "#0b7d72"}
-                onChange={(e) => setColorAcento(e.target.value)}
-              />
-            </div>
-            <div className="campo campo-inline">
-              <label htmlFor="cColorHeader">Color del encabezado</label>
-              <input
-                id="cColorHeader"
-                type="color"
-                value={colorHeader || "#0b5c56"}
-                onChange={(e) => setColorHeader(e.target.value)}
-              />
-            </div>
-            <button
-              type="button"
-              className="btn-ghost"
-              onClick={() => {
-                setColorAcento("");
-                setColorHeader("");
-              }}
-            >
-              Restaurar colores por defecto
-            </button>
-          </div>
+          <h3>
+            Marca {!features.whiteLabel && <span className="badge badge-pro">🔒 Plan Pro</span>}
+          </h3>
+          {features.whiteLabel ? (
+            <>
+              <div className="campo">
+                <label htmlFor="cLogoUrl">URL del logo (imagen cuadrada; sin logo se muestran las iniciales)</label>
+                <input
+                  id="cLogoUrl"
+                  placeholder="https://..."
+                  value={logoUrl}
+                  onChange={(e) => setLogoUrl(e.target.value)}
+                />
+              </div>
+              <div className="admin-servicio">
+                <div className="campo campo-inline">
+                  <label htmlFor="cColorAcento">Color de acento</label>
+                  <input
+                    id="cColorAcento"
+                    type="color"
+                    value={colorAcento || "#0b7d72"}
+                    onChange={(e) => setColorAcento(e.target.value)}
+                  />
+                </div>
+                <div className="campo campo-inline">
+                  <label htmlFor="cColorHeader">Color del encabezado</label>
+                  <input
+                    id="cColorHeader"
+                    type="color"
+                    value={colorHeader || "#0b5c56"}
+                    onChange={(e) => setColorHeader(e.target.value)}
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={() => {
+                    setColorAcento("");
+                    setColorHeader("");
+                  }}
+                >
+                  Restaurar colores por defecto
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="campo-ayuda">
+              Logo y colores propios del panel están disponibles en el plan Pro — contactanos para actualizar tu plan.
+            </p>
+          )}
         </div>
 
         <div className="card">

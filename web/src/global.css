@@ -193,6 +193,13 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .hd-tab:hover { background: rgba(255,255,255,.12); color: rgba(255,255,255,.9); }
 .hd-tab.activa { background: var(--header-fg); color: var(--header-bg); }
 .hd-tab svg { flex-shrink: 0; }
+/* Pestaña Pro no incluida en el plan del negocio (Carril D, 0.1): visible pero
+   atenuada, abre el modal "Disponible en el plan Pro" en vez de cambiar de vista. */
+.hd-tab-bloqueada { opacity: .55; }
+.hd-tab-bloqueada:hover { opacity: .8; }
+
+/* Badge "🔒 Plan Pro" junto a un título de sección gateada (p. ej. Marca en Mi negocio). */
+.badge-pro { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent-strong); margin-left: 8px; vertical-align: middle; }
 
 /* Acciones — derecha */
 .hd-acciones { display: flex; align-items: center; gap: var(--space-2xs); flex-shrink: 0; }

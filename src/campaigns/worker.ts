@@ -72,10 +72,14 @@ async function procesarUno(): Promise<boolean> {
         throw new Error("El tenant no tiene (o ya no tiene) una plantilla de marketing configurada");
       }
       const idioma = process.env.WHATSAPP_TEMPLATE_IDIOMA ?? "es";
-      await enviarPlantilla(tenant, envio.clienteWa, tenant.plantillaMarketing, idioma, [
-        envio.clienteNombre,
-        envio.mensaje,
-      ]);
+      await enviarPlantilla(
+        tenant,
+        envio.clienteWa,
+        tenant.plantillaMarketing,
+        idioma,
+        [envio.clienteNombre, envio.mensaje],
+        "marketing",
+      );
       await marcarEnviado(d, envio.id);
     }
   } catch (e) {

@@ -316,6 +316,33 @@ export const waCampaniaEnvios = pgTable(
   }),
 );
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Contadores de uso mensual por tenant (Carril D, 0.2): cuántas conversaciones/
+// mensajes/plantillas consume cada negocio, para acercarse al modelo de cobro de
+// Meta (cobra por conversación) y habilitar a futuro el tope de ~500 conv/mes del
+// plan Básico. Por ahora se MIDE sin bloquear (sin enforcement todavía). Una fila
+// por tenant+mes; los contadores se incrementan atómicamente (INSERT ... ON
+// CONFLICT DO UPDATE SET x = x + n) desde src/observabilidad/uso.ts.
+// ─────────────────────────────────────────────────────────────────────────────
+export const waUsoMensual = pgTable(
+  "wa_uso_mensual",
+  {
+    id: id(),
+    tenantId: text("tenant_id").notNull(),
+    anioMes: text("anio_mes").notNull(), // "YYYY-MM"
+    // "Conversación iniciada" ≈ primer mensaje tras 24 h de silencio (aproxima el
+    // modelo de cobro de Meta: una conversación = una ventana de 24 h).
+    conversacionesIniciadas: integer("conversaciones_iniciadas").notNull().default(0),
+    mensajesEntrantes: integer("mensajes_entrantes").notNull().default(0),
+    mensajesSalientes: integer("mensajes_salientes").notNull().default(0),
+    plantillasMarketing: integer("plantillas_marketing").notNull().default(0),
+    plantillasUtilidad: integer("plantillas_utilidad").notNull().default(0),
+  },
+  (t) => ({
+    uqTenantMes: uniqueIndex("wa_uso_mensual_tenant_mes_uq").on(t.tenantId, t.anioMes),
+  }),
+);
+
 export const schema = {
   waConversaciones,
   waMensajes,
@@ -327,4 +354,5 @@ export const schema = {
   waJobs,
   waCampanias,
   waCampaniaEnvios,
+  waUsoMensual,
 };
