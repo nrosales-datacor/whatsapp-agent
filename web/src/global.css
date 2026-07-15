@@ -396,6 +396,11 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .card h3 { font-size: var(--step--1); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: var(--space-md); }
 .dash-vacio { color: var(--text-muted); font-size: var(--step--1); }
 
+/* Estado de error reutilizable (ErrorState: ícono + mensaje + Reintentar) */
+.error-state { display: flex; flex-direction: column; align-items: center; gap: var(--space-sm); text-align: center; color: var(--text-muted); padding: var(--space-xl) var(--space-md); }
+.error-state svg { color: var(--destructive); }
+.error-state p { font-size: var(--step--1); margin: 0; }
+
 /* Barras horizontales (citas por día) */
 .barra { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-xs); font-size: var(--step--1); }
 .barra .et { width: 84px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-muted); }

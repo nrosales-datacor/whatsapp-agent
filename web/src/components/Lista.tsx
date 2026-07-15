@@ -98,7 +98,10 @@ export default function Lista({ conversaciones, abiertaId, escondida, onAbrir }:
               onClick={() => onAbrir(c.id)}
             >
               {c.leadScore !== undefined ? (
-                <div className={`score-tile ${scoreClase(c.leadScore)}`}>
+                <div
+                  className={`score-tile ${scoreClase(c.leadScore)}`}
+                  title="Lead score: prioridad estimada del cliente (0-100), según interés en agendar y actividad reciente."
+                >
                   {c.leadScore}
                 </div>
               ) : (
@@ -107,7 +110,7 @@ export default function Lista({ conversaciones, abiertaId, escondida, onAbrir }:
               <div className="info">
                 <div className="fila">
                   <span className={"num" + (c.sinLeer > 0 ? " negrita" : "")}>
-                    {fmtNum(c.clienteWa)}
+                    {c.nombre || fmtNum(c.clienteWa)}
                   </span>
                   <span className={"hora" + (c.sinLeer > 0 ? " hora-accent" : "")}>
                     {hora(c.ultimaActividadEn)}

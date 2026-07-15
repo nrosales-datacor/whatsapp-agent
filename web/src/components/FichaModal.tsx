@@ -51,7 +51,7 @@ export default function FichaModal({ convId, clienteWa, onCerrar }: Props) {
             <b>{fmtNum(clienteWa)}</b>
           </div>
           <div className="dato">
-            <span>Vehículos</span>
+            <span>Vehículo / Placa</span>
             <b>{ficha && ficha.placas.length ? ficha.placas.join(", ") : "—"}</b>
           </div>
           <div className="dato">
@@ -60,7 +60,7 @@ export default function FichaModal({ convId, clienteWa, onCerrar }: Props) {
           </div>
           <div className="dato">
             <span>Última visita</span>
-            <b>{ficha?.ultimaVisita || "—"}</b>
+            <b>{fechaCorta(ficha?.ultimaVisita)}</b>
           </div>
           <div className="dato">
             <span>Cliente desde</span>
@@ -72,7 +72,7 @@ export default function FichaModal({ convId, clienteWa, onCerrar }: Props) {
             {ficha && ficha.historial.length ? (
               ficha.historial.map((h, i) => (
                 <div className="hist" key={i}>
-                  <b>{h.servicioNombre}</b> · {h.fecha} {h.hora}{" "}
+                  <b>{h.servicioNombre}</b> · {fechaCorta(h.fecha)} {h.hora}{" "}
                   <span style={{ color: "var(--text-muted)" }}>({h.estado})</span>
                 </div>
               ))

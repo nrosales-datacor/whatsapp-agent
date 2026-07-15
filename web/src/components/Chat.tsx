@@ -156,9 +156,14 @@ export default function Chat({ id, resumen, reaperturaConfigurada, mostrar, onVo
           <div className="chatHead" onClick={onVerFicha}>
             <div className="chat-head-top">
               {score !== undefined && (
-                <div className={`score-tile score-tile-sm ${scoreClase(score)}`}>{score}</div>
+                <div
+                  className={`score-tile score-tile-sm ${scoreClase(score)}`}
+                  title="Lead score: prioridad estimada del cliente (0-100), según interés en agendar y actividad reciente."
+                >
+                  {score}
+                </div>
               )}
-              <span id="chatTitulo">{fmtNum(conv.clienteWa)}</span>
+              <span id="chatTitulo">{resumen?.nombre || fmtNum(conv.clienteWa)}</span>
               <span className={"pill " + conv.modo}>{humano ? "humano" : "bot"}</span>
               <span
                 className={"pill-ventana" + (conv.ventanaAbierta ? " abierta" : " cerrada")}
