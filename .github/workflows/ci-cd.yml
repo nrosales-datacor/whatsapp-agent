@@ -22,6 +22,9 @@ jobs:
       - name: Tests unitarios (backend)
         run: npm test
 
+      - name: Guardrail de migraciones (drift de schema, ángulo 7)
+        run: npm run db:check
+
       - name: Typecheck (backend)
         run: npm run typecheck
 
@@ -34,9 +37,30 @@ jobs:
       - name: Build del panel
         run: npm run build --prefix web
 
+  e2e-panel:
+    name: E2E del panel (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+
+      - name: Instalar dependencias (backend, incluye Playwright y tsx)
+        run: npm ci
+
+      - name: Build del panel (web/dist — el server E2E lo sirve)
+        run: npm run web:build
+
+      - name: Instalar el navegador de Playwright (Chromium)
+        run: npx playwright install --with-deps chromium
+
+      - name: Correr el E2E del panel (server en memoria + Graph mockeado)
+        run: npx playwright test
+
   desplegar:
     name: Deploy a producción
-    needs: verificar
+    needs: [verificar, e2e-panel]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     concurrency:
