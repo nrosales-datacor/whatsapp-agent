@@ -9,6 +9,7 @@ import {
   validarLinkResenas,
   validarLogoUrl,
   validarNombrePlantillaMarketing,
+  validarNombrePlantillaReapertura,
   validarServicios,
 } from "../../src/config/validadores";
 
@@ -93,6 +94,12 @@ test("validarNombrePlantillaMarketing: normaliza a minúsculas y valida formato"
   assert.equal(validarNombrePlantillaMarketing("Promo_Verano"), "promo_verano");
   assert.equal(validarNombrePlantillaMarketing("promo verano"), null);
   assert.equal(validarNombrePlantillaMarketing(""), "");
+});
+
+test("validarNombrePlantillaReapertura: normaliza a minúsculas y valida formato", () => {
+  assert.equal(validarNombrePlantillaReapertura("Reapertura_Conv"), "reapertura_conv");
+  assert.equal(validarNombrePlantillaReapertura("reapertura conv"), null);
+  assert.equal(validarNombrePlantillaReapertura(""), "");
 });
 
 test("validarColorHex: acepta hex válido y normaliza a minúsculas", () => {

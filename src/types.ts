@@ -82,6 +82,12 @@ export interface Tenant {
    * segmentadas, C3.2). undefined = sin configurar (no se pueden enviar campañas).
    */
   plantillaMarketing?: string;
+  /**
+   * Nombre de la plantilla de UTILIDAD aprobada en Meta para reabrir conversaciones
+   * fuera de la ventana de 24h (Carril D, 0.3). undefined = sin configurar (el panel
+   * no puede reabrir; solo queda esperar a que el cliente escriba de nuevo).
+   */
+  plantillaReapertura?: string;
   /** Color de acento del panel (hex "#rrggbb"), white-label C4.1. undefined = paleta default. */
   colorAcento?: string;
   /** Color del encabezado del panel (hex "#rrggbb"), white-label C4.1. undefined = paleta default. */
@@ -261,6 +267,14 @@ export interface Conversacion {
   tieneCita?: boolean;
   /** true si esa cita activa más próxima está confirmada por el cliente (C1.3). */
   citaConfirmada?: boolean;
+  /**
+   * Ventana de sesión de WhatsApp (Carril D, 0.3): true si el último mensaje del
+   * cliente fue hace menos de 24h — solo entonces se puede mandar texto libre.
+   * Derivada de `mensajes`, no se persiste (ver src/whatsapp/ventana.ts).
+   */
+  ventanaAbierta: boolean;
+  /** ISO de cuándo cierra la ventana de 24h; null = el cliente nunca escribió. */
+  ventanaCierraEn: string | null;
 }
 
 /** Fila liviana para la lista de la bandeja del panel (sin todo el historial). */

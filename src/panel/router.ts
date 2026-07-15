@@ -23,9 +23,10 @@ import {
   validarLinkResenas,
   validarLogoUrl,
   validarNombrePlantillaMarketing,
+  validarNombrePlantillaReapertura,
   validarServicios,
 } from "../config/validadores";
-import { enviarTexto } from "../whatsapp/client";
+import { enviarPlantilla, enviarTexto } from "../whatsapp/client";
 import {
   configPublica as esConfigPublica,
   embeddedSignupConfigurado,
@@ -695,6 +696,9 @@ export async function manejarPanel(
       // Gating de planes (Carril D, 0.1): el panel muestra/oculta sin adivinar.
       plan: tenant.plan,
       features: featuresDeTenant(tenant),
+      // Ventana de 24h (Carril D, 0.3): si hay plantilla de reapertura configurada,
+      // el chat ofrece el botón "Reabrir conversación" fuera de ventana.
+      reaperturaConfigurada: !!tenant.plantillaReapertura,
     });
     return true;
   }
@@ -896,6 +900,7 @@ export async function manejarPanel(
       bloqueos: tenant.bloqueos,
       linkResenas: tenant.linkResenas ?? "",
       plantillaMarketing: tenant.plantillaMarketing ?? "",
+      plantillaReapertura: tenant.plantillaReapertura ?? "",
       colorAcento: tenant.colorAcento ?? "",
       colorHeader: tenant.colorHeader ?? "",
       logoUrl: tenant.logoUrl ?? "",
@@ -934,6 +939,11 @@ export async function manejarPanel(
       return json(res, 400, { ok: false, error: "Nombre de plantilla inválido (minúsculas, números y guiones bajos)" }), true;
     }
 
+    const plantillaReapertura = validarNombrePlantillaReapertura(body?.plantillaReapertura);
+    if (plantillaReapertura === null) {
+      return json(res, 400, { ok: false, error: "Nombre de plantilla inválido (minúsculas, números y guiones bajos)" }), true;
+    }
+
     const colorAcento = validarColorHex(body?.colorAcento);
     if (colorAcento === null) return json(res, 400, { ok: false, error: "Color de acento inválido (formato #rrggbb)" }), true;
 
@@ -965,6 +975,7 @@ export async function manejarPanel(
         bloqueos,
         linkResenas: linkResenas || null,
         plantillaMarketing: plantillaMarketing || null,
+        plantillaReapertura: plantillaReapertura || null,
         colorAcento: colorAcento || null,
         colorHeader: colorHeader || null,
         logoUrl: logoUrl || null,
@@ -1170,6 +1181,16 @@ export async function manejarPanel(
       if (!t) return json(res, 400, { ok: false, error: "Mensaje vacío" }), true;
       if (t.length > 4096) return json(res, 400, { ok: false, error: "El mensaje supera el límite de WhatsApp (4096)" }), true;
 
+      // Ventana de 24h (Carril D, 0.3): fuera de ventana Meta rechaza el texto libre —
+      // se corta acá con un error claro en vez de dejar que falle en enviarTexto.
+      if (!conv.ventanaAbierta) {
+        return json(res, 409, {
+          ok: false,
+          error: "ventana_cerrada",
+          ventanaCierraEn: conv.ventanaCierraEn,
+        }), true;
+      }
+
       try {
         await enviarTexto(tenant, conv.clienteWa, t);
       } catch (e) {
@@ -1186,6 +1207,36 @@ export async function manejarPanel(
         porHumano: true,
       });
       await repo.marcarLeidas(tenant.id, conv.id);
+      return json(res, 200, { ok: true }), true;
+    }
+
+    // Reabrir conversación fuera de la ventana de 24h (Carril D, 0.3): manda la
+    // plantilla de UTILIDAD configurada en "Mi negocio" — el cliente responde y la
+    // ventana vuelve a abrirse (mismo mecanismo que un mensaje entrante cualquiera).
+    if (accion === "reabrir" && metodo === "POST") {
+      const conv = await repo.obtenerConversacionPorId(tenant.id, convId);
+      if (!conv) return json(res, 404, { ok: false, error: "No existe" }), true;
+      if (conv.ventanaAbierta) {
+        return json(res, 400, { ok: false, error: "La ventana ya está abierta, no hace falta reabrir" }), true;
+      }
+      if (!tenant.plantillaReapertura) {
+        return json(res, 400, {
+          ok: false,
+          error: "Configurá la plantilla de reapertura en \"Mi negocio\" antes de reabrir conversaciones",
+        }), true;
+      }
+      try {
+        await enviarPlantilla(tenant, conv.clienteWa, tenant.plantillaReapertura, "es", [], "utilidad");
+      } catch (e) {
+        console.error("[panel] enviarPlantilla (reabrir) falló:", e);
+        return json(res, 502, { ok: false, error: "No se pudo enviar la plantilla de reapertura" }), true;
+      }
+      await repo.guardarMensaje(conv.id, {
+        rol: "assistant",
+        contenido: "📩 Plantilla de reapertura enviada (conversación fuera de la ventana de 24h).",
+        creadoEn: new Date().toISOString(),
+        porHumano: true,
+      });
       return json(res, 200, { ok: true }), true;
     }
 

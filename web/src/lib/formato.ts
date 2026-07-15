@@ -21,6 +21,16 @@ export function colones(n: number): string {
   return "₡" + (n || 0).toLocaleString("es-CR");
 }
 
+/** Tiempo restante hasta un ISO futuro, "Xh Ym" o "Ym" (ventana de 24h, Carril D 0.3). "" si no hay fecha. */
+export function restante(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms <= 0) return "0m";
+  const horas = Math.floor(ms / (60 * 60 * 1000));
+  const minutos = Math.floor((ms % (60 * 60 * 1000)) / (60 * 1000));
+  return horas > 0 ? `${horas}h ${minutos}m` : `${minutos}m`;
+}
+
 /** Iniciales del nombre del negocio para el chip de marca sin logo (máx. 2 letras). */
 export function iniciales(nombre: string): string {
   const palabras = nombre.trim().split(/\s+/).filter(Boolean);

@@ -153,6 +153,18 @@ export function validarNombrePlantillaMarketing(v: unknown): string | null {
 }
 
 /**
+ * Valida el nombre de la plantilla de UTILIDAD aprobada en Meta para reabrir
+ * conversaciones fuera de la ventana de 24h (ROADMAP Carril D, 0.3). Vacío = sin
+ * configurar (el panel no puede reabrir). Mismo formato que la de marketing.
+ */
+export function validarNombrePlantillaReapertura(v: unknown): string | null {
+  const s = String(v ?? "").trim().toLowerCase();
+  if (!s) return "";
+  if (s.length > 80 || !RE_NOMBRE_PLANTILLA.test(s)) return null;
+  return s;
+}
+
+/**
  * Valida un color de marca en hex "#rrggbb" (white-label, ROADMAP C4.1). Vacío = sin
  * configurar (el panel usa la paleta verde default). Devuelve null si viene algo no
  * vacío pero con un formato distinto.

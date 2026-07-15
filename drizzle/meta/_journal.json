@@ -120,6 +120,13 @@
       "when": 1784093934937,
       "tag": "0016_first_terror",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1784129992422,
+      "tag": "0017_legal_silver_samurai",
+      "breakpoints": true
     }
   ]
 }

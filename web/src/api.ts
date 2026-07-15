@@ -131,6 +131,9 @@ export interface Sesion {
   plan: Plan;
   /** Qué puede usar este negocio según su plan — el panel muestra/oculta sin adivinar. */
   features: Features;
+  /** Ventana de 24h (Carril D, 0.3): true si el negocio configuró la plantilla de
+   * reapertura — habilita el botón "Reabrir conversación" fuera de ventana. */
+  reaperturaConfigurada: boolean;
 }
 
 /** La ficha que devuelve el panel agrega el nombre del servicio a cada ítem del historial. */
@@ -177,6 +180,11 @@ export async function cambiarModo(id: string, modo: ModoConversacion): Promise<v
     method: "POST",
     body: JSON.stringify({ modo }),
   });
+}
+
+/** Ventana de 24h (Carril D, 0.3): reabre la conversación con la plantilla de utilidad configurada. */
+export async function reabrirConversacion(id: string): Promise<void> {
+  await pedir(`/conversaciones/${encodeURIComponent(id)}/reabrir`, { method: "POST" });
 }
 
 /** Cola de trabajo (C2.3): marcar una conversación como atendida, o reabrirla. */
@@ -273,6 +281,8 @@ export interface ConfigNegocio {
   linkResenas: string;
   /** Nombre de la plantilla MARKETING aprobada en Meta (C3.2). "" = sin configurar. */
   plantillaMarketing: string;
+  /** Nombre de la plantilla de UTILIDAD para reabrir conversaciones fuera de ventana (0.3). "" = sin configurar. */
+  plantillaReapertura: string;
   /** Color de acento del panel (hex "#rrggbb", C4.1). "" = paleta default. */
   colorAcento: string;
   /** Color del encabezado del panel (hex "#rrggbb", C4.1). "" = paleta default. */

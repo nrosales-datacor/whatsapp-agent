@@ -4,10 +4,11 @@ import {
   cambiarEstadoConversacion,
   cambiarModo,
   obtenerConversacion,
+  reabrirConversacion,
   responder,
   type ResumenConversacion,
 } from "../api";
-import { fmtNum, hora } from "../lib/formato";
+import { fmtNum, hora, restante } from "../lib/formato";
 import Icono from "./Iconos";
 import { useToast } from "./Toast";
 
@@ -15,6 +16,8 @@ interface Props {
   id: string | null;
   /** Resumen de la conversación activa (de la lista cacheada). Provee leadScore, tieneCita, etc. */
   resumen: ResumenConversacion | null;
+  /** Ventana de 24h (Carril D, 0.3): el negocio configuró la plantilla de reapertura. */
+  reaperturaConfigurada: boolean;
   mostrar: boolean;
   onVolver: () => void;
   onVerFicha: () => void;
@@ -26,7 +29,7 @@ function scoreClase(s: number) {
   return "score-bajo";
 }
 
-export default function Chat({ id, resumen, mostrar, onVolver, onVerFicha }: Props) {
+export default function Chat({ id, resumen, reaperturaConfigurada, mostrar, onVolver, onVerFicha }: Props) {
   const qc = useQueryClient();
   const { flash } = useToast();
   const [texto, setTexto] = useState("");
@@ -49,7 +52,17 @@ export default function Chat({ id, resumen, mostrar, onVolver, onVerFicha }: Pro
   const enviar = useMutation({
     mutationFn: (t: string) => responder(id!, t),
     onSuccess: () => { setTexto(""); invalidar(); },
-    onError: (e) => flash(e instanceof Error ? e.message : "No se pudo enviar"),
+    onError: (e) => {
+      const msg = e instanceof Error ? e.message : "No se pudo enviar";
+      flash(msg === "ventana_cerrada" ? "La ventana de 24h se cerró — reabrí la conversación para escribir" : msg);
+      if (msg === "ventana_cerrada") invalidar();
+    },
+  });
+
+  const reabrir = useMutation({
+    mutationFn: () => reabrirConversacion(id!),
+    onSuccess: () => { invalidar(); flash("Plantilla de reapertura enviada"); },
+    onError: (e) => flash(e instanceof Error ? e.message : "No se pudo reabrir la conversación"),
   });
 
   // El borrador es por conversación: si se cambia de chat sin enviar, no debe
@@ -147,6 +160,12 @@ export default function Chat({ id, resumen, mostrar, onVolver, onVerFicha }: Pro
               )}
               <span id="chatTitulo">{fmtNum(conv.clienteWa)}</span>
               <span className={"pill " + conv.modo}>{humano ? "humano" : "bot"}</span>
+              <span
+                className={"pill-ventana" + (conv.ventanaAbierta ? " abierta" : " cerrada")}
+                title="Ventana de sesión de WhatsApp: solo se puede escribir texto libre dentro de las 24h posteriores al último mensaje del cliente"
+              >
+                {conv.ventanaAbierta ? `🟢 cierra en ${restante(conv.ventanaCierraEn)}` : "🔴 ventana cerrada"}
+              </span>
               {tieneCita && (
                 <span className={"pill-cita" + (citaConfirmada ? " confirmada" : "")}>
                   {citaConfirmada ? "✅ Cita confirmada" : "📅 Cita"}
@@ -240,7 +259,29 @@ export default function Chat({ id, resumen, mostrar, onVolver, onVerFicha }: Pro
         </div>
       )}
 
-      {conv && (
+      {conv && !conv.ventanaAbierta && (
+        <div id="composer" className="composer-cerrado">
+          <span className="composer-cerrado-msg">
+            🔴 Ventana de 24h cerrada: no se puede escribir texto libre hasta que el cliente vuelva a escribir.
+          </span>
+          {reaperturaConfigurada ? (
+            <button
+              type="button"
+              className="accion accion-primaria"
+              onClick={() => reabrir.mutate()}
+              disabled={reabrir.isPending}
+            >
+              Reabrir conversación
+            </button>
+          ) : (
+            <span className="composer-cerrado-ayuda">
+              Configurá la plantilla de reapertura en "Mi negocio" para poder reabrirla.
+            </span>
+          )}
+        </div>
+      )}
+
+      {conv && conv.ventanaAbierta && (
         <div id="composer">
           <textarea
             ref={taRef}

@@ -184,3 +184,41 @@ de cuenta* → *Plantillas de mensaje* → **Crear plantilla**:
 Igual que la Utility: quitar ambigüedad, dejar el opt-out ("BAJA") explícito en el cuerpo, y
 re-someter. Meta es más estricto con Marketing que con Utility — evitar mayúsculas sostenidas,
 signos de exclamación excesivos o lenguaje que suene a spam.
+
+---
+
+## D. Plantilla de UTILIDAD para reabrir conversaciones (para Carril D, 0.3)
+
+### Qué es y por qué
+
+La ventana de sesión de WhatsApp dura 24 h desde el último mensaje del cliente; pasado ese
+tiempo, el panel bloquea el texto libre (chip 🔴 "ventana cerrada" en el chat) y el único
+camino para retomar la conversación es una plantilla **aprobada**. El botón "Reabrir
+conversación" del chat manda esta plantilla (`src/whatsapp/client.ts`, `enviarPlantilla` con
+categoría `"utilidad"`); sin ella configurada, el botón no aparece y solo queda esperar a que
+el cliente escriba de nuevo.
+
+Cada tenant necesita su propia plantilla aprobada; el nombre se configura en "Mi negocio" →
+"Ventana de 24 horas" → "Plantilla de reapertura aprobada".
+
+### Contenido exacto para crearla
+
+En **WhatsApp Manager** → *Plantillas de mensaje* → **Crear plantilla**:
+
+- **Categoría:** Utility (no Marketing — no es una promoción, es continuar una conversación
+  de servicio ya iniciada).
+- **Nombre:** minúsculas y guiones bajos (ej. `reapertura_conversacion`); ese nombre exacto va
+  en "Mi negocio" → "Ventana de 24 horas".
+- **Idioma:** Español (`es`).
+- **Cuerpo** (sin variables, el código hoy la manda sin parámetros):
+
+  > ¡Hola! Quedamos pendientes de tu consulta 🙂 Escribinos cuando quieras y seguimos donde lo
+  > dejamos.
+
+### Cómo verificar la aprobación y activarla
+
+1. Utility suele aprobarse más rápido que Marketing (horas, no días).
+2. Aprobada → "Mi negocio" → "Ventana de 24 horas" → escribir el nombre exacto → Guardar (sin
+   redeploy, mismo mecanismo que el resto de "Mi negocio").
+3. Probar reabriendo una conversación de prueba (tu propio número) antes de depender de ella
+   con un cliente real.

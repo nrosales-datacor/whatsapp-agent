@@ -52,6 +52,8 @@ const convVacia = (): Conversacion => ({
   modo: "bot",
   estado: "abierta",
   mensajes: [],
+  ventanaAbierta: false,
+  ventanaCierraEn: null,
 });
 
 test("un job pendiente se reclama exactamente una vez (no se re-entrega)", async () => {
