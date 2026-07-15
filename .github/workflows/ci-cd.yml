@@ -71,6 +71,7 @@ jobs:
       DEPLOY_USER: "sebastian"
       DEPLOY_DIR: "~/lavacar-whatsapp-bot"
       DEPLOY_PM2_APP: "whatsapp-bot"
+      BASE_URL: "https://wabotlavacar.selyon.app"
       SALUD_URL: "https://wabotlavacar.selyon.app/salud"
     steps:
       - name: Configurar SSH
@@ -105,3 +106,46 @@ jobs:
           done
           echo "::error::El bot no respondió en /salud tras el deploy (30s de reintentos)"
           exit 1
+
+      # Smoke post-deploy (TESTING.md ángulo 9): más allá de /salud, verifica que las
+      # tres superficies críticas están vivas tras el deploy. Ninguna toca datos ni
+      # requiere credenciales reales, así que es seguro correrlo contra producción.
+      - name: Smoke post-deploy (panel + API + auth)
+        run: |
+          fallo=0
+
+          # 1) El bundle de React se sirve (no cayó al 503 "corré web:build"). Regresión
+          #    típica: falta el build → /panel devuelve 503 y el panel queda inservible.
+          panel="$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/panel")"
+          cuerpo="$(curl -s "$BASE_URL/panel")"
+          if [ "$panel" = "200" ] && printf '%s' "$cuerpo" | grep -qi '<div id="root"'; then
+            echo "✅ /panel sirve el bundle de React (200 + #root)"
+          else
+            echo "::error::/panel no sirvió el bundle (HTTP $panel) — ¿falta web:build?"
+            fallo=1
+          fi
+
+          # 2) La API del panel está viva y exige auth: /me sin cookie → 401 (no 500/404).
+          me="$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/api/panel/me")"
+          if [ "$me" = "401" ]; then
+            echo "✅ /api/panel/me sin sesión → 401 (API viva, auth aplicada)"
+          else
+            echo "::error::/api/panel/me devolvió $me (se esperaba 401)"
+            fallo=1
+          fi
+
+          # 3) El login está vivo y consulta el tenantStore (base de datos): con Origin del
+          #    host y credenciales falsas debe dar 401 — un 500/503 delataría que la base o
+          #    el store se rompieron. Es el proxy seguro de "un login real funciona" sin
+          #    usar credenciales reales de demo en producción.
+          login="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/api/panel/login" \
+            -H "Origin: $BASE_URL" -H 'Content-Type: application/json' \
+            -d '{"usuario":"__smoke_inexistente__","password":"__no__"}')"
+          if [ "$login" = "401" ]; then
+            echo "✅ /api/panel/login con credenciales falsas → 401 (auth + tenantStore vivos)"
+          else
+            echo "::error::/api/panel/login devolvió $login (se esperaba 401)"
+            fallo=1
+          fi
+
+          exit $fallo
