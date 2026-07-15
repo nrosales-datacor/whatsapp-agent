@@ -6,7 +6,8 @@
 > **Este doc es un plan, no un estado.** A medida que se implemente cada ángulo, marcar su casilla y anotar
 > el comando/archivo real. Mantener vivo igual que `ROADMAP.md`.
 >
-> **Última actualización:** 2026-07-14 (ángulos 1, 2, 3, 4 y 5 implementados)
+> **Última actualización:** 2026-07-14 (ángulos 1–5 y 7 completos; ángulo 6 implementado por la UI
+> in-memory — los flujos que exigen base de datos quedan documentados para la corrida con Postgres)
 
 ---
 
@@ -145,22 +146,42 @@ se serializan. Eso NO debilita el invariante que importa: la atomicidad del `UPD
 Postgres igual en serie. La **contención real de 2 backends en paralelo** (que atraparía una regresión que quite el
 `FOR UPDATE SKIP LOCKED`) necesita un Postgres multi-conexión y se cubriría en el job de **Postgres efímera del ángulo 7**.
 
-### 6. ⬜ Panel E2E (Playwright — formalizar lo que hoy es manual)
+### 6. ✅ Panel E2E (Playwright — formalizar lo que hoy es manual)
 
-- [ ] Login → responder → toggle bot/humano → marcar atendido/reabrir.
-- [ ] Agenda: crear manual / confirmar / reprogramar / completar / cancelar / no-show.
-- [ ] **Guards de rol:** operador recibe **403** en `/usuarios` y `POST /config` (no basta esconder la pestaña).
-- [ ] Admin/onboarding: CSRF, 409 por duplicado, no-sombra de sesión operador.
-- [ ] White-label: colores/logo se aplican; se limpian al logout.
-- [ ] Responsivo 390/1440px × claro/oscuro; sin errores de consola.
-- [ ] PWA: `sw.js` con `Service-Worker-Allowed`, manifest, íconos.
+Suite en `test/e2e-panel/*.spec.ts` (Chromium, `npm run test:e2e`; corre en CI como **job aparte**
+`e2e-panel`, que además **bloquea el deploy**). Playwright `@1.60.0` fijo (política supply-chain). El
+webServer levanta el **mismo `src/server.ts`** en modo seguro (`test/e2e-panel/servidor.ts`): repo **en
+memoria** (sin `DATABASE_URL` → jamás toca producción; se neutraliza el `.env` real vía `DOTENV_CONFIG_PATH`),
+`SEED_DEMO=1`, y **Graph API mockeado in-process** (reusa el helper del ángulo 3) para que `responder` envíe
+sin red. `workers:1` porque todas las specs comparten el repo en memoria del proceso.
 
-### 7. ⬜ Guardrail de migraciones en CI (tu trampa conocida)
+- [x] **Login** (feliz + credenciales malas) → **responder** (el mensaje del operador aparece, Graph mockeado)
+  → **toggle bot/humano** → **marcar atendido/reabrir**. Todo por la UI real.
+- [x] Bandeja con conversaciones sembradas; abrir chat → mensajes → **ficha del cliente** → **dashboard**.
+- [x] Agenda: **crear / confirmar / reprogramar / completar / cancelar / no-show** (ciclo CRUD por la API
+  autenticada); la vista y el modal "Nueva cita" cargan por la UI.
+- [x] **Guards de rol:** operador recibe **403** en `GET /usuarios` y `POST /config`; el dueño **pasa** el guard
+  (cae en el 503 de "requiere DB") — códigos distintos ⇒ el 403 es por rol. Las cookies se **mintean** con el
+  `PANEL_SESSION_SECRET` conocido, sin depender de que exista el usuario en la base.
+- [x] **CSRF:** `POST` con `Origin` ajeno → 403; con el `Origin` del host → pasa el guard (y falla por credenciales).
+- [x] **Responsivo 390/1440px × claro/oscuro; sin errores de consola** (pageerror + console.error, filtrando ruido de red/PWA).
+- [x] **PWA:** `sw.js` (200 + `Service-Worker-Allowed: /panel/`), `manifest.webmanifest`, íconos.
+- [ ] **Requiere base de datos real → cubrir en la corrida con Postgres** (ángulo 7 / job futuro con service
+  container): alta de negocio **409 por duplicado**, CRUD de **usuarios/config/campañas** (en memoria dan 503),
+  y **white-label** aplicado/limpiado (necesita un tenant con colores guardados). El **403** del operador y la
+  separación admin/operador SÍ se prueban acá (son de rol, no de DB).
+
+### 7. ✅ Guardrail de migraciones en CI (tu trampa conocida)
 
 - Cambiar `src/db/schema.ts` **sin** migración drizzle rompe TODO el deploy en silencio
   (`seedTenants` aborta antes del `pm2 restart`).
-- [ ] Paso en CI: levantar Postgres efímera (service container), correr `db:migrate`, y validar
-  con `drizzle-kit check` que el schema aplicado == `schema.ts`. Falla el build si hay drift.
+- [x] **Detección de drift** (`npm run db:check` → `scripts/verificarMigraciones.ts`, corre en el job
+  `verificar` antes del typecheck y **bloquea el deploy**): corre `drizzle-kit generate` (offline, usa los
+  snapshots de `./drizzle/meta` — **no necesita base**) y falla si eso produce cambios en `./drizzle`, o sea si
+  `schema.ts` tiene cambios sin migrar. Deja el árbol como lo encontró (revierte lo que `generate` haya tocado).
+- [x] **Que las migraciones apliquen limpio** ya lo cubre la suite de **fiabilidad** (ángulo 5): PGlite aplica las
+  migraciones reales de `./drizzle` en cada push. Por eso el guardrail acá se enfoca en el drift, que es el modo
+  de fallo caro y silencioso; no hace falta un service container solo para esto.
 
 ### 8. ⬜ Seguridad
 
@@ -190,25 +211,30 @@ test/
   tenant/          # aislamiento multi-tenant
   e2e-webhook/     # responderEntrante con repo en memoria + fetch mockeado
   reliability/     # cola, recordatorios, campañas (concurrencia)
+  e2e-panel/       # Playwright: servidor.ts (server E2E), *.spec.ts, constantes.ts
   helpers/         # fabricadores de tenant/cita/conversación, mock de Graph/OpenAI
 eval/
   transcripciones/ # casos fijos del agente
   correrEval.ts
-web/
-  e2e/             # Playwright (formaliza shotPanel.mjs y las verificaciones manuales)
+playwright.config.ts  # webServer = test/e2e-panel/servidor.ts, workers:1
+scripts/
+  verificarMigraciones.ts  # guardrail de drift (ángulo 7)
 ```
 
 `package.json`:
 ```jsonc
 "scripts": {
-  "test": "tsx --test test/**/*.test.ts",   // rápido, determinista, en cada push
-  "test:e2e": "playwright test",             // panel
-  "eval": "tsx eval/correrEval.ts"           // LLM, manual/nocturno
+  "test": "tsx --test test/unit/*.test.ts test/tenant/*.test.ts test/e2e-webhook/*.test.ts test/reliability/*.test.ts",
+  "test:e2e": "npm run web:build && playwright test",  // panel (build + Playwright)
+  "db:check": "tsx scripts/verificarMigraciones.ts",   // drift de schema (ángulo 7)
+  "eval": "tsx eval/correrEval.ts"                      // LLM, manual/nocturno
 }
 ```
 
-CI (`.github/workflows/ci-cd.yml`): agregar `npm test` **antes** del build; `test:e2e` y el guardrail
-de migraciones como jobs separados. `eval` NO en el push (tokens).
+CI (`.github/workflows/ci-cd.yml`): `npm test` y `npm run db:check` corren en el job `verificar`
+(antes del typecheck); el E2E del panel es el job separado `e2e-panel` (build + `npx playwright install`
++ `npx playwright test`). Ambos jobs **bloquean el deploy** (`desplegar.needs: [verificar, e2e-panel]`).
+`eval` NO en el push (tokens).
 
 ---
 
