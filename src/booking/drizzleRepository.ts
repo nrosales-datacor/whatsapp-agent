@@ -16,6 +16,7 @@ import type {
   TipoRecordatorio,
 } from "../types";
 import { calcularMetricas, formatDelta } from "../panel/metricas";
+import { calcularVentana } from "../whatsapp/ventana";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Repositorio Drizzle. Implementa la MISMA interfaz que el de memoria.
@@ -77,6 +78,15 @@ export class RepositorioDrizzle implements Repositorio {
         .limit(20)
     ).reverse();
 
+    const mensajes: MensajeConversacion[] = msgs.map((m) => ({
+      rol: m.rol as "user" | "assistant",
+      contenido: m.contenido,
+      creadoEn: m.creadoEn.toISOString(),
+      porHumano: m.porHumano,
+      mediaUrl: m.mediaUrl ?? undefined,
+      mediaTipo: (m.mediaTipo as "imagen" | undefined) ?? undefined,
+    }));
+
     return {
       id: conv.id,
       tenantId: conv.tenantId,
@@ -85,14 +95,8 @@ export class RepositorioDrizzle implements Repositorio {
       optOutEn: conv.optOutEn ? conv.optOutEn.toISOString() : null,
       modo: conv.modo as ModoConversacion,
       estado: conv.estado as EstadoConversacion,
-      mensajes: msgs.map((m) => ({
-        rol: m.rol as "user" | "assistant",
-        contenido: m.contenido,
-        creadoEn: m.creadoEn.toISOString(),
-        porHumano: m.porHumano,
-        mediaUrl: m.mediaUrl ?? undefined,
-        mediaTipo: (m.mediaTipo as "imagen" | undefined) ?? undefined,
-      })),
+      mensajes,
+      ...calcularVentana(mensajes),
     };
   }
 
@@ -484,7 +488,7 @@ export class RepositorioDrizzle implements Repositorio {
     ]);
     const conv = convRows[0];
     if (!conv) return null; // no existe / no es de este tenant → descartamos los mensajes leídos
-    const msgs = msgsDesc.reverse();
+    const msgsAsc = msgsDesc.reverse();
 
     // Cita activa más próxima del cliente (para badge "Cita agendada" y subtítulo servicio).
     const [citaActiva] = await this.db
@@ -501,6 +505,15 @@ export class RepositorioDrizzle implements Repositorio {
       .orderBy(waCitas.fecha, waCitas.hora)
       .limit(1);
 
+    const mensajes: MensajeConversacion[] = msgsAsc.map((m) => ({
+      rol: m.rol as "user" | "assistant",
+      contenido: m.contenido,
+      creadoEn: m.creadoEn.toISOString(),
+      porHumano: m.porHumano,
+      mediaUrl: m.mediaUrl ?? undefined,
+      mediaTipo: (m.mediaTipo as "imagen" | undefined) ?? undefined,
+    }));
+
     return {
       id: conv.id,
       tenantId: conv.tenantId,
@@ -509,14 +522,8 @@ export class RepositorioDrizzle implements Repositorio {
       optOutEn: conv.optOutEn ? conv.optOutEn.toISOString() : null,
       modo: conv.modo as ModoConversacion,
       estado: conv.estado as EstadoConversacion,
-      mensajes: msgs.map((m) => ({
-        rol: m.rol as "user" | "assistant",
-        contenido: m.contenido,
-        creadoEn: m.creadoEn.toISOString(),
-        porHumano: m.porHumano,
-        mediaUrl: m.mediaUrl ?? undefined,
-        mediaTipo: (m.mediaTipo as "imagen" | undefined) ?? undefined,
-      })),
+      mensajes,
+      ...calcularVentana(mensajes),
       servicio: citaActiva?.servicioId ?? null,
       tieneCita: !!citaActiva,
       citaConfirmada: !!citaActiva?.confirmadaEn,

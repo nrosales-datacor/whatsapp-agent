@@ -294,6 +294,9 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .chat-servicio { color: var(--accent); font-weight: 500; }
 .pill-cita { background: var(--bot-soft); color: var(--bot); font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: var(--radius); }
 .pill-cita.confirmada { background: var(--accent-soft); color: var(--accent); }
+.pill-ventana { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: var(--radius); white-space: nowrap; }
+.pill-ventana.abierta { background: color-mix(in srgb, var(--success) 18%, transparent); color: var(--success); }
+.pill-ventana.cerrada { background: var(--danger-soft); color: var(--danger); }
 .estado-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .estado-dot.bot { background: var(--text-muted); }
 .estado-dot.humano { background: var(--accent); }
@@ -344,6 +347,10 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 #composer button { background: var(--accent); color: var(--on-accent); width: 42px; height: 42px; border-radius: var(--radius-pill); display: grid; place-items: center; flex-shrink: 0; transition: background .15s; }
 #composer button:hover { background: var(--accent-strong); }
 #composer button svg { width: 20px; height: 20px; }
+.composer-cerrado { flex-direction: column; align-items: stretch; gap: var(--space-xs); }
+.composer-cerrado-msg { font-size: var(--step--1); color: var(--danger); }
+.composer-cerrado-ayuda { font-size: var(--step--1); color: var(--text-muted); }
+.composer-cerrado .accion { align-self: flex-start; }
 
 /* ══════════════════════════════════════════════════════════════════════════════
    FICHA DE CLIENTE

@@ -149,6 +149,7 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
               <Chat
                 id={abiertaId}
                 resumen={convActiva}
+                reaperturaConfigurada={sesion.reaperturaConfigurada}
                 mostrar={mostrarChatMovil}
                 onVolver={volver}
                 onVerFicha={() => setFichaAbierta(true)}

@@ -113,6 +113,7 @@ export default function MiNegocio({ features }: { features: Features }) {
   const [parabrisas, setParabrisas] = useState("");
   const [linkResenas, setLinkResenas] = useState("");
   const [plantillaMarketing, setPlantillaMarketing] = useState("");
+  const [plantillaReapertura, setPlantillaReapertura] = useState("");
   const [colorAcento, setColorAcento] = useState("");
   const [colorHeader, setColorHeader] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
@@ -131,6 +132,7 @@ export default function MiNegocio({ features }: { features: Features }) {
     setParabrisas((q.data.kb.parabrisas ?? []).join("\n"));
     setLinkResenas(q.data.linkResenas ?? "");
     setPlantillaMarketing(q.data.plantillaMarketing ?? "");
+    setPlantillaReapertura(q.data.plantillaReapertura ?? "");
     setColorAcento(q.data.colorAcento ?? "");
     setColorHeader(q.data.colorHeader ?? "");
     setLogoUrl(q.data.logoUrl ?? "");
@@ -210,6 +212,7 @@ export default function MiNegocio({ features }: { features: Features }) {
       bloqueos: construirBloqueos(),
       linkResenas: linkResenas.trim(),
       plantillaMarketing: plantillaMarketing.trim(),
+      plantillaReapertura: plantillaReapertura.trim(),
       // Sin plan Pro los inputs de marca están ocultos (arriba); no reenviar un valor
       // viejo que el backend rechazaría por el gating de whiteLabel (0.1).
       colorAcento: features.whiteLabel ? colorAcento.trim() : "",
@@ -420,6 +423,24 @@ export default function MiNegocio({ features }: { features: Features }) {
               value={linkResenas}
               onChange={(e) => setLinkResenas(e.target.value)}
             />
+          </div>
+        </div>
+
+        <div className="card admin-form">
+          <h3>Ventana de 24 horas</h3>
+          <div className="campo">
+            <label htmlFor="cPlantillaReapertura">Plantilla de reapertura aprobada (nombre exacto en Meta)</label>
+            <input
+              id="cPlantillaReapertura"
+              placeholder="reapertura_conversacion"
+              value={plantillaReapertura}
+              onChange={(e) => setPlantillaReapertura(e.target.value)}
+            />
+            <p className="campo-ayuda">
+              Es una plantilla de UTILIDAD (no marketing) para reabrir una conversación cuando pasaron más de 24h
+              desde el último mensaje del cliente. Sin ella, el botón "Reabrir conversación" del chat no aparece.
+              Ver <code>GUIA-META.md</code> §D.
+            </p>
           </div>
         </div>
 

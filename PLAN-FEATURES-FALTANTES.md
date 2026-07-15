@@ -252,7 +252,7 @@ snapshot_reputacion: tenant_id, fecha, rating numeric, total_resenas int
 - [x] 0.1 Extender `planes.ts` con las features Pro + guards en Campañas/Usuarios/White-label + 🔒 en el panel
 - [x] 0.1 Cambio de plan Básico↔Pro desde `/panel/admin`
 - [x] 0.2 Tabla `wa_uso_mensual` + incrementos (medir sin bloquear)
-- [ ] 0.3 Ventana 24 h: API + chip + bloqueo de input
+- [x] 0.3 Ventana 24 h: API + chip + bloqueo de input
 - [ ] Enviar a aprobación las plantillas de Meta (rescate toque 2, reapertura)
 - [ ] 0.6 Documento de proceso de cobro
 - [ ] Definir precio fundador (ej. Pro con descuento vitalicio, primeros 5)

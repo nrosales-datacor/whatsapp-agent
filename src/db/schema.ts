@@ -177,6 +177,9 @@ export const waTenants = pgTable(
     // Nombre de la plantilla MARKETING aprobada en Meta para este tenant (C3.2, campañas
     // segmentadas). null = sin configurar (el dueño no puede enviar campañas todavía).
     plantillaMarketing: text("plantilla_marketing"),
+    // Plantilla de UTILIDAD aprobada en Meta para reabrir conversaciones fuera de la
+    // ventana de 24h (Carril D, 0.3). null = sin configurar (no se puede reabrir).
+    plantillaReapertura: text("plantilla_reapertura"),
     // White-label (C4.1): color de acento/encabezado (hex "#rrggbb") y logo (URL). null =
     // sin configurar → el panel usa la paleta verde default de global.css.
     colorAcento: text("color_acento"),

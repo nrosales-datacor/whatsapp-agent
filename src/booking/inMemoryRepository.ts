@@ -13,6 +13,7 @@ import type {
   TipoRecordatorio,
 } from "../types";
 import { calcularMetricas } from "../panel/metricas";
+import { calcularVentana } from "../whatsapp/ventana";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Repositorio EN MEMORIA. Sirve para probar el agente YA, sin base de datos.
@@ -43,7 +44,9 @@ export class RepositorioEnMemoria implements Repositorio {
     return `${tenantId}:${clienteWa}`;
   }
 
-  /** Proyecta el estado interno al DTO público (copia los mensajes; no filtra notas). */
+  /** Proyecta el estado interno al DTO público (copia los mensajes; no filtra notas).
+   * La ventana de 24h se deriva de TODOS los mensajes (no de los recortados por
+   * `limite`), aunque el DTO solo exponga los últimos `limite`. */
   private dto(c: ConvInterna, limite: number): Conversacion {
     return {
       id: c.id,
@@ -55,6 +58,7 @@ export class RepositorioEnMemoria implements Repositorio {
       estado: c.estado,
       // porHumano normalizado a boolean (paridad con Drizzle, que nunca es undefined).
       mensajes: c.mensajes.slice(-limite).map((m) => ({ ...m, porHumano: m.porHumano ?? false })),
+      ...calcularVentana(c.mensajes),
     };
   }
 
@@ -71,6 +75,9 @@ export class RepositorioEnMemoria implements Repositorio {
         modo: "bot",
         estado: "abierta",
         mensajes: [],
+        // Recalculadas por dto() en cada lectura; estos valores nunca se leen tal cual.
+        ventanaAbierta: false,
+        ventanaCierraEn: null,
         notas: "",
         creadaEn: new Date().toISOString(),
         leidoHasta: null,
