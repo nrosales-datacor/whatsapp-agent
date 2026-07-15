@@ -1,11 +1,17 @@
-import { useQuery } from "@tanstack/react-query";
-import { adminListarTenants } from "../../api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { adminCambiarPlan, adminListarTenants, type Plan } from "../../api";
 
 // Tabla de negocios ya dados de alta (resumen liviano, sin secretos). Se refresca
 // sola cuando el formulario invalida ["adminTenants"] tras crear uno.
 export default function ListaNegocios() {
+  const qc = useQueryClient();
   const q = useQuery({ queryKey: ["adminTenants"], queryFn: adminListarTenants });
   const tenants = q.data ?? [];
+
+  const cambiarPlan = useMutation({
+    mutationFn: ({ id, plan }: { id: string; plan: Plan }) => adminCambiarPlan(id, plan),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["adminTenants"] }),
+  });
 
   return (
     <div className="card">
@@ -25,6 +31,8 @@ export default function ListaNegocios() {
                 <th>id</th>
                 <th>phone_number_id</th>
                 <th>Servicios</th>
+                <th>Plan</th>
+                <th>Conversaciones este mes</th>
               </tr>
             </thead>
             <tbody>
@@ -34,6 +42,17 @@ export default function ListaNegocios() {
                   <td>{t.id}</td>
                   <td>{t.phoneNumberId}</td>
                   <td>{t.servicios}</td>
+                  <td>
+                    <select
+                      value={t.plan}
+                      disabled={cambiarPlan.isPending}
+                      onChange={(e) => cambiarPlan.mutate({ id: t.id, plan: e.target.value as Plan })}
+                    >
+                      <option value="basico">Básico</option>
+                      <option value="pro">Pro</option>
+                    </select>
+                  </td>
+                  <td>{t.conversacionesEsteMes}</td>
                 </tr>
               ))}
             </tbody>

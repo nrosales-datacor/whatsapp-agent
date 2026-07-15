@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { listarConversaciones, logout, type Sesion, type ResumenConversacion } from "../api";
+import { listarConversaciones, logout, type Features, type Sesion, type ResumenConversacion } from "../api";
 import { useTema } from "../lib/tema";
 import { aplicarMarca, resetMarca } from "../lib/marca";
 import { iniciales } from "../lib/formato";
@@ -21,13 +21,15 @@ type Vista = "inbox" | "panel" | "agenda" | "config" | "usuarios" | "campanias";
 
 // Navegación principal. En desktop se pinta como tabs segmentadas en el header;
 // en móvil, como barra inferior (bottom nav) — ver .hd-tabs en global.css.
-const TABS: { id: Vista; icono: IconoId; label: string; soloDueno?: boolean }[] = [
+// `feature`: si el plan del negocio no la habilita (Carril D, 0.1), la tab se ve con
+// 🔒 y no cambia de vista al tocarla — abre el modal "Disponible en el plan Pro".
+const TABS: { id: Vista; icono: IconoId; label: string; soloDueno?: boolean; feature?: keyof Features }[] = [
   { id: "inbox", icono: "chat", label: "Inbox" },
   { id: "panel", icono: "dash", label: "Panel" },
   { id: "agenda", icono: "cal", label: "Agenda" },
   { id: "config", icono: "gear", label: "Mi negocio", soloDueno: true },
-  { id: "usuarios", icono: "user", label: "Usuarios", soloDueno: true },
-  { id: "campanias", icono: "send", label: "Campañas", soloDueno: true },
+  { id: "usuarios", icono: "user", label: "Usuarios", soloDueno: true, feature: "multiUsuario" },
+  { id: "campanias", icono: "send", label: "Campañas", soloDueno: true, feature: "campanias" },
 ];
 
 export default function Panel({ sesion }: { sesion: Sesion }) {
@@ -37,6 +39,7 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
   const [abiertaId, setAbiertaId] = useState<string | null>(null);
   const [mostrarChatMovil, setMostrarChatMovil] = useState(false);
   const [fichaAbierta, setFichaAbierta] = useState(false);
+  const [modalPlanAbierto, setModalPlanAbierto] = useState(false);
 
   const convs = useQuery({
     queryKey: ["conversaciones"],
@@ -92,20 +95,23 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
           </div>
 
           <nav className="hd-tabs">
-            {TABS.filter((t) => !t.soloDueno || sesion.rol === "dueno").map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                className={"hd-tab" + (vista === t.id ? " activa" : "")}
-                onClick={() => setVista(t.id)}
-              >
-                <Icono id={t.icono} size={15} />
-                <span className="hd-tab-label">{t.label}</span>
-                {t.id === "inbox" && totalSinLeer > 0 && (
-                  <span className="badge badge-naranja">{totalSinLeer}</span>
-                )}
-              </button>
-            ))}
+            {TABS.filter((t) => !t.soloDueno || sesion.rol === "dueno").map((t) => {
+              const bloqueada = !!t.feature && !sesion.features[t.feature];
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  className={"hd-tab" + (vista === t.id ? " activa" : "") + (bloqueada ? " hd-tab-bloqueada" : "")}
+                  onClick={() => (bloqueada ? setModalPlanAbierto(true) : setVista(t.id))}
+                >
+                  <Icono id={bloqueada ? "lock" : t.icono} size={15} />
+                  <span className="hd-tab-label">{t.label}</span>
+                  {t.id === "inbox" && totalSinLeer > 0 && (
+                    <span className="badge badge-naranja">{totalSinLeer}</span>
+                  )}
+                </button>
+              );
+            })}
           </nav>
 
           <div className="hd-acciones">
@@ -151,9 +157,11 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
           )}
           {vista === "panel" && <Dashboard nombre={sesion.nombre} />}
           {vista === "agenda" && <Agenda servicios={sesion.servicios} />}
-          {vista === "config" && sesion.rol === "dueno" && <MiNegocio />}
-          {vista === "usuarios" && sesion.rol === "dueno" && <Usuarios usuarioActualId={sesion.usuarioId} />}
-          {vista === "campanias" && sesion.rol === "dueno" && <Campanias />}
+          {vista === "config" && sesion.rol === "dueno" && <MiNegocio features={sesion.features} />}
+          {vista === "usuarios" && sesion.rol === "dueno" && sesion.features.multiUsuario && (
+            <Usuarios usuarioActualId={sesion.usuarioId} />
+          )}
+          {vista === "campanias" && sesion.rol === "dueno" && sesion.features.campanias && <Campanias />}
         </div>
       </div>
 
@@ -163,6 +171,27 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
           clienteWa={convActiva.clienteWa}
           onCerrar={() => setFichaAbierta(false)}
         />
+      )}
+
+      {modalPlanAbierto && (
+        <div
+          className="overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setModalPlanAbierto(false);
+          }}
+        >
+          <div className="ficha-modal" style={{ maxWidth: 360 }}>
+            <div className="ficha-head">
+              <h3>Función Pro</h3>
+              <button type="button" onClick={() => setModalPlanAbierto(false)} title="Cerrar">
+                ✕
+              </button>
+            </div>
+            <div className="ficha-body">
+              <p>Disponible en el plan Pro — contactanos para actualizar tu plan.</p>
+            </div>
+          </div>
+        </div>
       )}
     </ToastProvider>
   );

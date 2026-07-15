@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import type { MensajeInteractivo, OpcionInteractiva, Tenant } from "../types";
+import { registrarMensajeSaliente } from "../observabilidad/uso";
 
 // ⚠️ La versión del Graph API cambia con el tiempo. Confirmá la vigente en la
 // documentación de Meta antes de producción. Se deja configurable por .env.
@@ -230,6 +231,7 @@ async function postMensaje(
   tenant: Tenant,
   contenido: Record<string, unknown>,
   etiqueta: string,
+  plantillaCategoria?: "marketing" | "utilidad",
 ): Promise<void> {
   const token = tenant.accessToken ?? process.env.WHATSAPP_ACCESS_TOKEN;
   if (!token) throw new Error("Falta access token de WhatsApp para el tenant " + tenant.id);
@@ -257,7 +259,11 @@ async function postMensaje(
       throw ultimoError;
     }
 
-    if (res.ok) return;
+    if (res.ok) {
+      // Contador de uso mensual (Carril D, 0.2): solo se cuenta un envío exitoso.
+      registrarMensajeSaliente(tenant.id, plantillaCategoria);
+      return;
+    }
 
     const detalle = await res.text();
     ultimoError = new Error(`Error ${etiqueta} (${res.status}): ${detalle}`);
@@ -419,6 +425,10 @@ export async function enviarPlantilla(
   nombrePlantilla: string,
   idioma: string,
   parametros: string[],
+  // Categoría de la plantilla ante Meta (para el contador de uso, Carril D 0.2):
+  // "marketing" = campañas segmentadas (C3.2); "utilidad" = recordatorios fuera de
+  // la ventana de 24 h (default, ya que es el caso más frecuente hoy).
+  categoria: "marketing" | "utilidad" = "utilidad",
 ): Promise<void> {
   await postMensaje(
     tenant,
@@ -439,5 +449,6 @@ export async function enviarPlantilla(
       },
     },
     "enviando plantilla WhatsApp",
+    categoria,
   );
 }

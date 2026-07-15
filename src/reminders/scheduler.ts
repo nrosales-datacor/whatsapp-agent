@@ -93,11 +93,14 @@ async function enviarRecordatorio(tenant: Tenant, cita: Cita, tipo: TipoRecordat
     // de la aprobación de la plantilla. Mientras tanto, el texto libre (abajo) sí los
     // lleva (funciona con el número de prueba y dentro de la ventana de 24 h).
     const idioma = process.env.WHATSAPP_TEMPLATE_IDIOMA ?? "es";
-    await enviarPlantilla(tenant, cita.clienteWa, plantilla, idioma, [
-      cita.clienteNombre,
-      nombreServicio,
-      cuando,
-    ]);
+    await enviarPlantilla(
+      tenant,
+      cita.clienteWa,
+      plantilla,
+      idioma,
+      [cita.clienteNombre, nombreServicio, cuando],
+      "utilidad",
+    );
     return;
   }
 

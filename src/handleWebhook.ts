@@ -14,6 +14,17 @@ import { transcribirAudio } from "./whatsapp/transcribir";
 import { correrAgente } from "./agent/runAgent";
 import { notificarOperador } from "./panel/notificaciones";
 import { registrarMensaje } from "./observabilidad/metricas";
+import { registrarMensajeEntrante } from "./observabilidad/uso";
+
+// "Conversación iniciada" ≈ primer mensaje tras 24 h de silencio (aproxima el modelo
+// de cobro de Meta: una conversación = una ventana de 24 h), para los contadores de
+// uso mensual por tenant (Carril D, 0.2).
+const VENTANA_CONVERSACION_MS = 24 * 60 * 60 * 1000;
+export function esConversacionIniciada(mensajesPrevios: MensajeConversacion[]): boolean {
+  const ultimo = mensajesPrevios[mensajesPrevios.length - 1];
+  if (!ultimo) return true;
+  return Date.now() - new Date(ultimo.creadoEn).getTime() > VENTANA_CONVERSACION_MS;
+}
 
 // Aviso de transparencia que se manda UNA vez por cliente (cumple opt-in/política).
 const AVISO_BOT =
@@ -121,6 +132,7 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio): Promise
     const esNuevo = await repo.guardarEntranteYEncolar(conv.id, msg, payload);
     if (!esNuevo) return null;
     registrarMensaje();
+    registrarMensajeEntrante(tenant.id, esConversacionIniciada(historialPrevio));
     if (esAudio) return { clase: "audio", tenant, entrante, conv, primerContacto, historialPrevio };
     if (esImagen) return { clase: "imagen", tenant, entrante, conv, primerContacto, historialPrevio };
     return { clase: "no-texto", tenant, entrante, conv };
@@ -155,6 +167,7 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio): Promise
     return null;
   }
   registrarMensaje();
+  registrarMensajeEntrante(tenant.id, esConversacionIniciada(historialPrevio));
 
   return { clase: "texto", tenant, entrante, conv, primerContacto, historialPrevio };
 }

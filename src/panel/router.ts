@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   actualizarConfigTenant,
+  actualizarFacturacionTenant,
   actualizarUsuarioTenant,
   crearTenant,
   crearUsuarioTenant,
@@ -34,7 +35,9 @@ import {
   suscribirApp,
   tomarToken,
 } from "../whatsapp/embeddedSignup";
-import type { Cita, EstadoConversacion, KnowledgeBase, Repositorio, Rol, SegmentoFiltro, Tenant } from "../types";
+import type { Cita, EstadoConversacion, KnowledgeBase, Plan, Repositorio, Rol, SegmentoFiltro, Tenant } from "../types";
+import { featuresDeTenant, tenantPuede } from "../billing/planes";
+import { listarUsoMensualActual } from "../observabilidad/uso";
 import {
   cancelarCampania,
   confirmarEnvioCampania,
@@ -558,6 +561,9 @@ export async function manejarPanel(
 
     if (ruta === "admin/tenants" && metodo === "GET") {
       // Resumen liviano: NUNCA exponemos accessToken por la API.
+      // Uso mensual (Carril D, 0.2): una sola consulta para todos los negocios, en vez
+      // de N — "medir sin bloquear" (sin DB o sin actividad todavía, queda en 0).
+      const uso = await listarUsoMensualActual();
       const tenants = listarTenants().map((t) => ({
         id: t.id,
         nombre: t.nombre,
@@ -565,9 +571,37 @@ export async function manejarPanel(
         moneda: t.moneda,
         timezone: t.timezone,
         servicios: t.servicios.length,
+        plan: t.plan,
+        conversacionesEsteMes: uso.get(t.id)?.conversacionesIniciadas ?? 0,
       }));
       json(res, 200, { ok: true, tenants });
       return true;
+    }
+
+    // Cambio de plan Básico↔Pro desde el admin (Carril D, 0.1): sin redeploy, habilita
+    // o quita Campañas/Usuarios/White-label de inmediato (el caché se recarga al final).
+    const partesPlan = ruta.split("/");
+    if (partesPlan[0] === "admin" && partesPlan[1] === "tenants" && partesPlan[2] && partesPlan[3] === "plan" && metodo === "POST") {
+      if (!hayBaseDeDatos()) {
+        return json(res, 503, { ok: false, error: "El cambio de plan requiere base de datos (no configurada)." }), true;
+      }
+      const tenantId = decodeURIComponent(partesPlan[2]);
+      if (!obtenerTenantPorId(tenantId)) return json(res, 404, { ok: false, error: "Negocio no encontrado" }), true;
+      const body = await leerBody(req);
+      if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
+      const plan: Plan | undefined = body?.plan === "basico" || body?.plan === "pro" ? body.plan : undefined;
+      if (!plan) return json(res, 400, { ok: false, error: "plan inválido (\"basico\" o \"pro\")" }), true;
+      try {
+        await actualizarFacturacionTenant(tenantId, { plan });
+      } catch (e) {
+        if (e instanceof Error && e.message === "SIN_DB") {
+          return json(res, 503, { ok: false, error: "El cambio de plan requiere base de datos." }), true;
+        }
+        console.error("[admin] actualizarFacturacionTenant:", e);
+        return json(res, 500, { ok: false, error: "No se pudo cambiar el plan." }), true;
+      }
+      await recargar();
+      return json(res, 200, { ok: true }), true;
     }
 
     if (ruta === "admin/tenants" && metodo === "POST") {
@@ -658,6 +692,9 @@ export async function manejarPanel(
         colorHeader: tenant.colorHeader ?? null,
         logoUrl: tenant.logoUrl ?? null,
       },
+      // Gating de planes (Carril D, 0.1): el panel muestra/oculta sin adivinar.
+      plan: tenant.plan,
+      features: featuresDeTenant(tenant),
     });
     return true;
   }
@@ -666,6 +703,10 @@ export async function manejarPanel(
   if (ruta === "usuarios" || ruta.startsWith("usuarios/")) {
     if (rol !== "dueno") {
       json(res, 403, { ok: false, error: "Solo el dueño del negocio puede gestionar usuarios" });
+      return true;
+    }
+    if (!tenantPuede(tenant, "multiUsuario")) {
+      json(res, 403, { ok: false, error: "plan_requerido", plan: "pro" });
       return true;
     }
     // A diferencia de "config" (que lee del tenant ya cacheado), esto consulta la base
@@ -759,6 +800,9 @@ export async function manejarPanel(
   if (ruta === "campanias" || ruta.startsWith("campanias/")) {
     if (rol !== "dueno") {
       return json(res, 403, { ok: false, error: "Solo el dueño del negocio puede gestionar campañas" }), true;
+    }
+    if (!tenantPuede(tenant, "campanias")) {
+      return json(res, 403, { ok: false, error: "plan_requerido", plan: "pro" }), true;
     }
     if (!hayBaseDeDatos()) {
       return json(res, 503, { ok: false, error: "Las campañas requieren base de datos (no configurada)." }), true;
@@ -898,6 +942,12 @@ export async function manejarPanel(
 
     const logoUrl = validarLogoUrl(body?.logoUrl);
     if (logoUrl === null) return json(res, 400, { ok: false, error: "URL del logo inválida (debe ser una URL http o https)" }), true;
+
+    // White-label (C4.1) es Pro (Carril D, 0.1): un Básico no puede setear marca aunque
+    // mande el POST directo, aunque sí puede guardar el resto de "Mi negocio" sin tocarla.
+    if ((colorAcento || colorHeader || logoUrl) && !tenantPuede(tenant, "whiteLabel")) {
+      return json(res, 403, { ok: false, error: "plan_requerido", plan: "pro" }), true;
+    }
 
     const kb: KnowledgeBase = {
       faq: validarFaq(body?.kb?.faq),

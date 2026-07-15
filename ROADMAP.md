@@ -6,7 +6,7 @@
 
 **Leyenda:** ✅ hecho · 🔵 en progreso · ⬜ pendiente · 🔴 bloqueante crítico para escalar
 
-**Última actualización:** 2026-07-13 (Carril D: plan comercial "Selyon Features Faltantes" agregado — Fase 0 bloqueante para vender los 3 planes)
+**Última actualización:** 2026-07-14 (Carril D, 0.2 — contadores de uso mensual por tenant, `wa_uso_mensual` + columna "Conversaciones este mes" en el admin)
 
 ---
 
@@ -87,26 +87,31 @@ El **código** es sólido para el piloto; lo que no escala todavía es la **topo
 - [x] ✅ **C4.4 — Landing de venta** ("Recepcionista IA", HTML/CSS estático en `landing/`, sin build ni deps nuevas — plan completo en `PLAN-C4.4-LANDING.md`). El **root del dominio** ahora sirve la landing (`GET /`) en vez del texto de salud, que se movió a `GET /salud`; nuevo handler `src/landing/servirLanding.ts` (mismo patrón allowlist/caché de `panel/router.ts`) atiende `/`, `/privacidad`, `/terminos`, `/landing/*` (assets), `/robots.txt` y `/favicon.svg`, sin tocar `/panel`, `/api/panel/*` ni `/webhook`. Contenido: hero con mock de chat de WhatsApp animado (CSS, respeta `prefers-reduced-motion`), 6 features reales (no prometidas), 4 screenshots reales del panel (claro/oscuro, móvil/desktop, capturados con Playwright vía `SEED_DEMO`), planes sin montos, FAQ y CTAs `wa.me` al bot piloto (Lavacar Rosales). `privacidad.html`/`terminos.html` cumplen el requisito de sitio público + política de privacidad de `GUIA-META.md` §B (URL: `/privacidad`) — **desbloquea también C4.2**. Verificado: typecheck, checklist de curl (rutas nuevas + regresión de `/panel`/`/webhook`/`/api/panel/me`), `design-verify` en 390/1440px (corregido padding del CTA final que quedaba pegado al borde en mobile). Placeholders marcados `[PENDIENTE-NATHAN]` en comentarios HTML (nombre legal, email, dominio propio, número de ventas): no bloquean, son un buscar-y-reemplazar. _Pendiente (F6, no bloquea):_ bot vendedor como tenant propio — requiere número nuevo en la WABA.
   - **2026-07-06 — rediseño "Selyon"**: la landing se reposicionó como **Selyon**, marca paraguas que lleva al agente de WhatsApp (hoy "Recepcionista IA") y previsualiza un segundo producto, **Menú Digital IA** (tarjeta en `#productos` con badge "Próximamente" y link placeholder `menu.html` — página aún no existe, es de un carril futuro). Handoff de diseño en `design_handoff_selyon_landing/` (prototipo hifi + README con tokens exactos). Rediseño completo de `landing/index.html` + `landing/assets/estilos.css`: hero oscuro con grillas/glows animados y mock de chat con replay por `IntersectionObserver`, franja de métricas, suite de productos, deep-dive de features, showcase del panel (capturas reales), pasos, testimonio, precios con plan Pro destacado, FAQ y footer de 3 columnas — mismo patrón plain HTML/CSS/JS vanilla, cero deps nuevas. `privacidad.html`/`terminos.html` actualizados solo en la cabecera/pie compartidos (marca Selyon) para no romper el link desde el footer/FAQ. De paso se corrigió un bug real en `src/panel/router.ts` (`leerFuente`): el regex de nombres de fuente solo aceptaba minúsculas y por eso los `.ttf` de Noto Sans (`NotoSans-Regular.ttf`, etc., con mayúsculas) devolvían 404 en `/panel/fonts/*` — afectaba también al panel React (`web/src/global.css`), no solo a la landing. Verificado con `design-verify` en 390/760/900/1440px (sin overflow horizontal, breakpoint de nav subido a 820px para evitar wrap de los links, offset de los chips flotantes del hero corregido para no tapar el mock de chat) y `tsc --noEmit`.
 
-## Carril D — Plan comercial: Selyon Features Faltantes (plan detallado: `PLAN-FEATURES-FALTANTES.md`)
+## Carril D — Plan comercial: Básico + Pro (2 planes) (plan detallado: `PLAN-FEATURES-FALTANTES.md`)
 
-> Plan para poder vender los 3 planes (Básico ₡35.000 / Pro ₡60.000 / Premium ₡95.000) con las
-> features prometidas. **Fase 0 es lo único bloqueante para vender**; el resto se construye con
-> clientes ya pagando. El detalle completo de cada ítem (datos, backend, panel, aceptación,
-> estimados) vive en el plan; acá solo el tracking de alto nivel.
+> Plan para vender **dos planes**: **Básico ₡35.000** (el producto que ya existe) y **Pro ₡60.000**
+> (Básico + Campañas —ya construida, solo se gatea— + rescate de cotizaciones + upsell + motor de
+> reseñas completo). **Fase 0 (gating) es lo único bloqueante para vender**; las 3 features Pro se
+> construyen con clientes ya pagando. El detalle (datos, backend, panel, aceptación, estimados) vive
+> en el plan; acá solo el tracking de alto nivel.
+>
+> **Reencuadre 2026-07-14:** se pasó de 3 planes a 2 — **Premium queda eliminado como plan
+> vendible**; sus features exclusivas (CTWA, paquetes prepagados, membresías, Instagram,
+> multi-empleado) bajan al **Backlog por demanda** (construir solo si un cliente lo pide y paga).
 >
 > **Se solapa con trabajo ya hecho en Carril C** — antes de arrancar cada ítem, revisar si ya
-> existe: **0.1** (planes/gating) reusa las columnas `plan`/`estadoFacturacion`/Stripe que ya
-> están en el schema por **C4.3** (Stripe, todavía sin cerrar) — conviene resolver 0.1 y C4.3
-> juntos con el mismo modelo de datos, no dos sistemas de plan paralelos. **1.3** (motor de
-> reseñas) extiende el post-servicio que ya existe (**C3.1**, botones Todo bien/Problema +
-> link de reseñas) — falta la estructura de 3 botones, Places API y snapshot de reputación, no
-> el flujo base. **1.1** (rescate de cotizaciones) y **2.2**/**3.1** (paquetes/membresías) siguen
-> el patrón de mini-cola independiente ya usado en **C3.2** (campañas) — no tocar `wa_jobs`/B1
-> (ver [[patron-colas-independientes]]).
+> existe: **0.1** (gating) **reusa el modelo ya presente en el schema** (`plan` `"basico"|"pro"` +
+> Stripe, por **C4.3**) y el helper `tenantPuede()` de `src/billing/planes.ts` que **ya existe pero
+> aún no se aplica en ningún endpoint** — es cablear, no crear. **1.3** (motor de reseñas) extiende
+> el post-servicio de **C3.1** (botones Todo bien/Problema + link de reseñas) — falta la estructura
+> de 3 botones, Places API y snapshot, no el flujo base. **1.1** (rescate) sigue el patrón de
+> mini-cola independiente ya usado en **C3.2** (campañas) — no tocar `wa_jobs`/B1 (ver
+> [[patron-colas-independientes]]).
 
-- [ ] 🔴 **Fase 0 — Hardening pre-venta** (bloqueante para vender los 3 planes)
-  - [ ] 0.1 Infraestructura de planes/estado + `hasFeature` + gating (unificar con C4.3/Stripe)
-  - [ ] 0.2 Contadores de uso mensual por tenant (conversaciones/mensajes/plantillas)
+- [ ] 🔴 **Fase 0 — Gating de 2 planes + hardening pre-venta** (bloqueante para vender)
+  - [x] ✅ **0.1 Gating por plan.** `src/billing/planes.ts` ya exportaba `tenantPuede()`; se extendió el mapa con las 3 features de Fase 1 (`rescateCotizaciones`/`upsell`/`resenasPro`, todas en `false` hasta construirlas) y se agregó `featuresDeTenant()` para exponer el mapa completo. Guards cableados en `src/panel/router.ts`: `/usuarios/*` y `/campanias/*` rechazan con `403 { error:"plan_requerido", plan:"pro" }` si el tenant no tiene `multiUsuario`/`campanias` (antes de tocar la base — el rechazo no depende de tener DB); `POST /config` rechaza el mismo 403 si el body trae `colorAcento`/`colorHeader`/`logoUrl` no vacíos sin `whiteLabel`. `GET /me` expone `plan` + `features` (mismo patrón que `marca`/`servicios`). Panel: las tabs "Usuarios" y "Campañas" se muestran con 🔒 (no se ocultan) y abren un modal "Función Pro" en vez de cambiar de vista si el plan no las habilita; dentro de "Mi negocio", la tarjeta "Marca" se reemplaza por un aviso cuando falta `whiteLabel` (y el guardado no reenvía los valores viejos de marca, para no chocar con el gating si el tenant fue bajado de plan). Admin (`/panel/admin`): la tabla de negocios suma columna "Plan" con un `<select>` que llama a `POST /admin/tenants/{id}/plan` (nuevo, reusa `actualizarFacturacionTenant` + `recargar()` — sin redeploy). Verificado: `tsc --noEmit` (backend + `web/`, incl. `tsconfig.sw.json`) + `web:build` OK; `npm test` (112→116 tests, se sumaron 2 casos para las features de Fase 1 en `test/unit/planes.test.ts`); sanity manual contra el server en memoria (`SEED_DEMO`, sin DB): con el tenant en `"pro"` (grandfathering) `/me` expone `features` todo `true` y `/usuarios`/`/campanias` caen al 503 esperado de "falta DB" (pasaron el gate de plan); con el tenant forzado a `"basico"` (cambio temporal revertido tras la prueba), `/me` expone `features` todo `false` y `/usuarios`/`/campanias` devuelven el 403 `plan_requerido` sin tocar la base. _Pendiente conocido:_ sin Postgres local no se pudo probar el guard de white-label en `POST /config` ni el cambio de plan vía `POST /admin/tenants/{id}/plan` contra una base real (ambos ya requerían DB antes de este cambio, mismo motivo que otros ítems del ROADMAP); la migración `plan`/Stripe de C4.3 ya estaba generada y aplicándose (`drizzle/0015_strange_metal_master.sql`, commit `0064177`).
+  - [x] ✅ **0.2 Contadores de uso mensual por tenant.** Tabla nueva `wa_uso_mensual` (`tenant_id, anio_mes, conversaciones_iniciadas, mensajes_entrantes, mensajes_salientes, plantillas_marketing, plantillas_utilidad`, migración aditiva `0016_first_terror.sql`) con upsert atómico (`INSERT ... ON CONFLICT (tenant_id, anio_mes) DO UPDATE SET x = x + n`, `src/observabilidad/uso.ts`) — mismo patrón de módulo con conexión propia que `tenantStore.ts`, no-op total sin `DATABASE_URL` (nunca bloquea el hot path). "Conversación iniciada" se aproxima al modelo de cobro de Meta: si el mensaje anterior de esa conversación (o la ausencia de uno) fue hace más de 24 h, cuenta como una conversación nueva (`esConversacionIniciada()`, nuevo en `src/handleWebhook.ts`, mira el último mensaje del `historialPrevio` ya cargado en fase 1 — cero costo extra de lectura). Enganchado en dos puntos: `ingerirEntrante()` cuenta cada entrante nuevo (ya deduplicado por wamid) vía `registrarMensajeEntrante()`; `postMensaje()` en `whatsapp/client.ts` (el único choke point de TODOS los envíos — texto, botones, lista, plantilla) cuenta cada saliente exitoso vía `registrarMensajeSaliente()`, con la categoría de plantilla (`"marketing"` en campañas C3.2, `"utilidad"` en recordatorios fuera de 24h) pasada explícitamente por el caller. Ambas llamadas son fire-and-forget (no se esperan): "medir sin bloquear" es tanto una decisión de producto (sin tope todavía) como de implementación (cero latencia agregada al webhook o al envío). Admin: `admin/tenants` GET suma `conversacionesEsteMes` (una sola consulta para todos los tenants del mes actual, `listarUsoMensualActual()`) y la tabla de negocios lo muestra en una columna nueva. Verificado: `tsc --noEmit` (backend + `web/`) + `web:build` OK; `npm test` 117→121 (3 casos nuevos en `test/reliability/uso.test.ts` contra Postgres real vía PGlite — incluye 20 incrementos concurrentes a la misma fila, ninguno se pierde — y 4 casos puros para `esConversacionIniciada` en `test/unit/handleWebhook.test.ts`); sanity manual contra el server en memoria (`SEED_DEMO`, sin DB): `admin/tenants` devuelve `conversacionesEsteMes: 0` sin romper (no-op esperado sin `DATABASE_URL`). _Pendiente conocido:_ sin Postgres local no se pudo confirmar en vivo que los números cuadren (±5%) con el billing real de Meta Business Manager — la aceptación formal del ítem queda para cuando haya datos de producción; el enforcement del tope (~500 conv/mes del Básico) es a propósito **no** parte de este ítem (decisión de producto: medir primero, activar el tope después).
+  - [ ] 0.3 Indicador de ventana de 24h en la bandeja (chip + bloqueo de input fuera de ventana)
   - [ ] 0.3 Indicador de ventana de 24h en la bandeja (chip + bloqueo de input fuera de ventana)
   - [ ] 0.4 Pulido de bandeja y ficha (nombres, tooltip lead score, fechas, `<ErrorState>`, botón Guardar)
   - [ ] 0.5 Reset de contraseña desde el admin (clave temporal + forzar cambio)
@@ -115,14 +120,7 @@ El **código** es sólido para el piloto; lo que no escala todavía es la **topo
   - [ ] 1.1 Rescate de cotizaciones abandonadas (mini-cola propia, 2 toques, tarjeta "₡ recuperados")
   - [ ] 1.2 Upsell inteligente al agendar (add-on por servicio, tarjeta "Ticket promedio")
   - [ ] 1.3 Motor de reseñas de Google completo (extiende C3.1: 3 botones, Places API, snapshot)
-- [ ] ⬜ **Fase 2 — Premium quick-wins** (semanas 7–8)
-  - [ ] 2.1 Atribución de anuncios Click-to-WhatsApp (CTWA, `referral` del webhook)
-  - [ ] 2.2 Paquetes prepagados (compra → confirmación manual → consumo por cita)
-- [ ] ⬜ **Fase 3 — Premium grande** (semanas 9–14, arrancar solo con cliente Premium real)
-  - [ ] 3.1 Membresías recurrentes (extiende 2.2 con ciclo/renovación)
-  - [ ] 3.2 Multicanal Instagram DM (requiere App Review de Meta — trámite largo)
-  - [ ] 3.3 Agenda multi-empleado (retrocompatible con negocio de 1 empleado)
-- [ ] ⬜ **Fase 4 — Backlog por demanda** (14 features, ver tabla completa en el plan; construir solo cuando un cliente lo pida/pague)
+- [ ] ⬜ **Backlog / futuro** (fuera de los 2 planes — construir solo por demanda de un cliente que pague): ex-Premium (paquetes prepagados, membresías, CTWA, Instagram DM, agenda multi-empleado) + backlog largo (WhatsApp Flows, fila virtual, señas SINPE, lista de espera, referidos, etc.). Ver tabla completa en el plan.
 
 ---
 

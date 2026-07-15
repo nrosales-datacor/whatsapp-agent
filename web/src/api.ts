@@ -20,6 +20,7 @@ import type {
   KnowledgeBase,
   Metricas,
   ModoConversacion,
+  Plan,
   Rol,
   ResumenConversacion,
   SegmentoFiltro,
@@ -39,6 +40,7 @@ export type {
   KnowledgeBase,
   Metricas,
   ModoConversacion,
+  Plan,
   Rol,
   ResumenConversacion,
   SegmentoFiltro,
@@ -101,6 +103,16 @@ export interface Marca {
   logoUrl: string | null;
 }
 
+/** Features gateadas por plan (Carril D, 0.1). Ver src/billing/planes.ts. */
+export interface Features {
+  campanias: boolean;
+  multiUsuario: boolean;
+  whiteLabel: boolean;
+  rescateCotizaciones: boolean;
+  upsell: boolean;
+  resenasPro: boolean;
+}
+
 // ── Tipos de respuesta que enriquecen los del dominio ──
 export interface Sesion {
   nombre: string;
@@ -115,6 +127,10 @@ export interface Sesion {
   servicios: Service[];
   /** White-label (C4.1): color de acento/encabezado y logo del negocio. */
   marca: Marca;
+  /** Plan de suscripción del negocio (Carril D): "basico" | "pro". */
+  plan: Plan;
+  /** Qué puede usar este negocio según su plan — el panel muestra/oculta sin adivinar. */
+  features: Features;
 }
 
 /** La ficha que devuelve el panel agrega el nombre del servicio a cada ítem del historial. */
@@ -303,6 +319,9 @@ export interface TenantResumen {
   moneda: string;
   timezone: string;
   servicios: number;
+  plan: Plan;
+  /** Conversaciones iniciadas este mes (Carril D, 0.2) — mide sin bloquear, sin tope todavía. */
+  conversacionesEsteMes: number;
 }
 
 /** Cuerpo del alta de negocio (lo valida y normaliza el backend igual). */
@@ -369,6 +388,11 @@ export function adminListarTenants(): Promise<TenantResumen[]> {
 
 export function adminCrearTenant(body: AltaTenant): Promise<{ tenantId: string }> {
   return pedir<{ tenantId: string }>("/admin/tenants", { method: "POST", body: JSON.stringify(body) });
+}
+
+/** Cambia el plan de un negocio (Carril D, 0.1) — sin redeploy, vía el caché del tenantStore. */
+export async function adminCambiarPlan(id: string, plan: Plan): Promise<void> {
+  await pedir(`/admin/tenants/${encodeURIComponent(id)}/plan`, { method: "POST", body: JSON.stringify({ plan }) });
 }
 
 // ── Usuarios del panel del negocio (ROADMAP C2.3, solo dueño) ──

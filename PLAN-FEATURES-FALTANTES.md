@@ -1,10 +1,15 @@
-# Plan de Ejecución — Selyon: Features Faltantes
+# Plan de Ejecución — Selyon: Básico + Pro (2 planes)
 
-**Fecha:** 2026-07-13 · **Stack:** TypeScript/node:http · Drizzle + Postgres (Supabase) · React + TanStack Query (PWA) · Meta Cloud API · OpenAI · Google Calendar
+**Fecha:** 2026-07-14 · **Stack:** TypeScript/node:http · Drizzle + Postgres (Supabase) · React + TanStack Query (PWA) · Meta Cloud API · OpenAI · Google Calendar
 
-**Objetivo:** Poder vender los 3 planes (Básico ₡35.000 / Pro ₡60.000 / Premium ₡95.000) con las features prometidas, sin bloquear el lanzamiento comercial.
+**Objetivo:** Poder vender **dos planes** con las features prometidas, sin bloquear el lanzamiento comercial:
 
-**Regla de oro:** La Fase 0 es lo único bloqueante para vender. Todo lo demás se construye *mientras ya hay clientes pagando*.
+- **Plan Básico (₡35.000)** — el producto que ya existe: agente IA, bandeja, agenda, CRM, recordatorios, dashboard, Mi negocio, usuarios. Al Básico solo hay que **quitarle** cosas (con el gating, no ve Campañas ni las features Pro).
+- **Plan Pro (₡60.000)** — Básico + **Campañas** (ya construida, solo se gatea), **Rescate de cotizaciones**, **Upsell al agendar** y **Motor de reseñas completo**.
+
+> **Cambio de alcance (2026-07-14):** este plan pasó de 3 planes (Básico/Pro/**Premium ₡95.000**) a **2 planes**. Las features que eran exclusivas de Premium (CTWA, paquetes prepagados, membresías, Instagram, multi-empleado) **ya no forman parte de un plan vendible**: quedan en el **Backlog / futuro** al final, para construir solo cuando un cliente concreto lo pida y pague. No se venden como "Premium".
+
+**Regla de oro:** La Fase 0 (gating) es lo único bloqueante para vender los dos planes. Las 3 features Pro se construyen *mientras ya hay clientes pagando*.
 
 ---
 
@@ -12,332 +17,242 @@
 
 | Fase | Contenido | Duración | Al finalizar podés... |
 |---|---|---|---|
-| **0** | Hardening pre-venta + infraestructura de planes | Semanas 1–2 | Vender los 3 planes hoy |
-| **1** | Features del plan Pro | Semanas 3–6 | Entregar Pro completo |
-| **2** | Premium quick-wins (CTWA + prepagados) | Semanas 7–8 | Entregar Premium "v1" |
-| **3** | Premium grande (membresías, Instagram, multi-empleado) | Semanas 9–14 | Premium completo + vender a salones/barberías |
-| **4** | Backlog por demanda | Cuando un cliente lo pida/pague | Expandir sin especular |
+| **0** | Gating de 2 planes + hardening pre-venta | Semanas 1–2 | Vender Básico y Pro hoy |
+| **1** | Las 3 features del plan Pro | Semanas 3–6 | Entregar Pro completo y demostrable |
+| **Backlog** | Ex-Premium + varios | Cuando un cliente lo pida/pague | Expandir sin especular |
 
 ---
 
-# FASE 0 — Hardening pre-venta (Semanas 1–2) 🔴 BLOQUEANTE
+# FASE 0 — Gating de 2 planes + hardening pre-venta (Semanas 1–2) 🔴 BLOQUEANTE
 
-## 0.1 Infraestructura de planes y suspensión
+## 0.1 Gating de features por plan (cablear lo que ya existe)
 
-**Objetivo:** Cada tenant tiene plan y estado; el sistema los respeta en backend y panel.
+**Estado real del código (importante):** el modelo de 2 planes ya está a medio cablear y NO hay que crearlo de cero:
+- `wa_tenants.plan` (`"basico" | "pro"`, default `"pro"` para grandfathering), `stripeCustomerId`, `stripeSubscriptionId`, `estadoFacturacion` (`"trial"|"activo"|"atrasado"|"cancelado"`) y `facturacionPeriodoFin` ya existen en `src/db/schema.ts` (por C4.3, aún sin migración generada).
+- `src/billing/planes.ts` ya expone `tenantPuede(tenant, feature)` con un mapa `plan → features`.
+- **El hueco:** ese gating **no se aplica en ningún endpoint todavía**. Campañas, Usuarios y White-label están construidos y hoy quedan abiertos a cualquier plan.
 
-**Datos (Drizzle):**
-```
-tenants:
-  + plan: enum('basico','pro','premium') default 'basico'
-  + estado: enum('trial','activo','moroso','suspendido') default 'trial'
-  + trial_hasta: date nullable
-  + proximo_cobro: date nullable
-  + notas_facturacion: text nullable   -- "paga SINPE el 5 de cada mes", etc.
-```
+**Objetivo:** que el Básico deje de ver/usar las features Pro, respetado en panel **y** backend.
 
 **Backend:**
-- Helper central `hasFeature(tenant, feature)` con un mapa plan→features:
-  - `basico`: agente, bandeja, agenda, crm, recordatorios, dashboard, mi_negocio, usuarios
-  - `pro`: básico + campanias, rescate_cotizaciones, upsell, resenas
-  - `premium`: pro + membresias, prepagados, ctwa, instagram, multi_empleado
-- Middleware en `/api/panel/*`: endpoints gateados devuelven `403 { error: 'plan_requerido', plan: 'pro' }`.
-- **Webhook:** si `estado = 'suspendido'`, el bot responde UNA sola vez un mensaje neutro configurable ("Por el momento escribinos directamente al negocio 🙏") y no procesa más. Los mensajes se siguen guardando (no perder historial). Si `moroso`: el bot funciona normal pero el panel muestra banner de pago pendiente al dueño.
+- Extender el mapa de `src/billing/planes.ts` con las features Pro nuevas de este plan:
+  ```
+  Feature = "campanias" | "multiUsuario" | "whiteLabel"
+          | "rescateCotizaciones" | "upsell" | "resenasPro"
+  basico: todo false
+  pro:    todo true
+  ```
+- Aplicar `tenantPuede()` como guard en los endpoints Pro que hoy están abiertos: `/api/panel/campanias/*`, `/api/panel/usuarios/*` y los de white-label en `/api/panel/config`. Rechazo uniforme `403 { error: "plan_requerido", plan: "pro" }`.
+- `GET /me` expone `plan` + un objeto `features` derivado, para que el panel muestre/oculte sin adivinar (mismo patrón con que ya expone `marca`/`servicios`).
 
 **Panel:**
-- Pestañas gateadas se muestran con 🔒 y modal "Disponible en el plan Pro — contactanos" (tu vendedor silencioso).
-- Banner de estado `moroso`/`trial` (días restantes) en el header del panel.
+- Pestañas Pro (Campañas + las nuevas de Fase 1) se muestran con 🔒 para Básico → modal "Disponible en el plan Pro — contactanos". Es el vendedor silencioso dentro del producto.
 
-**Admin (`/panel/admin`):**
-- En la lista de negocios: columna plan + estado, dropdown para cambiar plan, botón Suspender/Reactivar, campo próximo cobro.
+**Admin (`/panel/admin`):** en la lista de negocios, columna `plan` + dropdown para cambiar plan (Básico↔Pro) sin redeploy. La suspensión/estado fino de facturación se resuelve con C4.3 (Stripe) — acá basta con el cambio de plan manual.
 
-**Aceptación:** cambiar un tenant a `suspendido` desde el admin apaga el bot en <1 min sin redeploy; un dueño Básico ve Campañas bloqueada y el API se lo rechaza aunque llame directo.
+**Aceptación:** un dueño Básico no ve Campañas ni las features Pro, y si pega el POST directo igual le rebota 403; cambiar el plan a Pro desde el admin las habilita sin redeploy.
 
-**Estimado: 3–4 días.**
+**Estimado: 2–3 días.**
 
 ---
 
-## 0.2 Contadores de uso por tenant
+## 0.2 Contadores de uso por tenant (para el tope del Básico)
 
-**Objetivo:** Saber cuánto te cuesta cada cliente (Meta cobra por conversación) y habilitar límites futuros.
+**Objetivo:** medir cuántas conversaciones consume cada cliente — habilita el **límite de ~500 conversaciones/mes del Básico** que se mencionó, y saber qué te cuesta cada cliente (Meta cobra por conversación).
 
-**Datos:**
-```
-uso_mensual:
-  tenant_id, anio_mes ('2026-07'),
-  conversaciones_iniciadas int, mensajes_entrantes int,
-  mensajes_salientes int, plantillas_marketing int, plantillas_utilidad int
-```
-- Incremento atómico (`INSERT ... ON CONFLICT DO UPDATE`) desde el webhook y desde cada envío.
-- Conversación "iniciada" = primer mensaje tras 24h de silencio (aproxima el modelo de cobro de Meta).
+**Datos:** tabla `wa_uso_mensual` (`tenant_id, anio_mes, conversaciones_iniciadas, mensajes_entrantes, mensajes_salientes, plantillas_marketing, plantillas_utilidad`). Incremento atómico (`INSERT ... ON CONFLICT DO UPDATE`) desde el webhook y desde cada envío. Conversación "iniciada" = primer mensaje tras 24 h de silencio (aproxima el modelo de cobro de Meta).
 
-**Admin:** columna "Conversaciones este mes" por negocio + vista de detalle con los últimos 6 meses.
+**Admin:** columna "Conversaciones este mes" por negocio.
 
-**No hacer todavía:** enforcement de límites. Solo medir. Definís los topes por plan cuando tengas 2–3 meses de datos reales.
+**Decisión de producto:** **medir sin bloquear.** Podés lanzar los 2 planes hoy sin enforcement del tope y solo monitorear; definís el número exacto y activás el bloqueo cuando tengas 1–2 meses de datos reales. El enforcement es un cambio chico encima de esto cuando lo quieras.
 
 **Aceptación:** el admin muestra números que cuadran (±5%) con el billing de Meta Business Manager.
 
-**Estimado: 2 días.**
+**Estimado: 2 días. (Opcional para lanzar — no bloquea la venta.)**
 
 ---
 
 ## 0.3 Indicador de ventana de 24 horas en la bandeja
 
-**Objetivo:** Que el operador NUNCA escriba a ciegas fuera de la ventana de sesión de WhatsApp.
+**Objetivo:** que el operador NUNCA escriba a ciegas fuera de la ventana de sesión de WhatsApp (el bug operativo más caro que podés prevenir).
 
-**Backend:**
-- La conversación ya conoce el timestamp del último mensaje entrante → exponer `ventana_abierta: boolean` y `ventana_cierra_en: timestamp` en el API de conversaciones.
-- Si el operador envía fuera de ventana: el endpoint rechaza con error claro (no fallo silencioso).
+**Backend:** exponer `ventana_abierta` y `ventana_cierra_en` en el API de conversaciones (la conversación ya conoce el timestamp del último entrante). Si el operador envía fuera de ventana → el endpoint rechaza con error claro.
 
-**Panel:**
-- Chip en el header del chat: 🟢 "Sesión abierta · cierra en 5h 12m" / 🔴 "Sesión cerrada".
-- Con sesión cerrada: el input de texto se deshabilita y se reemplaza por selector de plantillas de utilidad aprobadas ("Reabrir conversación"). Enviada la plantilla y respondido el cliente, la ventana se reabre sola.
+**Panel:** chip en el header del chat (🟢 "cierra en 5h 12m" / 🔴 "cerrada"). Con sesión cerrada, el input de texto se deshabilita y se reemplaza por selector de plantillas de utilidad ("Reabrir conversación").
 
-**Aceptación:** es imposible que un operador intente enviar texto libre fuera de ventana desde el panel; el caso está cubierto también a nivel API.
+**Aceptación:** es imposible enviar texto libre fuera de ventana desde el panel; también cubierto a nivel API.
 
-**Estimado: 2–3 días.** *Este es el bug operativo más caro que podés prevenir — prioridad máxima dentro de la Fase 0.*
-
----
+**Estimado: 2–3 días.**
 
 ## 0.4 Pulido de bandeja y ficha
 
-- **Nombres en vez de números:** si la ficha tiene nombre, la bandeja muestra "Diego Ramírez" y el número en secundario. (1 día)
-- **Tooltip del lead score:** icono ⓘ junto al score con leyenda corta ("Probabilidad de que esta conversación termine en cita"). (0.5 día)
-- **Fechas unificadas:** todo dd/mm/yyyy con un formateador central. Renombrar "Vehículos" → "Vehículo / Placa" o mostrar "Hilux · C 162345". (0.5 día)
-- **Estados de error reales:** componente `<ErrorState>` (icono + mensaje + botón Reintentar) reemplaza los textos planos "No se pudieron cargar..." en Usuarios, Campañas y cualquier query fallida. (1 día)
-- **Botón Guardar de Nueva cita:** estado habilitado con contraste pleno cuando el form es válido. (0.5 día)
+- **Nombres en vez de números** cuando la ficha tiene nombre (1 día).
+- **Tooltip del lead score** (ⓘ con leyenda corta) (0.5 día).
+- **Fechas unificadas** dd/mm/yyyy con un formateador central; "Vehículos" → "Vehículo / Placa" (0.5 día).
+- **`<ErrorState>`** (icono + mensaje + Reintentar) reemplaza los textos planos en Usuarios/Campañas/queries fallidas (1 día).
+- **Botón Guardar de Nueva cita** con contraste pleno cuando el form es válido (0.5 día).
 
 **Estimado total: 3–4 días.**
 
 ## 0.5 Reset de contraseña desde el admin
 
-- Endpoint superadmin `POST /admin/usuarios/:id/reset-password` que genera clave temporal de un solo uso con expiración 24h y flag `debe_cambiar_clave`.
-- Al primer login con clave temporal, el panel fuerza pantalla de cambio.
-- Botón "Resetear clave" en el detalle del negocio en el admin.
+- `POST /admin/usuarios/:id/reset-password` → clave temporal de un solo uso (expira 24 h) + flag `debe_cambiar_clave`; el panel fuerza el cambio al primer login. Botón "Resetear clave" en el detalle del negocio.
 
 **Estimado: 1–2 días.**
 
 ## 0.6 Proceso de cobro manual (operativo, no código)
 
-- Documento interno: día de facturación, plantilla de factura TicoFactura (ya dominás el flujo), recordatorio de pago por WhatsApp al dueño, política de gracia (7 días → `moroso`, 15 días → `suspendido`).
-- Checklist mensual de 15 minutos usando el admin de 0.1.
+- Documento interno: día de facturación, plantilla de factura, recordatorio de pago por WhatsApp al dueño, política de gracia. Checklist mensual de 15 min usando el admin de 0.1.
 
-**Estimado: medio día. Ya podés VENDER al terminar la Fase 0.** ✅
+**Estimado: medio día. Ya podés VENDER los 2 planes al terminar la Fase 0.** ✅
 
 ---
 
-# FASE 1 — Plan Pro (Semanas 3–6)
+# FASE 1 — Las 3 features del plan Pro (Semanas 3–6)
+
+> **Cada feature se gatea a `pro` en el MISMO commit que la construye** (agregar al mapa de `planes.ts` + guard en su endpoint), y **toda tabla/columna nueva lleva su migración Drizzle generada en ese mismo commit** — sin migración el deploy rompe en silencio (`seedTenants` aborta antes del `pm2 restart`).
 
 ## 1.1 Rescate de cotizaciones abandonadas 💰 (la feature más vendedora)
 
-**Objetivo:** Cotización sin cita en 3h → seguimiento automático → cita recuperada → métrica visible en ₡.
+**Objetivo:** cotización sin cita en ~3 h → seguimiento automático → cita recuperada → métrica visible en ₡.
 
-**Datos:**
+**Patrón obligado:** mini-cola propia estilo `src/campaigns/` — **NO** tocar `wa_jobs`/B1. Módulo nuevo `src/rescate/` (`db.ts` con su pool propio, `cola.ts` con `FOR UPDATE SKIP LOCKED`, `worker.ts` con throttling), copiado/adaptado de `src/campaigns/`.
+
+**Datos (migración aditiva):**
 ```
-cotizaciones:
-  id, tenant_id, conversacion_id, cliente_telefono,
-  servicio, monto, creada_en,
-  estado: enum('pendiente','agendada','rescate_1_enviado','rescate_2_enviado','descartada','recuperada'),
+wa_cotizaciones:
+  id, tenant_id, conversacion_id, cliente_wa,
+  servicio_id, monto, creada_en,
+  estado: 'pendiente' | 'agendada' | 'toque1' | 'toque2' | 'recuperada' | 'descartada' | 'opt_out',
   cita_id nullable, monto_recuperado nullable
 ```
 
-**Detección (bot):**
-- El agente ya sabe cuándo cotiza. Agregar tool/función interna `registrar_cotizacion(servicio, monto)` que el modelo invoca al dar un precio con intención de venta. Fallback: regex de montos (₡ + número) sobre mensajes salientes del bot marcados como cotización por el propio prompt.
-- Si luego se crea cita para ese teléfono con ese servicio → `estado = 'agendada'`.
+**(a) Marcar "cotización enviada":**
+- Tool nueva `registrar_cotizacion(servicioId, monto)` en `src/agent/tools.ts` + ejecución en `runAgent.ts`; el modelo la invoca al dar un precio con intención de venta (regla nueva en `systemPrompt.ts`).
+- Fallback: si el modelo no la llamó pero luego hay cita para ese teléfono+servicio, se marca `agendada` igual.
+- Al crearse una cita (bot o manual) para ese teléfono+servicio → `agendada` (o `recuperada` si ya hubo toque).
 
-**Job de rescate (usa tu cola durable en Postgres):**
-- Cada 15 min: cotizaciones `pendiente` con `creada_en < now() - 3h` y sin cita.
-- **Toque 1 (dentro de ventana 24h):** mensaje libre del bot, tono natural, referencia concreta: "¿Te guardo el espacio de mañana para el {servicio} ({monto})? Me quedan {n} horarios libres." Incluye lista tocable de horarios (ya tenés mensajes interactivos).
-- **Toque 2 (día siguiente, probablemente fuera de ventana):** plantilla de utilidad/marketing aprobada por Meta con variables {nombre, servicio, monto}. Reutiliza tu infra de plantillas de Campañas.
-- **Reglas duras:** máximo 2 toques por cotización; respeta opt-out "BAJA"; no dispara si la conversación está en modo humano; no dispara dos rescates activos al mismo teléfono.
-- Si el cliente agenda después de un toque → `recuperada` + `monto_recuperado`.
+**(b) Job cada X min** (`src/rescate/worker.ts`): cotizaciones `pendiente` con `creada_en < now() - RESCATE_HORAS` (default 3 h, env acelerable a minutos para demo/QA) y sin cita.
 
-**Configuración (Mi Negocio, sección nueva "Rescate de ventas"):** on/off, horas de espera (default 3), textos editables de los 2 toques, nombre de la plantilla Meta del toque 2.
+**(c) Envío del seguimiento:**
+- **Toque 1 (dentro de 24 h):** texto libre con lista tocable de horarios (reusa `ofrecer_horarios`/`enviarLista` de C1.2): *"¿Te guardo el espacio para el {servicio} ({monto})? Me quedan {n} horarios libres."*
+- **Toque 2 (día siguiente, fuera de 24 h):** plantilla Utility/Marketing aprobada por Meta con `{nombre, servicio, monto}`, exactamente como envía campañas (`src/campaigns/worker.ts`, `enviarPlantilla`). **Tramitar esa plantilla en Meta desde la Semana 1** (el review tarda).
 
-**Dashboard:** tarjeta **"₡ recuperados por el bot"** (mes actual) + contadores enviados/recuperados + tasa. *Esta tarjeta es tu demo de ventas.*
+**(d) Reglas duras:** máx 2 toques por cotización; respeta `optOutEn` (mismo chequeo que campañas); no dispara si la conversación está en modo humano; no dos rescates activos al mismo teléfono.
 
-**Aceptación:** flujo E2E en demo: bot cotiza → 3h sin cita (acelerable por env var) → toque 1 → cliente agenda → tarjeta suma el monto.
+**(e) Dashboard:** tarjeta **"₡ recuperados"** (mes actual) + enviados/recuperados/tasa (nuevo campo en `Metricas` de `src/panel/metricas.ts` + tarjeta en `Dashboard.tsx`). *Esta tarjeta es tu demo de venta.*
 
-**Estimado: 6–8 días.**
+**Config (Mi Negocio, sección "Rescate de ventas"):** on/off, horas de espera, textos editables de los 2 toques, nombre de la plantilla Meta del toque 2.
+
+**Aceptación:** flujo E2E en `SEED_DEMO`: bot cotiza → 3 h sin cita (acelerable por env) → toque 1 → cliente agenda → la tarjeta suma el monto.
+
+**Estimado: 1.5–2 semanas.**
 
 ---
 
 ## 1.2 Upsell inteligente al agendar
 
-**Objetivo:** Al confirmar una cita, el bot ofrece UN add-on relevante; el dashboard demuestra el aumento de ticket.
+**Objetivo:** al confirmar una cita, el bot ofrece UN add-on relevante; el dashboard demuestra el aumento de ticket. Es mayormente prompt engineering + 2 campos de config. Sin cola.
 
 **Datos:**
 ```
-servicios (Mi Negocio):
-  + addon_sugerido_id nullable      -- qué ofrecer con este servicio
-  + addon_precio_promo nullable     -- precio ancla ("en vez de X")
-  + addon_activo boolean
+Service (JSONB de wa_tenants — editable en "Mi negocio", sin migración de tabla):
+  + addonSugeridoId?    -- qué ofrecer con este servicio
+  + addonPrecioPromo?   -- precio ancla ("en vez de X")
+  + addonActivo?
 
-citas:
-  + addons jsonb    -- [{servicio_id, precio}]
-  + monto_total     -- base + addons
+wa_citas (migración aditiva):
+  + addons jsonb        -- [{servicioId, precio}]
+  + monto_total         -- base + addons
 
-clientes:
-  + upsells_rechazados jsonb  -- [{addon_id, fecha}] para no insistir <60 días
+ficha del cliente (CRM):
+  + upsells_rechazados jsonb  -- [{addonId, fecha}] para no insistir <60 días
 ```
 
 **Bot (prompt + tools):**
-- Regla en el system prompt del agente: *después* de que el cliente confirma día/hora y *antes* del mensaje de cierre, si el servicio tiene add-on activo y el cliente no lo rechazó hace <60 días: ofrecerlo UNA vez, casual, con precio ancla. Nunca insistir tras un "no".
-- Tool `agregar_addon_a_cita(cita_id, addon_id)` cuando acepta; registrar rechazo cuando declina.
+- Regla en `systemPrompt.ts`: *después* de que el cliente confirma día/hora y *antes* del cierre, si el servicio tiene add-on activo y el cliente no lo rechazó hace <60 días → ofrecerlo UNA vez, casual, con precio ancla. Nunca insistir tras un "no".
+- Tool `agregar_addon_a_cita(citaId, addonId)` al aceptar; registrar el rechazo cuando declina.
 
 **Panel:**
-- Mi Negocio: selector de add-on + precio promo por servicio.
+- Mi Negocio (`MiNegocio.tsx`): selector de add-on + precio promo por servicio.
 - Agenda/ficha: la cita muestra add-ons y monto total.
 - Dashboard: tarjeta **"Ticket promedio"** + tasa de aceptación de upsell + ₡ extra del mes por add-ons.
 
-**Aceptación:** en demo, el bot ofrece el add-on tras confirmar, lo agrega si aceptan, no lo re-ofrece al mismo cliente, y el dashboard refleja el ₡ extra.
+**Aceptación:** el bot ofrece el add-on tras confirmar, lo agrega si aceptan, no lo re-ofrece al mismo cliente, y el dashboard refleja el ₡ extra.
 
-**Estimado: 4–5 días.**
+**Estimado: 1 semana.**
 
 ---
 
 ## 1.3 Motor de reseñas de Google (completo)
 
-**Objetivo:** Pedir reseña SOLO a clientes satisfechos y mostrarle al dueño cómo sube su reputación.
+**Objetivo:** pedir reseña SOLO a clientes satisfechos y mostrarle al dueño cómo sube su reputación. **Ya tenés el ~60%** (C3.1): el "¿Cómo te fue?" con botones y el link de Google viven en `src/reminders/scheduler.ts` (`enviarPostServicio`) y el protocolo `postbien|`/`postmal|` en `src/whatsapp/client.ts`.
 
 **Datos:**
 ```
-seguimientos:
+wa_seguimientos (migración aditiva):
   cita_id, tenant_id, enviado_en,
-  sentimiento: enum('positivo','neutral','negativo') nullable,
+  sentimiento: 'positivo' | 'neutral' | 'negativo' nullable,
   resena_solicitada boolean, respuesta_texto text
 
-tenants: + google_place_id nullable
+wa_tenants: + google_place_id nullable
 snapshot_reputacion: tenant_id, fecha, rating numeric, total_resenas int
 ```
 
-**Bot:**
-- El "¿Cómo te fue?" existente se estructura: botones nativos **Excelente 😃 / Bien 🙂 / Mal 😞** (mensajes interactivos que ya usás).
-- Enrutamiento: Excelente → agradecer + link de reseña (`resena_solicitada = true`). Bien → agradecer, opcional cupón simple de texto configurable, NO pedir reseña. Mal → flujo actual de intercepción + alerta al operador (ya existe).
+**(a) Estructurar la respuesta** — pasar de 2 botones a **3**: `Excelente 😃 / Bien 🙂 / Mal 😞` (`botonesPostServicio` + `respuestaPostServicio` en `client.ts`). Enrutamiento en `handleWebhook.ts` (acción directa, ya existe el patrón):
+- **Excelente** → agradecer + link de reseña (`tenant.linkResenas`), marcar `resena_solicitada`.
+- **Bien** → agradecer, NO pedir reseña (opcional: cupón simple de texto configurable).
+- **Mal** → flujo actual de intercepción + escalada al operador (ya existe).
 
-**Google Places API (opcional pero potente):**
-- Job diario: `rating` + `user_ratings_total` del `place_id` → snapshot. Costo ínfimo (1 llamada/día/tenant, dentro del free tier de Places).
+**(b) Contador de solicitudes enviadas** — derivado de `wa_seguimientos`; tarjeta en el dashboard: solicitudes enviadas vs. reseñas conseguidas.
 
-**Dashboard, sección "Reputación":** rating actual con estrellas, gráfico de evolución, reseñas nuevas/mes, solicitudes enviadas vs. reseñas conseguidas, y la línea que vende: *"Cada estrella extra = 5–9% más ingresos (Harvard Business School)"*.
+**(c) Google Places API (opcional pero valioso):** `tenant.googlePlaceId` (config en Mi Negocio) + job diario que lee `rating` + `user_ratings_total` → `snapshot_reputacion`. 1 llamada/día/tenant (dentro del free tier de Places). **Dependencia externa:** API key de Google Places (+ decisión de cargar esa dep/costo). Dashboard sección "Reputación": rating con estrellas + gráfico de evolución con ≥2 snapshots.
 
-**Aceptación:** solo respuestas "Excelente" reciben el link; el dashboard grafica evolución con ≥2 snapshots.
+**Aceptación:** solo "Excelente" recibe el link; el contador sube; con Places, el dashboard grafica la evolución.
 
-**Estimado: 5–6 días** (3–4 sin Places API).
+**Estimado: 1 semana** (3–4 días sin Places API; +2–3 días con ella).
 
 **✅ Fin de Fase 1: plan Pro completo y demostrable con números.**
 
 ---
 
-# FASE 2 — Premium quick-wins (Semanas 7–8)
+# BACKLOG / FUTURO (fuera de los 2 planes — construir por demanda)
 
-## 2.1 Atribución de anuncios Click-to-WhatsApp (3–5 días)
+> Estas features **ya no se venden como un plan** (eran el ex-Premium). Se construyen solo cuando un cliente concreto lo pida y pague. Se conservan aquí como referencia de alcance, no como compromiso.
 
-**Objetivo:** "Este anuncio generó 12 citas y ₡96.000" — ROI real de la pauta del cliente.
+**Ex-Premium (mayor esfuerzo):**
+- **Paquetes prepagados** ("5 servicios por el precio de 4", compra → confirmación manual SINPE → consumo por cita → aviso de renovación). ~5–7 días.
+- **Membresías recurrentes** (extiende paquetes con ciclo/renovación + recordatorio de pago + MRR en dashboard). ~2 semanas.
+- **Atribución Click-to-WhatsApp (CTWA)** (objeto `referral` del webhook → origen de conversación/cita → ROI de la pauta en el dashboard). ~3–5 días.
+- **Multicanal Instagram DM** (mismo agente, requiere App Review de Meta — trámite largo). ~2 semanas + revisión.
+- **Agenda multi-empleado** (slots por empleado, retrocompatible con negocio de 1 empleado). ~2–3 semanas.
 
-- **Webhook:** cuando el mensaje entrante trae objeto `referral` (viene de CTWA), guardar en la conversación: `source_type, source_id, headline, ad_url`.
-- **Datos:** `conversaciones: + origen jsonb nullable`. Las citas heredan el origen de su conversación.
-- **Dashboard, sección "Origen de clientes":** tabla por anuncio → conversaciones → citas → ₡ estimados; total orgánico vs. pagado.
-- **Aceptación:** un mensaje de prueba con referral simulado aparece atribuido de punta a punta.
-
-## 2.2 Paquetes prepagados (versión simple de membresías) (5–7 días)
-
-**Objetivo:** "5 servicios por el precio de 4", pagado por adelantado — flujo de caja inmediato para el cliente.
-
-**Datos:**
-```
-paquetes: id, tenant_id, nombre, servicio_id, cantidad_usos, precio, activo
-paquetes_cliente: id, paquete_id, cliente_id, usos_restantes, comprado_en, vence_en nullable,
-                  estado: enum('pendiente_pago','activo','agotado','vencido')
-```
-
-**Flujo:**
-- Mi Negocio: sección "Paquetes" (crear/editar/activar).
-- Bot: conoce los paquetes (base de conocimiento estructurada); si el cliente quiere comprar → instrucciones de SINPE + aviso al operador; el operador confirma pago en la ficha → `activo`.
-- Al completar una cita de un cliente con paquete activo del servicio: descontar uso automáticamente + mensaje "Te quedan 3 lavados de tu paquete ✨".
-- `usos_restantes = 1` → el bot avisa; `= 0` → ofrece renovar (semilla de la membresía completa de Fase 3).
-- Dashboard: paquetes vendidos, ₡ prepagados, usos consumidos.
-
-**Aceptación:** ciclo completo compra → confirmación manual → consumo por cita → aviso de renovación.
-
-**✅ Fin de Fase 2: ya podés entregar Premium "v1" (CTWA + prepagados) y cobrarlo.**
-
----
-
-# FASE 3 — Premium grande (Semanas 9–14)
-
-*Regla: cada item de esta fase arranca solo cuando haya al menos un cliente Premium (o prospecto firmado) que lo necesite.*
-
-## 3.1 Membresías recurrentes (2 semanas)
-
-Extiende 2.2 con renovación por ciclo:
-- `membresias: + ciclo enum('mensual'), renovacion_en date, usos_por_ciclo`
-- Job diario: 3 días antes de `renovacion_en` → recordatorio de pago (plantilla utilidad); confirmado el pago (manual en ficha u orden admin) → resetear usos y correr fecha; sin pago tras X días de gracia → `vencida` + aviso.
-- Bot vende la membresía detectando recurrencia: cliente con ≥3 visitas/mes → "Con el plan mensual hubieras ahorrado ₡X" (job semanal que marca candidatos + oferta en la siguiente conversación).
-- Dashboard: MRR del negocio, miembros activos, churn de membresías.
-
-## 3.2 Multicanal: Instagram DM (2 semanas + revisión de permisos de Meta)
-
-- Misma app de Meta: suscribirse al webhook de Instagram Messaging; solicitar permisos `instagram_manage_messages` (App Review — **iniciar el trámite al comienzo de la fase, tarda**).
-- Normalizador de mensajes: unificar WhatsApp/Instagram al modelo interno de conversación con campo `canal`.
-- Bandeja: badge de canal (logo WA/IG) + filtro por canal. El agente responde igual en ambos; las plantillas/ventanas difieren (Instagram usa ventana de 24h con tag HUMAN_AGENT en vez de plantillas) → abstraer la regla de "puedo enviar libre?" por canal (reutiliza 0.3).
-- Onboarding: en el admin, campo para vincular la cuenta de Instagram del negocio.
-
-## 3.3 Agenda multi-empleado (2–3 semanas — el más invasivo)
-
-- **Datos:** `empleados (id, tenant_id, nombre, activo, horario jsonb nullable)`; `citas: + empleado_id nullable`; `servicios: + empleados_habilitados jsonb nullable`.
-- **Disponibilidad:** el cálculo de slots pasa de "por negocio" a "por empleado" (negocio de 1 empleado = comportamiento actual intacto → retrocompatible; ese es el criterio de diseño clave).
-- **Bot:** si el tenant tiene >1 empleado habilitado para el servicio: "¿Con quién preferís? Luis, María o el primero disponible" (lista tocable). "Primero disponible" = asignación automática al de menor carga.
-- **Panel:** Agenda con filtro/columnas por empleado; Nueva cita con selector; Mi Negocio → sección Empleados; Dashboard → ingresos y citas por empleado.
-- **Google Calendar:** un calendario por empleado (o colores/etiquetas si el negocio usa uno solo — configurable).
-
-**✅ Fin de Fase 3: Premium completo. Selyon vendible a salones, barberías y clínicas.**
-
----
-
-# FASE 4 — Backlog por demanda (construir cuando un cliente lo pida)
-
-Orden sugerido si tuvieras que elegir hoy, con el disparador que justifica construirlo:
-
-| # | Feature | Estimado | Construilo cuando... |
-|---|---|---|---|
-| 4.1 | **WhatsApp Flows** (formularios nativos de agendado) | 1–2 sem | Notes >15% de abandono en el flujo de agendado conversacional |
-| 4.2 | **Fila virtual** (orden de llegada) | 1 sem | Un negocio walk-in (barbería, tu propio lavacar) lo pida — diferenciador LATAM único |
-| 4.3 | **Señas por SINPE** para confirmar citas | 3–4 días | Un cliente sufra no-show >30% |
-| 4.4 | **Lista de espera** (cancelación → ofrecer espacio) | 3–4 días | Un cliente tenga agenda llena recurrentemente |
-| 4.5 | **Recompra por ciclo de servicio** | 4–5 días | Tengas 3+ meses de historial de servicios por cliente |
-| 4.6 | **Campañas de cumpleaños** | 2–3 días | Quick-win: cualquier momento post-Fase 1 |
-| 4.7 | **Rescate de clientes en riesgo** (frecuencia individual) | 4–5 días | Junto con 4.5 (comparten análisis de frecuencia) |
-| 4.8 | **Programa de referidos** con códigos | 1 sem | Un cliente pregunte "¿cómo consigo más clientes nuevos?" |
-| 4.9 | **Promos de horas valle** | 3–4 días | El dashboard de un cliente muestre huecos sistemáticos |
-| 4.10 | **Tarifas B2B/flota** | 3–4 días | Llegue el segundo chofer de Uber preguntando |
-| 4.11 | **Rescate de llamadas perdidas** | 1 sem + telco | Tengas un prospecto que "pierde llamadas" como dolor principal |
-| 4.12 | **Botón Reservar en Google Maps → bot** | 1–2 días (link) | Quick-win: cualquier momento |
-| 4.13 | **NPS estructurado con enrutamiento** | Ya cubierto en 1.3 | Evolucionarlo con puntaje 1–10 si un cliente corporativo lo pide |
-| 4.14 | **Panel multi-sucursal** | 2–3 sem | Firmes la primera cadena/franquicia (que pague onboarding) |
+**Otros por demanda:** WhatsApp Flows (formularios nativos), fila virtual, señas por SINPE, lista de espera, recompra por ciclo, campañas de cumpleaños, rescate de clientes en riesgo, programa de referidos, promos de horas valle, tarifas B2B/flota, rescate de llamadas perdidas, botón Reservar en Google Maps, panel multi-sucursal. Cada uno se arranca solo con un disparador de negocio real que lo justifique.
 
 ---
 
 # Notas transversales
 
-**Plantillas de Meta a crear/aprobar ANTES de necesitarlas** (el review tarda días): rescate toque 2, recordatorio de renovación de membresía, reapertura de conversación (utilidad, para 0.3). Crearlas en la Semana 1 aunque las uses en la 4.
+**Gating + migraciones (OBLIGATORIO por commit):** cada feature Pro se agrega al mapa de `planes.ts` y se gatea en su endpoint en el mismo commit; cada tabla/columna nueva lleva su migración Drizzle generada en ese commit (ver `deploy-migracion-obligatoria`).
 
-**Testing en demo:** cada feature nueva debe funcionar en modo `SEED_DEMO` con datos ficticios — tus capturas y demos de venta salen de ahí. Agregar cotizaciones, paquetes y empleados de ejemplo al seed.
+**Colas independientes:** el rescate (1.1) usa su propia mini-cola estilo `src/campaigns/`, nunca `wa_jobs`/B1 (ver el patrón acordado en el ROADMAP, C3.2).
 
-**Métricas = ventas:** cada feature de ingresos DEBE terminar en una tarjeta del dashboard con ₡. La regla: si el dueño no puede ver cuánta plata le generó, la feature no está terminada.
+**Plantillas de Meta a tramitar ANTES de necesitarlas** (el review tarda días): rescate toque 2 (Utility/Marketing), reapertura de conversación (Utility, para 0.3), y la de recordatorio fuera de 24 h que sigue pendiente. Crearlas en la Semana 1.
 
-**Flags de aceleración para pruebas:** env vars para acortar tiempos (rescate a 3 min en vez de 3h, renovación a 1 día) — imprescindible para demos y QA.
+**Testing en demo:** cada feature nueva debe funcionar en `SEED_DEMO` con datos ficticios — de ahí salen tus capturas y demos de venta. Agregar cotizaciones y add-ons de ejemplo al seed.
 
-**Con Claude Code:** atacá cada numeral como una sesión independiente en tu workspace multi-proyecto. El orden dentro de cada fase ya está pensado para que cada item deje el sistema deployable.
+**Métricas = ventas:** cada feature de ingresos DEBE terminar en una tarjeta del dashboard con ₡. Si el dueño no ve cuánta plata le generó, la feature no está terminada.
+
+**Flags de aceleración:** env vars para acortar tiempos (rescate a 3 min en vez de 3 h) — imprescindible para demos y QA.
 
 ---
 
-## Checklist de arranque (esta semana)
+## Checklist de arranque
 
-- [ ] 0.1 Migración de `plan`/`estado` + helper `hasFeature` + gating
-- [ ] 0.1 Controles de plan/suspensión en `/panel/admin`
-- [ ] 0.2 Tabla `uso_mensual` + incrementos en webhook
-- [ ] 0.3 Ventana 24h: API + chip + bloqueo de input
-- [ ] Enviar a aprobación las 3 plantillas de Meta
-- [ ] 0.6 Documento de proceso de cobro SINPE
-- [ ] Definir precio fundador (ej. Pro ₡45.000 de por vida, primeros 5)
-- [ ] 📣 Agendar las primeras 5 conversaciones de venta para la Semana 3
+- [x] 0.1 Extender `planes.ts` con las features Pro + guards en Campañas/Usuarios/White-label + 🔒 en el panel
+- [x] 0.1 Cambio de plan Básico↔Pro desde `/panel/admin`
+- [x] 0.2 Tabla `wa_uso_mensual` + incrementos (medir sin bloquear)
+- [ ] 0.3 Ventana 24 h: API + chip + bloqueo de input
+- [ ] Enviar a aprobación las plantillas de Meta (rescate toque 2, reapertura)
+- [ ] 0.6 Documento de proceso de cobro
+- [ ] Definir precio fundador (ej. Pro con descuento vitalicio, primeros 5)
