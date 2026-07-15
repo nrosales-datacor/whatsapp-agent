@@ -8,8 +8,12 @@ import { listarTenants } from "../config/tenantStore";
 // NUNCA corre en producción (no se invoca sin SEED_DEMO) y no toca la base.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Ancla fija ("ahora" de la demo) para que las capturas sean reproducibles.
-const BASE = new Date("2026-06-20T15:30:00-06:00").getTime();
+// Ancla del "ahora" de la demo: relativa a Date.now() (no una fecha fija en el
+// calendario). Una fecha fija se corre respecto al reloj real a medida que pasan
+// los días — los mensajes "recientes" (haceMin) terminan pareciendo de hace
+// semanas, lo que cierra la ventana de 24h (Carril D 0.3) en TODA la demo y
+// rompe tanto el E2E del panel como cualquier demo de venta en vivo.
+const BASE = Date.now();
 const haceMin = (m: number) => new Date(BASE - m * 60_000).toISOString();
 const dia = (diasAtras: number) => new Date(BASE - diasAtras * 86_400_000).toISOString().slice(0, 10);
 
