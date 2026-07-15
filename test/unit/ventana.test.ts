@@ -28,9 +28,11 @@ test("calcularVentana: último mensaje del cliente hace 1h, ventana abierta", ()
   ]);
   assert.equal(r.ventanaAbierta, true);
   assert.ok(r.ventanaCierraEn);
-  // Cierra ~23h después de ahora (24h desde el mensaje de hace 1h).
+  // Cierra ~23h después de ahora (24h desde el mensaje de hace 1h). Límite superior
+  // inclusivo: si el test corre lo bastante rápido, `hace()` y este `Date.now()`
+  // caen en el mismo milisegundo y el restante da EXACTAMENTE 23h (visto en CI).
   const restanteMs = new Date(r.ventanaCierraEn!).getTime() - Date.now();
-  assert.ok(restanteMs > 22 * 60 * 60 * 1000 && restanteMs < 23 * 60 * 60 * 1000);
+  assert.ok(restanteMs > 22 * 60 * 60 * 1000 && restanteMs <= 23 * 60 * 60 * 1000);
 });
 
 test("calcularVentana: último mensaje del cliente hace 25h, ventana cerrada", () => {
