@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { obtenerMetricas } from "../api";
 import { colones } from "../lib/formato";
+import ErrorState from "./ErrorState";
 import Icono, { type IconoId } from "./Iconos";
 
 // ── KPI card ──────────────────────────────────────────────────────────────────
@@ -132,6 +133,16 @@ function HorasPico({ items }: { items: { hora: string; cantidad: number }[] }) {
 export default function Dashboard({ nombre }: { nombre: string }) {
   const q = useQuery({ queryKey: ["metricas"], queryFn: obtenerMetricas });
   const m = q.data;
+
+  if (q.isError) {
+    return (
+      <div id="dashboard">
+        <div className="dash-body">
+          <ErrorState mensaje="No se pudieron cargar las métricas." onReintentar={() => q.refetch()} />
+        </div>
+      </div>
+    );
+  }
 
   const kpis: KPIProps[] = [
     {

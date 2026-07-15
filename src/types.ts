@@ -299,6 +299,8 @@ export interface ResumenConversacion {
   tieneCita?: boolean;
   /** true si esa cita activa más próxima está confirmada por el cliente (C1.3). */
   citaConfirmada?: boolean;
+  /** Nombre del cliente si ya quedó registrado en alguna cita; null si aún no se sabe. */
+  nombre?: string | null;
 }
 
 /** Suscripción de notificaciones push de un navegador (Web Push). */

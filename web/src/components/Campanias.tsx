@@ -12,6 +12,8 @@ import {
   type PreviewSegmento,
   type SegmentoFiltro,
 } from "../api";
+import { fechaHora } from "../lib/formato";
+import ErrorState from "./ErrorState";
 import { useToast } from "./Toast";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -32,11 +34,6 @@ const NOMBRES_ESTADO: Record<Campania["estado"], string> = {
 
 function BadgeEstado({ estado }: { estado: Campania["estado"] }) {
   return <span className={`badge-estado ${estado}`}>{NOMBRES_ESTADO[estado]}</span>;
-}
-
-function fechaCorta(iso: string | null): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString("es-CR", { dateStyle: "short", timeStyle: "short" });
 }
 
 /** "Ahora" en hora local, formateado para el atributo `min` de un input datetime-local. */
@@ -132,7 +129,7 @@ export default function Campanias() {
     return (
       <div id="campanias">
         <div className="dash-body">
-          <p className="dash-vacio">No se pudieron cargar las campañas.</p>
+          <ErrorState mensaje="No se pudieron cargar las campañas." onReintentar={() => q.refetch()} />
         </div>
       </div>
     );
@@ -169,7 +166,7 @@ export default function Campanias() {
                         <BadgeEstado estado={c.estado} />
                       </td>
                       <td>{c.totalDestinatarios || "—"}</td>
-                      <td>{fechaCorta(c.creadaEn)}</td>
+                      <td>{fechaHora(c.creadaEn)}</td>
                       <td>
                         <button type="button" className="btn-ghost" onClick={() => setSeleccionadaId(c.id)}>
                           Ver detalle
@@ -330,7 +327,7 @@ function DetalleCampania({ id, onCerrar, onCambio }: { id: string; onCerrar: () 
         </div>
 
         {q.isLoading && <p className="dash-vacio">Cargando…</p>}
-        {q.isError && <p className="dash-vacio">No se pudo cargar la campaña.</p>}
+        {q.isError && <ErrorState mensaje="No se pudo cargar la campaña." onReintentar={() => q.refetch()} />}
 
         {c && (
           <div className="ficha-body">

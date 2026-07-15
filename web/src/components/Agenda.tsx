@@ -13,6 +13,7 @@ import {
   type Service,
 } from "../api";
 import { fmtNum } from "../lib/formato";
+import ErrorState from "./ErrorState";
 import Icono from "./Iconos";
 import { useToast } from "./Toast";
 
@@ -156,7 +157,13 @@ export default function Agenda({ servicios }: Props) {
           </button>
         </div>
 
-        {vista === "dia" && (
+        {q.isError && (
+          <div className="card">
+            <ErrorState mensaje="No se pudieron cargar las citas." onReintentar={() => q.refetch()} />
+          </div>
+        )}
+
+        {!q.isError && vista === "dia" && (
           <div className="card">
             <h3>Citas del día</h3>
             {citas.length === 0 && <p className="dash-vacio">Sin citas para este día.</p>}
@@ -177,7 +184,7 @@ export default function Agenda({ servicios }: Props) {
           </div>
         )}
 
-        {vista === "semana" && (
+        {!q.isError && vista === "semana" && (
           <div className="agenda-semana">
             {diasSemana.map((f) => {
               const delDia = citas.filter((c) => c.fecha === f).sort((a, b) => a.hora.localeCompare(b.hora));

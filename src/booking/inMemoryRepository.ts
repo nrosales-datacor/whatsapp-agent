@@ -306,6 +306,9 @@ export class RepositorioEnMemoria implements Repositorio {
           (ct) => ct.tenantId === tenantId && ct.clienteWa === c.clienteWa,
         );
         const citaActiva = citasCliente.find((ct) => ct.estado === "agendada" && ct.fecha >= hoy);
+        const nombre =
+          [...citasCliente].sort((a, b) => b.fecha.localeCompare(a.fecha)).find((ct) => ct.clienteNombre)
+            ?.clienteNombre ?? null;
 
         // Heurística tentativa de lead score (misma que el repo Drizzle).
         let leadScore = 40;
@@ -327,6 +330,7 @@ export class RepositorioEnMemoria implements Repositorio {
           servicio: citaActiva?.servicioId ?? null,
           tieneCita: !!citaActiva,
           citaConfirmada: !!citaActiva?.confirmadaEn,
+          nombre,
         };
       })
       .sort((a, b) => (b.ultimaActividadEn ?? "").localeCompare(a.ultimaActividadEn ?? ""));

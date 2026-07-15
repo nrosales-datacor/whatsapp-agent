@@ -10,6 +10,7 @@ import {
   type KnowledgeBase,
   type Service,
 } from "../api";
+import ErrorState from "./ErrorState";
 import { useToast } from "./Toast";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -234,7 +235,7 @@ export default function MiNegocio({ features }: { features: Features }) {
     return (
       <div id="miNegocio">
         <div className="dash-body">
-          <p className="dash-vacio">No se pudo cargar la configuración del negocio.</p>
+          <ErrorState mensaje="No se pudo cargar la configuración del negocio." onReintentar={() => q.refetch()} />
         </div>
       </div>
     );

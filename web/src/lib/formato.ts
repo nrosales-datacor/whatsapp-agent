@@ -6,9 +6,32 @@ export function hora(iso: string | null | undefined): string {
   return iso ? new Date(iso).toLocaleTimeString("es-CR", { hour: "2-digit", minute: "2-digit" }) : "";
 }
 
-/** Fecha local corta a partir de un ISO; "—" si no hay fecha. */
+function pad2(n: number): string {
+  return n < 10 ? "0" + n : String(n);
+}
+
+/**
+ * Fecha en formato dd/mm/yyyy fijo (no depende del locale del navegador); "—" si no
+ * hay fecha o es inválida. Un string "YYYY-MM-DD" puro (sin hora, ej. `Cita.fecha`)
+ * se interpreta en UTC para no correr un día por el offset de zona horaria del
+ * cliente; un ISO con hora se interpreta en la zona local, como corresponde a un
+ * instante real.
+ */
 export function fechaCorta(iso: string | null | undefined): string {
-  return iso ? new Date(iso).toLocaleDateString("es-CR") : "—";
+  if (!iso) return "—";
+  const soloFecha = /^\d{4}-\d{2}-\d{2}$/.test(iso);
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const dia = soloFecha ? d.getUTCDate() : d.getDate();
+  const mes = (soloFecha ? d.getUTCMonth() : d.getMonth()) + 1;
+  const anio = soloFecha ? d.getUTCFullYear() : d.getFullYear();
+  return `${pad2(dia)}/${pad2(mes)}/${anio}`;
+}
+
+/** Fecha dd/mm/yyyy + hora "HH:mm" a partir de un ISO; "—" si no hay fecha. */
+export function fechaHora(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  return `${fechaCorta(iso)} ${hora(iso)}`;
 }
 
 /** Número de WhatsApp (E.164 sin "+") a formato visible. */

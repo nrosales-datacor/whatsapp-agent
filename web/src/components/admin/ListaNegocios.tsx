@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { adminCambiarPlan, adminListarTenants, type Plan } from "../../api";
+import ErrorState from "../ErrorState";
 
 // Tabla de negocios ya dados de alta (resumen liviano, sin secretos). Se refresca
 // sola cuando el formulario invalida ["adminTenants"] tras crear uno.
@@ -19,7 +20,7 @@ export default function ListaNegocios() {
       {q.isLoading ? (
         <div className="admin-vacio">Cargando…</div>
       ) : q.isError ? (
-        <div className="admin-error">No se pudieron cargar los negocios.</div>
+        <ErrorState mensaje="No se pudieron cargar los negocios." onReintentar={() => q.refetch()} />
       ) : tenants.length === 0 ? (
         <div className="admin-vacio">Todavía no hay negocios dados de alta.</div>
       ) : (

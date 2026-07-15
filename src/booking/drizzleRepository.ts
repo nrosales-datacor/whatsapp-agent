@@ -402,7 +402,8 @@ export class RepositorioDrizzle implements Repositorio {
         EXISTS(
           SELECT 1 FROM wa_citas ch
           WHERE ch.tenant_id = c.tenant_id AND ch.cliente_wa = c.cliente_wa
-        ) AS tuvo_cita
+        ) AS tuvo_cita,
+        ultima_cita.cliente_nombre AS cliente_nombre
       FROM wa_conversaciones c
       LEFT JOIN LATERAL (
         SELECT contenido, creado_en, rol
@@ -419,6 +420,13 @@ export class RepositorioDrizzle implements Repositorio {
         ORDER BY fecha ASC, hora ASC
         LIMIT 1
       ) cita_prox ON true
+      LEFT JOIN LATERAL (
+        SELECT cliente_nombre
+        FROM wa_citas
+        WHERE tenant_id = c.tenant_id AND cliente_wa = c.cliente_wa
+        ORDER BY creada_en DESC
+        LIMIT 1
+      ) ultima_cita ON true
       WHERE c.tenant_id = ${tenantId}
       ORDER BY ultima_actividad DESC
     `)) as unknown as Array<{
@@ -434,6 +442,7 @@ export class RepositorioDrizzle implements Repositorio {
       tiene_cita: boolean;
       cita_confirmada: boolean;
       tuvo_cita: boolean;
+      cliente_nombre: string | null;
     }>;
 
     const hace24h = Date.now() - 24 * 60 * 60 * 1000;
@@ -462,6 +471,7 @@ export class RepositorioDrizzle implements Repositorio {
         servicio: r.servicio_id ?? null,
         tieneCita: r.tiene_cita,
         citaConfirmada: r.cita_confirmada,
+        nombre: r.cliente_nombre ?? null,
       };
     });
   }

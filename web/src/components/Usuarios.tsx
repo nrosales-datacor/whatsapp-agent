@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { actualizarUsuario, crearUsuario, listarUsuarios, type Rol } from "../api";
+import ErrorState from "./ErrorState";
 import { useToast } from "./Toast";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -73,7 +74,7 @@ export default function Usuarios({ usuarioActualId }: Props) {
     return (
       <div id="usuarios">
         <div className="dash-body">
-          <p className="dash-vacio">No se pudieron cargar los usuarios.</p>
+          <ErrorState mensaje="No se pudieron cargar los usuarios." onReintentar={() => q.refetch()} />
         </div>
       </div>
     );
