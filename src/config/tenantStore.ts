@@ -21,6 +21,10 @@ interface CuentaUsuario {
   passwordHash: string;
   /** Rol dentro del negocio (C2.3): "dueno" edita "Mi negocio" y gestiona usuarios. */
   rol: Rol;
+  /** Reset de contraseña desde el admin (Carril D, 0.5): fuerza el cambio al loguearse. */
+  debeCambiarClave: boolean;
+  /** Vencimiento de la clave temporal (0.5). Null = clave normal. */
+  claveTemporalExpira: Date | null;
 }
 
 interface Cache {
@@ -36,7 +40,15 @@ let hayDb = false;
 
 function construirCache(
   tenants: Tenant[],
-  usuarios: { id: string; usuario: string; tenantId: string; passwordHash: string; rol: Rol }[],
+  usuarios: {
+    id: string;
+    usuario: string;
+    tenantId: string;
+    passwordHash: string;
+    rol: Rol;
+    debeCambiarClave: boolean;
+    claveTemporalExpira: Date | null;
+  }[],
 ): Cache {
   const porPnid = new Map<string, Tenant>();
   const porId = new Map<string, Tenant>();
@@ -45,7 +57,16 @@ function construirCache(
     porPnid.set(t.phoneNumberId, t);
   }
   const us = new Map<string, CuentaUsuario>();
-  for (const u of usuarios) us.set(u.usuario, { id: u.id, tenantId: u.tenantId, passwordHash: u.passwordHash, rol: u.rol });
+  for (const u of usuarios) {
+    us.set(u.usuario, {
+      id: u.id,
+      tenantId: u.tenantId,
+      passwordHash: u.passwordHash,
+      rol: u.rol,
+      debeCambiarClave: u.debeCambiarClave,
+      claveTemporalExpira: u.claveTemporalExpira,
+    });
+  }
   return { porPnid, porId, usuarios: us };
 }
 
@@ -56,7 +77,17 @@ function cacheFallback(): Cache {
   const t = TENANT_FALLBACK_ROSALES;
   const usuarios = [];
   const hash = process.env.PANEL_PASSWORD_HASH_ROSALES;
-  if (hash) usuarios.push({ id: "fallback", usuario: t.id, tenantId: t.id, passwordHash: hash, rol: "dueno" as Rol });
+  if (hash) {
+    usuarios.push({
+      id: "fallback",
+      usuario: t.id,
+      tenantId: t.id,
+      passwordHash: hash,
+      rol: "dueno" as Rol,
+      debeCambiarClave: false,
+      claveTemporalExpira: null,
+    });
+  }
   return construirCache([t], usuarios);
 }
 
@@ -105,7 +136,15 @@ async function recargarDesdeDb(): Promise<void> {
     }
     cache = construirCache(
       tenants.map(filaATenant),
-      usuarios.map((u) => ({ id: u.id, usuario: u.usuario, tenantId: u.tenantId, passwordHash: u.passwordHash, rol: u.rol as Rol })),
+      usuarios.map((u) => ({
+        id: u.id,
+        usuario: u.usuario,
+        tenantId: u.tenantId,
+        passwordHash: u.passwordHash,
+        rol: u.rol as Rol,
+        debeCambiarClave: u.debeCambiarClave,
+        claveTemporalExpira: u.claveTemporalExpira,
+      })),
     );
   } catch (e) {
     activarFallback(`no se pudo leer la base (${e instanceof Error ? e.message : String(e)})`);
@@ -165,6 +204,15 @@ export function listarTenants(): Tenant[] {
 /** Cuenta de panel para el login (resuelve usuario → tenant + hash). */
 export function obtenerUsuario(usuario: string): CuentaUsuario | undefined {
   return cache.usuarios.get(usuario);
+}
+
+// Cuentas por negocio: pocas decenas por tenant en el caso de uso real (panel de un
+// lavacar), así que un scan lineal por request de /me es más simple que mantener un
+// segundo índice por id solo para esto.
+/** Cuenta de panel por id (para /me y el cambio de clave — la sesión solo trae el id). */
+export function obtenerUsuarioPorId(usuarioId: string): CuentaUsuario | undefined {
+  for (const c of cache.usuarios.values()) if (c.id === usuarioId) return c;
+  return undefined;
 }
 
 // ── Escritura: alta de negocios (onboarding, ROADMAP B3) ──
@@ -277,6 +325,8 @@ export interface UsuarioTenant {
   rol: Rol;
   activo: boolean;
   creadoEn: string; // ISO
+  /** true si tiene una clave temporal pendiente de cambiar (reset del admin, 0.5). */
+  debeCambiarClave: boolean;
 }
 
 /** Todos los usuarios (activos e inactivos) de un negocio, para la pestaña "Usuarios". */
@@ -289,6 +339,7 @@ export async function listarUsuariosDeTenant(tenantId: string): Promise<UsuarioT
     rol: f.rol as Rol,
     activo: f.activo,
     creadoEn: f.creadoEn.toISOString(),
+    debeCambiarClave: f.debeCambiarClave,
   }));
 }
 
@@ -326,6 +377,43 @@ export async function actualizarUsuarioTenant(
   await d
     .update(waUsuarios)
     .set(patch)
+    .where(and(eq(waUsuarios.id, usuarioId), eq(waUsuarios.tenantId, tenantId)));
+}
+
+// ── Reset de contraseña desde el admin (Carril D, 0.5) ──
+// A diferencia de actualizarUsuarioTenant (scopeado al dueño de SU negocio), el
+// superadmin actúa cross-tenant: no hay tenantId propio con el cual filtrar el WHERE.
+
+/**
+ * Resetea la clave de un usuario del panel (superadmin, 0.5): guarda el hash de la clave
+ * temporal, marca debeCambiarClave y fija su vencimiento (24h). Devuelve el usuario
+ * afectado (para mostrar en qué negocio se hizo el reset), o null si no existe.
+ * Lanza Error("SIN_DB") si no hay base.
+ */
+export async function resetearClaveUsuario(usuarioId: string, passwordHash: string, expiraEn: Date): Promise<UsuarioTenant | null> {
+  if (!hayDb) throw new Error("SIN_DB");
+  const d = obtenerDb();
+  const filas = await d
+    .update(waUsuarios)
+    .set({ passwordHash, debeCambiarClave: true, claveTemporalExpira: expiraEn })
+    .where(eq(waUsuarios.id, usuarioId))
+    .returning();
+  const f = filas[0];
+  if (!f) return null;
+  return { id: f.id, usuario: f.usuario, rol: f.rol as Rol, activo: f.activo, creadoEn: f.creadoEn.toISOString(), debeCambiarClave: f.debeCambiarClave };
+}
+
+/**
+ * Cambio de clave propio (el usuario ya logueado, forzado o voluntario): reemplaza el
+ * hash y limpia el flag de clave temporal. Scopeada por tenantId (defensa en profundidad,
+ * mismo patrón que actualizarUsuarioTenant). Lanza Error("SIN_DB") si no hay base.
+ */
+export async function cambiarClavePropia(tenantId: string, usuarioId: string, nuevoHash: string): Promise<void> {
+  if (!hayDb) throw new Error("SIN_DB");
+  const d = obtenerDb();
+  await d
+    .update(waUsuarios)
+    .set({ passwordHash: nuevoHash, debeCambiarClave: false, claveTemporalExpira: null })
     .where(and(eq(waUsuarios.id, usuarioId), eq(waUsuarios.tenantId, tenantId)));
 }
 

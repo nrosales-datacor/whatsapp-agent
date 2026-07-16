@@ -127,6 +127,13 @@
       "when": 1784129992422,
       "tag": "0017_legal_silver_samurai",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1784215436638,
+      "tag": "0018_bored_baron_zemo",
+      "breakpoints": true
     }
   ]
 }

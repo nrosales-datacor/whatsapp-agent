@@ -43,6 +43,18 @@ export function hashearPassword(password: string): string {
 // cuando el usuario no existe, y así no filtrar qué tenants son válidos por timing.
 export const HASH_DUMMY = hashearPassword(crypto.randomBytes(16).toString("hex"));
 
+// Alfabeto sin caracteres ambiguos (0/O, 1/l/I) — la clave temporal (0.5) la lee/tipea
+// un humano para comunicarla al dueño del negocio.
+const ALFABETO_CLAVE_TEMPORAL = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+
+/** Genera una clave temporal legible (12 caracteres) para el reset de contraseña desde el admin. */
+export function generarClaveTemporal(): string {
+  const bytes = crypto.randomBytes(12);
+  let out = "";
+  for (const b of bytes) out += ALFABETO_CLAVE_TEMPORAL[b % ALFABETO_CLAVE_TEMPORAL.length];
+  return out;
+}
+
 /** Compara una contraseña con el "salt:hash" guardado (tiempo constante). */
 export function verificarPassword(password: string, guardado: string | undefined): boolean {
   if (!guardado) return false;
