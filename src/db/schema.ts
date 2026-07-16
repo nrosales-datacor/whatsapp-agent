@@ -223,6 +223,11 @@ export const waUsuarios = pgTable(
     rol: text("rol").notNull().default("operador"),
     activo: boolean("activo").notNull().default(true),
     creadoEn: timestamp("creado_en", { withTimezone: true }).notNull().defaultNow(),
+    // Reset de contraseña desde el admin (Carril D, 0.5): el superadmin genera una clave
+    // temporal; el panel fuerza el cambio al primer login mientras este flag esté en true.
+    debeCambiarClave: boolean("debe_cambiar_clave").notNull().default(false),
+    // Vencimiento de la clave temporal (24h desde el reset). Null = clave normal, sin vencer.
+    claveTemporalExpira: timestamp("clave_temporal_expira", { withTimezone: true }),
   },
   (t) => ({
     uqUsuario: uniqueIndex("wa_usuarios_usuario_uq").on(t.usuario),

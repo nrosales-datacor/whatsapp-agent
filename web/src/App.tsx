@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { me } from "./api";
 import Login from "./components/Login";
 import Panel from "./components/Panel";
+import CambiarClaveObligatorio from "./components/CambiarClaveObligatorio";
 import RutaAdmin from "./components/admin/RutaAdmin";
 
 // Compuerta del operador (lo de siempre): la sesión vive en ["me"]; un 401 la pone en
@@ -11,6 +12,9 @@ function RutaOperador() {
   const sesion = useQuery({ queryKey: ["me"], queryFn: me });
   if (sesion.isLoading) return null;
   if (!sesion.data) return <Login />;
+  // Reset de contraseña desde el admin (Carril D, 0.5): con una clave temporal pendiente,
+  // el panel no se muestra hasta que el usuario la cambie por una propia.
+  if (sesion.data.debeCambiarClave) return <CambiarClaveObligatorio />;
   return <Panel sesion={sesion.data} />;
 }
 

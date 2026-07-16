@@ -121,6 +121,8 @@ export interface Sesion {
   usuarioId: string;
   /** Rol del usuario logueado (C2.3): "dueno" ve "Mi negocio" y "Usuarios"; "operador" no. */
   rol: Rol;
+  /** Reset de contraseña desde el admin (Carril D, 0.5): fuerza la pantalla de cambio de clave. */
+  debeCambiarClave: boolean;
   /** Clave pública VAPID para suscribir push (null si el server no tiene push). */
   vapidPublica: string | null;
   /** Catálogo de servicios agendables del negocio (para la Agenda, C2.1). */
@@ -155,6 +157,11 @@ export async function logout(): Promise<void> {
 
 export function me(): Promise<Sesion> {
   return pedir<Sesion>("/me");
+}
+
+/** Cambio de clave propio (Carril D, 0.5): lo usa el cambio obligatorio tras un reset del admin. */
+export async function cambiarClave(claveActual: string, claveNueva: string): Promise<void> {
+  await pedir("/cambiar-clave", { method: "POST", body: JSON.stringify({ claveActual, claveNueva }) });
 }
 
 // ── Bandeja ──
@@ -412,6 +419,8 @@ export interface UsuarioTenant {
   rol: Rol;
   activo: boolean;
   creadoEn: string;
+  /** true si tiene una clave temporal pendiente de cambiar (reset del admin, 0.5). */
+  debeCambiarClave: boolean;
 }
 
 export function listarUsuarios(): Promise<UsuarioTenant[]> {
@@ -424,6 +433,15 @@ export async function crearUsuario(usuario: string, password: string, rol: Rol):
 
 export async function actualizarUsuario(id: string, patch: { rol?: Rol; activo?: boolean }): Promise<void> {
   await pedir(`/usuarios/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify(patch) });
+}
+
+// ── Reset de contraseña desde el admin (Carril D, 0.5) ──
+export function adminListarUsuariosTenant(tenantId: string): Promise<UsuarioTenant[]> {
+  return pedir<{ usuarios: UsuarioTenant[] }>(`/admin/tenants/${encodeURIComponent(tenantId)}/usuarios`).then((r) => r.usuarios);
+}
+
+export function adminResetearClave(usuarioId: string): Promise<{ usuario: string; claveTemporal: string; expiraEn: string }> {
+  return pedir(`/admin/usuarios/${encodeURIComponent(usuarioId)}/reset-password`, { method: "POST" });
 }
 
 // ── Campañas segmentadas (ROADMAP C3.2, solo dueño) ──

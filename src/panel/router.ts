@@ -5,6 +5,7 @@ import {
   actualizarConfigTenant,
   actualizarFacturacionTenant,
   actualizarUsuarioTenant,
+  cambiarClavePropia,
   crearTenant,
   crearUsuarioTenant,
   hayBaseDeDatos,
@@ -12,7 +13,9 @@ import {
   listarUsuariosDeTenant,
   obtenerTenantPorId,
   obtenerUsuario,
+  obtenerUsuarioPorId,
   recargar,
+  resetearClaveUsuario,
 } from "../config/tenantStore";
 import {
   limpiarLineas,
@@ -57,6 +60,7 @@ import {
 import {
   crearSesion,
   crearSesionAdmin,
+  generarClaveTemporal,
   hashearPassword,
   HASH_DUMMY,
   verificarPassword,
@@ -637,6 +641,49 @@ export async function manejarPanel(
       return json(res, 201, { ok: true, tenantId: v.tenant.id }), true;
     }
 
+    // Equipo de un negocio, visto desde el admin (Carril D, 0.5): para elegir a quién
+    // resetearle la clave. Reusa listarUsuariosDeTenant (mismo dato que ve el dueño).
+    const partesUsuariosTenant = ruta.split("/");
+    if (
+      partesUsuariosTenant[0] === "admin" &&
+      partesUsuariosTenant[1] === "tenants" &&
+      partesUsuariosTenant[2] &&
+      partesUsuariosTenant[3] === "usuarios" &&
+      metodo === "GET"
+    ) {
+      if (!hayBaseDeDatos()) return json(res, 503, { ok: false, error: "Requiere base de datos (no configurada)." }), true;
+      const tenantId = decodeURIComponent(partesUsuariosTenant[2]);
+      if (!obtenerTenantPorId(tenantId)) return json(res, 404, { ok: false, error: "Negocio no encontrado" }), true;
+      const usuarios = await listarUsuariosDeTenant(tenantId);
+      return json(res, 200, { ok: true, usuarios }), true;
+    }
+
+    // Reset de contraseña desde el admin (Carril D, 0.5): clave temporal de un solo uso,
+    // vence en 24h; el panel fuerza el cambio al primer login (debeCambiarClave).
+    const partesResetClave = ruta.split("/");
+    if (
+      partesResetClave[0] === "admin" &&
+      partesResetClave[1] === "usuarios" &&
+      partesResetClave[2] &&
+      partesResetClave[3] === "reset-password" &&
+      metodo === "POST"
+    ) {
+      if (!hayBaseDeDatos()) return json(res, 503, { ok: false, error: "Requiere base de datos (no configurada)." }), true;
+      const usuarioId = decodeURIComponent(partesResetClave[2]);
+      const claveTemporal = generarClaveTemporal();
+      const expiraEn = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      let usuario;
+      try {
+        usuario = await resetearClaveUsuario(usuarioId, hashearPassword(claveTemporal), expiraEn);
+      } catch (e) {
+        if (e instanceof Error && e.message === "SIN_DB") return json(res, 503, { ok: false, error: "Requiere base de datos." }), true;
+        console.error("[admin] resetearClaveUsuario:", e);
+        return json(res, 500, { ok: false, error: "No se pudo resetear la clave." }), true;
+      }
+      if (!usuario) return json(res, 404, { ok: false, error: "Usuario no encontrado" }), true;
+      return json(res, 200, { ok: true, usuario: usuario.usuario, claveTemporal, expiraEn: expiraEn.toISOString() }), true;
+    }
+
     return json(res, 404, { ok: false, error: "Ruta no encontrada" }), true;
   }
 
@@ -651,8 +698,13 @@ export async function manejarPanel(
     // filtrar por timing qué usuarios son válidos. El 401 es idéntico en ambos casos.
     const ok = verificarPassword(String(password ?? ""), cuenta?.passwordHash ?? HASH_DUMMY);
     const tenant = cuenta ? obtenerTenantPorId(cuenta.tenantId) : undefined;
-    if (!cuenta || !ok || !tenant) {
-      json(res, 401, { ok: false, error: "Usuario o contraseña incorrectos" });
+    // Clave temporal del reset de admin (0.5): vencida a las 24h, hay que pedir un reset nuevo.
+    const claveVencida = !!cuenta?.claveTemporalExpira && Date.now() > cuenta.claveTemporalExpira.getTime();
+    if (!cuenta || !ok || !tenant || claveVencida) {
+      const error = claveVencida
+        ? "La clave temporal venció. Pedile a tu administrador que te la resetee de nuevo."
+        : "Usuario o contraseña incorrectos";
+      json(res, 401, { ok: false, error });
       return true;
     }
     const cookie = `${COOKIE}=${crearSesion(tenant.id, cuenta.id, cuenta.rol)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${7 * 24 * 60 * 60}`;
@@ -685,6 +737,9 @@ export async function manejarPanel(
       tenantId: tenant.id,
       usuarioId,
       rol,
+      // Reset de contraseña desde el admin (Carril D, 0.5): el panel fuerza el cambio
+      // de clave antes de mostrar nada más mientras esto esté en true.
+      debeCambiarClave: obtenerUsuarioPorId(usuarioId)?.debeCambiarClave ?? false,
       vapidPublica: clavePublicaVapid(),
       servicios: tenant.servicios.filter((s) => s.agendable),
       // White-label (C4.1): el panel se pinta con esto al cargar (ver web/src/lib/marca.ts).
@@ -701,6 +756,30 @@ export async function manejarPanel(
       reaperturaConfigurada: !!tenant.plantillaReapertura,
     });
     return true;
+  }
+
+  // Cambio de clave propio (Carril D, 0.5): lo usa tanto el cambio obligatorio tras un
+  // reset del admin como un cambio voluntario. Requiere la clave actual (o la temporal).
+  if (ruta === "cambiar-clave" && metodo === "POST") {
+    if (!hayBaseDeDatos()) return json(res, 503, { ok: false, error: "Requiere base de datos (no configurada)." }), true;
+    const body = await leerBody(req);
+    if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
+    const claveActual = String(body?.claveActual ?? "");
+    const claveNueva = String(body?.claveNueva ?? "");
+    if (claveNueva.length < 8) return json(res, 400, { ok: false, error: "La contraseña debe tener al menos 8 caracteres" }), true;
+    const cuenta = obtenerUsuarioPorId(usuarioId);
+    if (!cuenta || !verificarPassword(claveActual, cuenta.passwordHash)) {
+      return json(res, 401, { ok: false, error: "La contraseña actual no es correcta" }), true;
+    }
+    try {
+      await cambiarClavePropia(tenant.id, usuarioId, hashearPassword(claveNueva));
+    } catch (e) {
+      if (e instanceof Error && e.message === "SIN_DB") return json(res, 503, { ok: false, error: "Requiere base de datos." }), true;
+      console.error("[panel] cambiarClavePropia:", e);
+      return json(res, 500, { ok: false, error: "No se pudo cambiar la contraseña." }), true;
+    }
+    await recargar();
+    return json(res, 200, { ok: true }), true;
   }
 
   // ── Usuarios del panel del negocio (ROADMAP C2.3) — solo dueño ──
