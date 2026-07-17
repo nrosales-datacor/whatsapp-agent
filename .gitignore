@@ -27,3 +27,6 @@ playwright-report/
 test-results/
 blob-report/
 .playwright/
+
+# Capturas de referencia de diseño/UX (pesadas, no hace falta versionarlas)
+docs/ux-review/**/*.png

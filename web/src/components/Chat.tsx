@@ -14,19 +14,13 @@ import { useToast } from "./Toast";
 
 interface Props {
   id: string | null;
-  /** Resumen de la conversación activa (de la lista cacheada). Provee leadScore, tieneCita, etc. */
+  /** Resumen de la conversación activa (de la lista cacheada). Provee tieneCita, servicio, etc. */
   resumen: ResumenConversacion | null;
   /** Ventana de 24h (Carril D, 0.3): el negocio configuró la plantilla de reapertura. */
   reaperturaConfigurada: boolean;
   mostrar: boolean;
   onVolver: () => void;
   onVerFicha: () => void;
-}
-
-function scoreClase(s: number) {
-  if (s >= 80) return "score-alto";
-  if (s >= 55) return "score-medio";
-  return "score-bajo";
 }
 
 export default function Chat({ id, resumen, reaperturaConfigurada, mostrar, onVolver, onVerFicha }: Props) {
@@ -134,7 +128,6 @@ export default function Chat({ id, resumen, reaperturaConfigurada, mostrar, onVo
 
   const humano = conv?.modo === "humano";
   const atendida = conv?.estado === "atendida";
-  const score = resumen?.leadScore;
   const tieneCita = conv?.tieneCita ?? resumen?.tieneCita;
   const citaConfirmada = conv?.citaConfirmada ?? resumen?.citaConfirmada;
   const servicio = conv?.servicio ?? resumen?.servicio;
@@ -155,21 +148,10 @@ export default function Chat({ id, resumen, reaperturaConfigurada, mostrar, onVo
         {conv && (
           <div className="chatHead" onClick={onVerFicha}>
             <div className="chat-head-top">
-              {score !== undefined && (
-                <div
-                  className={`score-tile score-tile-sm ${scoreClase(score)}`}
-                  title="Lead score: prioridad estimada del cliente (0-100), según interés en agendar y actividad reciente."
-                >
-                  {score}
-                </div>
-              )}
               <span id="chatTitulo">{resumen?.nombre || fmtNum(conv.clienteWa)}</span>
-              <span className={"pill " + conv.modo}>{humano ? "humano" : "bot"}</span>
-              <span
-                className={"pill-ventana" + (conv.ventanaAbierta ? " abierta" : " cerrada")}
-                title="Ventana de sesión de WhatsApp: solo se puede escribir texto libre dentro de las 24h posteriores al último mensaje del cliente"
-              >
-                {conv.ventanaAbierta ? `🟢 cierra en ${restante(conv.ventanaCierraEn)}` : "🔴 ventana cerrada"}
+              <span className={"pill-estado " + conv.modo}>
+                <span className={"estado-dot " + (humano ? "humano" : "bot")} />
+                {humano ? "Lo atendés vos" : "Lo atiende el bot"}
               </span>
               {tieneCita && (
                 <span className={"pill-cita" + (citaConfirmada ? " confirmada" : "")}>
@@ -178,9 +160,15 @@ export default function Chat({ id, resumen, reaperturaConfigurada, mostrar, onVo
               )}
             </div>
             <div id="chatModo">
-              {servicio && <span className="chat-servicio">{servicio} · </span>}
-              <span className={"estado-dot " + (humano ? "humano" : "bot")} />
-              {humano ? "Lo estás atendiendo vos" : "Lo atiende el bot"}
+              {servicio && <span className="chat-servicio">{servicio} ·</span>}
+              <span className="tnum">{fmtNum(conv.clienteWa)}</span>
+              <span>·</span>
+              <span
+                className={"pill-ventana" + (conv.ventanaAbierta ? " abierta" : " cerrada")}
+                title="Ventana de sesión de WhatsApp: solo se puede escribir texto libre dentro de las 24h posteriores al último mensaje del cliente"
+              >
+                {conv.ventanaAbierta ? `🟢 cierra en ${restante(conv.ventanaCierraEn)}` : "🔴 ventana cerrada"}
+              </span>
             </div>
             <div className="ver">Ver ficha del cliente ›</div>
           </div>
