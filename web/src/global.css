@@ -72,7 +72,7 @@
 
   /* ── Feedback ── */
   --danger: #C72B3F; --danger-soft: #FBEBE8;
-  --success: #58BE4D; --warning: #FA8500;
+  --success: #58BE4D; --warning: #FA8500; --warning-soft: #FFF1DE;
 
   /* ── Forma ── */
   --radius: 16px; --radius-sm: 10px; --radius-pill: 999px; --av: 13px;
@@ -114,6 +114,7 @@
   --bot: #37b3a3; --bot-soft: #123330;
   --human: #e0902f; --human-soft: #3a2a13;
   --active: #16302b; --chat-bg: #0a1917;
+  --warning-soft: #3a2a13;
 
   --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 34px rgba(0,0,0,.5);
   --shadow-overlay: 0 1px 2px rgba(0,0,0,.5), 0 16px 40px -12px rgba(0,0,0,.6);
@@ -128,6 +129,8 @@ body { font-family: var(--font-body); color: var(--text); background: var(--bg);
 button { font: inherit; cursor: pointer; border: none; background: none; color: inherit; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .oculto { display: none !important; }
+/* Números tabulares — montos, horas, teléfonos, placas y fechas (nunca "bailan" al cambiar). */
+.tnum { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
 
 /* ══════════════════════════════════════════════════════════════════════════════
    LOGIN
@@ -259,12 +262,33 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .conv .ultimo { font-size: var(--step--1); color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .badges { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
 
-/* Score tile — reemplaza al avatar cuando hay leadScore */
-.score-tile { width: 44px; height: 44px; border-radius: var(--radius); display: grid; place-items: center; font-family: var(--font-display); font-size: var(--step--1); font-weight: 700; flex-shrink: 0; line-height: 1; }
-.score-tile-sm { width: 32px; height: 32px; border-radius: var(--radius-sm); font-size: 10px; }
-.score-alto  { background: var(--accent);      color: var(--accent-fg); }
-.score-medio { background: var(--accent-soft); color: var(--accent-strong); }
-.score-bajo  { background: var(--surface-2);   color: var(--text-muted); border: 1px solid var(--border); }
+/* Medidor de interés — reemplaza el número crudo de leadScore (0-100) por 3
+   barras + etiqueta ("Interés alto/medio/bajo"), igual criterio que antes
+   (scoreClase) pero legible sin leyenda aparte. */
+.interes { display: inline-flex; align-items: center; gap: 6px; }
+.interes-barras { display: flex; align-items: flex-end; gap: 2px; }
+.interes-barra { width: 3px; border-radius: 1px; background: var(--border-2); }
+.interes-barra:nth-child(1) { height: 6px; }
+.interes-barra:nth-child(2) { height: 9px; }
+.interes-barra:nth-child(3) { height: 12px; }
+.interes-barra.on { background: var(--accent); }
+.interes-label { font-size: 11px; color: var(--text-3); }
+
+/* Señal "necesita que intervengas" — fila con cliente esperando una respuesta
+   humana (modo humano + mensajes sin leer): barra de acento ámbar a la
+   izquierda de la fila + chip con el tiempo de espera. */
+.conv.necesita { box-shadow: inset 3px 0 0 var(--warning); }
+.conv.activa.necesita { box-shadow: inset 3px 0 0 var(--accent); }
+.chip-alerta { display: inline-flex; align-items: center; gap: 4px; background: var(--warning-soft); color: var(--warning); font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 6px; white-space: nowrap; }
+
+/* Filtro "Necesita respuesta" — distinto de los demás filtros neutros: color
+   de alerta siempre visible (activo o no), con puntito, para que se note
+   sin tener que activarlo. */
+.filtro-pill.filtro-alerta { background: var(--warning-soft); border-color: transparent; color: var(--warning); }
+.filtro-pill.filtro-alerta:hover { background: var(--warning-soft); color: var(--warning); }
+.filtro-pill.filtro-alerta.activo { background: var(--warning); color: #fff; }
+.filtro-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--warning); flex-shrink: 0; }
+.filtro-pill.filtro-alerta.activo .filtro-dot { background: #fff; }
 
 /* Pills de modo */
 .pill { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 2px 6px; border-radius: var(--radius); }
@@ -290,7 +314,7 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .chatHead { flex: 1; min-width: 0; cursor: pointer; }
 .chat-head-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 #chatTitulo { font-weight: 700; font-size: var(--step-0); }
-#chatModo { font-size: var(--step--1); color: var(--text-muted); display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+#chatModo { font-size: var(--step--1); color: var(--text-muted); display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
 .chat-servicio { color: var(--accent); font-weight: 500; }
 .pill-cita { background: var(--bot-soft); color: var(--bot); font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: var(--radius); }
 .pill-cita.confirmada { background: var(--accent-soft); color: var(--accent); }
@@ -300,6 +324,11 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .estado-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .estado-dot.bot { background: var(--text-muted); }
 .estado-dot.humano { background: var(--accent); }
+/* Pill de estado del header del chat — frase completa ("Lo atiende el bot"), a
+   diferencia de .pill (etiqueta corta en mayúsculas de la fila de la lista). */
+.pill-estado { display: inline-flex; align-items: center; gap: 6px; font-size: var(--step--1); font-weight: 600; padding: 4px 10px; border-radius: var(--radius-pill); }
+.pill-estado.bot    { background: var(--bot-soft);   color: var(--bot); }
+.pill-estado.humano { background: var(--human-soft); color: var(--human); }
 .chatHead .ver { font-size: var(--step--1); color: var(--accent); margin-top: 1px; }
 .toggle { background: var(--accent); color: var(--on-accent); padding: 8px 14px; border-radius: var(--radius); font-size: var(--step--1); font-weight: 600; white-space: nowrap; flex-shrink: 0; transition: background .15s; }
 .toggle:hover { background: var(--accent-strong); }
@@ -379,17 +408,51 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .dash-body { padding: var(--space-lg); max-width: 960px; margin: 0 auto; }
 .dash-titulo { margin-bottom: var(--space-lg); }
 .dash-titulo h2 { font-family: var(--font-display); font-size: var(--step-2); font-weight: 700; letter-spacing: -.01em; color: var(--text); }
+.dash-titulo p { font-size: var(--step--1); color: var(--text-muted); margin-top: 3px; }
+
+/* Grupo de KPIs — eyebrow + línea separadora (Dinero / Actividad del bot / Riesgo y calidad) */
+.dash-grupo { display: flex; align-items: center; gap: 10px; margin: var(--space-lg) 0 var(--space-sm); }
+.dash-grupo-titulo { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; font-weight: 700; color: var(--text-3); white-space: nowrap; }
+.dash-grupo-linea { flex: 1; height: 1px; background: var(--border); }
+
+/* Hero "Plata rescatada por el bot" — el dato #1 del dashboard, aparte de los KPIs */
+.hero-rescate { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: var(--space-lg); margin-bottom: var(--space-md); }
+.hero-eyebrow { display: flex; align-items: center; gap: 7px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); font-weight: 700; margin-bottom: 10px; }
+.hero-monto { font-family: var(--font-display); font-weight: 800; font-size: clamp(1.9rem, 5vw, 2.6rem); letter-spacing: -.02em; color: var(--accent-strong); line-height: 1; }
+.hero-monto span { font-size: .6em; font-weight: 700; color: var(--text-3); margin-right: 2px; }
+.hero-texto { font-size: var(--step-0); color: var(--text-2); line-height: 1.5; margin-top: 10px; max-width: 560px; }
+.hero-texto b { color: var(--text); }
+.hero-submetricas { display: flex; gap: 20px; margin-top: 16px; flex-wrap: wrap; }
+.hero-sub-v { font-family: var(--font-display); font-weight: 700; font-size: var(--step-2); color: var(--text); }
+.hero-sub-l { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.hero-sep { width: 1px; background: var(--border); align-self: stretch; }
 
 /* KPI cards */
 .kpis { display: grid; grid-template-columns: repeat(3,1fr); gap: var(--space-md); margin-bottom: var(--space-lg); }
 .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-md) var(--space-lg); }
 .kpi-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: var(--space-sm); }
 .kpi-icon-badge { width: 40px; height: 40px; border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; flex-shrink: 0; }
-.kpi.hero .kpi-icon-badge { background: var(--accent); color: var(--accent-fg); }
+.kpi-icon-badge.tono-neutro  { background: var(--surface-2); color: var(--text-2); }
+.kpi-icon-badge.tono-success { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
+.kpi-icon-badge.tono-danger  { background: var(--danger-soft); color: var(--danger); }
 .kpi-delta { font-size: var(--step--1); font-weight: 700; color: var(--success); background: rgba(88,190,77,.12); padding: 2px 8px; border-radius: var(--radius-pill); align-self: flex-start; white-space: nowrap; }
+.kpi-delta.malo { color: var(--danger); background: var(--danger-soft); }
 .kpi-n { font-family: var(--font-display); font-size: clamp(var(--step-2), 6vw, var(--step-3)); font-weight: 900; line-height: 1; color: var(--text); letter-spacing: -.02em; overflow-wrap: anywhere; }
-.kpi.hero .kpi-n { color: var(--accent); }
 .kpi-l { font-size: var(--step--1); color: var(--text-muted); margin-top: var(--space-xs); }
+
+/* KPIs secundarios — grupos Actividad/Riesgo: grid 2 col, tarjeta más compacta */
+.kpis-sec { display: grid; grid-template-columns: repeat(2,1fr); gap: var(--space-md); margin-bottom: var(--space-lg); }
+.kpi.kpi-compacta { padding: var(--space-sm) var(--space-md); }
+.kpi.kpi-compacta .kpi-icon-badge { width: 30px; height: 30px; }
+.kpi.kpi-compacta .kpi-n { font-size: var(--step-2); margin-top: var(--space-xs); }
+
+/* Barras verticales — "Citas por día" con más aire que la lista horizontal (Servicios/Horas pico) */
+.citas-dia-wrap { display: flex; align-items: flex-end; gap: 12px; height: 150px; }
+.cd-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 8px; height: 100%; }
+.cd-num { font-size: 12px; font-weight: 700; color: var(--text); }
+.cd-bar { width: 100%; max-width: 46px; border-radius: 6px 6px 0 0; background: var(--accent-soft); min-height: 2px; }
+.cd-bar.ultimo { background: var(--accent); }
+.cd-label { font-size: 11px; color: var(--text-3); }
 
 /* Cards genéricas */
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-md) var(--space-lg); margin-bottom: var(--space-md); }

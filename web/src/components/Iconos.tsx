@@ -1,7 +1,7 @@
 export type IconoId =
   | "search" | "send" | "cal" | "quote" | "check2" | "bell"
   | "moon" | "sun" | "chat" | "dash" | "out" | "bot" | "user"
-  | "x" | "trend" | "money" | "clock" | "back" | "gear" | "alert" | "lock" | "star";
+  | "x" | "trend" | "money" | "clock" | "back" | "gear" | "alert" | "lock" | "star" | "shield";
 
 interface Props {
   id: IconoId;
@@ -33,6 +33,7 @@ const RUTAS: Record<IconoId, string> = {
   alert:   '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
   lock:    '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
   star:    '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
+  shield:  '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/>',
 };
 
 // Los paths son literales hardcodeados en este módulo — sin input de usuario.

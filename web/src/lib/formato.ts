@@ -54,6 +54,16 @@ export function restante(iso: string | null | undefined): string {
   return horas > 0 ? `${horas}h ${minutos}m` : `${minutos}m`;
 }
 
+/** Tiempo transcurrido desde un ISO pasado, "Xh Ym" o "Ym" (bandeja: "Sin responder hace…"). "" si no hay fecha. */
+export function transcurrido(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms <= 0) return "0m";
+  const horas = Math.floor(ms / (60 * 60 * 1000));
+  const minutos = Math.floor((ms % (60 * 60 * 1000)) / (60 * 1000));
+  return horas > 0 ? `${horas}h ${minutos}m` : `${minutos}m`;
+}
+
 /** Iniciales del nombre del negocio para el chip de marca sin logo (máx. 2 letras). */
 export function iniciales(nombre: string): string {
   const palabras = nombre.trim().split(/\s+/).filter(Boolean);
