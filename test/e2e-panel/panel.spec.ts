@@ -64,7 +64,7 @@ test("toggle bot ↔ humano en una conversación", async ({ page }) => {
   await expect(atenderYo).toBeVisible();
   await atenderYo.click();
   await expect(devolver).toBeVisible();
-  await expect(page.locator(".chatHead .pill.humano")).toBeVisible();
+  await expect(page.locator(".chatHead .pill-estado.humano")).toBeVisible();
   await devolver.click();
   await expect(atenderYo).toBeVisible();
 });
@@ -98,7 +98,7 @@ test("responder: el mensaje del operador aparece en el chat (Graph mockeado)", a
   await expect(page.locator("#msgs")).toContainText(texto);
   expect(await page.locator("#msgs .b").count()).toBeGreaterThan(antes);
   // Al responder un humano, la conversación pasa a modo humano.
-  await expect(page.locator(".chatHead .pill.humano")).toBeVisible();
+  await expect(page.locator(".chatHead .pill-estado.humano")).toBeVisible();
 });
 
 test("agenda: la vista carga y el modal de nueva cita se abre", async ({ page }) => {
