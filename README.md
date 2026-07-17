@@ -7,6 +7,19 @@ precios/horarios/servicios y agenda pulidos. Tenant cargado: **Lavacar Rosales**
 Cumple la política de Meta: es un agente de **soporte acotado**, no un asistente
 general. Si le piden algo fuera de alcance, redirige con amabilidad.
 
+## Documentación del proyecto
+
+- **`ROADMAP.md`** — fuente de verdad del plan de arquitectura/producto y qué está ✅/🔵/⬜. Empezá acá.
+- **`CLAUDE.md`** — convenciones del repo y política de dependencias.
+- **`DEPLOY.md`** — cómo desplegar/operar el droplet. **`TESTING.md`** — estrategia y estado de pruebas.
+- **`GUIA-META.md`** — trámites pendientes con Meta (plantillas, Embedded Signup).
+- **`PLAN-FEATURES-FALTANTES.md`** — plan comercial vigente (Carril D: planes Básico/Pro).
+- **`PLAN-PREVENTA.md`** — checklist de preparación pre-venta (parcialmente desactualizado, ver nota al inicio del archivo).
+- **`PROCESO-COBRO-MANUAL.md`** — proceso operativo de cobro mientras no hay Stripe.
+- **`docs/FUNCIONALIDADES.md`** — resumen de funcionalidades con capturas (cara comercial del producto).
+- **`docs/archivo/`** — planes de ejecución ya completados (quedan como bitácora histórica; el
+  estado vigente de cada ítem vive en `ROADMAP.md`, no en estos archivos).
+
 ## Cómo correrlo (rápido, sin base de datos)
 
 1. Instalá dependencias:

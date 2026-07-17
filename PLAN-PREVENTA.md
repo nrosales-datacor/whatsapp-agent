@@ -1,3 +1,14 @@
+> ⚠️ **Documento parcialmente desactualizado (revisar antes de usar como checklist).** Escrito
+> 2026-07-07; desde entonces avanzó bastante trabajo que este plan todavía marca como pendiente o
+> inexistente — en particular: **ya existe una suite de tests automatizados completa** (ver
+> `TESTING.md`: unitarios, aislamiento multi-tenant, E2E de webhook y panel, seguridad, fiabilidad
+> con PGlite, evals del agente), **ya existe CI/CD** (`.github/workflows/ci-cd.yml`, con Sentry,
+> uptime monitor y métricas — ver `ROADMAP.md` B5) y **todo el Carril D** (gating de planes Básico/Pro,
+> rate limiting de login, ventana de 24h, etc.) está construido. Antes de ejecutar un ítem de acá,
+> confirmá en `ROADMAP.md`/`TESTING.md` que sigue realmente pendiente — varios ya no lo están.
+> Lo que sigue vigente: los trámites de Fase 2 (legal/Hacienda), el piloto externo (§7), y partes
+> operativas puntuales (backups con restore probado, redeploy verificado).
+
 # PLAN-PREVENTA — Preparación para cobrar al primer cliente
 
 > Plan de preparación pre-venta del agente de WhatsApp (Selyon / "Recepcionista IA").
