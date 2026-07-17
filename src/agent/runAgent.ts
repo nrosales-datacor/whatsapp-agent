@@ -12,6 +12,7 @@ import {
   sincronizarReprogramacionGcal,
 } from "../booking/gestionCitas";
 import { registrarLatenciaAgente } from "../observabilidad/metricas";
+import { tenantPuede } from "../billing/planes";
 
 const MODELO = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const MAX_PASOS = 4; // tope de iteraciones de tool-calling por mensaje
@@ -150,7 +151,35 @@ async function ejecutarTool(
     // Si Google falla, la cita YA quedó guardada: no se bloquea la respuesta.
     await sincronizarCreacionGcal(tenant, repo, cita);
 
-    return JSON.stringify({ ok: true, cita });
+    // Rescate de cotizaciones (Carril D, 1.1): si el cliente tenía una cotización
+    // activa para este servicio, esta cita la cierra (agendada o recuperada). No
+    // bloquea la respuesta al cliente si falla.
+    if (tenantPuede(tenant, "rescateCotizaciones")) {
+      await repo
+        .actualizarCotizacionPorCita(tenant.id, clienteWa, servicioId, cita.id, cita.precio)
+        .catch((e) => console.error("[rescate] actualizarCotizacionPorCita:", e));
+    }
+
+    // Upsell inteligente al agendar (Carril D, 1.2): si el servicio tiene un add-on
+    // configurado y el cliente no lo rechazó hace <60 días, se lo sugerimos al modelo
+    // para que lo ofrezca UNA vez en el mismo cierre. No bloquea la respuesta si falla.
+    let addonSugerido: { addonId: string; nombre: string; precioPromo?: number } | undefined;
+    if (tenantPuede(tenant, "upsell")) {
+      const servicioBase = tenant.servicios.find((s) => s.id === servicioId);
+      const addonServicio = servicioBase?.addonActivo
+        ? tenant.servicios.find((s) => s.id === servicioBase.addonSugeridoId)
+        : undefined;
+      if (addonServicio) {
+        const rechazadoReciente = await repo
+          .fueRechazadoAddonRecientemente(tenant.id, clienteWa, addonServicio.id, hoyEnTz(tenant.timezone))
+          .catch(() => false); // ante la duda, mejor ofrecerlo que perderse la venta
+        if (!rechazadoReciente) {
+          addonSugerido = { addonId: addonServicio.id, nombre: addonServicio.nombre, precioPromo: servicioBase!.addonPrecioPromo };
+        }
+      }
+    }
+
+    return JSON.stringify({ ok: true, cita, addonSugerido });
   }
 
   // Nombre legible del servicio para las respuestas de las herramientas de cita.
@@ -221,6 +250,48 @@ async function ejecutarTool(
     if (!actualizada) return JSON.stringify({ ok: false, motivo: "no se pudo reprogramar la cita." });
     // Reflejar el cambio en Google Calendar (si está configurado y la cita tiene evento).
     await sincronizarReprogramacionGcal(tenant, actualizada);
+    return JSON.stringify({ ok: true, cita: citaResumen(actualizada) });
+  }
+
+  if (nombre === "registrar_cotizacion") {
+    const servicioId = String(args.servicioId);
+    const monto = Number(args.monto);
+    // Fallo silencioso (ok:false sin motivo): esta tool no tiene efecto conversacional,
+    // el modelo no necesita reaccionar a que no se haya podido registrar.
+    if (!servicioEsAgendable(servicioId) || !Number.isFinite(monto) || monto <= 0) {
+      return JSON.stringify({ ok: false });
+    }
+    if (tenantPuede(tenant, "rescateCotizaciones") && tenant.rescateActivo) {
+      await repo
+        .registrarCotizacion(tenant.id, clienteWa, servicioId, monto)
+        .catch((e) => console.error("[rescate] registrarCotizacion:", e));
+    }
+    return JSON.stringify({ ok: true });
+  }
+
+  if (nombre === "agregar_addon_a_cita" || nombre === "rechazar_addon") {
+    const citaId = String(args.citaId);
+    const addonId = String(args.addonId);
+    // Validamos citaId/addonId contra la config del tenant en vez de confiar en lo
+    // que pasa el modelo: la cita debe ser del cliente y el addonId debe ser
+    // EXACTAMENTE el que está configurado para el servicio de esa cita (evita que
+    // el modelo agregue un add-on arbitrario o con un precio inventado).
+    const activas = await repo.citasActivasCliente(tenant.id, clienteWa, hoyEnTz(tenant.timezone));
+    const cita = activas.find((c) => c.id === citaId);
+    if (!cita) return JSON.stringify({ ok: false, motivo: "no encontré esa cita entre las activas del cliente." });
+    const servicioBase = tenant.servicios.find((s) => s.id === cita.servicioId);
+    if (!servicioBase?.addonActivo || servicioBase.addonSugeridoId !== addonId) {
+      return JSON.stringify({ ok: false, motivo: "ese add-on no corresponde a esta cita." });
+    }
+
+    if (nombre === "rechazar_addon") {
+      await repo.registrarRechazoAddon(tenant.id, clienteWa, addonId);
+      return JSON.stringify({ ok: true });
+    }
+
+    const precio = servicioBase.addonPrecioPromo ?? tenant.servicios.find((s) => s.id === addonId)?.precio ?? 0;
+    const actualizada = await repo.agregarAddonACita(tenant.id, citaId, { servicioId: addonId, precio });
+    if (!actualizada) return JSON.stringify({ ok: false, motivo: "no se pudo agregar el add-on." });
     return JSON.stringify({ ok: true, cita: citaResumen(actualizada) });
   }
 

@@ -12,7 +12,7 @@ import {
   type CitaAgenda,
   type Service,
 } from "../api";
-import { fmtNum } from "../lib/formato";
+import { colones, fmtNum } from "../lib/formato";
 import ErrorState from "./ErrorState";
 import Icono from "./Iconos";
 import { useToast } from "./Toast";
@@ -172,6 +172,7 @@ export default function Agenda({ servicios }: Props) {
                 <FilaCita
                   key={c.id}
                   cita={c}
+                  servicios={servicios}
                   pendiente={pendiente}
                   onConfirmar={() => confirmar.mutate(c.id)}
                   onCompletar={() => completar.mutate(c.id)}
@@ -233,6 +234,7 @@ export default function Agenda({ servicios }: Props) {
 
 interface FilaProps {
   cita: CitaAgenda;
+  servicios: Service[];
   pendiente: boolean;
   onConfirmar: () => void;
   onCompletar: () => void;
@@ -243,8 +245,12 @@ interface FilaProps {
 
 const ETIQUETA_ESTADO: Record<string, string> = { no_show: "No-show" };
 
-function FilaCita({ cita, pendiente, onConfirmar, onCompletar, onCancelar, onNoShow, onReprogramar }: FilaProps) {
+function FilaCita({ cita, servicios, pendiente, onConfirmar, onCompletar, onCancelar, onNoShow, onReprogramar }: FilaProps) {
   const activa = cita.estado === "agendada";
+  // Upsell (Carril D, 1.2): total = base + add-ons aceptados. Solo se muestra si hay
+  // algo que sumar (precio y/o add-ons); una cita sin ninguno no necesita esta línea.
+  const addons = cita.addons ?? [];
+  const total = (cita.precio ?? 0) + addons.reduce((s, a) => s + a.precio, 0);
   return (
     <div className="agenda-fila">
       <span className="agenda-hora">{cita.hora}</span>
@@ -254,6 +260,15 @@ function FilaCita({ cita, pendiente, onConfirmar, onCompletar, onCancelar, onNoS
           {fmtNum(cita.clienteWa)} · {cita.servicioNombre}
           {cita.placa ? ` · ${cita.placa}` : ""}
         </span>
+        {(cita.precio != null || addons.length > 0) && (
+          <span className="agenda-total">
+            {colones(total)}
+            {addons.length > 0 &&
+              ` (incluye ${addons
+                .map((a) => servicios.find((s) => s.id === a.servicioId)?.nombre ?? a.servicioId)
+                .join(", ")})`}
+          </span>
+        )}
       </div>
       {cita.estado !== "agendada" && (
         <span className={"badge-estado " + cita.estado}>{ETIQUETA_ESTADO[cita.estado] ?? cita.estado}</span>

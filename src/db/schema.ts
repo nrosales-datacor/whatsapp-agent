@@ -1,6 +1,6 @@
-import { pgTable, text, timestamp, integer, boolean, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer, boolean, jsonb, index, uniqueIndex, numeric } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
-import type { Bloqueo, HorarioDia, KnowledgeBase, PendienteSerializado, SegmentoFiltro, Service } from "../types";
+import type { AddonCita, Bloqueo, HorarioDia, KnowledgeBase, PendienteSerializado, RechazoAddon, SegmentoFiltro, Service } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Esquema Drizzle del agente de WhatsApp.
@@ -42,6 +42,10 @@ export const waConversaciones = pgTable(
     leidoHasta: timestamp("leido_hasta", { withTimezone: true }),
     // Notas privadas del negocio sobre este cliente (ficha / CRM).
     notas: text("notas"),
+    // Upsell inteligente al agendar (Carril D, 1.2): add-ons que el cliente rechazó, para
+    // no volver a ofrecérselos antes de 60 días. Vive en la conversación (preferencia del
+    // cliente), no en la cita puntual.
+    upsellsRechazados: jsonb("upsells_rechazados").$type<RechazoAddon[]>().notNull().default([]),
   },
   (t) => ({
     uq: uniqueIndex("wa_conv_tenant_cliente_uq").on(t.tenantId, t.clienteWa),
@@ -103,6 +107,10 @@ export const waCitas = pgTable(
     // Cuándo se envió el seguimiento post-servicio (satisfacción + reseña, C3.1).
     // null = pendiente.
     postServicioEn: timestamp("post_servicio_en", { withTimezone: true }),
+    // Add-ons aceptados por el cliente al agendar (upsell, Carril D 1.2). El monto total
+    // (base + add-ons) se calcula al leer (precio + suma de addons.precio), no se persiste
+    // aparte: evita que un total guardado quede desincronizado del detalle.
+    addons: jsonb("addons").$type<AddonCita[]>().notNull().default([]),
   },
   (t) => ({
     idxTenantFecha: index("wa_citas_tenant_fecha_idx").on(t.tenantId, t.fecha),
@@ -200,6 +208,17 @@ export const waTenants = pgTable(
     activo: boolean("activo").notNull().default(true),
     creadoEn: timestamp("creado_en", { withTimezone: true }).notNull().defaultNow(),
     actualizadoEn: timestamp("actualizado_en", { withTimezone: true }).notNull().defaultNow(),
+    // Rescate de cotizaciones abandonadas (Carril D, Fase 1 - 1.1). false = el bot igual
+    // registra la cotización (dato barato), pero no se manda ningún seguimiento automático.
+    rescateActivo: boolean("rescate_activo").notNull().default(false),
+    rescateHorasEspera: integer("rescate_horas_espera").notNull().default(3),
+    rescateToque1Texto: text("rescate_toque1_texto"),
+    rescateToque2Texto: text("rescate_toque2_texto"),
+    rescatePlantilla: text("rescate_plantilla"),
+    // Motor de reseñas de Google completo (Carril D, 1.3): Place ID del negocio para
+    // el job diario de Places API (rating + total de reseñas → snapshot_reputacion).
+    // null = sin configurar (no corre el job para este tenant).
+    googlePlaceId: text("google_place_id"),
   },
   (t) => ({
     uqPnid: uniqueIndex("wa_tenants_pnid_uq").on(t.phoneNumberId),
@@ -351,6 +370,83 @@ export const waUsoMensual = pgTable(
   }),
 );
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Rescate de cotizaciones abandonadas (Carril D, Fase 1 - 1.1). El CRUD (crear al
+// cotizar, cerrar al agendar) va por el Repositorio (memoria y Drizzle, ver
+// src/types.ts) para que aparezca en el dashboard y en el seed de demo sin DB. El
+// ENVÍO de los toques (toque1/toque2) es una mini-cola INDEPENDIENTE de wa_jobs
+// (src/rescate/), mismo patrón que wa_campania_envios (C3.2): FOR UPDATE SKIP
+// LOCKED sobre esta misma tabla, con su propio worker/throttling.
+// ─────────────────────────────────────────────────────────────────────────────
+export const waCotizaciones = pgTable(
+  "wa_cotizaciones",
+  {
+    id: id(),
+    tenantId: text("tenant_id").notNull(),
+    clienteWa: text("cliente_wa").notNull(),
+    servicioId: text("servicio_id").notNull(),
+    monto: integer("monto").notNull(),
+    // pendiente → toque1 → toque2 (máx. 2 toques) | agendada | recuperada | descartada | opt_out
+    estado: text("estado").notNull().default("pendiente"),
+    citaId: text("cita_id"),
+    montoRecuperado: integer("monto_recuperado"),
+    creadaEn: timestamp("creada_en", { withTimezone: true }).notNull().defaultNow(),
+    toque1En: timestamp("toque1_en", { withTimezone: true }),
+    toque2En: timestamp("toque2_en", { withTimezone: true }),
+  },
+  (t) => ({
+    // Índice que usa la mini-cola al reclamar: candidatos a un toque, por tenant y antigüedad.
+    idxClaim: index("wa_cotizaciones_claim_idx").on(t.tenantId, t.estado, t.creadaEn),
+    idxCliente: index("wa_cotizaciones_cliente_idx").on(t.tenantId, t.clienteWa),
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Motor de reseñas de Google completo (Carril D, Fase 1 - 1.3). Extiende el
+// post-servicio de C3.1 (que solo mandaba 2 botones y un link, sin registrar
+// nada): con plan Pro, el seguimiento pasa a 3 botones (Excelente/Bien/Mal) y
+// se registra en wa_seguimientos para el contador del dashboard. El plan Básico
+// sigue con el flujo legacy de 2 botones (sin fila acá, ver reminders/scheduler.ts).
+// snapshot_reputacion es el histórico diario de Places API (rating + total de
+// reseñas) para graficar la evolución — job independiente, 1 fila/tenant/día.
+// ─────────────────────────────────────────────────────────────────────────────
+export const waSeguimientos = pgTable(
+  "wa_seguimientos",
+  {
+    id: id(),
+    citaId: text("cita_id")
+      .notNull()
+      .references(() => waCitas.id, { onDelete: "cascade" }),
+    tenantId: text("tenant_id").notNull(),
+    enviadoEn: timestamp("enviado_en", { withTimezone: true }).notNull().defaultNow(),
+    // 'positivo' | 'neutral' | 'negativo' | null (todavía no respondió).
+    sentimiento: text("sentimiento"),
+    resenaSolicitada: boolean("resena_solicitada").notNull().default(false),
+    respuestaTexto: text("respuesta_texto"),
+  },
+  (t) => ({
+    // Un seguimiento por cita: el scheduler no debe crear dos filas para la misma cita.
+    uqCita: uniqueIndex("wa_seguimientos_cita_uq").on(t.citaId),
+    idxTenant: index("wa_seguimientos_tenant_idx").on(t.tenantId),
+  }),
+);
+
+export const waSnapshotReputacion = pgTable(
+  "wa_snapshot_reputacion",
+  {
+    id: id(),
+    tenantId: text("tenant_id").notNull(),
+    fecha: text("fecha").notNull(), // "YYYY-MM-DD"
+    rating: numeric("rating", { precision: 3, scale: 2, mode: "number" }).notNull(),
+    totalResenas: integer("total_resenas").notNull(),
+    creadaEn: timestamp("creada_en", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    // Idempotencia: el job diario no duplica el snapshot si corre dos veces el mismo día.
+    uqTenantFecha: uniqueIndex("wa_snapshot_reputacion_tenant_fecha_uq").on(t.tenantId, t.fecha),
+  }),
+);
+
 export const schema = {
   waConversaciones,
   waMensajes,
@@ -363,4 +459,7 @@ export const schema = {
   waCampanias,
   waCampaniaEnvios,
   waUsoMensual,
+  waCotizaciones,
+  waSeguimientos,
+  waSnapshotReputacion,
 };

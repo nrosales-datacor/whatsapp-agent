@@ -1,6 +1,7 @@
 import type { Cita, Repositorio, Tenant, TipoRecordatorio } from "../types";
 import { listarTenants } from "../config/tenantStore";
-import { botonesPostServicio, botonesRecordatorio, enviarBotones, enviarPlantilla } from "../whatsapp/client";
+import { botonesPostServicio, botonesPostServicioPro, botonesRecordatorio, enviarBotones, enviarPlantilla } from "../whatsapp/client";
+import { tenantPuede } from "../billing/planes";
 import { capturarError } from "../observabilidad/sentry";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -119,12 +120,18 @@ async function enviarRecordatorio(tenant: Tenant, cita: Cita, tipo: TipoRecordat
  * igual que la confirmación del recordatorio (C1.3). Mismo caveat de la ventana de
  * 24 h que enviarRecordatorio: sin plantilla aprobada, el texto libre con botones
  * solo llega si el cliente escribió en las últimas 24 h (o con el número de prueba).
+ *
+ * Plan Pro (Carril D, 1.3 — motor de reseñas completo): 3 botones en vez de 2, y se
+ * registra el envío en wa_seguimientos (repo.crearSeguimiento) para el contador del
+ * dashboard. Plan Básico: flujo legacy sin tracking (igual que siempre).
  */
-async function enviarPostServicio(tenant: Tenant, cita: Cita): Promise<void> {
+async function enviarPostServicio(tenant: Tenant, cita: Cita, repo: Repositorio): Promise<void> {
   const servicio = tenant.servicios.find((s) => s.id === cita.servicioId);
   const nombreServicio = servicio?.nombre ?? cita.servicioId;
   const cuerpo = `¡Hola ${cita.clienteNombre}! 👋 ¿Cómo te fue con tu ${nombreServicio} en ${tenant.nombre}? 🚗`;
-  await enviarBotones(tenant, cita.clienteWa, cuerpo, botonesPostServicio(cita.id));
+  const esPro = tenantPuede(tenant, "resenasPro");
+  await enviarBotones(tenant, cita.clienteWa, cuerpo, esPro ? botonesPostServicioPro(cita.id) : botonesPostServicio(cita.id));
+  if (esPro) await repo.crearSeguimiento(tenant.id, cita.id);
 }
 
 /** Revisa las citas de un tenant y envía los recordatorios que tocan. */
@@ -184,7 +191,7 @@ async function procesarTenant(tenant: Tenant, repo: Repositorio): Promise<void> 
       if (minutosTranscurridos < POST_SERVICIO_HORAS_DESPUES * 60) continue;
       if (!(await repo.reclamarRecordatorio(cita.id, "post_servicio"))) continue;
       try {
-        await enviarPostServicio(tenant, cita);
+        await enviarPostServicio(tenant, cita, repo);
         console.log(`[recordatorios] post-servicio → cita ${cita.id} (${cita.clienteWa})`);
       } catch (e) {
         await repo.revertirRecordatorio(cita.id, "post_servicio");

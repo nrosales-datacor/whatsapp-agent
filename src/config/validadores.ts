@@ -13,6 +13,8 @@ export const RE_FECHA = /^\d{4}-\d{2}-\d{2}$/;
 export const RE_URL_HTTP = /^https?:\/\/.+/i;
 export const RE_NOMBRE_PLANTILLA = /^[a-z0-9_]+$/;
 export const RE_COLOR_HEX = /^#[0-9a-f]{6}$/i;
+// Los Place ID de Google son alfanuméricos con "_"/"-" (ej: "ChIJN1t_tDeuEmsRUsoyG83frY4").
+export const RE_GOOGLE_PLACE_ID = /^[A-Za-z0-9_-]{10,300}$/;
 
 export function limpiarLineas(v: unknown): string[] {
   if (!Array.isArray(v)) return [];
@@ -84,8 +86,40 @@ export function validarServicios(v: unknown): ResultadoServicios {
     if (precioNota) serv.precioNota = precioNota.slice(0, 200);
     const descripcion = String(r.descripcion ?? "").trim();
     if (descripcion) serv.descripcion = descripcion.slice(0, 500);
+
+    // Upsell inteligente al agendar (Carril D, 1.2): qué add-on ofrecer con este servicio.
+    const addonSugeridoId = String(r.addonSugeridoId ?? "").trim();
+    if (addonSugeridoId) {
+      if (!RE_SLUG.test(addonSugeridoId) || addonSugeridoId.length > 50) {
+        return { ok: false, error: `El add-on sugerido de "${etiqueta}" tiene un id inválido` };
+      }
+      if (addonSugeridoId === id) {
+        return { ok: false, error: `El servicio "${etiqueta}" no puede sugerirse a sí mismo como add-on` };
+      }
+      serv.addonSugeridoId = addonSugeridoId;
+    }
+    if (r.addonPrecioPromo !== undefined && r.addonPrecioPromo !== null && r.addonPrecioPromo !== "") {
+      const ap = Number(r.addonPrecioPromo);
+      if (!Number.isInteger(ap) || ap < 0) {
+        return { ok: false, error: `El precio promo del add-on de "${etiqueta}" debe ser un número entero positivo` };
+      }
+      serv.addonPrecioPromo = ap;
+    }
+    if (r.addonActivo) serv.addonActivo = true;
+
     out.push(serv);
   }
+
+  // Segunda pasada: un addonSugeridoId debe apuntar a OTRO servicio que exista en la lista
+  // (no se puede validar en la primera pasada porque el id sugerido puede aparecer más
+  // adelante en el arreglo).
+  const idsFinales = new Set(out.map((s) => s.id));
+  for (const s of out) {
+    if (s.addonSugeridoId && !idsFinales.has(s.addonSugeridoId)) {
+      return { ok: false, error: `El add-on sugerido de "${s.nombre}" ("${s.addonSugeridoId}") no existe entre los servicios` };
+    }
+  }
+
   return { ok: true, servicios: out };
 }
 
@@ -185,5 +219,47 @@ export function validarLogoUrl(v: unknown): string | null {
   const s = String(v ?? "").trim();
   if (!s) return "";
   if (s.length > 500 || !RE_URL_HTTP.test(s)) return null;
+  return s;
+}
+
+/**
+ * Valida las horas de espera antes del primer toque del rescate de cotizaciones
+ * (Carril D, 1.1). 1 a 72 horas (más de 3 días ya no tiene sentido como "rescate").
+ */
+export function validarRescateHoras(v: unknown): number | null {
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 1 || n > 72) return null;
+  return n;
+}
+
+/** Valida los textos editables de los toques del rescate. Vacío = usa el texto por defecto. */
+export function validarTextoRescate(v: unknown): string | null {
+  const s = String(v ?? "").trim();
+  if (!s) return "";
+  if (s.length > 300) return null;
+  return s;
+}
+
+/**
+ * Valida el nombre de la plantilla de Meta del segundo toque del rescate (fuera de
+ * la ventana de 24h). Vacío = sin configurar (el rescate se detiene después del
+ * primer toque). Mismo formato que las demás plantillas (validarNombrePlantillaMarketing).
+ */
+export function validarNombrePlantillaRescate(v: unknown): string | null {
+  const s = String(v ?? "").trim().toLowerCase();
+  if (!s) return "";
+  if (s.length > 80 || !RE_NOMBRE_PLANTILLA.test(s)) return null;
+  return s;
+}
+
+/**
+ * Valida el Place ID de Google del negocio (Carril D, 1.3-c: motor de reseñas
+ * completo, job diario de Places API). Vacío = sin configurar (el job no corre para
+ * este tenant). Devuelve null si viene algo no vacío pero con un formato inválido.
+ */
+export function validarGooglePlaceId(v: unknown): string | null {
+  const s = String(v ?? "").trim();
+  if (!s) return "";
+  if (!RE_GOOGLE_PLACE_ID.test(s)) return null;
   return s;
 }

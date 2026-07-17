@@ -1,6 +1,8 @@
 import type {
+  AddonCita,
   Cita,
   Conversacion,
+  Cotizacion,
   EstadoConversacion,
   FichaCliente,
   MensajeConversacion,
@@ -8,8 +10,12 @@ import type {
   ModoConversacion,
   PendienteSerializado,
   PushSub,
+  RechazoAddon,
   Repositorio,
   ResumenConversacion,
+  Seguimiento,
+  Sentimiento,
+  SnapshotReputacion,
   TipoRecordatorio,
 } from "../types";
 import { calcularMetricas } from "../panel/metricas";
@@ -28,14 +34,28 @@ type ConvInterna = Conversacion & {
   creadaEn: string; // ISO, para primerContacto (no deriva del primer mensaje, que se trunca)
   leidoHasta: string | null;
   humanoEn: string | null;
+  // Upsell inteligente al agendar (Carril D, 1.2): add-ons que el cliente rechazó, para
+  // no volver a ofrecérselos antes de DIAS_NO_INSISTIR_ADDON días.
+  upsellsRechazados: RechazoAddon[];
 };
 
 const TOPE_MENSAJES = 200; // historial que se guarda por conversación (la vista del panel usa los últimos 100)
 const MAX_WA_IDS = 5000; // tope del set de dedup de waMessageId (evita crecimiento sin límite)
+const DIAS_NO_INSISTIR_ADDON = 60;
+
+/** "YYYY-MM-DD" de hace `dias` días respecto de `hoy` (aritmética UTC al mediodía: sin sorpresas de DST). */
+function fechaHaceDias(dias: number, hoy: string): string {
+  const d = new Date(`${hoy}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - dias);
+  return d.toISOString().slice(0, 10);
+}
 
 export class RepositorioEnMemoria implements Repositorio {
   private conversaciones = new Map<string, ConvInterna>();
   private citas: Cita[] = [];
+  private cotizaciones: Cotizacion[] = [];
+  private seguimientos: Seguimiento[] = [];
+  private snapshotsReputacion: (SnapshotReputacion & { tenantId: string })[] = [];
   private pushSubs = new Map<string, PushSub & { tenantId: string }>();
   // ids de mensajes de WhatsApp ya vistos, para deduplicar reintentos de Meta.
   private waIdsVistos = new Set<string>();
@@ -82,6 +102,7 @@ export class RepositorioEnMemoria implements Repositorio {
         creadaEn: new Date().toISOString(),
         leidoHasta: null,
         humanoEn: null,
+        upsellsRechazados: [],
       };
       this.conversaciones.set(k, c);
     }
@@ -148,6 +169,7 @@ export class RepositorioEnMemoria implements Repositorio {
     const nueva: Cita = {
       ...cita,
       origen: cita.origen ?? "bot",
+      addons: cita.addons ?? [],
       id: `cita_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       estado: "agendada",
       creadaEn: new Date().toISOString(),
@@ -210,6 +232,69 @@ export class RepositorioEnMemoria implements Repositorio {
     if (!c) return null;
     c.estado = "no_show";
     return { ...c };
+  }
+
+  async registrarCotizacion(tenantId: string, clienteWa: string, servicioId: string, monto: number): Promise<Cotizacion | null> {
+    const yaActiva = this.cotizaciones.some(
+      (c) =>
+        c.tenantId === tenantId &&
+        c.clienteWa === clienteWa &&
+        (c.estado === "pendiente" || c.estado === "toque1" || c.estado === "toque2"),
+    );
+    if (yaActiva) return null; // no dos rescates activos al mismo teléfono
+    const nueva: Cotizacion = {
+      id: `cotiz_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      tenantId,
+      clienteWa,
+      servicioId,
+      monto,
+      estado: "pendiente",
+      creadaEn: new Date().toISOString(),
+    };
+    this.cotizaciones.push(nueva);
+    return nueva;
+  }
+
+  async actualizarCotizacionPorCita(
+    tenantId: string,
+    clienteWa: string,
+    servicioId: string,
+    citaId: string,
+    montoCita?: number,
+  ): Promise<void> {
+    const activa = this.cotizaciones.find(
+      (c) =>
+        c.tenantId === tenantId &&
+        c.clienteWa === clienteWa &&
+        c.servicioId === servicioId &&
+        (c.estado === "pendiente" || c.estado === "toque1" || c.estado === "toque2"),
+    );
+    if (!activa) return;
+    const yaTuvoToque = activa.estado === "toque1" || activa.estado === "toque2";
+    activa.estado = yaTuvoToque ? "recuperada" : "agendada";
+    activa.citaId = citaId;
+    if (yaTuvoToque) activa.montoRecuperado = montoCita ?? activa.monto;
+  }
+
+  async agregarAddonACita(tenantId: string, citaId: string, addon: AddonCita): Promise<Cita | null> {
+    const c = this.citas.find((x) => x.id === citaId && x.tenantId === tenantId);
+    if (!c) return null;
+    if (!c.addons) c.addons = [];
+    if (!c.addons.some((a) => a.servicioId === addon.servicioId)) c.addons.push(addon);
+    return { ...c };
+  }
+
+  async registrarRechazoAddon(tenantId: string, clienteWa: string, addonId: string): Promise<void> {
+    const c = this.conversaciones.get(this.clave(tenantId, clienteWa));
+    if (!c) return;
+    c.upsellsRechazados.push({ addonId, fecha: new Date().toISOString().slice(0, 10) });
+  }
+
+  async fueRechazadoAddonRecientemente(tenantId: string, clienteWa: string, addonId: string, hoy: string): Promise<boolean> {
+    const c = this.conversaciones.get(this.clave(tenantId, clienteWa));
+    if (!c) return false;
+    const corte = fechaHaceDias(DIAS_NO_INSISTIR_ADDON, hoy);
+    return c.upsellsRechazados.some((r) => r.addonId === addonId && r.fecha >= corte);
   }
 
   async marcarRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<void> {
@@ -389,8 +474,74 @@ export class RepositorioEnMemoria implements Repositorio {
   async metricas(tenantId: string): Promise<Metricas> {
     const convs = [...this.conversaciones.values()].filter((c) => c.tenantId === tenantId);
     const citas = this.citas.filter((c) => c.tenantId === tenantId);
+    const cotizaciones = this.cotizaciones.filter((c) => c.tenantId === tenantId);
+    const seguimientos = this.seguimientos.filter((s) => s.tenantId === tenantId);
     const sinEscalar = convs.filter((c) => !c.humanoEn).length;
-    return calcularMetricas(convs.length, convs.filter((c) => c.modo === "humano").length, sinEscalar, citas);
+    const rechazosAddon = convs.reduce((s, c) => s + c.upsellsRechazados.length, 0);
+    const base = calcularMetricas(
+      convs.length,
+      convs.filter((c) => c.modo === "humano").length,
+      sinEscalar,
+      citas,
+      cotizaciones,
+      rechazosAddon,
+      seguimientos,
+    );
+    const historico = await this.historicoReputacion(tenantId, 30);
+    if (historico.length === 0) return base;
+    const ultimo = historico[0];
+    return {
+      ...base,
+      reputacion: { rating: ultimo.rating, totalResenas: ultimo.totalResenas, historico: [...historico].reverse() },
+    };
+  }
+
+  // ── Motor de reseñas de Google completo (Carril D, Fase 1 - 1.3) ──
+  async crearSeguimiento(tenantId: string, citaId: string): Promise<void> {
+    if (this.seguimientos.some((s) => s.citaId === citaId)) return; // idempotente
+    this.seguimientos.push({
+      id: `seg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      citaId,
+      tenantId,
+      enviadoEn: new Date().toISOString(),
+      sentimiento: null,
+      resenaSolicitada: false,
+    });
+  }
+
+  async registrarRespuestaSeguimiento(
+    citaId: string,
+    sentimiento: Sentimiento,
+    resenaSolicitada: boolean,
+    respuestaTexto: string,
+  ): Promise<void> {
+    const s = this.seguimientos.find((x) => x.citaId === citaId);
+    if (!s) return; // tenant Básico: nunca se creó la fila al enviar
+    s.sentimiento = sentimiento;
+    s.resenaSolicitada = resenaSolicitada;
+    s.respuestaTexto = respuestaTexto;
+  }
+
+  async seguimientosDeTenant(tenantId: string): Promise<Seguimiento[]> {
+    return this.seguimientos.filter((s) => s.tenantId === tenantId).map((s) => ({ ...s }));
+  }
+
+  async guardarSnapshotReputacion(tenantId: string, fecha: string, rating: number, totalResenas: number): Promise<void> {
+    const existente = this.snapshotsReputacion.find((s) => s.tenantId === tenantId && s.fecha === fecha);
+    if (existente) {
+      existente.rating = rating;
+      existente.totalResenas = totalResenas;
+    } else {
+      this.snapshotsReputacion.push({ tenantId, fecha, rating, totalResenas });
+    }
+  }
+
+  async historicoReputacion(tenantId: string, limite: number): Promise<SnapshotReputacion[]> {
+    return this.snapshotsReputacion
+      .filter((s) => s.tenantId === tenantId)
+      .sort((a, b) => b.fecha.localeCompare(a.fecha))
+      .slice(0, limite)
+      .map(({ fecha, rating, totalResenas }) => ({ fecha, rating, totalResenas }));
   }
 
   // ── Notificaciones push ──

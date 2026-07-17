@@ -29,6 +29,10 @@ interface ServicioForm {
   duracionMin: string;
   agendable: boolean;
   descripcion: string;
+  /** Upsell inteligente al agendar (Carril D, 1.2): qué add-on ofrecer con este servicio. */
+  addonSugeridoId: string;
+  addonPrecioPromo: string;
+  addonActivo: boolean;
 }
 interface FaqForm {
   pregunta: string;
@@ -83,6 +87,9 @@ function serviciosAForm(servicios: Service[]): ServicioForm[] {
     duracionMin: String(s.duracionMin),
     agendable: !!s.agendable,
     descripcion: s.descripcion ?? "",
+    addonSugeridoId: s.addonSugeridoId ?? "",
+    addonPrecioPromo: s.addonPrecioPromo !== undefined ? String(s.addonPrecioPromo) : "",
+    addonActivo: !!s.addonActivo,
   }));
 }
 
@@ -118,6 +125,12 @@ export default function MiNegocio({ features }: { features: Features }) {
   const [colorAcento, setColorAcento] = useState("");
   const [colorHeader, setColorHeader] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
+  const [rescateActivo, setRescateActivo] = useState(false);
+  const [rescateHorasEspera, setRescateHorasEspera] = useState("3");
+  const [rescateToque1Texto, setRescateToque1Texto] = useState("");
+  const [rescateToque2Texto, setRescateToque2Texto] = useState("");
+  const [rescatePlantilla, setRescatePlantilla] = useState("");
+  const [googlePlaceId, setGooglePlaceId] = useState("");
 
   // Seedear el form UNA sola vez al llegar la config: un refetch de fondo no debe
   // pisar lo que el operador está escribiendo.
@@ -137,6 +150,12 @@ export default function MiNegocio({ features }: { features: Features }) {
     setColorAcento(q.data.colorAcento ?? "");
     setColorHeader(q.data.colorHeader ?? "");
     setLogoUrl(q.data.logoUrl ?? "");
+    setRescateActivo(q.data.rescateActivo);
+    setRescateHorasEspera(String(q.data.rescateHorasEspera));
+    setRescateToque1Texto(q.data.rescateToque1Texto ?? "");
+    setRescateToque2Texto(q.data.rescateToque2Texto ?? "");
+    setRescatePlantilla(q.data.rescatePlantilla ?? "");
+    setGooglePlaceId(q.data.googlePlaceId ?? "");
     setCargado(true);
   }, [q.data, cargado]);
 
@@ -162,6 +181,9 @@ export default function MiNegocio({ features }: { features: Features }) {
   function construirServicios(): Service[] {
     const validos = servicios.filter((s) => s.nombre.trim());
     const ids = idsUnicos(validos);
+    // El selector de add-on guarda el id CRUDO (tal como está escrito en el formulario)
+    // de la fila elegida; acá lo traducimos al id FINAL normalizado de esa fila.
+    const idFinalPorCrudo = new Map(validos.map((s, i) => [s.id, ids[i]]));
     return validos.map((s, i) => {
       const duracion = Math.round(Number(s.duracionMin));
       const serv: Service = {
@@ -173,6 +195,15 @@ export default function MiNegocio({ features }: { features: Features }) {
       if (s.precioVariable) serv.precioVariable = true;
       else if (s.precio.trim()) serv.precio = Math.round(Number(s.precio));
       if (s.precioNota.trim()) serv.precioNota = s.precioNota.trim();
+      const addonFinal = idFinalPorCrudo.get(s.addonSugeridoId.trim());
+      if (addonFinal && addonFinal !== ids[i]) {
+        serv.addonSugeridoId = addonFinal;
+        if (s.addonPrecioPromo.trim()) {
+          const ap = Math.round(Number(s.addonPrecioPromo));
+          if (Number.isFinite(ap) && ap >= 0) serv.addonPrecioPromo = ap;
+        }
+        if (s.addonActivo) serv.addonActivo = true;
+      }
       if (s.descripcion.trim()) serv.descripcion = s.descripcion.trim();
       return serv;
     });
@@ -219,6 +250,16 @@ export default function MiNegocio({ features }: { features: Features }) {
       colorAcento: features.whiteLabel ? colorAcento.trim() : "",
       colorHeader: features.whiteLabel ? colorHeader.trim() : "",
       logoUrl: features.whiteLabel ? logoUrl.trim() : "",
+      // Sin plan Pro los inputs de rescate están ocultos (abajo); no reenviar
+      // rescateActivo=true, que el backend rechazaría por el gating (Carril D, 0.1).
+      rescateActivo: features.rescateCotizaciones && rescateActivo,
+      rescateHorasEspera: Math.round(Number(rescateHorasEspera)) || 3,
+      rescateToque1Texto: rescateToque1Texto.trim(),
+      rescateToque2Texto: rescateToque2Texto.trim(),
+      rescatePlantilla: rescatePlantilla.trim(),
+      // Sin plan Pro el input de Place ID está oculto (abajo); no reenviar un valor
+      // viejo que el backend rechazaría por el gating de resenasPro (Carril D, 0.1).
+      googlePlaceId: features.resenasPro ? googlePlaceId.trim() : "",
     });
   }
 
@@ -302,7 +343,15 @@ export default function MiNegocio({ features }: { features: Features }) {
         </div>
 
         <div className="card">
-          <h3>Servicios</h3>
+          <h3>
+            Servicios {!features.upsell && <span className="badge badge-pro">🔒 Upsell Pro</span>}
+          </h3>
+          {!features.upsell && (
+            <p className="campo-ayuda">
+              El upsell inteligente (sugerir un add-on al agendar) está disponible en el plan Pro — contactanos para
+              actualizar tu plan.
+            </p>
+          )}
           {servicios.map((s, i) => (
             <div className="admin-servicio" key={i}>
               <input placeholder="id" value={s.id} onChange={(e) => setServ(i, "id", e.target.value)} />
@@ -337,6 +386,40 @@ export default function MiNegocio({ features }: { features: Features }) {
                 value={s.precioNota}
                 onChange={(e) => setServ(i, "precioNota", e.target.value)}
               />
+              {features.upsell && (
+                <>
+                  <select
+                    value={s.addonSugeridoId}
+                    onChange={(e) => setServ(i, "addonSugeridoId", e.target.value)}
+                    title="Add-on a ofrecer al agendar este servicio"
+                  >
+                    <option value="">— sin add-on sugerido —</option>
+                    {servicios
+                      .filter((_, idx) => idx !== i)
+                      .map((otro, idx) => (
+                        <option key={idx} value={otro.id}>
+                          {otro.nombre || otro.id || `servicio #${idx + 1}`}
+                        </option>
+                      ))}
+                  </select>
+                  <input
+                    placeholder="precio promo del add-on"
+                    inputMode="numeric"
+                    value={s.addonPrecioPromo}
+                    onChange={(e) => setServ(i, "addonPrecioPromo", e.target.value)}
+                    disabled={!s.addonSugeridoId}
+                  />
+                  <label className="admin-check">
+                    <input
+                      type="checkbox"
+                      checked={s.addonActivo}
+                      disabled={!s.addonSugeridoId}
+                      onChange={(e) => setServ(i, "addonActivo", e.target.checked)}
+                    />{" "}
+                    ofrecer add-on
+                  </label>
+                </>
+              )}
               <button type="button" className="btn-ghost" onClick={() => setServicios((prev) => prev.filter((_, idx) => idx !== i))}>
                 Quitar
               </button>
@@ -348,7 +431,19 @@ export default function MiNegocio({ features }: { features: Features }) {
             onClick={() =>
               setServicios((prev) => [
                 ...prev,
-                { id: "", nombre: "", precio: "", precioVariable: false, precioNota: "", duracionMin: "90", agendable: true, descripcion: "" },
+                {
+                  id: "",
+                  nombre: "",
+                  precio: "",
+                  precioVariable: false,
+                  precioNota: "",
+                  duracionMin: "90",
+                  agendable: true,
+                  descripcion: "",
+                  addonSugeridoId: "",
+                  addonPrecioPromo: "",
+                  addonActivo: false,
+                },
               ])
             }
           >
@@ -425,6 +520,31 @@ export default function MiNegocio({ features }: { features: Features }) {
               onChange={(e) => setLinkResenas(e.target.value)}
             />
           </div>
+          <h4>
+            Motor de reseñas completo {!features.resenasPro && <span className="badge badge-pro">🔒 Plan Pro</span>}
+          </h4>
+          {features.resenasPro ? (
+            <div className="campo">
+              <label htmlFor="cGooglePlaceId">Place ID de Google (para graficar la reputación en el dashboard)</label>
+              <input
+                id="cGooglePlaceId"
+                placeholder="ChIJN1t_tDeuEmsRUsoyG83frY4"
+                value={googlePlaceId}
+                onChange={(e) => setGooglePlaceId(e.target.value)}
+              />
+              <p className="campo-ayuda">
+                Con plan Pro, el seguimiento post-servicio usa 3 opciones (Excelente/Bien/Mal) en vez de 2: solo
+                "Excelente" recibe el link de reseña. Con el Place ID configurado, un job diario consulta tu rating
+                de Google y el dashboard grafica su evolución. Buscá tu Place ID en{" "}
+                <code>developers.google.com/maps/documentation/places/web-service/place-id</code>.
+              </p>
+            </div>
+          ) : (
+            <p className="campo-ayuda">
+              El seguimiento de 3 opciones (Excelente/Bien/Mal), el contador de solicitudes y el gráfico de
+              reputación en Google están disponibles en el plan Pro — contactanos para actualizar tu plan.
+            </p>
+          )}
         </div>
 
         <div className="card admin-form">
@@ -460,6 +580,71 @@ export default function MiNegocio({ features }: { features: Features }) {
               crearla en WhatsApp Manager.
             </p>
           </div>
+        </div>
+
+        <div className="card admin-form">
+          <h3>
+            Rescate de ventas {!features.rescateCotizaciones && <span className="badge badge-pro">🔒 Plan Pro</span>}
+          </h3>
+          {features.rescateCotizaciones ? (
+            <>
+              <label className="admin-check">
+                <input type="checkbox" checked={rescateActivo} onChange={(e) => setRescateActivo(e.target.checked)} /> Activo
+              </label>
+              <p className="campo-ayuda">
+                Cuando el bot cotiza un pulido y el cliente no agenda, le manda un seguimiento automático (máx. 2
+                toques) si no vuelve a escribir. La tarjeta "₡ recuperados" del dashboard muestra el resultado.
+              </p>
+              <div className="campo">
+                <label htmlFor="cRescateHoras">Horas de espera antes del primer toque</label>
+                <input
+                  id="cRescateHoras"
+                  inputMode="numeric"
+                  value={rescateHorasEspera}
+                  onChange={(e) => setRescateHorasEspera(e.target.value)}
+                />
+              </div>
+              <div className="campo">
+                <label htmlFor="cRescateToque1">
+                  Texto del primer toque (variables: {"{servicio}"}, {"{monto}"}, {"{n}"} = horarios libres)
+                </label>
+                <textarea
+                  id="cRescateToque1"
+                  placeholder="¡Hola! 👋 ¿Te guardo el espacio para el {servicio} ({monto})? Me quedan {n} horarios libres."
+                  value={rescateToque1Texto}
+                  onChange={(e) => setRescateToque1Texto(e.target.value)}
+                  rows={2}
+                />
+              </div>
+              <div className="campo">
+                <label htmlFor="cRescateToque2">Texto/variable del segundo toque (llena la plantilla de Meta)</label>
+                <input
+                  id="cRescateToque2"
+                  placeholder="pulido de parabrisas"
+                  value={rescateToque2Texto}
+                  onChange={(e) => setRescateToque2Texto(e.target.value)}
+                />
+              </div>
+              <div className="campo">
+                <label htmlFor="cRescatePlantilla">Plantilla de Meta del segundo toque (nombre exacto)</label>
+                <input
+                  id="cRescatePlantilla"
+                  placeholder="rescate_cotizacion"
+                  value={rescatePlantilla}
+                  onChange={(e) => setRescatePlantilla(e.target.value)}
+                />
+                <p className="campo-ayuda">
+                  El segundo toque sale un día después, fuera de la ventana de 24h: necesita una plantilla aprobada
+                  en Meta. Sin ella, el rescate se detiene después del primer toque.
+                </p>
+              </div>
+            </>
+          ) : (
+            <p className="campo-ayuda">
+              El seguimiento automático de cotizaciones abandonadas está disponible en el plan Pro — contactanos
+              para actualizar tu plan.
+            </p>
+          )}
         </div>
 
         <div className="card admin-form">

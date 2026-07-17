@@ -182,3 +182,72 @@ test("escritura: claim de recordatorio de una cita no afecta la del otro tenant"
   // Re-reclamar la de A falla (ya tomada), sin arrastrar a B.
   assert.equal(await repo.reclamarRecordatorio(citaA.id, "dia_antes"), false);
 });
+
+// Rescate de cotizaciones (Carril D, 1.1): mismo cliente cotizando en 2 tenants no
+// debe cruzarse — ni al registrar (el guard "no dos rescates activos" es por tenant)
+// ni al cerrar por cita (actualizarCotizacionPorCita no debe tocar la del otro).
+test("escritura: registrarCotizacion/actualizarCotizacionPorCita no se cruzan entre tenants", async () => {
+  const repo = new RepositorioEnMemoria();
+  const cotizA = await repo.registrarCotizacion(A, CLIENTE, "pulido-a", 15000);
+  const cotizB = await repo.registrarCotizacion(B, CLIENTE, "pulido-b", 20000);
+  assert.ok(cotizA);
+  assert.ok(cotizB);
+
+  // El mismo cliente puede tener una cotización activa en CADA tenant a la vez
+  // (el guard "no dos rescates activos" es scopeado por tenant, no global).
+  assert.notEqual(cotizA, null);
+  assert.notEqual(cotizB, null);
+
+  // Cerrar la cotización de A (agenda con ese servicio) no debe tocar la de B.
+  await repo.actualizarCotizacionPorCita(A, CLIENTE, "pulido-a", "cita-a", 15000);
+  assert.equal(cotizA!.estado, "agendada");
+  assert.equal(cotizB!.estado, "pendiente", "la cotización de B sigue intacta");
+});
+
+// Upsell (Carril D, 1.2): mismo cliente en 2 tenants no debe cruzar ni el rechazo de
+// add-on (una preferencia por tenant, no global) ni el add-on agregado a una cita.
+test("escritura: agregarAddonACita/registrarRechazoAddon/fueRechazadoAddonRecientemente no se cruzan entre tenants", async () => {
+  const repo = new RepositorioEnMemoria();
+  const citaA = await sembrarTenant(repo, A, "lavado-basico");
+  await sembrarTenant(repo, B, "pulido");
+
+  // Cliente rechaza el add-on en A: solo A queda bloqueado, B sigue libre de ofrecerlo.
+  await repo.registrarRechazoAddon(A, CLIENTE, "addon-x");
+  assert.equal(await repo.fueRechazadoAddonRecientemente(A, CLIENTE, "addon-x", HOY), true);
+  assert.equal(await repo.fueRechazadoAddonRecientemente(B, CLIENTE, "addon-x", HOY), false);
+
+  // agregarAddonACita con el tenant equivocado (B intentando tocar la cita de A) rechaza.
+  assert.equal(await repo.agregarAddonACita(B, citaA.id, { servicioId: "addon-y", precio: 5000 }), null);
+  const actualizada = await repo.agregarAddonACita(A, citaA.id, { servicioId: "addon-y", precio: 5000 });
+  assert.deepEqual(actualizada?.addons, [{ servicioId: "addon-y", precio: 5000 }]);
+});
+
+// Motor de reseñas de Google completo (Carril D, Fase 1 - 1.3): los seguimientos
+// post-servicio y los snapshots de reputación son por tenant — no deben cruzarse
+// aunque el job/scheduler procese varios negocios en el mismo tick.
+test("escritura: seguimientosDeTenant/historicoReputacion no se cruzan entre tenants", async () => {
+  const repo = new RepositorioEnMemoria();
+  const citaA = await sembrarTenant(repo, A, "lavado-basico");
+  const citaB = await sembrarTenant(repo, B, "pulido");
+
+  await repo.crearSeguimiento(A, citaA.id);
+  await repo.crearSeguimiento(B, citaB.id);
+  await repo.registrarRespuestaSeguimiento(citaA.id, "positivo", true, "Excelente 😃");
+  await repo.registrarRespuestaSeguimiento(citaB.id, "negativo", false, "Mal 😞");
+
+  const segA = await repo.seguimientosDeTenant(A);
+  const segB = await repo.seguimientosDeTenant(B);
+  assert.equal(segA.length, 1);
+  assert.equal(segB.length, 1);
+  assert.equal(segA[0].sentimiento, "positivo");
+  assert.equal(segB[0].sentimiento, "negativo");
+
+  await repo.guardarSnapshotReputacion(A, "2026-08-01", 4.5, 50);
+  await repo.guardarSnapshotReputacion(B, "2026-08-01", 3.8, 12);
+  assert.equal((await repo.historicoReputacion(A, 10))[0].rating, 4.5);
+  assert.equal((await repo.historicoReputacion(B, 10))[0].rating, 3.8);
+
+  // Métricas: la reputación de A no se filtra a las métricas de B.
+  assert.equal((await repo.metricas(A)).reputacion?.rating, 4.5);
+  assert.equal((await repo.metricas(B)).reputacion?.rating, 3.8);
+});

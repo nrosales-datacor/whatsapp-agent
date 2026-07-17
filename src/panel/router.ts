@@ -22,12 +22,16 @@ import {
   validarBloqueos,
   validarColorHex,
   validarFaq,
+  validarGooglePlaceId,
   validarHorario,
   validarLinkResenas,
   validarLogoUrl,
   validarNombrePlantillaMarketing,
   validarNombrePlantillaReapertura,
+  validarNombrePlantillaRescate,
+  validarRescateHoras,
   validarServicios,
+  validarTextoRescate,
 } from "../config/validadores";
 import { enviarPlantilla, enviarTexto } from "../whatsapp/client";
 import {
@@ -983,6 +987,12 @@ export async function manejarPanel(
       colorAcento: tenant.colorAcento ?? "",
       colorHeader: tenant.colorHeader ?? "",
       logoUrl: tenant.logoUrl ?? "",
+      rescateActivo: tenant.rescateActivo ?? false,
+      rescateHorasEspera: tenant.rescateHorasEspera ?? 3,
+      rescateToque1Texto: tenant.rescateToque1Texto ?? "",
+      rescateToque2Texto: tenant.rescateToque2Texto ?? "",
+      rescatePlantilla: tenant.rescatePlantilla ?? "",
+      googlePlaceId: tenant.googlePlaceId ?? "",
     });
     return true;
   }
@@ -1006,6 +1016,12 @@ export async function manejarPanel(
     const resServicios = validarServicios(body?.servicios ?? []);
     if (!resServicios.ok) return json(res, 400, { ok: false, error: resServicios.error }), true;
     const servicios = resServicios.servicios;
+
+    // Upsell inteligente al agendar (Carril D, 1.2) es Pro, igual que campañas/white-label:
+    // un Básico no puede activar un add-on aunque mande el POST directo.
+    if (servicios.some((s) => s.addonActivo) && !tenantPuede(tenant, "upsell")) {
+      return json(res, 403, { ok: false, error: "plan_requerido", plan: "pro" }), true;
+    }
 
     const bloqueos = validarBloqueos(body?.bloqueos ?? []);
     if (!bloqueos) return json(res, 400, { ok: false, error: "Hay un bloqueo inválido (fechas YYYY-MM-DD, desde ≤ hasta)" }), true;
@@ -1038,6 +1054,32 @@ export async function manejarPanel(
       return json(res, 403, { ok: false, error: "plan_requerido", plan: "pro" }), true;
     }
 
+    const rescateActivo = !!body?.rescateActivo;
+    const rescateHorasEspera = validarRescateHoras(body?.rescateHorasEspera ?? 3);
+    if (rescateHorasEspera === null) {
+      return json(res, 400, { ok: false, error: "Horas de espera del rescate inválidas (1 a 72)" }), true;
+    }
+    const rescateToque1Texto = validarTextoRescate(body?.rescateToque1Texto);
+    if (rescateToque1Texto === null) return json(res, 400, { ok: false, error: "Texto del primer toque inválido (máx. 300 caracteres)" }), true;
+    const rescateToque2Texto = validarTextoRescate(body?.rescateToque2Texto);
+    if (rescateToque2Texto === null) return json(res, 400, { ok: false, error: "Texto del segundo toque inválido (máx. 300 caracteres)" }), true;
+    const rescatePlantilla = validarNombrePlantillaRescate(body?.rescatePlantilla);
+    if (rescatePlantilla === null) {
+      return json(res, 400, { ok: false, error: "Nombre de plantilla inválido (minúsculas, números y guiones bajos)" }), true;
+    }
+    // Rescate de cotizaciones (Carril D, 1.1) es Pro, igual que campañas/white-label.
+    if (rescateActivo && !tenantPuede(tenant, "rescateCotizaciones")) {
+      return json(res, 403, { ok: false, error: "plan_requerido", plan: "pro" }), true;
+    }
+
+    const googlePlaceId = validarGooglePlaceId(body?.googlePlaceId);
+    if (googlePlaceId === null) return json(res, 400, { ok: false, error: "Place ID de Google inválido" }), true;
+    // Motor de reseñas completo (Carril D, 1.3) es Pro: un Básico no puede activar el
+    // job de reputación aunque mande el POST directo.
+    if (googlePlaceId && !tenantPuede(tenant, "resenasPro")) {
+      return json(res, 403, { ok: false, error: "plan_requerido", plan: "pro" }), true;
+    }
+
     const kb: KnowledgeBase = {
       faq: validarFaq(body?.kb?.faq),
       datos: limpiarLineas(body?.kb?.datos),
@@ -1058,6 +1100,12 @@ export async function manejarPanel(
         colorAcento: colorAcento || null,
         colorHeader: colorHeader || null,
         logoUrl: logoUrl || null,
+        rescateActivo,
+        rescateHorasEspera,
+        rescateToque1Texto: rescateToque1Texto || null,
+        rescateToque2Texto: rescateToque2Texto || null,
+        rescatePlantilla: rescatePlantilla || null,
+        googlePlaceId: googlePlaceId || null,
       });
     } catch (e) {
       if (e instanceof Error && e.message === "SIN_DB") {
@@ -1185,6 +1233,13 @@ export async function manejarPanel(
       origen: "manual",
     });
     await sincronizarCreacionGcal(tenant, repo, cita);
+    // Rescate de cotizaciones (Carril D, 1.1): una cita creada a mano en la Agenda
+    // también cierra una cotización activa del cliente para ese servicio.
+    if (tenantPuede(tenant, "rescateCotizaciones")) {
+      await repo
+        .actualizarCotizacionPorCita(tenant.id, clienteWa, servicioId, cita.id, precio)
+        .catch((e) => console.error("[rescate] actualizarCotizacionPorCita:", e));
+    }
     return json(res, 200, { ok: true, cita }), true;
   }
 

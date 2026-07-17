@@ -428,18 +428,25 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
     return;
   }
 
-  // SEGUIMIENTO POST-SERVICIO (C3.1): el cliente tocó "Todo bien" o "Tuve un
-  // problema" en el mensaje que manda el scheduler unas horas después de la cita.
-  // También es acción directa (no pasa por el agente ni por la ventana de modo
-  // humano): "bien" pide la reseña de Google (si el negocio la configuró en "Mi
-  // negocio"); "mal" escala a un humano ANTES de que se convierta en reseña negativa.
+  // SEGUIMIENTO POST-SERVICIO (C3.1 + Carril D 1.3): el cliente tocó un botón del
+  // mensaje que manda el scheduler unas horas después de la cita. Acción directa (no
+  // pasa por el agente ni por la ventana de modo humano): "positivo" (Todo bien/
+  // Excelente) pide la reseña de Google; "neutral" (Bien, solo existe en el flujo
+  // Pro de 3 botones) agradece SIN pedirla; "negativo" (mal) escala a un humano antes
+  // de que se convierta en reseña negativa. registrarRespuestaSeguimiento es no-op si
+  // el tenant es Básico (nunca se creó la fila de tracking al enviar).
   const postServicio = respuestaPostServicio(entrante.interactiveId);
   if (postServicio) {
+    const { citaId, sentimiento } = postServicio;
     try {
-      if (postServicio.bien) {
+      if (sentimiento === "positivo") {
         const ack = tenant.linkResenas
           ? `¡Qué alegría! 🙌 Si tenés un minuto, nos ayudaría muchísimo que dejaras una reseña en Google: ${tenant.linkResenas}`
           : "¡Qué alegría! 🙌 Gracias por la confianza.";
+        await enviarTexto(tenant, entrante.clienteWa, ack);
+        await repo.guardarMensaje(conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
+      } else if (sentimiento === "neutral") {
+        const ack = "¡Qué bueno! 🙌 Gracias por la confianza.";
         await enviarTexto(tenant, entrante.clienteWa, ack);
         await repo.guardarMensaje(conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
       } else {
@@ -451,12 +458,13 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
           repo,
           tenant,
           conv,
-          `⚠️ Cliente insatisfecho tras el servicio (cita ${postServicio.citaId}) — contactalo antes de que quede una reseña negativa.`,
+          `⚠️ Cliente insatisfecho tras el servicio (cita ${citaId}) — contactalo antes de que quede una reseña negativa.`,
         );
       }
-      console.log(`[post-servicio] cita ${postServicio.citaId} → ${postServicio.bien ? "bien" : "mal"} (${entrante.clienteWa})`);
+      await repo.registrarRespuestaSeguimiento(citaId, sentimiento, sentimiento === "positivo", entrante.texto);
+      console.log(`[post-servicio] cita ${citaId} → ${sentimiento} (${entrante.clienteWa})`);
     } catch (e) {
-      console.error(`[post-servicio] no se pudo procesar la respuesta de la cita ${postServicio.citaId}:`, e);
+      console.error(`[post-servicio] no se pudo procesar la respuesta de la cita ${citaId}:`, e);
     }
     return;
   }

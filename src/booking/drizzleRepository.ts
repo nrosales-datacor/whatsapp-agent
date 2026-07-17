@@ -1,9 +1,22 @@
 import { and, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import { schema, waCitas, waConversaciones, waEventosCalidad, waMensajes, waPushSubs, waJobs } from "../db/schema";
+import {
+  schema,
+  waCitas,
+  waConversaciones,
+  waCotizaciones,
+  waEventosCalidad,
+  waMensajes,
+  waPushSubs,
+  waJobs,
+  waSeguimientos,
+  waSnapshotReputacion,
+} from "../db/schema";
 import type {
+  AddonCita,
   Cita,
   Conversacion,
+  Cotizacion,
   EstadoConversacion,
   FichaCliente,
   MensajeConversacion,
@@ -13,10 +26,14 @@ import type {
   PushSub,
   Repositorio,
   ResumenConversacion,
+  Seguimiento,
+  Sentimiento,
+  SnapshotReputacion,
   TipoRecordatorio,
 } from "../types";
 import { calcularMetricas, formatDelta } from "../panel/metricas";
 import { calcularVentana } from "../whatsapp/ventana";
+import { filasDe } from "../db/filas";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Repositorio Drizzle. Implementa la MISMA interfaz que el de memoria.
@@ -47,7 +64,47 @@ function filaACita(r: typeof waCitas.$inferSelect): Cita {
     recordatorioMismoDiaEn: r.recordatorioMismoDiaEn ? r.recordatorioMismoDiaEn.toISOString() : null,
     confirmadaEn: r.confirmadaEn ? r.confirmadaEn.toISOString() : null,
     postServicioEn: r.postServicioEn ? r.postServicioEn.toISOString() : null,
+    addons: r.addons,
   };
+}
+
+/** Mapea una fila de wa_cotizaciones al DTO Cotizacion (normaliza null→undefined y fechas→ISO). */
+function filaACotizacion(r: typeof waCotizaciones.$inferSelect): Cotizacion {
+  return {
+    id: r.id,
+    tenantId: r.tenantId,
+    clienteWa: r.clienteWa,
+    servicioId: r.servicioId,
+    monto: r.monto,
+    estado: r.estado as Cotizacion["estado"],
+    citaId: r.citaId ?? undefined,
+    montoRecuperado: r.montoRecuperado ?? undefined,
+    creadaEn: r.creadaEn.toISOString(),
+    toque1En: r.toque1En ? r.toque1En.toISOString() : null,
+    toque2En: r.toque2En ? r.toque2En.toISOString() : null,
+  };
+}
+
+/** Mapea una fila de wa_seguimientos al DTO Seguimiento (normaliza null y fechas→ISO). */
+function filaASeguimiento(r: typeof waSeguimientos.$inferSelect): Seguimiento {
+  return {
+    id: r.id,
+    citaId: r.citaId,
+    tenantId: r.tenantId,
+    enviadoEn: r.enviadoEn.toISOString(),
+    sentimiento: (r.sentimiento as Sentimiento | null) ?? null,
+    resenaSolicitada: r.resenaSolicitada,
+    respuestaTexto: r.respuestaTexto ?? undefined,
+  };
+}
+
+const DIAS_NO_INSISTIR_ADDON = 60;
+
+/** "YYYY-MM-DD" de hace `dias` días respecto de `hoy` (aritmética UTC al mediodía: sin sorpresas de DST). */
+function fechaHaceDias(dias: number, hoy: string): string {
+  const d = new Date(`${hoy}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - dias);
+  return d.toISOString().slice(0, 10);
 }
 
 export class RepositorioDrizzle implements Repositorio {
@@ -181,19 +238,7 @@ export class RepositorioDrizzle implements Repositorio {
       })
       .returning();
 
-    return {
-      id: r.id,
-      tenantId: r.tenantId,
-      clienteWa: r.clienteWa,
-      clienteNombre: r.clienteNombre,
-      servicioId: r.servicioId,
-      fecha: r.fecha,
-      hora: r.hora,
-      placa: r.placa ?? undefined,
-      estado: r.estado as Cita["estado"],
-      creadaEn: r.creadaEn.toISOString(),
-      precio: r.precio ?? undefined,
-    };
+    return filaACita(r);
   }
 
   async guardarGcalEventId(citaId: string, eventId: string): Promise<void> {
@@ -264,6 +309,98 @@ export class RepositorioDrizzle implements Repositorio {
     return r ? filaACita(r) : null;
   }
 
+  async registrarCotizacion(tenantId: string, clienteWa: string, servicioId: string, monto: number): Promise<Cotizacion | null> {
+    const [activa] = await this.db
+      .select({ id: waCotizaciones.id })
+      .from(waCotizaciones)
+      .where(
+        and(
+          eq(waCotizaciones.tenantId, tenantId),
+          eq(waCotizaciones.clienteWa, clienteWa),
+          sql`${waCotizaciones.estado} IN ('pendiente', 'toque1', 'toque2')`,
+        ),
+      )
+      .limit(1);
+    if (activa) return null; // no dos rescates activos al mismo teléfono
+
+    const [r] = await this.db.insert(waCotizaciones).values({ tenantId, clienteWa, servicioId, monto }).returning();
+    return filaACotizacion(r);
+  }
+
+  async actualizarCotizacionPorCita(
+    tenantId: string,
+    clienteWa: string,
+    servicioId: string,
+    citaId: string,
+    montoCita?: number,
+  ): Promise<void> {
+    const [activa] = await this.db
+      .select()
+      .from(waCotizaciones)
+      .where(
+        and(
+          eq(waCotizaciones.tenantId, tenantId),
+          eq(waCotizaciones.clienteWa, clienteWa),
+          eq(waCotizaciones.servicioId, servicioId),
+          sql`${waCotizaciones.estado} IN ('pendiente', 'toque1', 'toque2')`,
+        ),
+      )
+      .limit(1);
+    if (!activa) return;
+
+    const yaTuvoToque = activa.estado === "toque1" || activa.estado === "toque2";
+    await this.db
+      .update(waCotizaciones)
+      .set({
+        estado: yaTuvoToque ? "recuperada" : "agendada",
+        citaId,
+        montoRecuperado: yaTuvoToque ? (montoCita ?? activa.monto) : null,
+      })
+      .where(eq(waCotizaciones.id, activa.id));
+  }
+
+  async agregarAddonACita(tenantId: string, citaId: string, addon: AddonCita): Promise<Cita | null> {
+    const [fila] = await this.db
+      .select()
+      .from(waCitas)
+      .where(and(eq(waCitas.id, citaId), eq(waCitas.tenantId, tenantId)))
+      .limit(1);
+    if (!fila) return null;
+    if (fila.addons.some((a) => a.servicioId === addon.servicioId)) return filaACita(fila); // idempotente
+
+    const [actualizada] = await this.db
+      .update(waCitas)
+      .set({ addons: [...fila.addons, addon] })
+      .where(eq(waCitas.id, citaId))
+      .returning();
+    return filaACita(actualizada);
+  }
+
+  async registrarRechazoAddon(tenantId: string, clienteWa: string, addonId: string): Promise<void> {
+    const [conv] = await this.db
+      .select({ id: waConversaciones.id, upsellsRechazados: waConversaciones.upsellsRechazados })
+      .from(waConversaciones)
+      .where(and(eq(waConversaciones.tenantId, tenantId), eq(waConversaciones.clienteWa, clienteWa)))
+      .limit(1);
+    if (!conv) return;
+    const rechazo = { addonId, fecha: new Date().toISOString().slice(0, 10) };
+    await this.db
+      .update(waConversaciones)
+      .set({ upsellsRechazados: [...conv.upsellsRechazados, rechazo] })
+      .where(eq(waConversaciones.id, conv.id));
+  }
+
+  async fueRechazadoAddonRecientemente(tenantId: string, clienteWa: string, addonId: string, hoy: string): Promise<boolean> {
+    const [conv] = await this.db
+      .select({ upsellsRechazados: waConversaciones.upsellsRechazados })
+      .from(waConversaciones)
+      .where(and(eq(waConversaciones.tenantId, tenantId), eq(waConversaciones.clienteWa, clienteWa)))
+      .limit(1);
+    if (!conv) return false;
+    const corte = fechaHaceDias(DIAS_NO_INSISTIR_ADDON, hoy);
+    return conv.upsellsRechazados.some((r) => r.addonId === addonId && r.fecha >= corte);
+  }
+
   async marcarRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<void> {
     const cambio =
       tipo === "dia_antes"
@@ -305,6 +442,48 @@ export class RepositorioDrizzle implements Repositorio {
           ? { recordatorioMismoDiaEn: null }
           : { postServicioEn: null };
     await this.db.update(waCitas).set(cambio).where(eq(waCitas.id, citaId));
+  }
+
+  // ── Motor de reseñas de Google completo (Carril D, Fase 1 - 1.3) ──
+  async crearSeguimiento(tenantId: string, citaId: string): Promise<void> {
+    await this.db.insert(waSeguimientos).values({ tenantId, citaId }).onConflictDoNothing();
+  }
+
+  async registrarRespuestaSeguimiento(
+    citaId: string,
+    sentimiento: Sentimiento,
+    resenaSolicitada: boolean,
+    respuestaTexto: string,
+  ): Promise<void> {
+    await this.db
+      .update(waSeguimientos)
+      .set({ sentimiento, resenaSolicitada, respuestaTexto })
+      .where(eq(waSeguimientos.citaId, citaId));
+  }
+
+  async seguimientosDeTenant(tenantId: string): Promise<Seguimiento[]> {
+    const rows = await this.db.select().from(waSeguimientos).where(eq(waSeguimientos.tenantId, tenantId));
+    return rows.map(filaASeguimiento);
+  }
+
+  async guardarSnapshotReputacion(tenantId: string, fecha: string, rating: number, totalResenas: number): Promise<void> {
+    await this.db
+      .insert(waSnapshotReputacion)
+      .values({ tenantId, fecha, rating, totalResenas })
+      .onConflictDoUpdate({
+        target: [waSnapshotReputacion.tenantId, waSnapshotReputacion.fecha],
+        set: { rating, totalResenas },
+      });
+  }
+
+  async historicoReputacion(tenantId: string, limite: number): Promise<SnapshotReputacion[]> {
+    const rows = await this.db
+      .select({ fecha: waSnapshotReputacion.fecha, rating: waSnapshotReputacion.rating, totalResenas: waSnapshotReputacion.totalResenas })
+      .from(waSnapshotReputacion)
+      .where(eq(waSnapshotReputacion.tenantId, tenantId))
+      .orderBy(desc(waSnapshotReputacion.fecha))
+      .limit(limite);
+    return rows;
   }
 
   async guardarEntranteYEncolar(
@@ -596,7 +775,7 @@ export class RepositorioDrizzle implements Repositorio {
     const hace14d = new Date(ahora.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
 
     // Totales all-time + conteo por período para deltas (en paralelo).
-    const [aggResult, citas, periodoResult] = await Promise.all([
+    const [aggResult, citas, periodoResult, cotizacionesFilas, rechazosResult, seguimientosFilas] = await Promise.all([
       // Total de conversaciones all-time + cuántas en modo humano + cuántas NUNCA
       // escalaron (humano_en IS NULL → el bot las resolvió solo, para "ahorro". C3.3).
       this.db.execute(sql`
@@ -615,6 +794,7 @@ export class RepositorioDrizzle implements Repositorio {
           clienteWa: waCitas.clienteWa,
           origen: waCitas.origen,
           creadaEn: waCitas.creadaEn,
+          addons: waCitas.addons,
         })
         .from(waCitas)
         .where(eq(waCitas.tenantId, tenantId)),
@@ -625,11 +805,37 @@ export class RepositorioDrizzle implements Repositorio {
           count(*) FILTER (WHERE creada_en >= ${hace14d} AND creada_en < ${hace7d}) AS convs_previo
         FROM wa_conversaciones WHERE tenant_id = ${tenantId}
       `) as unknown as Promise<Array<{ convs_actual: number | string; convs_previo: number | string }>>,
+      // Rescate de cotizaciones (Carril D, 1.1): solo estado + monto recuperado, para la tarjeta.
+      this.db
+        .select({ estado: waCotizaciones.estado, montoRecuperado: waCotizaciones.montoRecuperado })
+        .from(waCotizaciones)
+        .where(eq(waCotizaciones.tenantId, tenantId)),
+      // Upsell (Carril D, 1.2): total de add-ons rechazados (para la tasa de aceptación).
+      this.db.execute(sql`
+        SELECT COALESCE(SUM(jsonb_array_length(upsells_rechazados)), 0) AS rechazos
+        FROM wa_conversaciones WHERE tenant_id = ${tenantId}
+      `) as unknown as Promise<Array<{ rechazos: number | string }>>,
+      // Motor de reseñas (Carril D, 1.3): solo sentimiento, para el contador de solicitudes.
+      this.db
+        .select({ sentimiento: waSeguimientos.sentimiento })
+        .from(waSeguimientos)
+        .where(eq(waSeguimientos.tenantId, tenantId)),
     ]);
 
-    const agg = aggResult[0];
-    const periodo = periodoResult[0];
-    const base = calcularMetricas(Number(agg.total), Number(agg.humano), Number(agg.sin_escalar), citas);
+    // Normaliza el resultado del SQL crudo: postgres.js (producción) devuelve el
+    // arreglo directo, PGlite (tests de fiabilidad) devuelve `{ rows: [...] }`.
+    const agg = filasDe<{ total: number | string; humano: number | string; sin_escalar: number | string }>(aggResult)[0];
+    const periodo = filasDe<{ convs_actual: number | string; convs_previo: number | string }>(periodoResult)[0];
+    const rechazosAddon = Number(filasDe<{ rechazos: number | string }>(rechazosResult)[0]?.rechazos ?? 0);
+    const base = calcularMetricas(
+      Number(agg.total),
+      Number(agg.humano),
+      Number(agg.sin_escalar),
+      citas,
+      cotizacionesFilas,
+      rechazosAddon,
+      seguimientosFilas,
+    );
 
     // Citas del período actual (últimos 7 días) y previo (7-14 días atrás) por creación.
     const citasActivas = (c: typeof citas[0]) => c.estado !== "cancelada";
@@ -654,7 +860,13 @@ export class RepositorioDrizzle implements Repositorio {
     // Si ningún delta tiene valor, omitir el objeto completo.
     const hayDeltas = Object.values(deltas).some(Boolean);
 
-    return { ...base, ...(hayDeltas ? { deltas } : {}) };
+    // Reputación en Google (Carril D, 1.3-c, Places API): último snapshot + histórico.
+    const historico = await this.historicoReputacion(tenantId, 30);
+    const reputacion = historico.length
+      ? { rating: historico[0].rating, totalResenas: historico[0].totalResenas, historico: [...historico].reverse() }
+      : undefined;
+
+    return { ...base, ...(hayDeltas ? { deltas } : {}), ...(reputacion ? { reputacion } : {}) };
   }
 
   // ── Notificaciones push ──

@@ -5,12 +5,16 @@ import {
   validarBloqueos,
   validarColorHex,
   validarFaq,
+  validarGooglePlaceId,
   validarHorario,
   validarLinkResenas,
   validarLogoUrl,
   validarNombrePlantillaMarketing,
   validarNombrePlantillaReapertura,
+  validarNombrePlantillaRescate,
+  validarRescateHoras,
   validarServicios,
+  validarTextoRescate,
 } from "../../src/config/validadores";
 
 test("limpiarLineas: descarta vacíos y recorta espacios", () => {
@@ -64,6 +68,39 @@ test("validarServicios: rechaza precio negativo o no entero", () => {
   assert.equal(r.ok, false);
 });
 
+// Upsell inteligente al agendar (Carril D, 1.2): addonSugeridoId debe apuntar a OTRO
+// servicio de la misma lista (no a sí mismo, no a uno inexistente).
+test("validarServicios: acepta un add-on que apunta a otro servicio de la lista", () => {
+  const r = validarServicios([
+    { id: "pulido", nombre: "Pulido", duracionMin: 90, addonSugeridoId: "focos", addonPrecioPromo: 8000, addonActivo: true },
+    { id: "focos", nombre: "Pulido de focos", duracionMin: 60 },
+  ]);
+  assert.equal(r.ok, true);
+  if (r.ok) {
+    assert.equal(r.servicios[0].addonSugeridoId, "focos");
+    assert.equal(r.servicios[0].addonPrecioPromo, 8000);
+    assert.equal(r.servicios[0].addonActivo, true);
+  }
+});
+
+test("validarServicios: rechaza un add-on que se sugiere a sí mismo", () => {
+  const r = validarServicios([{ id: "pulido", nombre: "Pulido", duracionMin: 90, addonSugeridoId: "pulido" }]);
+  assert.equal(r.ok, false);
+});
+
+test("validarServicios: rechaza un add-on que apunta a un servicio inexistente", () => {
+  const r = validarServicios([{ id: "pulido", nombre: "Pulido", duracionMin: 90, addonSugeridoId: "no-existe" }]);
+  assert.equal(r.ok, false);
+});
+
+test("validarServicios: un add-on sugerido más adelante en la lista es válido (segunda pasada)", () => {
+  const r = validarServicios([
+    { id: "lavado", nombre: "Lavado", duracionMin: 60, addonSugeridoId: "cera" },
+    { id: "cera", nombre: "Encerado", duracionMin: 20 },
+  ]);
+  assert.equal(r.ok, true);
+});
+
 test("validarFaq: descarta entradas incompletas", () => {
   const out = validarFaq([
     { pregunta: "¿Abren domingo?", respuesta: "No" },
@@ -102,6 +139,26 @@ test("validarNombrePlantillaReapertura: normaliza a minúsculas y valida formato
   assert.equal(validarNombrePlantillaReapertura(""), "");
 });
 
+test("validarNombrePlantillaRescate: normaliza a minúsculas y valida formato", () => {
+  assert.equal(validarNombrePlantillaRescate("Rescate_Cotiz"), "rescate_cotiz");
+  assert.equal(validarNombrePlantillaRescate("rescate cotiz"), null);
+  assert.equal(validarNombrePlantillaRescate(""), "");
+});
+
+test("validarRescateHoras: acepta enteros entre 1 y 72, rechaza el resto", () => {
+  assert.equal(validarRescateHoras(3), 3);
+  assert.equal(validarRescateHoras("6"), 6);
+  assert.equal(validarRescateHoras(0), null);
+  assert.equal(validarRescateHoras(73), null);
+  assert.equal(validarRescateHoras(2.5), null);
+});
+
+test("validarTextoRescate: vacío es válido (default), largo excesivo rechaza", () => {
+  assert.equal(validarTextoRescate(""), "");
+  assert.equal(validarTextoRescate("  ¿Te guardo el espacio?  "), "¿Te guardo el espacio?");
+  assert.equal(validarTextoRescate("x".repeat(301)), null);
+});
+
 test("validarColorHex: acepta hex válido y normaliza a minúsculas", () => {
   assert.equal(validarColorHex("#ABCDEF"), "#abcdef");
   assert.equal(validarColorHex("abcdef"), null);
@@ -112,4 +169,11 @@ test("validarLogoUrl: exige http(s) cuando no está vacío", () => {
   assert.equal(validarLogoUrl(""), "");
   assert.equal(validarLogoUrl("http://cdn.example.com/logo.png"), "http://cdn.example.com/logo.png");
   assert.equal(validarLogoUrl("javascript:alert(1)"), null);
+});
+
+test("validarGooglePlaceId: vacío es válido, formato alfanumérico con _/- es válido", () => {
+  assert.equal(validarGooglePlaceId(""), "");
+  assert.equal(validarGooglePlaceId("ChIJN1t_tDeuEmsRUsoyG83frY4"), "ChIJN1t_tDeuEmsRUsoyG83frY4");
+  assert.equal(validarGooglePlaceId("muy corto"), null); // tiene espacio y es menor a 10 chars
+  assert.equal(validarGooglePlaceId("<script>x</script>"), null);
 });
