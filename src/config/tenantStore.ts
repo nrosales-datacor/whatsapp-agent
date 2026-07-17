@@ -116,6 +116,12 @@ function filaATenant(f: typeof waTenants.$inferSelect): Tenant {
     stripeSubscriptionId: f.stripeSubscriptionId ?? undefined,
     estadoFacturacion: (f.estadoFacturacion as EstadoFacturacion | null) ?? undefined,
     facturacionPeriodoFin: f.facturacionPeriodoFin?.toISOString() ?? undefined,
+    rescateActivo: f.rescateActivo,
+    rescateHorasEspera: f.rescateHorasEspera,
+    rescateToque1Texto: f.rescateToque1Texto ?? undefined,
+    rescateToque2Texto: f.rescateToque2Texto ?? undefined,
+    rescatePlantilla: f.rescatePlantilla ?? undefined,
+    googlePlaceId: f.googlePlaceId ?? undefined,
   };
 }
 
@@ -267,6 +273,12 @@ export async function crearTenant(tenant: Tenant, u: NuevoUsuario): Promise<void
       stripeSubscriptionId: tenant.stripeSubscriptionId ?? null,
       estadoFacturacion: tenant.estadoFacturacion ?? null,
       facturacionPeriodoFin: tenant.facturacionPeriodoFin ? new Date(tenant.facturacionPeriodoFin) : null,
+      rescateActivo: tenant.rescateActivo ?? false,
+      rescateHorasEspera: tenant.rescateHorasEspera ?? 3,
+      rescateToque1Texto: tenant.rescateToque1Texto ?? null,
+      rescateToque2Texto: tenant.rescateToque2Texto ?? null,
+      rescatePlantilla: tenant.rescatePlantilla ?? null,
+      googlePlaceId: tenant.googlePlaceId ?? null,
     });
     // El usuario del alta es, por definición, el dueño del negocio recién creado.
     await tx.insert(waUsuarios).values({ usuario: u.usuario, passwordHash: u.passwordHash, tenantId: tenant.id, rol: "dueno" });
@@ -292,6 +304,12 @@ export async function actualizarConfigTenant(
     colorAcento: string | null;
     colorHeader: string | null;
     logoUrl: string | null;
+    rescateActivo: boolean;
+    rescateHorasEspera: number;
+    rescateToque1Texto: string | null;
+    rescateToque2Texto: string | null;
+    rescatePlantilla: string | null;
+    googlePlaceId: string | null;
   },
 ): Promise<void> {
   if (!hayDb) throw new Error("SIN_DB");
@@ -309,6 +327,12 @@ export async function actualizarConfigTenant(
       colorAcento: patch.colorAcento,
       colorHeader: patch.colorHeader,
       logoUrl: patch.logoUrl,
+      rescateActivo: patch.rescateActivo,
+      rescateHorasEspera: patch.rescateHorasEspera,
+      rescateToque1Texto: patch.rescateToque1Texto,
+      rescateToque2Texto: patch.rescateToque2Texto,
+      rescatePlantilla: patch.rescatePlantilla,
+      googlePlaceId: patch.googlePlaceId,
       actualizadoEn: new Date(),
     })
     .where(eq(waTenants.id, tenantId));

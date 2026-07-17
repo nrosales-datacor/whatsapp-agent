@@ -13,6 +13,8 @@ export function formatDelta(actual: number, previo: number): string | undefined 
   return pct >= 0 ? `+${pct}%` : `${pct}%`;
 }
 
+type AddonCitaMetrica = { servicioId: string; precio: number };
+
 type CitaMetrica = {
   estado: string;
   precio?: number | null;
@@ -21,7 +23,46 @@ type CitaMetrica = {
   hora: string;
   clienteWa: string;
   origen?: string | null;
+  addons?: AddonCitaMetrica[];
 };
+
+type CotizacionMetrica = {
+  estado: string;
+  montoRecuperado?: number | null;
+};
+
+type SeguimientoMetrica = {
+  sentimiento: string | null;
+};
+
+/**
+ * Contador de solicitudes de reseña (Carril D, 1.3): "positivo" (Excelente) recibió
+ * el link; "neutral"/"negativo" no. Solo cuenta seguimientos RESPONDIDOS — uno recién
+ * enviado (sentimiento null) todavía no cuenta para ninguno de los dos lados.
+ */
+function calcularResenas(seguimientos: SeguimientoMetrica[]) {
+  const respondidos = seguimientos.filter((s) => s.sentimiento);
+  const solicitadas = respondidos.filter((s) => s.sentimiento === "positivo").length;
+  return {
+    resenasSolicitadas: solicitadas,
+    resenasNoSolicitadas: respondidos.length - solicitadas,
+  };
+}
+
+/**
+ * "Enviados" = a las que se les mandó al menos un toque (toque1/toque2/recuperada — nunca
+ * 'agendada', que significa "el cliente agendó ANTES de que saliera ningún toque"). C1.1.
+ */
+function calcularRescate(cotizaciones: CotizacionMetrica[]) {
+  const enviados = cotizaciones.filter((c) => c.estado === "toque1" || c.estado === "toque2" || c.estado === "recuperada");
+  const recuperados = cotizaciones.filter((c) => c.estado === "recuperada");
+  return {
+    rescateEnviados: enviados.length,
+    rescateRecuperados: recuperados.length,
+    rescateTasaPct: enviados.length ? Math.round((recuperados.length / enviados.length) * 100) : undefined,
+    rescateMontoRecuperado: recuperados.reduce((s, c) => s + (c.montoRecuperado ?? 0), 0),
+  };
+}
 
 export function calcularMetricas(
   totalConversaciones: number,
@@ -29,6 +70,12 @@ export function calcularMetricas(
   /** Conversaciones que NUNCA pasaron a modo humano (el bot las resolvió solo). C3.3. */
   conversacionesSinEscalar: number,
   citas: CitaMetrica[],
+  /** Cotizaciones del rescate de ventas (Carril D, 1.1). Vacío en repos/tests que no lo usan. */
+  cotizaciones: CotizacionMetrica[] = [],
+  /** Total de add-ons rechazados del tenant, para la tasa de aceptación del upsell (Carril D, 1.2). */
+  rechazosAddon = 0,
+  /** Seguimientos post-servicio del flujo Pro, para el contador de reseñas (Carril D, 1.3). */
+  seguimientos: SeguimientoMetrica[] = [],
 ): Metricas {
   // No-show cuenta como "resuelta, no cancelada": queda fuera de ingresos/totalCitas
   // (no hubo servicio), pero sí de la tasa de no-show.
@@ -36,6 +83,17 @@ export function calcularMetricas(
   const totalCitas = activas.length;
   const ingresosEstimados = activas.reduce((s, c) => s + (c.precio ?? 0), 0);
   const conversionPct = totalConversaciones ? Math.round((totalCitas / totalConversaciones) * 100) : 0;
+
+  // Upsell inteligente al agendar (Carril D, 1.2): monto de add-ons aceptados sobre citas
+  // ACTIVAS (mismo criterio que ingresosEstimados: cancelada/no_show no generaron el extra).
+  const montoAddons = (c: CitaMetrica) => (c.addons ?? []).reduce((s, a) => s + a.precio, 0);
+  const upsellMontoExtra = activas.reduce((s, c) => s + montoAddons(c), 0);
+  const citasConAddon = activas.filter((c) => (c.addons?.length ?? 0) > 0).length;
+  const ticketPromedio = totalCitas ? Math.round((ingresosEstimados + upsellMontoExtra) / totalCitas) : 0;
+  // Proxy: no hay un evento "ofrecido" (no todo cliente responde al upsell) — se mide
+  // sobre las respuestas EXPLÍCITAS que sí quedan registradas (aceptó o rechazó).
+  const upsellTasaPct =
+    citasConAddon + rechazosAddon ? Math.round((citasConAddon / (citasConAddon + rechazosAddon)) * 100) : undefined;
 
   const completadas = citas.filter((c) => c.estado === "completada").length;
   const noShows = citas.filter((c) => c.estado === "no_show").length;
@@ -90,5 +148,10 @@ export function calcularMetricas(
     clientesNuevos,
     clientesRecurrentes,
     ahorroBotPct,
+    ticketPromedio,
+    upsellMontoExtra,
+    upsellTasaPct,
+    ...calcularRescate(cotizaciones),
+    ...calcularResenas(seguimientos),
   };
 }

@@ -103,6 +103,33 @@ function SplitBar({ items }: { items: [SplitItem, SplitItem] }) {
   );
 }
 
+// ── Reputación en Google (Carril D, 1.3-c) ───────────────────────────────────
+
+function Reputacion({
+  rating,
+  totalResenas,
+  historico,
+}: {
+  rating: number;
+  totalResenas: number;
+  historico: { fecha: string; rating: number; totalResenas: number }[];
+}) {
+  return (
+    <>
+      <div className="reputacion-resumen">
+        <Icono id="star" size={22} sw={0} />
+        <span className="reputacion-rating">{rating.toFixed(1)}</span>
+        <span className="reputacion-total">{totalResenas} reseñas en Google</span>
+      </div>
+      {historico.length >= 2 ? (
+        <Barras items={historico.map((h) => ({ et: h.fecha.slice(5), v: h.rating }))} />
+      ) : (
+        <p className="dash-vacio">Necesitamos al menos 2 días de datos para graficar la evolución.</p>
+      )}
+    </>
+  );
+}
+
 // ── Horas pico (barras verticales) ───────────────────────────────────────────
 
 const BAR_MAX_H = 96; // px de altura máxima para la barra más alta
@@ -175,6 +202,32 @@ export default function Dashboard({ nombre }: { nombre: string }) {
       icono: "alert", label: "Tasa de no-show",
       valor: m?.noShowPct != null ? m.noShowPct + "%" : "—",
     },
+    {
+      icono: "money", label: "₡ recuperados (rescate)",
+      valor: colones(m?.rescateMontoRecuperado ?? 0),
+      hero: true,
+    },
+    {
+      icono: "trend", label: "Tasa de rescate",
+      valor: m?.rescateTasaPct != null ? m.rescateTasaPct + "%" : "—",
+    },
+    {
+      icono: "money", label: "Ticket promedio",
+      valor: colones(m?.ticketPromedio ?? 0),
+      hero: true,
+    },
+    {
+      icono: "money", label: "₡ extra por add-ons (upsell)",
+      valor: colones(m?.upsellMontoExtra ?? 0),
+    },
+    {
+      icono: "trend", label: "Aceptación de upsell",
+      valor: m?.upsellTasaPct != null ? m.upsellTasaPct + "%" : "—",
+    },
+    {
+      icono: "star", label: "Solicitudes de reseña enviadas",
+      valor: String(m?.resenasSolicitadas ?? 0),
+    },
   ];
 
   return (
@@ -203,6 +256,13 @@ export default function Dashboard({ nombre }: { nombre: string }) {
             <HorasPico items={m?.horasPico ?? []} />
           </div>
         </div>
+
+        {m?.reputacion && (
+          <div className="card">
+            <h3>Reputación en Google</h3>
+            <Reputacion {...m.reputacion} />
+          </div>
+        )}
 
         <div className="dash-grid-2">
           <div className="card">

@@ -296,6 +296,18 @@ export interface ConfigNegocio {
   colorHeader: string;
   /** URL del logo del negocio (C4.1). "" = se muestran las iniciales del nombre. */
   logoUrl: string;
+  /** Rescate de cotizaciones abandonadas (Carril D, 1.1): on/off. */
+  rescateActivo: boolean;
+  /** Horas sin cita antes del primer toque de seguimiento. */
+  rescateHorasEspera: number;
+  /** Texto editable del primer toque (lista de horarios, dentro de 24h). "" = usa el default. */
+  rescateToque1Texto: string;
+  /** Texto/variable editable del segundo toque (plantilla, fuera de 24h). "" = usa el default. */
+  rescateToque2Texto: string;
+  /** Nombre de la plantilla de Meta del segundo toque. "" = sin configurar (se detiene tras el primer toque). */
+  rescatePlantilla: string;
+  /** Place ID de Google (Carril D, 1.3-c): habilita el job diario de reputación. "" = sin configurar. */
+  googlePlaceId: string;
 }
 
 export function obtenerConfig(): Promise<ConfigNegocio> {

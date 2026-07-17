@@ -6,6 +6,7 @@ import { RepositorioEnMemoria } from "./booking/inMemoryRepository";
 import { RepositorioDrizzle } from "./booking/drizzleRepository";
 import { crearDb } from "./db/client";
 import { iniciarRecordatorios } from "./reminders/scheduler";
+import { iniciarReputacion, placesConfigurado } from "./reputacion/places";
 import { cargarTenants } from "./config/tenantStore";
 import { calendarioConfigurado } from "./calendar/googleCalendar";
 import { manejarPanel } from "./panel/router";
@@ -13,6 +14,7 @@ import { manejarLanding } from "./landing/servirLanding";
 import { pushConfigurado } from "./panel/push";
 import { iniciarWorker } from "./queue/worker";
 import { iniciarCampanias } from "./campaigns/worker";
+import { iniciarRescate } from "./rescate/worker";
 import { iniciarSentry, sentryConfigurado, capturarError } from "./observabilidad/sentry";
 import { iniciarReporteMetricas } from "./observabilidad/metricas";
 import type { Repositorio } from "./types";
@@ -141,6 +143,7 @@ server.listen(PORT, () => {
   console.log(`Google Calendar: ${calendarioConfigurado() ? "conectado ✅" : "no configurado (opcional)"}`);
   console.log(`Notificaciones push: ${pushConfigurado() ? "configuradas ✅" : "no configuradas (faltan llaves VAPID)"}`);
   console.log(`Sentry: ${sentryConfigurado() ? "activo ✅" : "no configurado (opcional, falta SENTRY_DSN)"}`);
+  console.log(`Reputación (Places API): ${placesConfigurado() ? "configurada ✅" : "no configurada (opcional, falta GOOGLE_PLACES_API_KEY)"}`);
 
   // Cola durable: el worker consume los jobs de wa_jobs. Solo cuando hay DB.
   if (db) iniciarWorker(repo, db);
@@ -149,8 +152,16 @@ server.listen(PORT, () => {
   // (no tiene sentido en modo demo/memoria — ver src/campaigns/db.ts).
   if (db) iniciarCampanias();
 
+  // Rescate de cotizaciones abandonadas (Carril D, 1.1): cola independiente, solo
+  // cuando hay DB (el registro/dashboard sí funciona en memoria, ver src/rescate/db.ts).
+  if (db) iniciarRescate();
+
   // Recordatorios de cita por WhatsApp (día antes + mismo día).
   iniciarRecordatorios(repo);
+
+  // Reputación en Google (Carril D, 1.3-c): job diario de Places API, solo para
+  // tenants Pro con googlePlaceId configurado. No-op sin GOOGLE_PLACES_API_KEY.
+  iniciarReputacion(repo);
 
   // Métricas internas: msg/min, latencia del turno del agente, profundidad de cola.
   iniciarReporteMetricas(db);

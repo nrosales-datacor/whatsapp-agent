@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { test } from "node:test";
 import {
   botonesPostServicio,
+  botonesPostServicioPro,
   botonesRecordatorio,
   esConfirmacionCita,
   firmaValida,
@@ -135,10 +136,18 @@ test("botonesRecordatorio + esConfirmacionCita: round-trip de confirmación", ()
   assert.equal(esConfirmacionCita(undefined), null);
 });
 
-test("botonesPostServicio + respuestaPostServicio: round-trip de satisfacción", () => {
+test("botonesPostServicio (Básico, 2 botones) + respuestaPostServicio: round-trip de satisfacción", () => {
   const [bien, mal] = botonesPostServicio("cita-7");
-  assert.deepEqual(respuestaPostServicio(bien.id), { citaId: "cita-7", bien: true });
-  assert.deepEqual(respuestaPostServicio(mal.id), { citaId: "cita-7", bien: false });
+  assert.deepEqual(respuestaPostServicio(bien.id), { citaId: "cita-7", sentimiento: "positivo" });
+  assert.deepEqual(respuestaPostServicio(mal.id), { citaId: "cita-7", sentimiento: "negativo" });
   assert.equal(respuestaPostServicio("otro|cita-7"), null);
   assert.equal(respuestaPostServicio(undefined), null);
+});
+
+// Carril D, 1.3: plan Pro manda 3 botones en vez de 2.
+test("botonesPostServicioPro (Pro, 3 botones) + respuestaPostServicio: round-trip de los 3 sentimientos", () => {
+  const [excelente, bien, mal] = botonesPostServicioPro("cita-8");
+  assert.deepEqual(respuestaPostServicio(excelente.id), { citaId: "cita-8", sentimiento: "positivo" });
+  assert.deepEqual(respuestaPostServicio(bien.id), { citaId: "cita-8", sentimiento: "neutral" });
+  assert.deepEqual(respuestaPostServicio(mal.id), { citaId: "cita-8", sentimiento: "negativo" });
 });

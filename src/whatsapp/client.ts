@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import type { MensajeInteractivo, OpcionInteractiva, Tenant } from "../types";
+import type { MensajeInteractivo, OpcionInteractiva, Sentimiento, Tenant } from "../types";
 import { registrarMensajeSaliente } from "../observabilidad/uso";
 
 // ⚠️ La versión del Graph API cambia con el tiempo. Confirmá la vigente en la
@@ -140,7 +140,11 @@ export function esConfirmacionCita(interactiveId: string | undefined): string | 
   return tipo === "confirmar" && citaId ? citaId : null;
 }
 
-/** Botones del seguimiento post-servicio (C3.1): satisfacción del cliente. */
+/**
+ * Botones del seguimiento post-servicio, plan Básico (C3.1, legacy): 2 opciones.
+ * "Todo bien" pide la reseña; "Tuve un problema" escala a humano. Sin tracking en
+ * wa_seguimientos (eso es exclusivo del flujo Pro, ver botonesPostServicioPro).
+ */
 export function botonesPostServicio(citaId: string): OpcionInteractiva[] {
   return [
     { id: `postbien|${citaId}`, titulo: "Todo bien 👍" },
@@ -149,17 +153,32 @@ export function botonesPostServicio(citaId: string): OpcionInteractiva[] {
 }
 
 /**
- * Si la respuesta interactiva es del seguimiento post-servicio (C3.1), devuelve la
- * cita y si el cliente marcó que todo salió bien. Acción directa (no pasa por el
- * agente): "bien" pide la reseña, "mal" escala a un humano ANTES de que se
- * convierta en reseña negativa.
+ * Botones del seguimiento post-servicio, plan Pro (Carril D, 1.3 — motor de reseñas
+ * completo): 3 opciones en vez de 2. Solo "Excelente" pide la reseña; "Bien" agradece
+ * sin pedirla (evita reseñas de 3-4 estrellas); "Mal" escala igual que en Básico.
  */
-export function respuestaPostServicio(interactiveId: string | undefined): { citaId: string; bien: boolean } | null {
+export function botonesPostServicioPro(citaId: string): OpcionInteractiva[] {
+  return [
+    { id: `postexcelente|${citaId}`, titulo: "Excelente 😃" },
+    { id: `postok|${citaId}`, titulo: "Bien 🙂" },
+    { id: `postmal|${citaId}`, titulo: "Mal 😞" },
+  ];
+}
+
+/**
+ * Si la respuesta interactiva es del seguimiento post-servicio (C3.1 + Carril D 1.3),
+ * devuelve la cita y el sentimiento marcado. Cubre AMBOS protocolos (Básico de 2
+ * botones y Pro de 3): "postbien"/"postexcelente" → positivo (pide reseña); "postok"
+ * → neutral (agradece sin pedir reseña, solo existe en Pro); "postmal" → negativo
+ * (escala a humano). Acción directa: no pasa por el agente ni por modo humano.
+ */
+export function respuestaPostServicio(interactiveId: string | undefined): { citaId: string; sentimiento: Sentimiento } | null {
   if (!interactiveId) return null;
   const [tipo, citaId] = interactiveId.split("|");
   if (!citaId) return null;
-  if (tipo === "postbien") return { citaId, bien: true };
-  if (tipo === "postmal") return { citaId, bien: false };
+  if (tipo === "postbien" || tipo === "postexcelente") return { citaId, sentimiento: "positivo" };
+  if (tipo === "postok") return { citaId, sentimiento: "neutral" };
+  if (tipo === "postmal") return { citaId, sentimiento: "negativo" };
   return null;
 }
 
@@ -180,9 +199,11 @@ function decodificarRespuestaInteractiva(id: string, titulo: string): string {
   // Pedido de reprogramar desde el recordatorio: fluye al agente, que arranca el
   // flujo de reprogramación (C1.1) identificando la cita por el número del cliente.
   if (tipo === "mover") return "Quiero reprogramar mi cita.";
-  // Seguimiento post-servicio (C3.1): también son acción directa en handleWebhook,
-  // pero dejamos un texto legible para el historial del panel.
+  // Seguimiento post-servicio (C3.1 + Carril D 1.3): también son acción directa en
+  // handleWebhook, pero dejamos un texto legible para el historial del panel.
   if (tipo === "postbien") return "Todo bien con el servicio 👍";
+  if (tipo === "postexcelente") return "Excelente el servicio 😃";
+  if (tipo === "postok") return "Bien el servicio 🙂";
   if (tipo === "postmal") return "Tuve un problema con el servicio 😕";
   return titulo;
 }

@@ -21,6 +21,29 @@ export interface Service {
   /** true => requiere cita (ej: pulidos). false/omitido => por orden de llegada. */
   agendable?: boolean;
   descripcion?: string;
+  /**
+   * Upsell inteligente al agendar (Carril D, 1.2): id de OTRO servicio a ofrecer como
+   * add-on cuando se agenda ESTE. undefined = no sugiere nada.
+   */
+  addonSugeridoId?: string;
+  /** Precio ancla del add-on ("en vez de X") al ofrecerlo. undefined = sin precio promo. */
+  addonPrecioPromo?: number;
+  /** true => el upsell de este servicio está activo. false/omitido => no se ofrece. */
+  addonActivo?: boolean;
+}
+
+/** Add-on aceptado y agregado a una cita (Carril D, 1.2). */
+export interface AddonCita {
+  /** id del servicio ofrecido como add-on (Service.addonSugeridoId del servicio base). */
+  servicioId: string;
+  /** Precio al que se aceptó (el ancla `addonPrecioPromo` configurado en ese momento). */
+  precio: number;
+}
+
+/** Un add-on rechazado por el cliente, para no volver a ofrecérselo pronto (Carril D, 1.2). */
+export interface RechazoAddon {
+  addonId: string;
+  fecha: string; // "YYYY-MM-DD"
 }
 
 /** Horario de atención por día de la semana (0 = domingo … 6 = sábado). */
@@ -107,6 +130,25 @@ export interface Tenant {
   estadoFacturacion?: EstadoFacturacion;
   /** current_period_end de la suscripción (ISO), para mostrar "próximo cobro" en el panel. */
   facturacionPeriodoFin?: string;
+  /**
+   * Rescate de cotizaciones abandonadas (Carril D, Fase 1 - 1.1): on/off. false/undefined =
+   * el bot registra cotizaciones igual (dato barato) pero no se manda ningún seguimiento.
+   */
+  rescateActivo?: boolean;
+  /** Horas sin cita antes del primer toque de seguimiento. undefined = default (3h). */
+  rescateHorasEspera?: number;
+  /** Texto editable del primer toque (dentro de la ventana de 24h, con lista de horarios). */
+  rescateToque1Texto?: string;
+  /** Texto/variable editable que llena la plantilla del segundo toque (fuera de 24h). */
+  rescateToque2Texto?: string;
+  /** Nombre de la plantilla de Meta (marketing/utilidad) para el segundo toque. undefined = sin configurar. */
+  rescatePlantilla?: string;
+  /**
+   * Place ID de Google (Carril D, Fase 1 - 1.3): habilita el job diario de Places API
+   * que alimenta la sección "Reputación" del dashboard. undefined = sin configurar
+   * (no corre el job para este tenant).
+   */
+  googlePlaceId?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -168,9 +210,39 @@ export interface Cita {
    * null/undefined = pendiente.
    */
   postServicioEn?: string | null;
+  /** Add-ons aceptados por el cliente al agendar (upsell, Carril D 1.2). Vacío/undefined = ninguno. */
+  addons?: AddonCita[];
 }
 
 export type TipoRecordatorio = "dia_antes" | "mismo_dia" | "post_servicio";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Motor de reseñas de Google completo (Carril D, Fase 1 - 1.3): extiende el
+// post-servicio de C3.1. Con plan Pro, el seguimiento post-servicio manda 3
+// botones (Excelente/Bien/Mal en vez de Todo bien/Tuve un problema) y registra
+// la respuesta en wa_seguimientos, para el contador "solicitudes enviadas" del
+// dashboard. El plan Básico sigue el flujo legacy de 2 botones sin esta fila.
+// ─────────────────────────────────────────────────────────────────────────────
+export type Sentimiento = "positivo" | "neutral" | "negativo";
+
+export interface Seguimiento {
+  id: string;
+  citaId: string;
+  tenantId: string;
+  enviadoEn: string; // ISO
+  /** null = el cliente todavía no respondió el seguimiento. */
+  sentimiento: Sentimiento | null;
+  /** true si "positivo" (Excelente): se le mandó el link de reseña. */
+  resenaSolicitada: boolean;
+  respuestaTexto?: string | null;
+}
+
+/** Snapshot diario de reputación en Google (Carril D 1.3-c, vía Places API). */
+export interface SnapshotReputacion {
+  fecha: string; // "YYYY-MM-DD"
+  rating: number;
+  totalResenas: number;
+}
 
 /**
  * Rol de un usuario del panel dentro de su negocio (C2.3): "dueno" puede editar
@@ -343,6 +415,38 @@ export interface Metricas {
     conversion?: string;
     ingresos?: string;
   };
+  /** Cotizaciones que recibieron al menos un toque de seguimiento (Carril D, 1.1). */
+  rescateEnviados: number;
+  /** De esas, cuántas terminaron en una cita (el seguimiento funcionó). */
+  rescateRecuperados: number;
+  /** rescateRecuperados / rescateEnviados. undefined si nunca se envió ningún toque. */
+  rescateTasaPct?: number;
+  /** Suma de lo cotizado en las cotizaciones recuperadas ("₡ recuperados", la tarjeta de venta). */
+  rescateMontoRecuperado: number;
+  /** Ticket promedio por cita, INCLUYENDO add-ons aceptados (Carril D, 1.2). 0 si no hay citas. */
+  ticketPromedio: number;
+  /** Suma de lo cobrado en add-ons aceptados ("₡ extra" del mes, la tarjeta de venta del upsell). */
+  upsellMontoExtra: number;
+  /** Citas con add-on aceptado / (aceptados + rechazos registrados). undefined si nunca hubo ninguno de los dos. */
+  upsellTasaPct?: number;
+  /**
+   * Seguimientos post-servicio respondidos con "Excelente" (Carril D, 1.3): se les
+   * mandó el link de reseña. Solo cuenta el flujo Pro (wa_seguimientos) — el flujo
+   * Básico legacy (2 botones) no registra nada acá.
+   */
+  resenasSolicitadas: number;
+  /** Seguimientos respondidos con "Bien" o "Mal" (NO se les pidió reseña), para el split del dashboard. */
+  resenasNoSolicitadas: number;
+  /**
+   * Reputación en Google (Carril D, 1.3-c, Places API): snapshot más reciente +
+   * histórico para graficar la evolución. undefined = sin googlePlaceId configurado,
+   * o el job diario todavía no corrió ninguna vez.
+   */
+  reputacion?: {
+    rating: number;
+    totalResenas: number;
+    historico: { fecha: string; rating: number; totalResenas: number }[];
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -416,6 +520,42 @@ export interface MetricasCampania {
 export interface CampaniaConDetalle extends Campania {
   metricas: MetricasCampania;
   envios: CampaniaEnvio[];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Rescate de cotizaciones abandonadas (Carril D, Fase 1 - 1.1): el bot cotiza un
+// pulido pero el cliente no agenda; si no vuelve, se le manda un seguimiento
+// automático (máx. 2 toques). El CRUD vive en el Repositorio (memoria y Drizzle)
+// para que aparezca en el dashboard y en el seed de demo; el ENVÍO de los toques
+// es DB-directo en src/rescate/ (mini-cola independiente de wa_jobs, mismo patrón
+// que C3.2 — ver [[patron-colas-independientes]]).
+// ─────────────────────────────────────────────────────────────────────────────
+export type EstadoCotizacion =
+  | "pendiente" // recién cotizada, sin cita, esperando el plazo del primer toque
+  | "toque1" // se mandó el primer toque (lista de horarios), sin cita todavía
+  | "toque2" // se mandó el segundo toque (plantilla), sin cita todavía; ya no hay más toques
+  | "agendada" // el cliente agendó ANTES de que saliera ningún toque (el rescate no hizo nada)
+  | "recuperada" // el cliente agendó DESPUÉS de un toque (el rescate funcionó)
+  | "descartada" // el dueño la descartó a mano (no va a volver)
+  | "opt_out"; // el cliente pidió "BAJA": se detiene el seguimiento
+
+export interface Cotizacion {
+  id: string;
+  tenantId: string;
+  clienteWa: string;
+  servicioId: string;
+  /** Monto cotizado en colones. */
+  monto: number;
+  estado: EstadoCotizacion;
+  /** Cita que resultó de esta cotización (agendada o recuperada). null = todavía sin cita. */
+  citaId?: string | null;
+  /** Precio final de la cita recuperada (para "₡ recuperados"). null = no aplica. */
+  montoRecuperado?: number | null;
+  creadaEn: string; // ISO
+  /** Cuándo se mandó el primer toque. null = pendiente. */
+  toque1En?: string | null;
+  /** Cuándo se mandó el segundo toque. null = pendiente (o nunca hizo falta). */
+  toque2En?: string | null;
 }
 
 /** Ficha (mini-CRM) de un cliente: datos agregados para el panel. */
@@ -506,6 +646,43 @@ export interface Repositorio {
    * null si no existe / no es del tenant / no estaba agendada. C3.3.
    */
   marcarNoShow(tenantId: string, citaId: string): Promise<Cita | null>;
+  /**
+   * Registra que se cotizó un pulido con intención de venta (Carril D, 1.1). Devuelve
+   * null (sin crear nada) si el cliente YA tiene una cotización activa (pendiente/
+   * toque1/toque2) — regla dura: no dos rescates activos al mismo teléfono.
+   */
+  registrarCotizacion(tenantId: string, clienteWa: string, servicioId: string, monto: number): Promise<Cotizacion | null>;
+  /**
+   * Se llama al crear una cita (bot o manual, C1.1). Si el cliente tiene una cotización
+   * ACTIVA para ese mismo servicio, la cierra: "agendada" si todavía no se le mandó
+   * ningún toque (el rescate no hizo nada), o "recuperada" si ya se le había mandado
+   * alguno (el seguimiento funcionó). No-op si no hay ninguna cotización activa.
+   */
+  actualizarCotizacionPorCita(
+    tenantId: string,
+    clienteWa: string,
+    servicioId: string,
+    citaId: string,
+    montoCita?: number,
+  ): Promise<void>;
+  /**
+   * Agrega un add-on ACEPTADO a una cita ya agendada (upsell, Carril D 1.2). Idempotente:
+   * si el add-on ya estaba, no lo duplica. Scopeada por tenantId. Devuelve la cita
+   * actualizada, o null si no existe / no es del tenant.
+   */
+  agregarAddonACita(tenantId: string, citaId: string, addon: AddonCita): Promise<Cita | null>;
+  /**
+   * Registra que el cliente RECHAZÓ un add-on (upsell, Carril D 1.2), para no
+   * volver a ofrecérselo pronto. Vive en la conversación del cliente (no en la
+   * cita): el rechazo es una preferencia del cliente, no de un agendamiento puntual.
+   */
+  registrarRechazoAddon(tenantId: string, clienteWa: string, addonId: string): Promise<void>;
+  /**
+   * true si el cliente rechazó ese add-on en los últimos 60 días (Carril D 1.2) —
+   * el bot no debe volver a ofrecérselo. `hoy` ("YYYY-MM-DD") es inyectable para
+   * pruebas deterministas.
+   */
+  fueRechazadoAddonRecientemente(tenantId: string, clienteWa: string, addonId: string, hoy: string): Promise<boolean>;
   /** Marca un recordatorio como enviado (para no mandarlo dos veces). */
   marcarRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<void>;
   /**
@@ -560,6 +737,35 @@ export interface Repositorio {
   guardarNotas(tenantId: string, conversacionId: string, notas: string): Promise<void>;
   /** Métricas agregadas del negocio para el dashboard. */
   metricas(tenantId: string): Promise<Metricas>;
+
+  // ── Motor de reseñas de Google completo (Carril D, Fase 1 - 1.3) ──
+  /**
+   * Registra que se mandó el seguimiento post-servicio con el flujo Pro (3 botones).
+   * Idempotente por citaId: si ya existe una fila (reintento del scheduler), no
+   * lanza ni duplica. Solo se llama para tenants en plan Pro.
+   */
+  crearSeguimiento(tenantId: string, citaId: string): Promise<void>;
+  /**
+   * Registra la respuesta del cliente al seguimiento post-servicio: sentimiento
+   * marcado, si se le pidió reseña y el texto legible de su respuesta. No-op si no
+   * existe una fila para esa cita (tenant en plan Básico, flujo legacy sin tracking)
+   * — el caller no necesita saber de antemano si el tenant es Pro.
+   */
+  registrarRespuestaSeguimiento(
+    citaId: string,
+    sentimiento: Sentimiento,
+    resenaSolicitada: boolean,
+    respuestaTexto: string,
+  ): Promise<void>;
+  /** Seguimientos post-servicio del tenant, para el contador del dashboard (Carril D 1.3). */
+  seguimientosDeTenant(tenantId: string): Promise<Seguimiento[]>;
+  /**
+   * Guarda el snapshot diario de reputación en Google (Carril D 1.3-c, Places API).
+   * Upsert por (tenantId, fecha): si el job corre dos veces el mismo día, no duplica.
+   */
+  guardarSnapshotReputacion(tenantId: string, fecha: string, rating: number, totalResenas: number): Promise<void>;
+  /** Últimos snapshots de reputación del tenant, más reciente primero (gráfico de evolución). */
+  historicoReputacion(tenantId: string, limite: number): Promise<SnapshotReputacion[]>;
 
   // ── Notificaciones push (Web Push) ──
   guardarPushSub(tenantId: string, sub: PushSub): Promise<void>;

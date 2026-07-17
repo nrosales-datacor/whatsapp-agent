@@ -44,6 +44,51 @@ test("calcularMetricas: cuenta exacta de conteos con dataset armado a mano", () 
   assert.equal(m.enModoHumano, 3);
 });
 
+test("calcularMetricas: rescate de cotizaciones (Carril D, 1.1) — cuenta enviados/recuperados/monto", () => {
+  const cotizaciones = [
+    { estado: "pendiente" }, // aún sin toque: no cuenta como "enviado"
+    { estado: "toque1" }, // se le mandó un toque, sin cita todavía: enviado, no recuperado
+    { estado: "recuperada", montoRecuperado: 15000 },
+    { estado: "recuperada", montoRecuperado: 20000 },
+    { estado: "agendada" }, // agendó ANTES de cualquier toque: el rescate no hizo nada
+    { estado: "opt_out" },
+  ];
+  const m = calcularMetricas(10, 0, 10, [], cotizaciones);
+  assert.equal(m.rescateEnviados, 3); // toque1 + 2 recuperadas
+  assert.equal(m.rescateRecuperados, 2);
+  assert.equal(m.rescateTasaPct, 67); // 2/3
+  assert.equal(m.rescateMontoRecuperado, 35000);
+});
+
+test("calcularMetricas: upsell (Carril D, 1.2) — ticket promedio, monto extra y tasa de aceptación", () => {
+  const citas = [
+    { estado: "completada", precio: 20000, servicioId: "lavado", fecha: "2026-07-01", hora: "09:00", clienteWa: "a", addons: [{ servicioId: "focos", precio: 8000 }] },
+    { estado: "completada", precio: 15000, servicioId: "pulido", fecha: "2026-07-02", hora: "10:00", clienteWa: "b" }, // sin add-on
+    { estado: "cancelada", precio: 15000, servicioId: "pulido", fecha: "2026-07-03", hora: "10:00", clienteWa: "c", addons: [{ servicioId: "focos", precio: 8000 }] }, // cancelada: no cuenta
+  ];
+  // 2 rechazos de add-on registrados (tenant-wide) además de la 1 cita con add-on aceptado.
+  const m = calcularMetricas(5, 0, 5, citas, [], 2);
+  // Activas: la de 20000+8000 y la de 15000 (la cancelada queda fuera). Total = 43000/2 = 21500.
+  assert.equal(m.ticketPromedio, 21500);
+  assert.equal(m.upsellMontoExtra, 8000); // solo el add-on de la cita ACTIVA
+  assert.equal(m.upsellTasaPct, 33); // 1 aceptado / (1 aceptado + 2 rechazados)
+});
+
+test("calcularMetricas: sin citas ni rechazos, upsell queda en cero/undefined sin NaN", () => {
+  const m = calcularMetricas(0, 0, 0, []);
+  assert.equal(m.ticketPromedio, 0);
+  assert.equal(m.upsellMontoExtra, 0);
+  assert.equal(m.upsellTasaPct, undefined);
+});
+
+test("calcularMetricas: sin cotizaciones (o repo que no las pasa), rescate queda en cero sin NaN", () => {
+  const m = calcularMetricas(5, 0, 5, []);
+  assert.equal(m.rescateEnviados, 0);
+  assert.equal(m.rescateRecuperados, 0);
+  assert.equal(m.rescateTasaPct, undefined);
+  assert.equal(m.rescateMontoRecuperado, 0);
+});
+
 test("calcularMetricas: sin citas resueltas, noShowPct queda undefined", () => {
   const citas = [{ estado: "agendada", servicioId: "lavado", fecha: "2026-07-01", hora: "09:00", clienteWa: "a" }];
   const m = calcularMetricas(1, 0, 1, citas);
@@ -56,6 +101,25 @@ test("calcularMetricas: sin conversaciones, conversionPct y ahorroBotPct son 0 (
   assert.equal(m.ahorroBotPct, 0);
   assert.equal(m.totalCitas, 0);
   assert.equal(m.ingresosEstimados, 0);
+});
+
+test("calcularMetricas: motor de reseñas (Carril D, 1.3) — cuenta solicitudes vs. no solicitadas", () => {
+  const seguimientos = [
+    { sentimiento: "positivo" }, // Excelente: recibió el link
+    { sentimiento: "positivo" },
+    { sentimiento: "neutral" }, // Bien: NO recibió el link
+    { sentimiento: "negativo" }, // Mal: NO recibió el link
+    { sentimiento: null }, // recién enviado, todavía sin responder: no cuenta para ninguno
+  ];
+  const m = calcularMetricas(10, 0, 10, [], [], 0, seguimientos);
+  assert.equal(m.resenasSolicitadas, 2);
+  assert.equal(m.resenasNoSolicitadas, 2);
+});
+
+test("calcularMetricas: sin seguimientos (o repo que no los pasa), el contador de reseñas queda en cero", () => {
+  const m = calcularMetricas(5, 0, 5, []);
+  assert.equal(m.resenasSolicitadas, 0);
+  assert.equal(m.resenasNoSolicitadas, 0);
 });
 
 test("calcularMetricas: serviciosTop y citasPorDia respetan topes (6 y 14) y orden", () => {

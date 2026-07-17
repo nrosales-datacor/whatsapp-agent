@@ -122,6 +122,57 @@ export const TOOLS: ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "registrar_cotizacion",
+      description:
+        "Registra que le diste un PRECIO a un PULIDO con intención de venta pero el cliente NO agendó cita en el momento. Habilita un seguimiento automático más tarde si no vuelve a escribir. Llamala SIEMPRE que cotices un pulido y el cliente no cierre la cita ahí mismo. No la uses para lavados (no se agendan) ni si ya agendó.",
+      parameters: {
+        type: "object",
+        properties: {
+          servicioId: { type: "string", description: "id del servicio de pulido cotizado." },
+          monto: { type: "number", description: "Monto cotizado en colones (el mismo que le dijiste al cliente)." },
+        },
+        required: ["servicioId", "monto"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "agregar_addon_a_cita",
+      description:
+        "Agrega el add-on sugerido a una cita ya agendada, cuando el cliente ACEPTA la oferta de upsell que le hiciste. Usá el citaId y el addonId que te dio el resultado de agendar_cita (campo addonSugerido).",
+      parameters: {
+        type: "object",
+        properties: {
+          citaId: { type: "string", description: "id de la cita a la que se agrega el add-on." },
+          addonId: { type: "string", description: "id del add-on (addonSugerido.addonId que te devolvió agendar_cita)." },
+        },
+        required: ["citaId", "addonId"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "rechazar_addon",
+      description:
+        "Registra que el cliente NO quiso el add-on que le ofreciste (dijo que no, o no mostró interés). Llamala para no volver a insistir con lo mismo pronto. Usá el citaId y el addonId de la oferta que le hiciste (addonSugerido de agendar_cita).",
+      parameters: {
+        type: "object",
+        properties: {
+          citaId: { type: "string", description: "id de la cita cuya oferta de add-on se rechazó." },
+          addonId: { type: "string", description: "id del add-on rechazado (addonSugerido.addonId)." },
+        },
+        required: ["citaId", "addonId"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "escalar_a_humano",
       description:
         "Pasa la conversación a una persona del equipo cuando NO podés resolver lo que el cliente necesita: una pregunta SOBRE EL NEGOCIO que no está en tu información, un reclamo, un caso especial, o algo que requiere a un encargado. NO la uses para pedidos FUERA del lavacar (esos se responden con amabilidad, sin escalar) ni cuando SÍ tenés la respuesta.",
