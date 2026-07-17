@@ -1,3 +1,7 @@
+> ✅ **Archivado — plan ejecutado.** C4.4 está ✅ en `ROADMAP.md` (Carril C). Fases F1–F5 completas;
+> solo F6 (bot vendedor como tenant propio) sigue pendiente, bloqueada por conseguir un número nuevo
+> en la WABA — no bloquea nada más. El estado vigente vive en `ROADMAP.md`.
+
 # PLAN C4.4 — Landing de venta (handoff ejecutable)
 
 > **Para quién es esto:** un agente (o humano) que va a implementar el ítem **C4.4 — Landing de

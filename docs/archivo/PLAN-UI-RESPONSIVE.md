@@ -1,3 +1,9 @@
+> ✅ **Archivado — plan ejecutado.** Nunca tuvo casilla de estado propia ni ítem en `ROADMAP.md`
+> (esa fue una de las causas del desorden); verificado por grep contra el código (2026-07-17) que
+> las Fases 1–4 están todas aplicadas (`.campo > input`, `.panel-mobile-grid` responsive, `dvh`,
+> `color-mix`, `nav-burger`, `.kpis` a 3 columnas, `.agenda-chip` con ellipsis, safe-area en
+> `#toasts`, etc.). No queda trabajo pendiente de este documento.
+
 # PLAN — Ajustes visuales/responsive (panel React + landing)
 
 > **Para el modelo ejecutor:** este plan es autocontenido. Sale de una auditoría completa de

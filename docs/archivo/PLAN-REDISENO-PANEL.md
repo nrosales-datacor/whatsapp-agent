@@ -1,3 +1,6 @@
+> ✅ **Archivado — plan ejecutado.** Es A8 en `ROADMAP.md` (Carril A), completo incluida la Fase 4
+> de verificación. Este documento queda como bitácora histórica; el estado vigente vive en `ROADMAP.md`.
+
 # PLAN — Rediseño visual del panel (mockup Lavacar → producción React)
 
 > **Para quién es esto:** este documento es un **handoff ejecutable por otro modelo/dev**. Describe

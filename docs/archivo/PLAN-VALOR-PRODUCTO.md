@@ -1,3 +1,9 @@
+> ✅ **Archivado — plan mayormente ejecutado.** Todo el Carril C (C1.1–C4.4) quedó ✅ en
+> `ROADMAP.md`, salvo **C4.3 (Stripe + planes)**, que sigue ⬜, y **C4.5 (= B5 observabilidad/CI)**,
+> que está 🔵 en progreso (falta solo la parte operativa de backups). Este documento queda como
+> bitácora histórica de la priorización original; el estado ítem por ítem vigente vive en
+> `ROADMAP.md` (Carril C y B5).
+
 # PLAN — Valor de producto (que la app destaque y se venda sola)
 
 > **Para quién es esto:** hoja de ruta de **features de producto** (no de arquitectura — eso ya lo

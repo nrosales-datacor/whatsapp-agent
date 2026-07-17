@@ -1,3 +1,6 @@
+> ✅ **Archivado — plan ejecutado.** B1 y B4 están ✅ en `ROADMAP.md` (Carril B). Este documento
+> queda como bitácora histórica de cómo se implementaron; el estado vigente vive en `ROADMAP.md`.
+
 # Plan de implementación — B1 (cola durable) y B4 (recordatorios safe para N instancias)
 
 > **Para quién es esto:** guía de ejecución paso a paso para implementar los dos bloqueantes 🔴 del
