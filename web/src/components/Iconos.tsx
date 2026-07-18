@@ -2,7 +2,8 @@ export type IconoId =
   | "search" | "send" | "cal" | "quote" | "check2" | "bell"
   | "moon" | "sun" | "chat" | "dash" | "out" | "bot" | "user"
   | "x" | "trend" | "money" | "clock" | "back" | "gear" | "alert" | "lock" | "star" | "shield"
-  | "plus" | "grip" | "trash" | "hash" | "chevrondown" | "calcheck";
+  | "plus" | "grip" | "trash" | "hash" | "chevrondown" | "calcheck"
+  | "eye" | "eyeoff" | "cloudoff" | "refresh";
 
 interface Props {
   id: IconoId;
@@ -41,6 +42,10 @@ const RUTAS: Record<IconoId, string> = {
   hash:    '<line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/>',
   chevrondown: '<polyline points="6 9 12 15 18 9"/>',
   calcheck: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="m9 16 2 2 4-4"/>',
+  eye:     '<path d="M1 12S4 5 12 5s11 7 11 7-3 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/>',
+  eyeoff:  '<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 11 7 11 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 1 12s4 7 11 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/>',
+  cloudoff:'<path d="M4.2 4.2A8 8 0 0 0 9 20h7a4.5 4.5 0 0 0 1.7-.32"/><path d="M20 15.9A4.5 4.5 0 0 0 17.5 8h-1.8A7 7 0 0 0 4.7 6"/><line x1="2" y1="2" x2="22" y2="22"/>',
+  refresh: '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>',
 };
 
 // Los paths son literales hardcodeados en este módulo — sin input de usuario.

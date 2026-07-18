@@ -75,6 +75,11 @@
   --success: #58BE4D; --warning: #FA8500; --warning-soft: #FFF1DE;
   --info: #248DE3; --info-soft: #E6F0FB;
 
+  /* ── Notas privadas (ficha del cliente) — fondo cálido diferenciado, no depende del acento del tenant ── */
+  --notas-bg: #FBF7EE; --notas-border: #EEE3CC; --notas-fg: #8A6D1F;
+  /* ── "Cliente frecuente" — dorado fijo, mismo tono que las estrellas de reseñas ── */
+  --frecuente: #C68A0A; --frecuente-soft: rgba(240,180,41,.18);
+
   /* ── Forma ── */
   --radius: 16px; --radius-sm: 10px; --radius-pill: 999px; --av: 13px;
 
@@ -118,6 +123,10 @@
   --warning-soft: #3a2a13;
   --info: #5aabf0; --info-soft: #142a3d;
 
+  /* Notas privadas — variante oscura intencional (cálido oscuro, no un claro invertido) */
+  --notas-bg: #241d10; --notas-border: #4a3d22; --notas-fg: #d8b25c;
+  --frecuente: #f0b429; --frecuente-soft: rgba(240,180,41,.16);
+
   --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 34px rgba(0,0,0,.5);
   --shadow-overlay: 0 1px 2px rgba(0,0,0,.5), 0 16px 40px -12px rgba(0,0,0,.6);
 }
@@ -137,23 +146,48 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 /* ══════════════════════════════════════════════════════════════════════════════
    LOGIN
    ══════════════════════════════════════════════════════════════════════════════ */
-#login { min-height: 100%; display: flex; align-items: center; justify-content: center; padding: var(--space-lg); background: var(--bg); }
+/* Shell de dos paneles (solo Login.tsx): marca a la izquierda + #login (form
+   centrado) a la derecha. CambiarClaveObligatorio.tsx reusa #login SOLO (sin
+   .login-shell/.login-marca), como pantalla de un único formulario centrado. */
+.login-shell { display: flex; min-height: 100%; min-height: 100dvh; }
+.login-marca { flex: 0 0 360px; background: var(--header-bg); color: var(--header-fg); display: flex; flex-direction: column; justify-content: space-between; padding: var(--space-2xl) var(--space-xl); }
+.login-marca-brand { display: flex; align-items: center; gap: var(--space-sm); }
+.login-marca-nombre { font-size: var(--step--1); font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--header-fg); }
+.login-marca-titular { font-family: var(--font-display); font-size: clamp(1.6rem, 3vw, var(--step-4)); font-weight: 800; line-height: 1.15; letter-spacing: -.02em; max-width: 30ch; }
+.login-marca-sub { font-size: var(--step--1); color: var(--header-sub); line-height: 1.5; max-width: 32ch; margin-top: var(--space-sm); }
+.login-marca-footer { font-size: 11px; color: var(--header-sub); opacity: .7; }
+.login-marca-movil { display: none; }
+
+#login { flex: 1; min-width: 0; min-height: 100%; display: flex; align-items: center; justify-content: center; padding: var(--space-lg); background: var(--bg); }
 #login form { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-overlay); padding: var(--space-xl); width: 100%; max-width: 384px; }
 .marca { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-xl); }
 .marca-chip { display: grid; place-items: center; width: 38px; height: 38px; background: var(--accent); color: var(--on-accent); border-radius: var(--radius); flex-shrink: 0; font-size: .76rem; font-weight: 800; letter-spacing: .02em; }
 .marca-chip svg { width: 20px; height: 20px; }
 .marca-logo { object-fit: cover; background: var(--surface); }
 .marca-txt { font-size: var(--step--1); font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--text-muted); }
-#login h1 { font-family: var(--font-display); font-size: var(--step-4); font-weight: 900; line-height: 1.04; letter-spacing: -.02em; color: var(--text); }
+#login h1 { font-family: var(--font-display); font-size: var(--step-3); font-weight: 900; line-height: 1.04; letter-spacing: -.02em; color: var(--text); }
 #login p { color: var(--text-muted); font-size: var(--step-0); line-height: 1.5; margin-top: var(--space-xs); margin-bottom: var(--space-xl); max-width: 34ch; }
 #login label { display: block; font-size: var(--step--1); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); margin: var(--space-md) 0 var(--space-2xs); }
 #login input { width: 100%; padding: 11px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: var(--step-0); color: var(--text); background: var(--surface); transition: border-color .15s, box-shadow .15s; }
 #login input::placeholder { color: var(--text-muted); }
 #login input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-#login button { width: 100%; margin-top: var(--space-xl); background: var(--accent); color: var(--on-accent); padding: 12px; border-radius: var(--radius); font-weight: 700; font-size: var(--step-0); letter-spacing: .01em; transition: background .15s, opacity .15s; }
-#login button:hover:not(:disabled) { background: var(--accent-strong); }
-#login button:disabled { opacity: .55; cursor: not-allowed; }
+/* Selector específico (no "#login button" a secas): el toggle de mostrar/ocultar
+   contraseña es OTRO botón dentro del mismo form y no debe heredar este look. */
+#login button[type="submit"] { width: 100%; margin-top: var(--space-xl); background: var(--accent); color: var(--on-accent); padding: 12px; border-radius: var(--radius); font-weight: 700; font-size: var(--step-0); letter-spacing: .01em; transition: background .15s, opacity .15s; }
+#login button[type="submit"]:hover:not(:disabled) { background: var(--accent-strong); }
+#login button[type="submit"]:disabled { opacity: .55; cursor: not-allowed; }
 #loginError { color: var(--destructive); font-size: var(--step--1); margin-top: var(--space-md); min-height: 16px; }
+
+.login-pass-label-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-sm); margin: var(--space-md) 0 var(--space-2xs); }
+.login-pass-label-row label { margin: 0; }
+.login-link { font-size: var(--step--1); font-weight: 600; color: var(--accent); text-transform: none; letter-spacing: normal; }
+.login-link:hover { text-decoration: underline; }
+.login-pass-wrap { position: relative; }
+.login-pass-wrap input { padding-right: 42px; }
+.login-pass-toggle { position: absolute; right: 3px; top: 3px; bottom: 3px; width: 36px; display: grid; place-items: center; color: var(--text-muted); border-radius: var(--radius-sm); transition: background .12s, color .12s; }
+.login-pass-toggle:hover { background: var(--surface-2); color: var(--text); }
+.login-ayuda { display: block; text-align: center; margin-top: var(--space-lg); font-size: var(--step--1); color: var(--text-muted); }
+.login-ayuda:hover { color: var(--accent); text-decoration: underline; }
 
 /* ══════════════════════════════════════════════════════════════════════════════
    LAYOUT PRINCIPAL — flex column con header compartido
@@ -224,6 +258,7 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 /* ── Vista principal debajo del header ── */
 #mainView { flex: 1; display: flex; min-height: 0; overflow: hidden; }
 #inbox-view { flex: 1; display: flex; min-height: 0; overflow: hidden; }
+.inbox-error-wrap { flex: 1; display: flex; align-items: center; justify-content: center; padding: var(--space-lg); }
 
 /* ══════════════════════════════════════════════════════════════════════════════
    LISTA (sidebar)
@@ -249,7 +284,7 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 
 /* Conversaciones */
 #convs { flex: 1; overflow-y: auto; }
-.convs-vacio { padding: var(--space-xl) var(--space-md); color: var(--text-muted); text-align: center; font-size: var(--step--1); }
+.convs-vacio-wrap { padding: var(--space-lg) var(--space-md); }
 .conv { display: flex; gap: var(--space-sm); padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--border); cursor: pointer; align-items: center; transition: background .12s; }
 .conv:hover { background: var(--surface-2); }
 .conv.activa { background: var(--active); box-shadow: inset 3px 0 0 var(--accent); }
@@ -364,12 +399,9 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .b .quien  { font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); margin-bottom: 3px; }
 .b .msg-img { display: block; max-width: 100%; max-height: 320px; border-radius: calc(var(--radius) - 4px); margin-bottom: 4px; object-fit: cover; }
 
-/* Empty state */
+/* Empty state — sin conversación (EstadoVacio) / cargando (texto simple, no es un vacío real) */
 #vacio { flex: 1; display: flex; align-items: center; justify-content: center; padding: var(--space-lg); }
-.vacio-card { display: flex; flex-direction: column; align-items: center; gap: var(--space-sm); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-xl); max-width: 280px; text-align: center; }
-.vacio-icono { color: var(--text-muted); }
-.vacio-titulo { font-family: var(--font-display); font-weight: 600; font-size: var(--step-0); color: var(--text); }
-.vacio-sub { font-size: var(--step--1); color: var(--text-muted); line-height: 1.5; }
+.vacio-cargando { color: var(--text-muted); font-size: var(--step-0); }
 
 /* Composer */
 #composer { display: flex; gap: var(--space-xs); padding: var(--space-sm) var(--space-md); background: var(--surface); border-top: 1px solid var(--border); align-items: flex-end; }
@@ -398,10 +430,47 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .ficha-body h4 { margin: var(--space-lg) 0 var(--space-xs); font-size: var(--step--1); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
 .hist { font-size: var(--step--1); padding: var(--space-xs) var(--space-sm); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 6px; }
 .hist b { color: var(--text); font-weight: 600; }
-#fNotas { width: 100%; min-height: 80px; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; font: inherit; font-size: var(--step-0); resize: vertical; background: var(--surface); transition: border-color .15s, box-shadow .15s; }
-#fNotas:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-#guardarNotas { margin-top: var(--space-sm); background: var(--accent); color: var(--on-accent); padding: 10px 16px; border-radius: var(--radius); font-weight: 600; font-size: var(--step--1); transition: background .15s; }
-#guardarNotas:hover { background: var(--accent-strong); }
+
+/* ── Ficha del cliente (rediseño visual, ver design_handoff_panel_whatsapp/) ──
+   Header propio (avatar + nombre + pill "cliente frecuente" + teléfono) encima
+   del .ficha-head genérico; tiles 2×2; historial como timeline vertical con
+   puntos por estado; notas privadas en bloque cálido diferenciado. */
+.ficha-modal-cliente { max-width: 560px; }
+.ficha-cliente-head { align-items: flex-start; gap: var(--space-md); }
+.ficha-cliente-avatar { width: 52px; height: 52px; border-radius: var(--radius); background: var(--accent-soft); color: var(--accent-strong); display: grid; place-items: center; font-family: var(--font-display); font-weight: 700; font-size: var(--step-0); flex-shrink: 0; }
+.ficha-cliente-id { flex: 1; min-width: 0; }
+.ficha-cliente-nombre-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ficha-cliente-nombre-row h3 { overflow-wrap: anywhere; }
+.ficha-cliente-tel { font-size: var(--step--1); color: var(--text-2); margin-top: 3px; }
+.pill-frecuente { display: inline-flex; align-items: center; gap: 4px; background: var(--frecuente-soft); color: var(--frecuente); font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: var(--radius-pill); white-space: nowrap; }
+.pill-frecuente svg { fill: currentColor; }
+
+.ficha-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-sm); margin-bottom: var(--space-md); }
+.ficha-tile { background: var(--surface-2); border-radius: var(--radius-sm); padding: var(--space-sm) var(--space-md); }
+.ficha-tile-label { display: block; font-size: 11px; color: var(--text-3); margin-bottom: 4px; }
+.ficha-tile-valor { display: block; font-size: var(--step-0); font-weight: 700; color: var(--text); overflow-wrap: anywhere; }
+
+/* Historial — timeline vertical: línea conectando puntos de color por estado */
+.ficha-historial { display: flex; flex-direction: column; }
+.ficha-historial-item { display: flex; align-items: flex-start; gap: var(--space-sm); position: relative; padding-bottom: var(--space-md); }
+.ficha-historial-item:last-child { padding-bottom: 0; }
+.ficha-historial-item:not(:last-child)::before { content: ""; position: absolute; left: 5px; top: 14px; bottom: 0; width: 1px; background: var(--border); }
+.ficha-historial-dot { width: 11px; height: 11px; border-radius: 50%; margin-top: 4px; flex-shrink: 0; box-shadow: 0 0 0 2px var(--surface); }
+.ficha-historial-dot-accent { background: var(--accent); }
+.ficha-historial-dot-success { background: var(--success); }
+.ficha-historial-dot-warning { background: var(--warning); }
+.ficha-historial-dot-danger { background: var(--danger); }
+.ficha-historial-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ficha-historial-servicio { font-weight: 600; font-size: var(--step--1); color: var(--text); }
+.ficha-historial-fecha { font-size: 11px; color: var(--text-3); }
+
+/* Notas privadas — bloque cálido diferenciado (nunca depende del acento del tenant) */
+.ficha-notas-card { background: var(--notas-bg); border: 1px solid var(--notas-border); border-radius: var(--radius-sm); padding: var(--space-md); margin-top: var(--space-lg); }
+.ficha-notas-titulo { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--notas-fg); margin-bottom: var(--space-sm); }
+.ficha-notas-input { width: 100%; min-height: 80px; border: 1px solid var(--notas-border); border-radius: var(--radius-sm); padding: 10px 12px; font: inherit; font-size: var(--step-0); resize: vertical; background: var(--surface); transition: border-color .15s, box-shadow .15s; }
+.ficha-notas-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.ficha-notas-guardar { margin-top: var(--space-sm); background: var(--accent); color: var(--on-accent); padding: 10px 16px; border-radius: var(--radius); font-weight: 600; font-size: var(--step--1); transition: background .15s; }
+.ficha-notas-guardar:hover { background: var(--accent-strong); }
 
 /* ══════════════════════════════════════════════════════════════════════════════
    DASHBOARD (tab view — ya no es overlay)
@@ -537,14 +606,12 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
   .svc-item-actions { margin-left: auto; }
 }
 
-/* Estado de error reutilizable (ErrorState: ícono + mensaje + Reintentar) */
-.error-state { display: flex; flex-direction: column; align-items: center; gap: var(--space-sm); text-align: center; color: var(--text-muted); padding: var(--space-xl) var(--space-md); }
-.error-state svg { color: var(--destructive); }
-.error-state p { font-size: var(--step--1); margin: 0; }
-
-/* Estado vacío enriquecido reutilizable (EstadoVacio: chip de ícono + título + ayuda + CTA) */
+/* Estado vacío enriquecido reutilizable (EstadoVacio/ErrorState: chip de ícono + título
+   + ayuda + CTA) — mismo patrón para vacíos y errores de carga, solo cambia el tono
+   del chip de ícono (ver design_handoff_panel_whatsapp/, sección 7). */
 .estado-vacio { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; background: var(--bg); border-radius: var(--radius); padding: var(--space-xl) var(--space-md); }
 .estado-vacio-icono { width: 56px; height: 56px; border-radius: var(--radius); background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; margin-bottom: var(--space-xs); }
+.estado-vacio-icono-danger { background: var(--danger-soft); color: var(--danger); }
 .estado-vacio-titulo { font-family: var(--font-display); font-weight: 600; font-size: var(--step-1); color: var(--text); }
 .estado-vacio-ayuda { font-size: var(--step--1); color: var(--text-2); line-height: 1.5; max-width: 290px; margin-bottom: var(--space-xs); }
 
@@ -793,6 +860,12 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 
   /* Botones ‹ › Hoy de la agenda: área táctil cómoda */
   .agenda-nav .btn-ghost { min-width: 44px; justify-content: center; }
+
+  /* Login: el panel de marca (360px) no entra en móvil — se reemplaza por el
+     bloque compacto de marca dentro del form (logo + nombre), como pide el handoff. */
+  .login-marca { display: none; }
+  .login-marca-movil { display: flex; }
+  .login-pass-toggle { width: 44px; }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════

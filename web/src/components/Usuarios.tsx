@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { actualizarUsuario, crearUsuario, listarUsuarios, type Rol } from "../api";
 import ErrorState from "./ErrorState";
+import EstadoVacio from "./EstadoVacio";
 import { useToast } from "./Toast";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -90,7 +91,7 @@ export default function Usuarios({ usuarioActualId }: Props) {
         <div className="card">
           <h3>Equipo ({usuarios.length})</h3>
           {usuarios.length === 0 ? (
-            <div className="admin-vacio">Todavía no hay usuarios.</div>
+            <EstadoVacio icono="user" titulo="Todavía no hay usuarios" ayuda="Los que agregues con el formulario de abajo van a aparecer acá." />
           ) : (
             <div className="admin-tabla-scroll">
               <table className="admin-tabla">

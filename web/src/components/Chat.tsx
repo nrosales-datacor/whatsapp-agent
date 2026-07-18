@@ -9,6 +9,7 @@ import {
   type ResumenConversacion,
 } from "../api";
 import { fmtNum, hora, restante } from "../lib/formato";
+import EstadoVacio from "./EstadoVacio";
 import Icono from "./Iconos";
 import { useToast } from "./Toast";
 
@@ -21,9 +22,21 @@ interface Props {
   mostrar: boolean;
   onVolver: () => void;
   onVerFicha: () => void;
+  /** Id de la conversación que necesita respuesta (si hay alguna) — habilita la CTA del vacío. */
+  conversacionNecesitaId: string | null;
+  onVerNecesitaRespuesta?: () => void;
 }
 
-export default function Chat({ id, resumen, reaperturaConfigurada, mostrar, onVolver, onVerFicha }: Props) {
+export default function Chat({
+  id,
+  resumen,
+  reaperturaConfigurada,
+  mostrar,
+  onVolver,
+  onVerFicha,
+  conversacionNecesitaId,
+  onVerNecesitaRespuesta,
+}: Props) {
   const qc = useQueryClient();
   const { flash } = useToast();
   const [texto, setTexto] = useState("");
@@ -218,17 +231,24 @@ export default function Chat({ id, resumen, reaperturaConfigurada, mostrar, onVo
         </div>
       )}
 
-      {!conv && (
+      {!conv && !id && (
         <div id="vacio">
-          <div className="vacio-card">
-            <div className="vacio-icono"><Icono id="chat" size={38} /></div>
-            <div className="vacio-titulo">{id ? "Cargando…" : "Elegí una conversación"}</div>
-            {!id && (
-              <div className="vacio-sub">
-                Seleccioná un contacto de la lista para ver la conversación.
-              </div>
-            )}
-          </div>
+          <EstadoVacio
+            icono="chat"
+            titulo="Elegí una conversación"
+            ayuda="Seleccioná un contacto de la lista para ver la conversación."
+            accion={
+              conversacionNecesitaId && onVerNecesitaRespuesta
+                ? { texto: "Ver la que necesita respuesta", icono: "alert", tono: "alerta", onClick: onVerNecesitaRespuesta }
+                : undefined
+            }
+          />
+        </div>
+      )}
+
+      {!conv && id && (
+        <div id="vacio">
+          <p className="vacio-cargando">Cargando…</p>
         </div>
       )}
 
