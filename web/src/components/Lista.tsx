@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { ResumenConversacion } from "../api";
 import { fmtNum, hora, transcurrido } from "../lib/formato";
+import EstadoVacio from "./EstadoVacio";
 import Icono from "./Iconos";
 
 interface Props {
@@ -31,7 +32,7 @@ function interesBucket(s: number): { clase: string; llenas: number; label: strin
  *  y con mensajes del cliente sin leer — no alcanza con "sin_resp" a secas,
  *  porque una conversación en modo bot con mensajes sin leer no requiere que
  *  el operador entre (el bot ya la está atendiendo). */
-function necesitaRespuesta(c: ResumenConversacion): boolean {
+export function necesitaRespuesta(c: ResumenConversacion): boolean {
   return c.modo === "humano" && c.sinLeer > 0;
 }
 
@@ -95,10 +96,23 @@ export default function Lista({ conversaciones, abiertaId, escondida, onAbrir }:
 
       <div id="convs">
         {filtradas.length === 0 ? (
-          <div className="convs-vacio">
-            {busqueda || filtro !== "todos"
-              ? "Sin resultados para este filtro."
-              : "Todavía no hay conversaciones."}
+          <div className="convs-vacio-wrap">
+            {busqueda || filtro !== "todos" ? (
+              <EstadoVacio
+                icono="search"
+                titulo="Sin resultados para este filtro"
+                ayuda="Probá con otra búsqueda o quitá el filtro activo."
+                accion={{
+                  texto: "Ver todos",
+                  onClick: () => {
+                    setBusqueda("");
+                    setFiltro("todos");
+                  },
+                }}
+              />
+            ) : (
+              <EstadoVacio icono="chat" titulo="Todavía no hay conversaciones" ayuda="Cuando un cliente te escriba por WhatsApp, va a aparecer acá." />
+            )}
           </div>
         ) : (
           filtradas.map((c) => {

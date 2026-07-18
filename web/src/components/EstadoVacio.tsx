@@ -4,7 +4,7 @@ interface Props {
   icono: IconoId;
   titulo: string;
   ayuda?: string;
-  accion?: { texto: string; onClick: () => void; icono?: IconoId };
+  accion?: { texto: string; onClick: () => void; icono?: IconoId; tono?: "alerta" };
 }
 
 /** Estado vacío enriquecido (ícono en chip + título + ayuda + CTA), ver design_handoff_panel_whatsapp/. */
@@ -17,7 +17,11 @@ export default function EstadoVacio({ icono, titulo, ayuda, accion }: Props) {
       <p className="estado-vacio-titulo">{titulo}</p>
       {ayuda && <p className="estado-vacio-ayuda">{ayuda}</p>}
       {accion && (
-        <button type="button" className="accion accion-outline" onClick={accion.onClick}>
+        <button
+          type="button"
+          className={"accion accion-outline" + (accion.tono === "alerta" ? " accion-alerta" : "")}
+          onClick={accion.onClick}
+        >
           {accion.icono && <Icono id={accion.icono} size={14} />}
           {accion.texto}
         </button>

@@ -14,6 +14,7 @@ import {
 } from "../api";
 import { fechaHora } from "../lib/formato";
 import ErrorState from "./ErrorState";
+import EstadoVacio from "./EstadoVacio";
 import { useToast } from "./Toast";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -145,7 +146,7 @@ export default function Campanias() {
         <div className="card">
           <h3>Historial ({campanias.length})</h3>
           {campanias.length === 0 ? (
-            <div className="admin-vacio">Todavía no armaste ninguna campaña.</div>
+            <EstadoVacio icono="send" titulo="Todavía no armaste ninguna campaña" ayuda="Armá un segmento y un mensaje con el formulario de abajo para enviar tu primera campaña." />
           ) : (
             <div className="admin-tabla-scroll">
               <table className="admin-tabla">

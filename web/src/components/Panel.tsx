@@ -4,7 +4,7 @@ import { listarConversaciones, logout, type Features, type Sesion, type ResumenC
 import { useTema } from "../lib/tema";
 import { aplicarMarca, resetMarca } from "../lib/marca";
 import { iniciales } from "../lib/formato";
-import Lista from "./Lista";
+import Lista, { necesitaRespuesta } from "./Lista";
 import Chat from "./Chat";
 import FichaModal from "./FichaModal";
 import Dashboard from "./Dashboard";
@@ -13,6 +13,7 @@ import MiNegocio from "./MiNegocio";
 import Usuarios from "./Usuarios";
 import Campanias from "./Campanias";
 import BotonNotif from "./BotonNotif";
+import ErrorState from "./ErrorState";
 import Icono, { type IconoId } from "./Iconos";
 import { ToastProvider } from "./Toast";
 
@@ -77,6 +78,7 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
   const convActiva: ResumenConversacion | null =
     conversaciones.find((c) => c.id === abiertaId) ?? null;
   const totalSinLeer = conversaciones.reduce((s, c) => s + c.sinLeer, 0);
+  const conversacionNecesita = conversaciones.find(necesitaRespuesta) ?? null;
 
   return (
     <ToastProvider>
@@ -140,20 +142,30 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
         <div id="mainView">
           {vista === "inbox" && (
             <div id="inbox-view">
-              <Lista
-                conversaciones={conversaciones}
-                abiertaId={abiertaId}
-                escondida={mostrarChatMovil}
-                onAbrir={abrir}
-              />
-              <Chat
-                id={abiertaId}
-                resumen={convActiva}
-                reaperturaConfigurada={sesion.reaperturaConfigurada}
-                mostrar={mostrarChatMovil}
-                onVolver={volver}
-                onVerFicha={() => setFichaAbierta(true)}
-              />
+              {convs.isError ? (
+                <div className="inbox-error-wrap">
+                  <ErrorState mensaje="No se pudieron cargar las conversaciones." onReintentar={() => convs.refetch()} />
+                </div>
+              ) : (
+                <>
+                  <Lista
+                    conversaciones={conversaciones}
+                    abiertaId={abiertaId}
+                    escondida={mostrarChatMovil}
+                    onAbrir={abrir}
+                  />
+                  <Chat
+                    id={abiertaId}
+                    resumen={convActiva}
+                    reaperturaConfigurada={sesion.reaperturaConfigurada}
+                    mostrar={mostrarChatMovil}
+                    onVolver={volver}
+                    onVerFicha={() => setFichaAbierta(true)}
+                    conversacionNecesitaId={conversacionNecesita?.id ?? null}
+                    onVerNecesitaRespuesta={conversacionNecesita ? () => abrir(conversacionNecesita.id) : undefined}
+                  />
+                </>
+              )}
             </div>
           )}
           {vista === "panel" && <Dashboard nombre={sesion.nombre} />}

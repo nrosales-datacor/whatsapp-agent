@@ -11,6 +11,7 @@ import {
   type Service,
 } from "../api";
 import ErrorState from "./ErrorState";
+import EstadoVacio from "./EstadoVacio";
 import Icono from "./Iconos";
 import { useToast } from "./Toast";
 
@@ -173,6 +174,25 @@ export default function MiNegocio({ features }: { features: Features }) {
 
   const setServ = (i: number, campo: keyof ServicioForm, valor: string | boolean) =>
     setServicios((prev) => prev.map((s, idx) => (idx === i ? { ...s, [campo]: valor } : s)));
+
+  function agregarServicio() {
+    setServicios((prev) => [
+      ...prev,
+      {
+        id: "",
+        nombre: "",
+        precio: "",
+        precioVariable: false,
+        precioNota: "",
+        duracionMin: "90",
+        agendable: true,
+        descripcion: "",
+        addonSugeridoId: "",
+        addonPrecioPromo: "",
+        addonActivo: false,
+      },
+    ]);
+  }
 
   function moverServicio(desde: number, hasta: number) {
     if (desde === hasta) return;
@@ -362,28 +382,7 @@ export default function MiNegocio({ features }: { features: Features }) {
               </div>
               <p className="svc-subtitulo">Lo que el bot puede cotizar y agendar. Arrastrá para reordenar.</p>
             </div>
-            <button
-              type="button"
-              className="accion accion-primaria svc-nuevo"
-              onClick={() =>
-                setServicios((prev) => [
-                  ...prev,
-                  {
-                    id: "",
-                    nombre: "",
-                    precio: "",
-                    precioVariable: false,
-                    precioNota: "",
-                    duracionMin: "90",
-                    agendable: true,
-                    descripcion: "",
-                    addonSugeridoId: "",
-                    addonPrecioPromo: "",
-                    addonActivo: false,
-                  },
-                ])
-              }
-            >
+            <button type="button" className="accion accion-primaria svc-nuevo" onClick={agregarServicio}>
               <Icono id="plus" size={16} />
               Nuevo servicio
             </button>
@@ -393,6 +392,14 @@ export default function MiNegocio({ features }: { features: Features }) {
               El upsell inteligente (sugerir un add-on al agendar) está disponible en el plan Pro — contactanos para
               actualizar tu plan.
             </p>
+          )}
+          {servicios.length === 0 && (
+            <EstadoVacio
+              icono="plus"
+              titulo="Todavía no tenés servicios"
+              ayuda="Agregá el primero para que el bot pueda cotizarlo y agendarlo."
+              accion={{ texto: "Nuevo servicio", icono: "plus", onClick: agregarServicio }}
+            />
           )}
           <div className="svc-lista">
             {servicios.map((s, i) => (
