@@ -11,6 +11,7 @@ import {
   type Service,
 } from "../api";
 import ErrorState from "./ErrorState";
+import Icono from "./Iconos";
 import { useToast } from "./Toast";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -112,6 +113,7 @@ export default function MiNegocio({ features }: { features: Features }) {
 
   const [cargado, setCargado] = useState(false);
   const [servicios, setServicios] = useState<ServicioForm[]>([]);
+  const [arrastrando, setArrastrando] = useState<number | null>(null);
   const [horario, setHorario] = useState<DiaForm[]>([]);
   const [bloqueos, setBloqueos] = useState<BloqueoForm[]>([]);
   const [faqs, setFaqs] = useState<FaqForm[]>([]);
@@ -171,6 +173,16 @@ export default function MiNegocio({ features }: { features: Features }) {
 
   const setServ = (i: number, campo: keyof ServicioForm, valor: string | boolean) =>
     setServicios((prev) => prev.map((s, idx) => (idx === i ? { ...s, [campo]: valor } : s)));
+
+  function moverServicio(desde: number, hasta: number) {
+    if (desde === hasta) return;
+    setServicios((prev) => {
+      const copia = [...prev];
+      const [item] = copia.splice(desde, 1);
+      copia.splice(hasta, 0, item);
+      return copia;
+    });
+  }
 
   const setDia = (i: number, campo: keyof DiaForm, valor: string | boolean) =>
     setHorario((prev) => prev.map((d, idx) => (idx === i ? { ...d, [campo]: valor } : d)));
@@ -342,113 +354,264 @@ export default function MiNegocio({ features }: { features: Features }) {
           )}
         </div>
 
-        <div className="card">
-          <h3>
-            Servicios {!features.upsell && <span className="badge badge-pro">🔒 Upsell Pro</span>}
-          </h3>
+        <div className="card svc-card-wrap">
+          <div className="svc-header">
+            <div>
+              <div className="svc-titulo">
+                Servicios {!features.upsell && <span className="badge badge-pro">🔒 Upsell Pro</span>}
+              </div>
+              <p className="svc-subtitulo">Lo que el bot puede cotizar y agendar. Arrastrá para reordenar.</p>
+            </div>
+            <button
+              type="button"
+              className="accion accion-primaria svc-nuevo"
+              onClick={() =>
+                setServicios((prev) => [
+                  ...prev,
+                  {
+                    id: "",
+                    nombre: "",
+                    precio: "",
+                    precioVariable: false,
+                    precioNota: "",
+                    duracionMin: "90",
+                    agendable: true,
+                    descripcion: "",
+                    addonSugeridoId: "",
+                    addonPrecioPromo: "",
+                    addonActivo: false,
+                  },
+                ])
+              }
+            >
+              <Icono id="plus" size={16} />
+              Nuevo servicio
+            </button>
+          </div>
           {!features.upsell && (
-            <p className="campo-ayuda">
+            <p className="campo-ayuda svc-aviso-pro">
               El upsell inteligente (sugerir un add-on al agendar) está disponible en el plan Pro — contactanos para
               actualizar tu plan.
             </p>
           )}
-          {servicios.map((s, i) => (
-            <div className="admin-servicio" key={i}>
-              <input placeholder="id" value={s.id} onChange={(e) => setServ(i, "id", e.target.value)} />
-              <input placeholder="nombre" value={s.nombre} onChange={(e) => setServ(i, "nombre", e.target.value)} />
-              <input
-                placeholder="precio"
-                inputMode="numeric"
-                value={s.precio}
-                onChange={(e) => setServ(i, "precio", e.target.value)}
-                disabled={s.precioVariable}
-              />
-              <input
-                placeholder="duración (min)"
-                inputMode="numeric"
-                value={s.duracionMin}
-                onChange={(e) => setServ(i, "duracionMin", e.target.value)}
-              />
-              <label className="admin-check">
-                <input
-                  type="checkbox"
-                  checked={s.precioVariable}
-                  onChange={(e) => setServ(i, "precioVariable", e.target.checked)}
-                />{" "}
-                precio variable
-              </label>
-              <label className="admin-check">
-                <input type="checkbox" checked={s.agendable} onChange={(e) => setServ(i, "agendable", e.target.checked)} /> agendable
-              </label>
-              <input
-                className="admin-ancho"
-                placeholder="nota de precio / descripción"
-                value={s.precioNota}
-                onChange={(e) => setServ(i, "precioNota", e.target.value)}
-              />
-              {features.upsell && (
-                <>
-                  <select
-                    value={s.addonSugeridoId}
-                    onChange={(e) => setServ(i, "addonSugeridoId", e.target.value)}
-                    title="Add-on a ofrecer al agendar este servicio"
-                  >
-                    <option value="">— sin add-on sugerido —</option>
-                    {servicios
-                      .filter((_, idx) => idx !== i)
-                      .map((otro, idx) => (
-                        <option key={idx} value={otro.id}>
-                          {otro.nombre || otro.id || `servicio #${idx + 1}`}
-                        </option>
-                      ))}
-                  </select>
-                  <input
-                    placeholder="precio promo del add-on"
-                    inputMode="numeric"
-                    value={s.addonPrecioPromo}
-                    onChange={(e) => setServ(i, "addonPrecioPromo", e.target.value)}
-                    disabled={!s.addonSugeridoId}
-                  />
-                  <label className="admin-check">
-                    <input
-                      type="checkbox"
-                      checked={s.addonActivo}
-                      disabled={!s.addonSugeridoId}
-                      onChange={(e) => setServ(i, "addonActivo", e.target.checked)}
-                    />{" "}
-                    ofrecer add-on
-                  </label>
-                </>
-              )}
-              <button type="button" className="btn-ghost" onClick={() => setServicios((prev) => prev.filter((_, idx) => idx !== i))}>
-                Quitar
-              </button>
-            </div>
-          ))}
-          <button
-            type="button"
-            className="btn-ghost"
-            onClick={() =>
-              setServicios((prev) => [
-                ...prev,
-                {
-                  id: "",
-                  nombre: "",
-                  precio: "",
-                  precioVariable: false,
-                  precioNota: "",
-                  duracionMin: "90",
-                  agendable: true,
-                  descripcion: "",
-                  addonSugeridoId: "",
-                  addonPrecioPromo: "",
-                  addonActivo: false,
-                },
-              ])
-            }
-          >
-            + Agregar servicio
-          </button>
+          <div className="svc-lista">
+            {servicios.map((s, i) => (
+              <div
+                className={`svc-item${arrastrando === i ? " svc-arrastrando" : ""}`}
+                key={i}
+                draggable
+                onDragStart={(e) => {
+                  // El índice viaja en el dataTransfer nativo (no en estado de React):
+                  // leerlo desde el closure de "arrastrando" en el onDrop de OTRO ítem no es
+                  // confiable, depende de que React re-renderice entre dragstart y drop.
+                  e.dataTransfer.setData("text/plain", String(i));
+                  e.dataTransfer.effectAllowed = "move";
+                  setArrastrando(i);
+                }}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const origen = Number(e.dataTransfer.getData("text/plain"));
+                  if (Number.isInteger(origen)) moverServicio(origen, i);
+                  setArrastrando(null);
+                }}
+                onDragEnd={() => setArrastrando(null)}
+              >
+                <div className="svc-item-head">
+                  <div className="svc-item-main">
+                    <span className="svc-grip" aria-hidden="true">
+                      <Icono id="grip" size={18} />
+                    </span>
+                    <div className="svc-item-titulo">
+                      <input
+                        className="svc-nombre-input"
+                        placeholder="Nombre del servicio"
+                        value={s.nombre}
+                        onChange={(e) => setServ(i, "nombre", e.target.value)}
+                      />
+                      <label className="svc-slug">
+                        <Icono id="hash" size={11} />
+                        <input
+                          className="svc-slug-input"
+                          placeholder="id"
+                          value={s.id}
+                          onChange={(e) => setServ(i, "id", e.target.value)}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                  <div className="svc-item-actions">
+                    {s.agendable && (
+                      <span className="svc-pill-agendable">
+                        <Icono id="calcheck" size={14} />
+                        Agendable
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      className="svc-borrar"
+                      title="Quitar servicio"
+                      onClick={() => setServicios((prev) => prev.filter((_, idx) => idx !== i))}
+                    >
+                      <Icono id="trash" size={16} />
+                    </button>
+                  </div>
+                </div>
+                <div className="svc-item-body">
+                  <div className="svc-col">
+                    <div className="campo">
+                      <label className="svc-label" htmlFor={`svcNombre${i}`}>
+                        Nombre visible
+                      </label>
+                      <input
+                        id={`svcNombre${i}`}
+                        value={s.nombre}
+                        onChange={(e) => setServ(i, "nombre", e.target.value)}
+                      />
+                    </div>
+                    <div className="campo">
+                      <label className="svc-label" htmlFor={`svcNota${i}`}>
+                        Nota de precio <span className="svc-label-hint">— cómo lo explica el bot</span>
+                      </label>
+                      <textarea
+                        id={`svcNota${i}`}
+                        placeholder="según vehículo…"
+                        rows={2}
+                        value={s.precioNota}
+                        onChange={(e) => setServ(i, "precioNota", e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="svc-col">
+                    <div className="svc-row-2">
+                      <div className="campo">
+                        <label className="svc-label" htmlFor={`svcPrecio${i}`}>
+                          Precio base
+                        </label>
+                        <div className="svc-input-money">
+                          <span>₡</span>
+                          <input
+                            id={`svcPrecio${i}`}
+                            inputMode="numeric"
+                            className="tnum"
+                            value={s.precio}
+                            disabled={s.precioVariable}
+                            onChange={(e) => setServ(i, "precio", e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <div className="campo">
+                        <label className="svc-label" htmlFor={`svcDuracion${i}`}>
+                          Duración (min)
+                        </label>
+                        <input
+                          id={`svcDuracion${i}`}
+                          inputMode="numeric"
+                          className="tnum"
+                          value={s.duracionMin}
+                          onChange={(e) => setServ(i, "duracionMin", e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="svc-switches">
+                      <label className="svc-switch-row">
+                        <div>
+                          <div className="svc-switch-titulo">Precio variable</div>
+                          <div className="svc-switch-ayuda">El precio cambia según el vehículo</div>
+                        </div>
+                        <span className="switch">
+                          <input
+                            type="checkbox"
+                            checked={s.precioVariable}
+                            onChange={(e) => setServ(i, "precioVariable", e.target.checked)}
+                          />
+                          <span className="switch-track">
+                            <span className="switch-knob" />
+                          </span>
+                        </span>
+                      </label>
+                      <div className="svc-switch-sep" />
+                      <label className="svc-switch-row">
+                        <div>
+                          <div className="svc-switch-titulo">Agendable</div>
+                          <div className="svc-switch-ayuda">El bot puede reservar una cita</div>
+                        </div>
+                        <span className="switch">
+                          <input
+                            type="checkbox"
+                            checked={s.agendable}
+                            onChange={(e) => setServ(i, "agendable", e.target.checked)}
+                          />
+                          <span className="switch-track">
+                            <span className="switch-knob" />
+                          </span>
+                        </span>
+                      </label>
+                      {features.upsell && (
+                        <>
+                          <div className="svc-switch-sep" />
+                          <label className="svc-switch-row">
+                            <div>
+                              <div className="svc-switch-titulo">Ofrecer add-on</div>
+                              <div className="svc-switch-ayuda">Sugerir un extra al cotizar</div>
+                            </div>
+                            <span className="switch">
+                              <input
+                                type="checkbox"
+                                checked={s.addonActivo}
+                                onChange={(e) => setServ(i, "addonActivo", e.target.checked)}
+                              />
+                              <span className="switch-track">
+                                <span className="switch-knob" />
+                              </span>
+                            </span>
+                          </label>
+                        </>
+                      )}
+                    </div>
+                    {features.upsell && s.addonActivo && (
+                      <div className="svc-row-2">
+                        <div className="campo">
+                          <label className="svc-label" htmlFor={`svcAddon${i}`}>
+                            Add-on sugerido
+                          </label>
+                          <select
+                            id={`svcAddon${i}`}
+                            value={s.addonSugeridoId}
+                            onChange={(e) => setServ(i, "addonSugeridoId", e.target.value)}
+                          >
+                            <option value="">— sin add-on sugerido —</option>
+                            {servicios
+                              .filter((_, idx) => idx !== i)
+                              .map((otro, idx) => (
+                                <option key={idx} value={otro.id}>
+                                  {otro.nombre || otro.id || `servicio #${idx + 1}`}
+                                </option>
+                              ))}
+                          </select>
+                        </div>
+                        <div className="campo">
+                          <label className="svc-label" htmlFor={`svcAddonPrecio${i}`}>
+                            Precio promo
+                          </label>
+                          <div className="svc-input-money">
+                            <span>₡</span>
+                            <input
+                              id={`svcAddonPrecio${i}`}
+                              inputMode="numeric"
+                              className="tnum"
+                              value={s.addonPrecioPromo}
+                              onChange={(e) => setServ(i, "addonPrecioPromo", e.target.value)}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="card">

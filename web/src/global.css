@@ -459,6 +459,82 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .card h3 { font-size: var(--step--1); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: var(--space-md); }
 .dash-vacio { color: var(--text-muted); font-size: var(--step--1); }
 
+/* ══════════════════════════════════════════════════════════════════════════════
+   MI NEGOCIO — editor de servicios (rediseño visual, ver design_handoff_panel_whatsapp/)
+   ══════════════════════════════════════════════════════════════════════════════ */
+.svc-card-wrap { padding: var(--space-lg); }
+.svc-header { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-md); flex-wrap: wrap; margin-bottom: var(--space-md); }
+.svc-titulo { font-family: var(--font-display); font-weight: 700; font-size: var(--step-1); letter-spacing: -.01em; color: var(--text); }
+.svc-subtitulo { font-size: var(--step--1); color: var(--text-3); margin-top: 3px; }
+.svc-nuevo { display: inline-flex; align-items: center; gap: 7px; padding: 10px 16px; border-radius: var(--radius-sm); font-size: var(--step--1); flex-shrink: 0; white-space: nowrap; }
+.svc-aviso-pro { margin-bottom: var(--space-md); }
+
+.svc-lista { display: flex; flex-direction: column; gap: var(--space-md); }
+.svc-item { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+.svc-item.svc-arrastrando { opacity: .45; }
+.svc-item-head { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap; padding: var(--space-md) var(--space-lg); border-bottom: 1px solid var(--border); }
+.svc-item-main { display: flex; align-items: center; gap: var(--space-sm); flex: 1; min-width: 0; }
+.svc-item-actions { display: flex; align-items: center; gap: var(--space-sm); flex-shrink: 0; }
+.svc-grip { color: var(--text-3); cursor: grab; flex-shrink: 0; display: flex; }
+.svc-grip:active { cursor: grabbing; }
+.svc-item-titulo { flex: 1; min-width: 0; }
+/* Prefijo #miNegocio: gana por especificidad a la regla genérica
+   "#miNegocio input" (id) que si no, pisa este estilo "sin caja". */
+#miNegocio .svc-nombre-input { display: block; font-family: var(--font-display); font-weight: 600; font-size: 1.05rem; color: var(--text); background: none; border: none; padding: 2px 0; width: 100%; }
+#miNegocio .svc-nombre-input:focus { outline: none; box-shadow: 0 0 0 2px var(--accent-soft); border-radius: 4px; }
+/* #miNegocio label fuerza display:block + margin en TODOS los <label> del tab
+   (para los campos normales); este chip es un <label> chico, necesita ganarle. */
+#miNegocio .svc-slug { display: inline-flex; align-items: center; gap: 5px; margin: 4px 0 0; max-width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 2px 8px; color: var(--text-3); font-size: 11.5px; font-weight: 400; letter-spacing: normal; }
+#miNegocio .svc-slug-input { font-family: var(--mono, monospace); font-size: 11.5px; color: var(--text-3); background: none; border: none; width: 18ch; max-width: 100%; padding: 0; }
+#miNegocio .svc-slug-input:focus { outline: none; color: var(--text); }
+.svc-pill-agendable { display: inline-flex; align-items: center; gap: 5px; background: var(--accent-soft); color: var(--accent-strong); font-size: 12px; font-weight: 600; padding: 5px 11px; border-radius: var(--radius-pill); flex-shrink: 0; white-space: nowrap; }
+.svc-borrar { width: 34px; height: 34px; border-radius: var(--radius-sm); border: 1px solid var(--border); display: grid; place-items: center; color: var(--text-3); flex-shrink: 0; transition: background .12s, color .12s, border-color .12s; }
+.svc-borrar:hover { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
+
+.svc-item-body { padding: var(--space-md) var(--space-lg); display: grid; grid-template-columns: 1.4fr 1fr; gap: var(--space-lg); }
+.svc-col { display: flex; flex-direction: column; gap: var(--space-md); }
+.svc-label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2); margin-bottom: 6px; }
+.svc-label-hint { font-weight: 400; color: var(--text-3); }
+/* Caja/borde/foco de estos inputs ya los da la regla genérica "#miNegocio input,
+   textarea, select" (arriba, en la sección MI NEGOCIO base) — acá solo lo que
+   necesita ser distinto (textarea compacta). */
+.svc-item-body textarea { min-height: 44px; }
+.svc-row-2 { display: flex; gap: var(--space-sm); }
+.svc-row-2 .campo { flex: 1; min-width: 0; }
+.svc-input-money { display: flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: var(--radius); padding: 0 14px; background: var(--surface); transition: border-color .15s, box-shadow .15s; }
+.svc-input-money span { color: var(--text-3); flex-shrink: 0; }
+#miNegocio .svc-input-money input { border: none; padding: 11px 0; background: none; width: auto; flex: 1; min-width: 0; }
+.svc-input-money:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.svc-input-money:has(input:disabled) { opacity: .55; }
+
+.svc-switches { display: flex; flex-direction: column; gap: 10px; background: var(--bg); border-radius: var(--radius-sm); padding: 14px 16px; }
+.svc-switch-sep { height: 1px; background: var(--border); }
+/* .svc-switch-row es un <label>: "#miNegocio label" (id) le pisaría display/margin/
+   color si no le ganamos en especificidad acá. */
+#miNegocio .svc-switch-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); cursor: pointer; margin: 0; letter-spacing: normal; font-weight: 400; color: inherit; }
+.svc-switch-titulo { font-size: 13px; font-weight: 500; color: var(--text); }
+.svc-switch-ayuda { font-size: 11.5px; color: var(--text-3); margin-top: 1px; }
+
+/* Switch reutilizable (pista + knob) */
+.switch { position: relative; width: 42px; height: 24px; flex-shrink: 0; display: inline-block; }
+.switch input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; z-index: 1; }
+.switch input:disabled { cursor: not-allowed; }
+.switch-track { position: absolute; inset: 0; border-radius: var(--radius-pill); background: var(--border-2); pointer-events: none; transition: background .15s; }
+.switch input:checked + .switch-track { background: var(--accent); }
+.switch input:disabled + .switch-track { opacity: .55; }
+.switch-knob { position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: var(--shadow); transition: transform .15s; }
+.switch input:checked + .switch-track .switch-knob { transform: translateX(18px); }
+.switch input:focus-visible + .switch-track { box-shadow: 0 0 0 3px var(--accent-soft); }
+
+@media (max-width: 760px) {
+  .svc-item-body { grid-template-columns: 1fr; padding: var(--space-sm) var(--space-md); }
+  .svc-item-head { padding: var(--space-sm) var(--space-md); }
+  /* Angosto: nombre/slug ocupan toda la fila, pill+borrar bajan a una segunda línea
+     alineados a la derecha (si no, se aprietan y el nombre queda truncado). */
+  .svc-item-main { flex-basis: 100%; }
+  .svc-item-actions { margin-left: auto; }
+}
+
 /* Estado de error reutilizable (ErrorState: ícono + mensaje + Reintentar) */
 .error-state { display: flex; flex-direction: column; align-items: center; gap: var(--space-sm); text-align: center; color: var(--text-muted); padding: var(--space-xl) var(--space-md); }
 .error-state svg { color: var(--destructive); }

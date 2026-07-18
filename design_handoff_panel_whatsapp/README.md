@@ -5,7 +5,7 @@
 
 - ✅ **Bandeja / Inbox** — medidor de interés, señal "necesita respuesta", header de chat simplificado. Ver ROADMAP A9.
 - ✅ **Panel / Dashboard** — hero de rescate, KPIs agrupados (Dinero/Actividad/Riesgo), gráfico vertical. Ver ROADMAP A9.
-- ⬜ **Mi negocio — editor de servicios**
+- ✅ **Mi negocio — editor de servicios** — tarjetas por servicio con grip de arrastre (reordena de verdad), chip de slug editable, pill "Agendable", switches alineados con ayuda, campos de add-on condicionales. Ver ROADMAP A9.
 - ⬜ **Agenda — línea de tiempo**
 - ⬜ **Ficha del cliente (modal)**
 - ⬜ **Login**
@@ -142,7 +142,7 @@ Preferir bordes finos + sombras suaves sobre bordes duros. Sin acentos de borde 
 
 **Cambios clave:** agrupación en 3 secciones; héroe de rescate; deltas semánticos; gráfico con aire.
 
-### 3. Mi negocio — editor de servicios — desktop y móvil ⬜ PENDIENTE
+### 3. Mi negocio — editor de servicios — desktop y móvil ✅ HECHO
 **Propósito:** configurar qué puede cotizar/agendar el bot. Corrige el editor apretado actual.
 
 **Layout desktop:** contenido centrado 920px. Título "Servicios" + subtítulo + botón "Nuevo servicio" (`--accent`).
