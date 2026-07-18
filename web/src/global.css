@@ -606,6 +606,88 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
   .svc-item-actions { margin-left: auto; }
 }
 
+/* ══════════════════════════════════════════════════════════════════════════════
+   MI NEGOCIO — layout de dos columnas (rediseño completo, design_handoff_panel_whatsapp/,
+   pantalla 3): sub-nav con scrollspy + barra "Guardar cambios" fija.
+   ══════════════════════════════════════════════════════════════════════════════ */
+.mn-layout { display: flex; flex: 1; min-width: 0; min-height: 0; }
+
+.mn-subnav { width: 250px; min-width: 0; flex-shrink: 0; background: var(--surface); border-right: 1px solid var(--border); padding: 22px 14px; overflow-y: auto; }
+.mn-subnav-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); padding: 0 10px 10px; }
+.mn-subnav-lista { display: flex; flex-direction: column; gap: 2px; }
+.mn-subnav-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border-radius: var(--radius-sm); border-left: 3px solid transparent; font-size: 13.5px; font-weight: 600; color: var(--text-2); text-align: left; transition: background .12s, color .12s, border-color .12s; }
+.mn-subnav-item svg { flex-shrink: 0; }
+.mn-subnav-item:hover { background: var(--surface-2); color: var(--text); }
+.mn-subnav-item.activo { background: var(--accent-soft); color: var(--accent-strong); border-left-color: var(--accent); }
+
+.mn-content { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; }
+/* min-width:0: .mn-content-inner es un item flex en columna de .mn-content —
+   sin esto, "align-items:stretch" no puede encoger por debajo de su ancho de
+   contenido y el formulario se desborda en móvil. */
+#miNegocio .mn-content-inner { max-width: 880px; min-width: 0; }
+.mn-section-sub { font-size: var(--step--1); color: var(--text-3); margin: -8px 0 var(--space-md); }
+.mn-section-head-switch { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); }
+.mn-section-head-switch h3 { margin-bottom: 0; }
+
+/* Botón punteado — agregar bloqueo/pregunta (ver design_handoff_panel_whatsapp/) */
+.btn-punteado { display: block; width: 100%; text-align: center; padding: 10px; border: 1px dashed var(--border-2); border-radius: var(--radius-sm); color: var(--text-2); font-size: var(--step--1); font-weight: 600; transition: background .12s, border-color .12s, color .12s; }
+.btn-punteado:hover { border-color: var(--accent-line); color: var(--accent); background: var(--accent-soft); }
+
+/* Campos monoespaciados — nombres de plantillas de Meta, Place ID, etc. */
+.mono { font-family: var(--mono, ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace); }
+
+/* Horario — fila por día: switch + Abre/Cierra con ícono + chip de estado */
+.horario-lista { display: flex; flex-direction: column; gap: 8px; }
+.horario-fila { display: grid; grid-template-columns: 180px 1fr 1fr 96px; gap: var(--space-sm); align-items: center; background: var(--surface-2); border-radius: 11px; padding: 10px 14px; }
+.horario-dia { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 13.5px; font-weight: 600; color: var(--text); letter-spacing: normal; text-transform: none; }
+#miNegocio .horario-campo label { margin: 0 0 3px; font-size: 11px; }
+.horario-input-hora { display: flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0 10px; background: var(--surface); color: var(--text-3); transition: border-color .15s, box-shadow .15s, opacity .15s; }
+#miNegocio .horario-input-hora input { border: none; padding: 8px 0; background: none; color: var(--text); }
+.horario-input-hora:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.horario-fila-cerrado .horario-input-hora { opacity: .45; }
+.horario-chip { justify-self: end; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: var(--radius-pill); background: var(--bg); color: var(--text-3); white-space: nowrap; }
+.horario-chip-abierto { background: var(--accent-soft); color: var(--accent-strong); }
+
+/* Feriados y bloqueos — fila con chip de ícono ámbar */
+.feriados-lista { display: flex; flex-direction: column; gap: 8px; margin-bottom: var(--space-md); }
+.feriado-fila { display: flex; align-items: center; gap: var(--space-sm); padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.feriado-icono { width: 32px; height: 32px; border-radius: var(--radius-sm); background: var(--warning-soft); color: var(--warning); display: grid; place-items: center; flex-shrink: 0; }
+.feriado-campos { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.feriado-fechas { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#miNegocio .feriado-fechas input { width: auto; flex: 0 1 auto; }
+.feriado-a { color: var(--text-3); font-size: 12px; }
+#miNegocio .feriado-motivo { width: 100%; }
+
+/* Barra "Guardar cambios" — fija al pie del contenido con scroll */
+/* El degradado solo cubre una franja angosta arriba (contenido que se retira
+   detrás); de ahí para abajo tiene que ser opaco o los botones (el "Descartar"
+   ghost no tiene fondo propio) quedan ilegibles sobre el texto que scrollea. */
+.mn-guardar-barra { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); min-width: 0; max-width: 880px; margin: 4px auto 0; padding: 14px var(--space-lg); background: linear-gradient(to bottom, transparent, var(--bg) 14px); }
+.mn-guardar-estado { display: flex; align-items: center; gap: 8px; font-size: var(--step--1); font-weight: 600; color: var(--text-2); }
+.mn-guardar-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warning); flex-shrink: 0; }
+.mn-guardar-acciones { display: flex; gap: 10px; flex-shrink: 0; }
+
+@media (max-width: 760px) {
+  .mn-layout { flex-direction: column; }
+  .mn-subnav { width: 100%; border-right: none; border-bottom: 1px solid var(--border); padding: 10px 12px; }
+  .mn-subnav-lista { flex-direction: row; overflow-x: auto; gap: 6px; }
+  .mn-subnav-eyebrow { display: none; }
+  .mn-subnav-item { width: auto; flex-shrink: 0; border-left: none; border-radius: var(--radius-pill); padding: 8px 14px; }
+  .mn-subnav-item.activo { border-left-color: transparent; box-shadow: inset 0 -2px 0 var(--accent); }
+
+  .horario-fila { grid-template-columns: 1fr 1fr; row-gap: 8px; }
+  .horario-dia { grid-column: 1 / -1; }
+  .horario-chip { grid-column: 1 / -1; justify-self: start; }
+
+  /* La barra de guardar queda fija arriba del bottom nav (no tapada debajo de él). */
+  .mn-guardar-barra { position: fixed; left: 0; right: 0; bottom: calc(70px + env(safe-area-inset-bottom)); z-index: 8; max-width: none; margin: 0; background: var(--surface); border-top: 1px solid var(--border); box-shadow: 0 -2px 12px rgba(15,39,35,.06); padding: 10px var(--space-md); }
+  /* margin:0 auto en .dash-body es un margen automático de EJE CRUZADO acá (el
+     eje cruzado de .mn-content, que está en columna, es el ancho): flexbox lo
+     trata como "no estirar, achicate a tu contenido" en vez de "llená el 100%"
+     — de ahí el overflow horizontal. width:100% + margin:0 lo fuerza explícito. */
+  #miNegocio .mn-content-inner { width: 100%; margin: 0; padding-bottom: calc(140px + env(safe-area-inset-bottom)); }
+}
+
 /* Estado vacío enriquecido reutilizable (EstadoVacio/ErrorState: chip de ícono + título
    + ayuda + CTA) — mismo patrón para vacíos y errores de carga, solo cambia el tono
    del chip de ícono (ver design_handoff_panel_whatsapp/, sección 7). */
@@ -900,6 +982,9 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .campo > input, .campo > textarea, .campo > select { width: 100%; }
 .campo-inline { display: inline-block; margin-right: var(--space-md); }
 .campo-ayuda { font-size: var(--step--1); color: var(--text-muted); margin-top: var(--space-2xs); }
+/* Las URL/nombres largos de referencia (Place ID API, GUIA-META.md) no tienen
+   espacios para partir — sin esto desbordan la tarjeta en móvil (390px). */
+.campo-ayuda code { overflow-wrap: anywhere; }
 .admin-horario { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-sm) var(--space-md); }
 .admin-dias { display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: center; }
 .admin-dia { display: inline-flex; align-items: center; gap: 4px; font-size: var(--step--1); color: var(--text); margin: 0; }
@@ -930,7 +1015,11 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
    MI NEGOCIO — config self-service del operador (ROADMAP C2.2)
    Misma receta visual que #admin, escopeada a esta pestaña del panel.
    ══════════════════════════════════════════════════════════════════════════════ */
-#miNegocio { flex: 1; overflow-y: auto; background: var(--bg); }
+/* flex (no overflow-y acá): el scroll ahora vive en .mn-content, a la derecha
+   de la sub-nav (.mn-subnav) — ver sección "MI NEGOCIO — layout de dos columnas".
+   min-width:0: sin esto, el default flex de "no encoger bajo el contenido" deja
+   que la fila de chips de la sub-nav en móvil empuje todo el ancho de la pantalla. */
+#miNegocio { flex: 1; min-width: 0; min-height: 0; display: flex; background: var(--bg); }
 #miNegocio label { display: block; font-size: var(--step--1); font-weight: 600; letter-spacing: .03em; color: var(--text-muted); margin: var(--space-md) 0 var(--space-2xs); }
 #miNegocio input, #miNegocio textarea, #miNegocio select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); font: inherit; font-size: var(--step-0); color: var(--text); background: var(--surface); transition: border-color .15s, box-shadow .15s; }
 #miNegocio textarea { resize: vertical; }
@@ -963,6 +1052,45 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
   outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
 }
 #usuarios input[type="checkbox"], #campanias input[type="checkbox"] { width: auto; }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   USUARIOS — equipo/roles (rediseño visual, design_handoff_panel_whatsapp/, pantalla 8)
+   ══════════════════════════════════════════════════════════════════════════════ */
+#usuarios .us-content { max-width: 760px; }
+.us-equipo-header { display: flex; align-items: center; gap: 8px; margin-bottom: var(--space-md); }
+.us-equipo-header h3 { margin-bottom: 0; }
+.us-chip-count { background: var(--surface-2); color: var(--text-2); font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: var(--radius-pill); }
+
+.us-usuario-cell { display: flex; align-items: center; gap: 10px; }
+.us-avatar { width: 38px; height: 38px; border-radius: 10px; background: var(--accent-soft); color: var(--accent-strong); display: grid; place-items: center; font-weight: 700; font-size: 13px; flex-shrink: 0; }
+.us-avatar-dueno { background: var(--accent); color: var(--accent-fg); }
+.us-nombre { font-weight: 600; color: var(--text); white-space: nowrap; }
+.us-vos { font-weight: 400; color: var(--text-3); }
+
+.us-estado-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: var(--radius-pill); background: var(--surface-2); color: var(--text-3); white-space: nowrap; }
+.us-estado-chip .us-estado-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); }
+.us-estado-activo { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
+.us-estado-activo .us-estado-dot { background: var(--success); }
+
+.us-acciones-col { text-align: right; }
+
+/* Tabla en desktop, tarjetas en móvil — mismo patrón que la vista Día de Agenda */
+.us-lista-movil { display: none; }
+.us-card-movil { display: flex; flex-direction: column; gap: 10px; padding: var(--space-sm) var(--space-md); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.us-card-movil + .us-card-movil { margin-top: 8px; }
+.us-card-movil .us-usuario-cell { align-items: center; }
+.us-card-movil-info { flex: 1; min-width: 0; }
+.us-card-movil-rol { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
+.us-card-movil-footer { display: flex; align-items: center; gap: 10px; }
+.us-card-movil-footer select { flex: 1; min-width: 0; }
+
+.us-form-grid { display: grid; grid-template-columns: 1.4fr 1.4fr 1fr; gap: var(--space-md); }
+
+@media (max-width: 760px) {
+  .us-tabla-desktop { display: none; }
+  .us-lista-movil { display: flex; flex-direction: column; gap: 8px; }
+  .us-form-grid { grid-template-columns: 1fr; }
+}
 
 /* ── <select> del panel con chevron propio ──
    El desplegable nativo del SO se ve tosco/cuadrado; le quitamos el estilo
