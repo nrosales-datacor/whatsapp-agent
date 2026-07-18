@@ -852,6 +852,7 @@ export default function MiNegocio({ features }: { features: Features }) {
 
             <div className="card admin-form" id="mnResenas">
               <h3>Reseñas de Google</h3>
+              <p className="mn-section-sub">Cómo y cuándo el bot le pide una reseña al cliente.</p>
               <div className="campo">
                 <label htmlFor="cLinkResenas">Link para pedir reseña (Google Maps → "Escribir reseña")</label>
                 <input
