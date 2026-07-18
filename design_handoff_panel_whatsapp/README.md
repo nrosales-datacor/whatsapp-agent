@@ -1,5 +1,19 @@
 # Handoff: Rediseño UX/UI — Panel del agente de WhatsApp IA (white-label)
 
+## Estado de implementación
+**Leyenda:** ✅ hecho · ⬜ pendiente · 🔶 parcial
+
+- ✅ **Bandeja / Inbox** — medidor de interés, señal "necesita respuesta", header de chat simplificado. Ver ROADMAP A9.
+- ✅ **Panel / Dashboard** — hero de rescate, KPIs agrupados (Dinero/Actividad/Riesgo), gráfico vertical. Ver ROADMAP A9.
+- ⬜ **Mi negocio — editor de servicios**
+- ⬜ **Agenda — línea de tiempo**
+- ⬜ **Ficha del cliente (modal)**
+- ⬜ **Login**
+- ⬜ **Estados vacíos y de error**
+- 🔶 **Design Tokens** — color (white-label + dark mode) y números tabulares adoptados sobre el sistema de tokens ya existente en `global.css` (de un rediseño previo, A8). NO se igualaron 1:1 los valores de este doc: tipografía body (pide Roboto, el codebase usa Noto Sans + Inter), radios (pide 6/8/12/18px, el codebase usa 10/16/999px) ni sombras en 3 capas (el codebase tiene 2, `--shadow`/`--shadow-overlay`).
+
+---
+
 ## Overview
 Rediseño visual/UX del panel web de administración de un **agente de WhatsApp con IA para lavacars**, vendido como SaaS **white-label multi-tenant**. El panel es donde el negocio supervisa las conversaciones que lleva el bot, las citas, las métricas y la configuración.
 
@@ -90,7 +104,7 @@ Preferir bordes finos + sombras suaves sobre bordes duros. Sin acentos de borde 
 
 ## Screens / Views
 
-### 1. Bandeja / Inbox (PRIORITARIA) — desktop (lista + chat) y móvil
+### 1. Bandeja / Inbox (PRIORITARIA) — desktop (lista + chat) y móvil ✅ HECHO
 **Propósito:** el operador ve las conversaciones que lleva el bot y decide cuándo intervenir.
 
 **Layout desktop (1440):** header 64px + body flex. Lista izquierda 372px (`--surface`, borde derecho) + chat flex.
@@ -112,7 +126,7 @@ Preferir bordes finos + sombras suaves sobre bordes duros. Sin acentos de borde 
 
 **Cambios clave:** score→medidor con leyenda; señal ámbar de intervención; avatar con iniciales; "Vos" en vez de "HUMANO"; acciones jerarquizadas.
 
-### 2. Panel / Dashboard (PRIORITARIA) — desktop y móvil
+### 2. Panel / Dashboard (PRIORITARIA) — desktop y móvil ✅ HECHO
 **Propósito:** el dueño ve el rendimiento del bot; el dato #1 es **plata rescatada por el bot**.
 
 **Layout desktop:** header + contenido con título "Panel · Lavacar Rosales", subtítulo "Resumen de los últimos 30 días" y selector de rango segmentado (7 días / 30 días activo / Año).
@@ -128,7 +142,7 @@ Preferir bordes finos + sombras suaves sobre bordes duros. Sin acentos de borde 
 
 **Cambios clave:** agrupación en 3 secciones; héroe de rescate; deltas semánticos; gráfico con aire.
 
-### 3. Mi negocio — editor de servicios — desktop y móvil
+### 3. Mi negocio — editor de servicios — desktop y móvil ⬜ PENDIENTE
 **Propósito:** configurar qué puede cotizar/agendar el bot. Corrige el editor apretado actual.
 
 **Layout desktop:** contenido centrado 920px. Título "Servicios" + subtítulo + botón "Nuevo servicio" (`--accent`).
@@ -142,7 +156,7 @@ Preferir bordes finos + sombras suaves sobre bordes duros. Sin acentos de borde 
 
 **Cambios clave:** tarjetas que respiran; switches alineados con ayuda; campos del add-on condicionales; sin inputs truncados.
 
-### 4. Agenda — día con línea de tiempo — desktop y móvil
+### 4. Agenda — día con línea de tiempo — desktop y móvil ⬜ PENDIENTE
 **Propósito:** ver las citas del día. Corrige el vacío/poca densidad actual.
 
 **Layout desktop:** header + toolbar (segmentado Día/Semana, ‹ Hoy ›, "Viernes 18 de julio", botón "Nueva cita"). Grid 1fr / 300px.
@@ -152,7 +166,7 @@ Preferir bordes finos + sombras suaves sobre bordes duros. Sin acentos de borde 
 
 **Layout móvil:** lista de citas con hora a la izquierda y tarjeta con borde de estado a la derecha; bottom nav (Agenda activo).
 
-### 5. Ficha del cliente (modal)
+### 5. Ficha del cliente (modal) ⬜ PENDIENTE
 **Propósito:** ver datos, historial y notas de un cliente.
 
 **Layout:** overlay `rgba(19,35,32,.55)` + modal 560px centrado, `--sh3`, radio 16px.
@@ -163,14 +177,14 @@ Preferir bordes finos + sombras suaves sobre bordes duros. Sin acentos de borde 
 
 **Cambios clave:** 3 bloques jerárquicos; datos en tiles; historial como timeline; notas separadas visualmente.
 
-### 6. Login (desktop y móvil)
+### 6. Login (desktop y móvil) ⬜ PENDIENTE
 **Propósito:** acceso white-label.
 
 **Layout desktop (900×600):** panel de marca izquierdo (360px, fondo `--header`, texto blanco): logo LR + nombre arriba, titular "Tu asistente atiende, cotiza y agenda por vos." + subtítulo al medio, footer discreto. Panel derecho (`--surface`): tarjeta 320px con "Ingresá a tu panel", campo Correo, campo Contraseña (con "¿La olvidaste?" y ojo), botón "Entrar" (`--accent`), y "¿Problemas para entrar? Escribinos".
 
 **Layout móvil:** logo LR 56px, nombre, subtítulo, campos, botón "Entrar", link "Recuperala" abajo.
 
-### 7. Estados vacíos y de error
+### 7. Estados vacíos y de error ⬜ PENDIENTE
 - **Vacío — sin conversación:** ícono en chip `--accent-soft` (message-square-dashed), "Elegí una conversación", ayuda cálida, y CTA secundaria "Ver la que necesita respuesta" (con ícono ámbar).
 - **Error de carga:** ícono danger (cloud-off), "No pudimos cargar las campañas", tono tranquilo ("Tus datos están a salvo…"), CTA "Reintentar" (`--accent`, rotate-cw).
 - **Vacío — agenda sin citas:** ícono acento (calendar-days), "Sin citas para este día", ayuda, CTA "Agendá la primera".
