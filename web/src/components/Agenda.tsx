@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   cancelarCitaPanel,
@@ -14,12 +14,23 @@ import {
 } from "../api";
 import { colones, fmtNum } from "../lib/formato";
 import ErrorState from "./ErrorState";
+import EstadoVacio from "./EstadoVacio";
 import Icono from "./Iconos";
 import { useToast } from "./Toast";
 
 type Vista = "dia" | "semana";
+type EstadoVisual = "confirmada" | "pendiente" | "riesgo" | "completada" | "cancelada" | "no_show";
 
 const DIAS = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+const PX_HORA = 64;
+const HORA_MIN_DEFAULT = 7;
+const HORA_MAX_DEFAULT = 18;
+
+const ETIQUETA_ESTADO: Record<string, string> = {
+  completada: "Completada",
+  cancelada: "Cancelada",
+  no_show: "No-show",
+};
 
 function hoyISO(): string {
   const d = new Date();
@@ -44,6 +55,54 @@ function etiquetaDia(fecha: string): string {
   return `${DIAS[d.getDay()]} ${d.getDate()}`;
 }
 
+/** "HH:mm" → horas decimales (ej. "14:30" → 14.5), para posicionar bloques en el timeline. */
+function horaDecimal(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h + m / 60;
+}
+
+/** "HH:mm" + minutos → "HH:mm" (sin cruzar más de un día, no hace falta para un horario de negocio). */
+function sumarMinutos(hhmm: string, minutos: number): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const total = h * 60 + m + minutos;
+  const hh = Math.floor(total / 60) % 24;
+  const mm = total % 60;
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+
+/** "HH:mm" (24h) → "H a.m./p.m." o "H:mm a.m./p.m." para el copy del resumen. */
+function hora12(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  const ampm = h < 12 ? "a.m." : "p.m.";
+  let h12 = h % 12;
+  if (h12 === 0) h12 = 12;
+  return m === 0 ? `${h12} ${ampm}` : `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
+/** Ídem, para un número de hora entero (etiquetas del gutter del timeline). */
+function etiquetaHoraEntera(h: number): string {
+  return hora12(`${String(h % 24).padStart(2, "0")}:00`);
+}
+
+function duracionCita(cita: CitaAgenda, servicios: Service[]): number {
+  return servicios.find((s) => s.id === cita.servicioId)?.duracionMin ?? 60;
+}
+
+/**
+ * Deriva el estado visual de una cita activa (Confirmada/Pendiente/Sin confirmar·riesgo)
+ * a partir de los campos que ya existen — el schema no tiene un estado explícito para
+ * esto (ver design_handoff_panel_whatsapp/). "Riesgo" = ya se le mandó el recordatorio
+ * del mismo día y todavía no confirmó.
+ */
+function estadoVisual(cita: CitaAgenda): { tipo: EstadoVisual; etiqueta: string } {
+  if (cita.estado !== "agendada") {
+    return { tipo: cita.estado, etiqueta: ETIQUETA_ESTADO[cita.estado] ?? cita.estado };
+  }
+  if (cita.confirmadaEn) return { tipo: "confirmada", etiqueta: "Confirmada" };
+  if (cita.recordatorioMismoDiaEn) return { tipo: "riesgo", etiqueta: "Sin confirmar" };
+  return { tipo: "pendiente", etiqueta: "Pendiente" };
+}
+
 interface Props {
   servicios: Service[];
 }
@@ -54,6 +113,8 @@ export default function Agenda({ servicios }: Props) {
   const [vista, setVista] = useState<Vista>("dia");
   const [fechaBase, setFechaBase] = useState(hoyISO());
   const [modal, setModal] = useState<null | { cita?: CitaAgenda }>(null);
+  const [detalle, setDetalle] = useState<CitaAgenda | null>(null);
+  const [resaltada, setResaltada] = useState<string | null>(null);
 
   const desde = vista === "dia" ? fechaBase : inicioSemana(fechaBase);
   const hasta = vista === "dia" ? fechaBase : sumarDias(desde, 6);
@@ -64,6 +125,7 @@ export default function Agenda({ servicios }: Props) {
     refetchInterval: 15000,
   });
   const citas = q.data ?? [];
+  const citasDia = useMemo(() => [...citas].sort((a, b) => a.hora.localeCompare(b.hora)), [citas]);
 
   function invalidar() {
     qc.invalidateQueries({ queryKey: ["citas"] });
@@ -109,7 +171,32 @@ export default function Agenda({ servicios }: Props) {
     setFechaBase((f) => sumarDias(f, vista === "dia" ? saltos : saltos * 7));
   }
 
+  function irACita(id: string) {
+    setResaltada(id);
+    document.getElementById(`cita-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    document.getElementById(`cita-m-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setTimeout(() => setResaltada((r) => (r === id ? null : r)), 1600);
+  }
+
   const diasSemana = vista === "semana" ? Array.from({ length: 7 }, (_, i) => sumarDias(desde, i)) : [];
+
+  // ── Cálculos del timeline (vista día) ──────────────────────────────────────
+  let horaInicio = HORA_MIN_DEFAULT;
+  let horaFin = HORA_MAX_DEFAULT;
+  for (const c of citasDia) {
+    const hd = horaDecimal(c.hora);
+    const durH = duracionCita(c, servicios) / 60;
+    horaInicio = Math.min(horaInicio, Math.floor(hd));
+    horaFin = Math.max(horaFin, Math.ceil(hd + durH));
+  }
+  const filasHora = Array.from({ length: horaFin - horaInicio }, (_, i) => horaInicio + i);
+
+  const citasActivas = citasDia.filter((c) => c.estado !== "cancelada");
+  const ingresoEstimado = citasDia
+    .filter((c) => c.estado === "agendada" || c.estado === "completada")
+    .reduce((s, c) => s + (c.precio ?? 0) + (c.addons ?? []).reduce((s2, a) => s2 + a.precio, 0), 0);
+  const enRiesgo = citasDia.filter((c) => estadoVisual(c).tipo === "riesgo");
+  const masUrgente = enRiesgo[0];
 
   return (
     <div id="agenda">
@@ -163,24 +250,124 @@ export default function Agenda({ servicios }: Props) {
           </div>
         )}
 
-        {!q.isError && vista === "dia" && (
+        {!q.isError && vista === "dia" && citasDia.length === 0 && (
           <div className="card">
-            <h3>Citas del día</h3>
-            {citas.length === 0 && <p className="dash-vacio">Sin citas para este día.</p>}
-            <div className="agenda-lista">
-              {citas.map((c) => (
-                <FilaCita
-                  key={c.id}
-                  cita={c}
-                  servicios={servicios}
-                  pendiente={pendiente}
-                  onConfirmar={() => confirmar.mutate(c.id)}
-                  onCompletar={() => completar.mutate(c.id)}
-                  onCancelar={() => cancelar.mutate(c.id)}
-                  onNoShow={() => noShow.mutate(c.id)}
-                  onReprogramar={() => setModal({ cita: c })}
-                />
-              ))}
+            <EstadoVacio
+              icono="cal"
+              titulo="Sin citas para este día"
+              ayuda="Las citas que agende el bot o que crees a mano van a aparecer acá."
+              accion={{ texto: "Agendá la primera", icono: "plus", onClick: () => setModal({}) }}
+            />
+          </div>
+        )}
+
+        {!q.isError && vista === "dia" && citasDia.length > 0 && (
+          <div className="agenda-grid">
+            <div className="card agenda-timeline-card">
+              <h3>
+                Citas del día · {citasDia.length} {citasDia.length === 1 ? "cita" : "citas"} ·{" "}
+                {hora12(citasDia[0].hora)} –{" "}
+                {hora12(sumarMinutos(citasDia[citasDia.length - 1].hora, duracionCita(citasDia[citasDia.length - 1], servicios)))}
+              </h3>
+              <div className="agenda-timeline" style={{ height: (horaFin - horaInicio) * PX_HORA }}>
+                <div className="agenda-timeline-filas">
+                  {filasHora.map((h) => (
+                    <div key={h} className="agenda-timeline-fila" style={{ height: PX_HORA }}>
+                      <span className="agenda-timeline-hora-label">{etiquetaHoraEntera(h)}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="agenda-timeline-bloques">
+                  {citasDia.map((c) => {
+                    const dur = duracionCita(c, servicios);
+                    const top = (horaDecimal(c.hora) - horaInicio) * PX_HORA;
+                    const height = Math.max((dur / 60) * PX_HORA, 30);
+                    const ev = estadoVisual(c);
+                    return (
+                      <button
+                        type="button"
+                        key={c.id}
+                        id={`cita-${c.id}`}
+                        className={
+                          `agenda-bloque agenda-bloque-${ev.tipo}` + (resaltada === c.id ? " agenda-bloque-resaltado" : "")
+                        }
+                        style={{ top, height }}
+                        onClick={() => setDetalle(c)}
+                      >
+                        <span className="agenda-bloque-top">
+                          <b className="tnum">{c.hora}</b>
+                          <span className="agenda-bloque-nombre">{c.clienteNombre}</span>
+                        </span>
+                        <span className="agenda-bloque-detalle">
+                          {c.servicioNombre}
+                          {c.placa ? ` · ${c.placa}` : ""}
+                        </span>
+                        <span className={`pill-cita-estado pill-cita-estado-${ev.tipo}`}>{ev.etiqueta}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="agenda-resumen">
+              <div className="card agenda-resumen-card">
+                <div className="agenda-resumen-fila">
+                  <span>Citas</span>
+                  <b className="tnum">{citasActivas.length}</b>
+                </div>
+                <div className="agenda-resumen-fila">
+                  <span>Ingreso estimado</span>
+                  <b className="tnum agenda-resumen-monto">{colones(ingresoEstimado)}</b>
+                </div>
+                <div className="agenda-resumen-fila">
+                  <span>Sin confirmar</span>
+                  {enRiesgo.length > 0 ? (
+                    <span className="chip-alerta">{enRiesgo.length} en riesgo</span>
+                  ) : (
+                    <b className="tnum">0</b>
+                  )}
+                </div>
+              </div>
+
+              {masUrgente && (
+                <div className="agenda-aviso-riesgo">
+                  <Icono id="alert" size={16} />
+                  <div>
+                    <p>
+                      <b>{masUrgente.clienteNombre}</b> no confirmó las {hora12(masUrgente.hora)}.
+                    </p>
+                    <button type="button" className="agenda-aviso-link" onClick={() => irACita(masUrgente.id)}>
+                      Ver en la agenda →
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="agenda-lista-movil">
+              {citasDia.map((c) => {
+                const ev = estadoVisual(c);
+                return (
+                  <button
+                    type="button"
+                    key={c.id}
+                    id={`cita-m-${c.id}`}
+                    className={"agenda-fila-movil" + (resaltada === c.id ? " agenda-bloque-resaltado" : "")}
+                    onClick={() => setDetalle(c)}
+                  >
+                    <span className="agenda-fila-movil-hora tnum">{c.hora}</span>
+                    <span className={`agenda-fila-movil-card agenda-bloque-${ev.tipo}`}>
+                      <span className="agenda-fila-movil-nombre">{c.clienteNombre}</span>
+                      <span className="agenda-fila-movil-detalle">
+                        {c.servicioNombre}
+                        {c.placa ? ` · ${c.placa}` : ""}
+                      </span>
+                      <span className={`pill-cita-estado pill-cita-estado-${ev.tipo}`}>{ev.etiqueta}</span>
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -214,6 +401,35 @@ export default function Agenda({ servicios }: Props) {
         )}
       </div>
 
+      {detalle && (
+        <ModalDetalleCita
+          cita={detalle}
+          servicios={servicios}
+          pendiente={pendiente}
+          onCerrar={() => setDetalle(null)}
+          onConfirmar={() => {
+            confirmar.mutate(detalle.id);
+            setDetalle(null);
+          }}
+          onCompletar={() => {
+            completar.mutate(detalle.id);
+            setDetalle(null);
+          }}
+          onCancelar={() => {
+            cancelar.mutate(detalle.id);
+            setDetalle(null);
+          }}
+          onNoShow={() => {
+            noShow.mutate(detalle.id);
+            setDetalle(null);
+          }}
+          onReprogramar={() => {
+            setModal({ cita: detalle });
+            setDetalle(null);
+          }}
+        />
+      )}
+
       {modal && (
         <ModalCita
           servicios={servicios}
@@ -230,12 +446,13 @@ export default function Agenda({ servicios }: Props) {
   );
 }
 
-// ── Fila de cita (vista día) ────────────────────────────────────────────────
+// ── Modal de detalle de una cita (ver + accionar) ───────────────────────────
 
-interface FilaProps {
+interface DetalleProps {
   cita: CitaAgenda;
   servicios: Service[];
   pendiente: boolean;
+  onCerrar: () => void;
   onConfirmar: () => void;
   onCompletar: () => void;
   onCancelar: () => void;
@@ -243,58 +460,93 @@ interface FilaProps {
   onReprogramar: () => void;
 }
 
-const ETIQUETA_ESTADO: Record<string, string> = { no_show: "No-show" };
-
-function FilaCita({ cita, servicios, pendiente, onConfirmar, onCompletar, onCancelar, onNoShow, onReprogramar }: FilaProps) {
+function ModalDetalleCita({
+  cita,
+  servicios,
+  pendiente,
+  onCerrar,
+  onConfirmar,
+  onCompletar,
+  onCancelar,
+  onNoShow,
+  onReprogramar,
+}: DetalleProps) {
   const activa = cita.estado === "agendada";
-  // Upsell (Carril D, 1.2): total = base + add-ons aceptados. Solo se muestra si hay
-  // algo que sumar (precio y/o add-ons); una cita sin ninguno no necesita esta línea.
+  const ev = estadoVisual(cita);
   const addons = cita.addons ?? [];
   const total = (cita.precio ?? 0) + addons.reduce((s, a) => s + a.precio, 0);
+
   return (
-    <div className="agenda-fila">
-      <span className="agenda-hora">{cita.hora}</span>
-      <div className="agenda-cliente">
-        <b>{cita.clienteNombre}</b>
-        <span>
-          {fmtNum(cita.clienteWa)} · {cita.servicioNombre}
-          {cita.placa ? ` · ${cita.placa}` : ""}
-        </span>
-        {(cita.precio != null || addons.length > 0) && (
-          <span className="agenda-total">
-            {colones(total)}
-            {addons.length > 0 &&
-              ` (incluye ${addons
-                .map((a) => servicios.find((s) => s.id === a.servicioId)?.nombre ?? a.servicioId)
-                .join(", ")})`}
-          </span>
-        )}
-      </div>
-      {cita.estado !== "agendada" && (
-        <span className={"badge-estado " + cita.estado}>{ETIQUETA_ESTADO[cita.estado] ?? cita.estado}</span>
-      )}
-      {cita.confirmadaEn && <span className="pill-cita confirmada">✅ Confirmada</span>}
-      {activa && (
-        <div className="agenda-acciones">
-          {!cita.confirmadaEn && (
-            <button type="button" className="accion accion-outline accion-check" disabled={pendiente} onClick={onConfirmar}>
-              Confirmar
-            </button>
-          )}
-          <button type="button" className="accion accion-outline" disabled={pendiente} onClick={onReprogramar}>
-            Reprogramar
-          </button>
-          <button type="button" className="accion accion-outline accion-check" disabled={pendiente} onClick={onCompletar}>
-            Completar
-          </button>
-          <button type="button" className="accion accion-outline accion-alerta" disabled={pendiente} onClick={onNoShow}>
-            No se presentó
-          </button>
-          <button type="button" className="accion accion-outline" disabled={pendiente} onClick={onCancelar}>
-            Cancelar
+    <div
+      className="overlay"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onCerrar();
+      }}
+    >
+      <div className="ficha-modal">
+        <div className="ficha-head">
+          <h3>{cita.clienteNombre}</h3>
+          <button type="button" onClick={onCerrar} title="Cerrar">
+            ✕
           </button>
         </div>
-      )}
+        <div className="ficha-body">
+          <span className={`pill-cita-estado pill-cita-estado-${ev.tipo}`}>{ev.etiqueta}</span>
+
+          <div className="dato">
+            <span>Hora</span>
+            <b className="tnum">{cita.hora}</b>
+          </div>
+          <div className="dato">
+            <span>Teléfono</span>
+            <b className="tnum">{fmtNum(cita.clienteWa)}</b>
+          </div>
+          <div className="dato">
+            <span>Servicio</span>
+            <b>{cita.servicioNombre}</b>
+          </div>
+          {cita.placa && (
+            <div className="dato">
+              <span>Placa</span>
+              <b className="tnum">{cita.placa}</b>
+            </div>
+          )}
+          {(cita.precio != null || addons.length > 0) && (
+            <div className="dato">
+              <span>Total</span>
+              <b className="tnum">
+                {colones(total)}
+                {addons.length > 0 &&
+                  ` (incluye ${addons
+                    .map((a) => servicios.find((s) => s.id === a.servicioId)?.nombre ?? a.servicioId)
+                    .join(", ")})`}
+              </b>
+            </div>
+          )}
+
+          {activa && (
+            <div className="agenda-detalle-acciones">
+              {!cita.confirmadaEn && (
+                <button type="button" className="accion accion-outline accion-check" disabled={pendiente} onClick={onConfirmar}>
+                  Confirmar
+                </button>
+              )}
+              <button type="button" className="accion accion-outline" disabled={pendiente} onClick={onReprogramar}>
+                Reprogramar
+              </button>
+              <button type="button" className="accion accion-outline accion-check" disabled={pendiente} onClick={onCompletar}>
+                Completar
+              </button>
+              <button type="button" className="accion accion-outline accion-alerta" disabled={pendiente} onClick={onNoShow}>
+                No se presentó
+              </button>
+              <button type="button" className="accion accion-outline" disabled={pendiente} onClick={onCancelar}>
+                Cancelar
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

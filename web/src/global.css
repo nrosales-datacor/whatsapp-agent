@@ -73,6 +73,7 @@
   /* ── Feedback ── */
   --danger: #C72B3F; --danger-soft: #FBEBE8;
   --success: #58BE4D; --warning: #FA8500; --warning-soft: #FFF1DE;
+  --info: #248DE3; --info-soft: #E6F0FB;
 
   /* ── Forma ── */
   --radius: 16px; --radius-sm: 10px; --radius-pill: 999px; --av: 13px;
@@ -115,6 +116,7 @@
   --human: #e0902f; --human-soft: #3a2a13;
   --active: #16302b; --chat-bg: #0a1917;
   --warning-soft: #3a2a13;
+  --info: #5aabf0; --info-soft: #142a3d;
 
   --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 34px rgba(0,0,0,.5);
   --shadow-overlay: 0 1px 2px rgba(0,0,0,.5), 0 16px 40px -12px rgba(0,0,0,.6);
@@ -540,6 +542,12 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .error-state svg { color: var(--destructive); }
 .error-state p { font-size: var(--step--1); margin: 0; }
 
+/* Estado vacío enriquecido reutilizable (EstadoVacio: chip de ícono + título + ayuda + CTA) */
+.estado-vacio { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; background: var(--bg); border-radius: var(--radius); padding: var(--space-xl) var(--space-md); }
+.estado-vacio-icono { width: 56px; height: 56px; border-radius: var(--radius); background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; margin-bottom: var(--space-xs); }
+.estado-vacio-titulo { font-family: var(--font-display); font-weight: 600; font-size: var(--step-1); color: var(--text); }
+.estado-vacio-ayuda { font-size: var(--step--1); color: var(--text-2); line-height: 1.5; max-width: 290px; margin-bottom: var(--space-xs); }
+
 /* Barras horizontales (citas por día) */
 .barra { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-xs); font-size: var(--step--1); }
 .barra .et { width: 84px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-muted); }
@@ -595,19 +603,78 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .agenda-nav { display: flex; align-items: center; gap: var(--space-xs); }
 .agenda-nav-fecha { font-weight: 700; min-width: 150px; text-align: center; }
 
-.agenda-lista { display: flex; flex-direction: column; gap: var(--space-xs); }
-.agenda-fila { display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-sm); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); flex-wrap: wrap; }
-.agenda-fila .agenda-hora { font-weight: 700; min-width: 48px; }
-.agenda-fila .agenda-cliente { flex: 1; min-width: 140px; }
-.agenda-fila .agenda-cliente b { display: block; }
-.agenda-fila .agenda-cliente span { color: var(--text-muted); font-size: var(--step--1); }
-.agenda-fila .agenda-cliente span.agenda-total { display: block; }
-.agenda-acciones { display: flex; gap: var(--space-xs); flex-wrap: wrap; }
-
 .badge-estado { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: var(--radius-pill); border: 1px solid var(--border); color: var(--text-muted); white-space: nowrap; }
 .badge-estado.completada { background: var(--accent-soft); color: var(--accent-strong); border-color: transparent; }
 .badge-estado.cancelada { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
 .badge-estado.no_show { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); border-color: transparent; }
+
+/* ── Vista Día — timeline + rail de resumen (design_handoff_panel_whatsapp/) ── */
+.agenda-grid { display: grid; grid-template-columns: 1fr 300px; gap: var(--space-md); align-items: start; }
+.agenda-timeline-card h3 { margin-bottom: var(--space-md); }
+
+.agenda-timeline { position: relative; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); overflow: hidden; }
+.agenda-timeline-filas { display: flex; flex-direction: column; }
+.agenda-timeline-fila { display: flex; align-items: flex-start; border-top: 1px solid var(--border-2); }
+.agenda-timeline-fila:first-child { border-top: none; }
+.agenda-timeline-hora-label { width: 64px; flex-shrink: 0; padding: 4px 8px; font-size: 11px; color: var(--text-3); }
+.agenda-timeline-bloques { position: absolute; inset: 0; left: 64px; }
+
+/* Bloque de cita — posicionado con top/height calculados desde hora + duración del servicio. */
+.agenda-bloque {
+  position: absolute; left: 6px; right: 6px;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 5px 10px; border-radius: var(--radius-sm);
+  border: 1px solid transparent; border-left-width: 3px;
+  text-align: left; overflow: hidden; cursor: pointer;
+  transition: box-shadow .12s, filter .12s;
+}
+.agenda-bloque:hover { filter: brightness(.98); box-shadow: var(--shadow); z-index: 1; }
+.agenda-bloque-top { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.agenda-bloque-top b { font-size: 11.5px; color: var(--text); flex-shrink: 0; }
+.agenda-bloque-nombre { font-weight: 600; font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agenda-bloque-detalle { font-size: 11px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agenda-bloque-resaltado { box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow); z-index: 1; }
+
+/* Pill de estado — reusada dentro del bloque (desktop), fila móvil y modal de detalle. */
+.pill-cita-estado { align-self: flex-start; font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: var(--radius-pill); white-space: nowrap; }
+
+/* Tono por estado — variantes semánticas (ver Design Tokens del handoff). */
+.agenda-bloque-confirmada { background: var(--accent-soft); border-color: var(--accent-line); border-left-color: var(--accent); }
+.pill-cita-estado-confirmada { background: var(--accent); color: var(--accent-fg); }
+.agenda-bloque-pendiente { background: var(--info-soft); border-color: color-mix(in srgb, var(--info) 30%, transparent); border-left-color: var(--info); }
+.pill-cita-estado-pendiente { background: var(--info); color: #fff; }
+.agenda-bloque-riesgo { background: var(--warning-soft); border-color: color-mix(in srgb, var(--warning) 35%, transparent); border-left-color: var(--warning); }
+.pill-cita-estado-riesgo { background: var(--warning); color: #fff; }
+.agenda-bloque-completada { background: var(--surface-2); border-color: var(--border); border-left-color: var(--accent-strong); opacity: .85; }
+.pill-cita-estado-completada { background: var(--accent-soft); color: var(--accent-strong); }
+.agenda-bloque-cancelada { background: var(--surface-2); border-color: var(--border); border-left-color: var(--danger); opacity: .6; text-decoration: line-through; }
+.pill-cita-estado-cancelada { background: var(--danger-soft); color: var(--danger); }
+.agenda-bloque-no_show { background: var(--surface-2); border-color: var(--border); border-left-color: var(--warning); opacity: .75; }
+.pill-cita-estado-no_show { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); }
+
+/* Rail derecho — resumen del día + aviso de riesgo */
+.agenda-resumen { display: flex; flex-direction: column; gap: var(--space-md); }
+.agenda-resumen-card { display: flex; flex-direction: column; gap: var(--space-sm); }
+.agenda-resumen-fila { display: flex; align-items: center; justify-content: space-between; font-size: var(--step--1); color: var(--text-2); }
+.agenda-resumen-fila b { color: var(--text); font-size: var(--step-0); font-weight: 700; }
+.agenda-resumen-monto { color: var(--accent-strong) !important; }
+
+.agenda-aviso-riesgo { display: flex; gap: var(--space-sm); background: var(--warning-soft); border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent); border-radius: var(--radius-sm); padding: var(--space-sm) var(--space-md); }
+.agenda-aviso-riesgo svg { color: var(--warning); flex-shrink: 0; margin-top: 2px; }
+.agenda-aviso-riesgo p { font-size: var(--step--1); color: var(--text); margin: 0; }
+.agenda-aviso-link { font-size: var(--step--1); font-weight: 600; color: var(--warning); margin-top: 4px; padding: 0; }
+.agenda-aviso-link:hover { text-decoration: underline; }
+
+/* Lista móvil — hora a la izquierda + tarjeta con borde de estado (oculta en desktop) */
+.agenda-lista-movil { display: none; }
+.agenda-fila-movil { display: flex; align-items: stretch; gap: var(--space-sm); width: 100%; text-align: left; background: none; border-radius: var(--radius-sm); }
+.agenda-fila-movil-hora { width: 48px; flex-shrink: 0; padding-top: var(--space-sm); font-weight: 700; font-size: 13px; color: var(--text-2); }
+.agenda-fila-movil-card { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: var(--space-sm) var(--space-md); border: 1px solid var(--border); border-left-width: 3px; border-radius: var(--radius-sm); background: var(--surface); }
+.agenda-fila-movil-nombre { font-weight: 600; font-size: 13.5px; color: var(--text); }
+.agenda-fila-movil-detalle { font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Modal de detalle de cita — acciones (Confirmar/Reprogramar/Completar/No-show/Cancelar) */
+.agenda-detalle-acciones { display: flex; gap: var(--space-xs); flex-wrap: wrap; margin-top: var(--space-md); }
 
 .agenda-semana { display: grid; grid-template-columns: repeat(7, 1fr); gap: var(--space-xs); }
 .agenda-dia-col { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-xs); background: var(--surface); min-height: 120px; }
@@ -669,6 +736,12 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
   .dash-grid-2 { grid-template-columns: 1fr; }
   /* Semana de la agenda: 7 columnas no entran en móvil → apilar */
   .agenda-semana { grid-template-columns: 1fr; }
+
+  /* Día de la agenda: el timeline (denso, requiere ancho) se cambia por la
+     lista simple hora+tarjeta — mismo patrón que el resto del panel en móvil. */
+  .agenda-timeline-card, .agenda-resumen { display: none; }
+  .agenda-grid { display: block; }
+  .agenda-lista-movil { display: flex; flex-direction: column; gap: var(--space-xs); }
 
   /* Áreas táctiles ≥44px (WCAG 2.5.5) */
   .btn-ghost, .toggle, .btn-hd-salir, .filtro-pill { min-height: 44px; display: inline-flex; align-items: center; }

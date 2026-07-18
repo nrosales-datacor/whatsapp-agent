@@ -6,7 +6,7 @@
 - ✅ **Bandeja / Inbox** — medidor de interés, señal "necesita respuesta", header de chat simplificado. Ver ROADMAP A9.
 - ✅ **Panel / Dashboard** — hero de rescate, KPIs agrupados (Dinero/Actividad/Riesgo), gráfico vertical. Ver ROADMAP A9.
 - ✅ **Mi negocio — editor de servicios** — tarjetas por servicio con grip de arrastre (reordena de verdad), chip de slug editable, pill "Agendable", switches alineados con ayuda, campos de add-on condicionales. Ver ROADMAP A9.
-- ⬜ **Agenda — línea de tiempo**
+- ✅ **Agenda — línea de tiempo** — timeline por hora (bloques posicionados por hora+duración del servicio), pills Confirmada/Pendiente/Sin confirmar·riesgo (derivadas en el cliente, sin campo nuevo de backend), rail "Resumen del día" + aviso de riesgo, lista simple hora+tarjeta en móvil, modal de detalle con las acciones (antes inline en la fila). Ver ROADMAP A9.
 - ⬜ **Ficha del cliente (modal)**
 - ⬜ **Login**
 - ⬜ **Estados vacíos y de error**
@@ -156,7 +156,7 @@ Preferir bordes finos + sombras suaves sobre bordes duros. Sin acentos de borde 
 
 **Cambios clave:** tarjetas que respiran; switches alineados con ayuda; campos del add-on condicionales; sin inputs truncados.
 
-### 4. Agenda — día con línea de tiempo — desktop y móvil ⬜ PENDIENTE
+### 4. Agenda — día con línea de tiempo — desktop y móvil ✅ HECHO
 **Propósito:** ver las citas del día. Corrige el vacío/poca densidad actual.
 
 **Layout desktop:** header + toolbar (segmentado Día/Semana, ‹ Hoy ›, "Viernes 18 de julio", botón "Nueva cita"). Grid 1fr / 300px.
@@ -165,6 +165,12 @@ Preferir bordes finos + sombras suaves sobre bordes duros. Sin acentos de borde 
 - **Resumen del día** (rail derecho): Citas 5, Ingreso estimado ₡89 000 (acento), Sin confirmar → chip "1 en riesgo". Debajo, tarjeta ámbar de aviso ("Rafael no confirmó las 3:30 p.m." + "Enviar recordatorio →").
 
 **Layout móvil:** lista de citas con hora a la izquierda y tarjeta con borde de estado a la derecha; bottom nav (Agenda activo).
+
+**Notas de implementación:**
+- El schema de `Cita` no tiene un estado explícito para Confirmada/Pendiente/Riesgo — se derivan en el cliente desde `confirmadaEn`/`recordatorioMismoDiaEn` (ver `estadoVisual()` en `Agenda.tsx`), sin agregar campos nuevos de backend. "Riesgo" = ya se envió el recordatorio del mismo día y el cliente no confirmó.
+- El rango de horas del timeline es dinámico (7–18 por default, se expande si alguna cita cae fuera) en vez de fijo, para no recortar citas tempranas/tardías.
+- Sin endpoint de "reenviar recordatorio" (no existe en el backend y no se inventó uno): el CTA del aviso de riesgo ("Ver en la agenda →") hace scroll + resalta el bloque correspondiente en vez de disparar un envío.
+- Las acciones por cita (Confirmar/Reprogramar/Completar/No se presentó/Cancelar), antes siempre visibles en la fila, ahora viven en un modal de detalle que se abre al tocar el bloque/fila — el timeline de referencia no tiene lugar para botones inline.
 
 ### 5. Ficha del cliente (modal) ⬜ PENDIENTE
 **Propósito:** ver datos, historial y notas de un cliente.
