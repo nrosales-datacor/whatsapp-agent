@@ -23,6 +23,7 @@ import type {
   Plan,
   Rol,
   ResumenConversacion,
+  SeccionConocimiento,
   SegmentoFiltro,
   Service,
 } from "../../src/types";
@@ -43,6 +44,7 @@ export type {
   Plan,
   Rol,
   ResumenConversacion,
+  SeccionConocimiento,
   SegmentoFiltro,
   Service,
 };
@@ -308,6 +310,19 @@ export interface ConfigNegocio {
   rescatePlantilla: string;
   /** Place ID de Google (Carril D, 1.3-c): habilita el job diario de reputación. "" = sin configurar. */
   googlePlaceId: string;
+  // ── Perfil del negocio (B7, motor multi-mercado) ──
+  /** Rubro/persona: "una barbería", "una empresa de software". "" = "un negocio". */
+  tipoNegocio: string;
+  /** País del negocio. "" = se infiere de la zona horaria. */
+  pais: string;
+  /** Formas de pago (texto libre). "" = no se menciona. */
+  formasPago: string;
+  /** Trato al cliente: "vos" | "tu" | "usted". "" = se infiere del país. */
+  registro: string;
+  /** Tono/estilo del bot (texto corto). "" = default "cordial y breve". */
+  tono: string;
+  /** Instrucciones libres del dueño para el bot (reglas particulares). "" = ninguna. */
+  instrucciones: string;
 }
 
 export function obtenerConfig(): Promise<ConfigNegocio> {
@@ -367,6 +382,13 @@ export interface AltaTenant {
     horario: Record<number, HorarioDia>;
     servicios: Service[];
     kb: KnowledgeBase;
+    // Perfil del negocio (B7): opcionales; el backend los valida/normaliza igual.
+    tipoNegocio?: string;
+    pais?: string;
+    formasPago?: string;
+    registro?: string;
+    tono?: string;
+    instrucciones?: string;
   };
   usuario: string;
   password: string;

@@ -219,6 +219,15 @@ export const waTenants = pgTable(
     // el job diario de Places API (rating + total de reseñas → snapshot_reputacion).
     // null = sin configurar (no corre el job para este tenant).
     googlePlaceId: text("google_place_id"),
+    // Perfil del negocio (B7, motor multi-mercado): con estos campos el system prompt
+    // se arma para CUALQUIER rubro, no solo lavacar. null = sin configurar (el prompt
+    // usa un default o lo infiere de la zona horaria). Ver src/agent/systemPrompt.ts.
+    tipoNegocio: text("tipo_negocio"), // rubro/persona: "una barbería", "una empresa de software"
+    pais: text("pais"), // país explícito; null => se infiere del timezone
+    formasPago: text("formas_pago"), // texto libre; reemplaza el "SINPE Móvil y efectivo" hardcodeado
+    registro: text("registro"), // "vos" | "tu" | "usted"; null => se infiere del país
+    tono: text("tono"), // texto corto; null => default "cordial y breve"
+    instrucciones: text("instrucciones"), // texto libre grande: reglas particulares del negocio (híbrido)
   },
   (t) => ({
     uqPnid: uniqueIndex("wa_tenants_pnid_uq").on(t.phoneNumberId),

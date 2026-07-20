@@ -210,14 +210,14 @@ migraciones** (la base cambió: columnas `modo`, `no_leidos`, `notas`, `precio`,
 Google Calendar y la tabla `wa_push_subs`).
 
 > ⚠️ Sin `PANEL_SESSION_SECRET` el servidor **NO arranca en producción** (se cae el
-> bot que ya funciona). Sin `PANEL_PASSWORD_HASH_ROSALES` nadie puede entrar al panel.
+> bot que ya funciona). Sin `PANEL_PASSWORD_HASH_SELYON` nadie puede entrar al panel.
 
 Líneas a agregar al `.env`. **Las 5 te las pasa Nathan** (ya están generadas — NO las
 generes vos: si las VAPID cambian, se rompen todas las suscripciones de push):
 
 ```
 PANEL_SESSION_SECRET=...                # te lo pasa Nathan (obligatorio)
-PANEL_PASSWORD_HASH_ROSALES=salt:hash   # te lo pasa Nathan (obligatorio)
+PANEL_PASSWORD_HASH_SELYON=salt:hash    # te lo pasa Nathan (obligatorio)
 VAPID_PUBLIC_KEY=...                     # te lo pasa Nathan
 VAPID_PRIVATE_KEY=...                    # te lo pasa Nathan (SECRETA)
 VAPID_SUBJECT=mailto:soporte@selyon.app
@@ -246,8 +246,8 @@ pm2 logs whatsapp-bot            # debe decir "Agente escuchando" + "Notificacio
 ```
 
 > 🆕 **Los negocios ahora viven en la base (no en el código).** `scripts/seedTenants.ts`
-> inserta/actualiza el negocio `lavacar-rosales` y su usuario de panel en las tablas
-> `wa_tenants`/`wa_usuarios` a partir de la config + `PANEL_PASSWORD_HASH_ROSALES` del
+> inserta/actualiza el negocio `selyon` y su usuario de panel en las tablas
+> `wa_tenants`/`wa_usuarios` a partir de la config + `PANEL_PASSWORD_HASH_SELYON` del
 > `.env`. **Corre DESPUÉS de `migrar.ts` y ANTES del `pm2 restart`** para que al reiniciar
 > el bot ya encuentre al negocio en la base. Es idempotente (se puede correr en cada deploy).
 > **Red de seguridad:** si la base quedara sin negocios o no respondiera, el bot cae a una

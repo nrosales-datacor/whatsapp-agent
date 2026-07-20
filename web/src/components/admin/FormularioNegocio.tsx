@@ -6,8 +6,10 @@ import {
   adminEmbeddedSignupConfig,
   type AltaTenant,
   type KnowledgeBase,
+  type SeccionConocimiento,
   type Service,
 } from "../../api";
+import { EditorItems, EditorSecciones } from "../EditorConocimiento";
 import { lanzarEmbeddedSignup } from "../../lib/embeddedSignup";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -43,7 +45,8 @@ function slugify(s: string): string {
     .slice(0, 50);
 }
 
-const lineas = (s: string): string[] => s.split("\n").map((l) => l.trim()).filter(Boolean);
+/** Normaliza los ítems de una lista antes de enviarlos: trim + descarta vacíos. */
+const limpiar = (items: string[]): string[] => items.map((s) => s.trim()).filter(Boolean);
 
 export default function FormularioNegocio({ hayDb }: { hayDb: boolean }) {
   const qc = useQueryClient();
@@ -58,6 +61,13 @@ export default function FormularioNegocio({ hayDb }: { hayDb: boolean }) {
   const [moneda, setMoneda] = useState("₡");
   const [ubicacion, setUbicacion] = useState("");
   const [intervaloAgendaMin, setIntervaloAgendaMin] = useState("30");
+  // Perfil del negocio (B7, motor multi-mercado).
+  const [tipoNegocio, setTipoNegocio] = useState("");
+  const [pais, setPais] = useState("");
+  const [formasPago, setFormasPago] = useState("");
+  const [registro, setRegistro] = useState("");
+  const [tono, setTono] = useState("");
+  const [instrucciones, setInstrucciones] = useState("");
 
   // Horario MVP: un par abre/cierra + qué días abre.
   const [abre, setAbre] = useState("06:00");
@@ -67,10 +77,9 @@ export default function FormularioNegocio({ hayDb }: { hayDb: boolean }) {
   // Servicios y KB
   const [servicios, setServicios] = useState<ServicioForm[]>([]);
   const [faqs, setFaqs] = useState<FaqForm[]>([]);
-  const [datos, setDatos] = useState("");
-  const [politicas, setPoliticas] = useState("");
-  const [tarifas, setTarifas] = useState("");
-  const [parabrisas, setParabrisas] = useState("");
+  const [datos, setDatos] = useState<string[]>([]);
+  const [politicas, setPoliticas] = useState<string[]>([]);
+  const [secciones, setSecciones] = useState<SeccionConocimiento[]>([]);
 
   // Usuario del panel
   const [usuario, setUsuario] = useState("");
@@ -123,8 +132,9 @@ export default function FormularioNegocio({ hayDb }: { hayDb: boolean }) {
       qc.invalidateQueries({ queryKey: ["adminTenants"] });
       // Reset de los campos clave (dejamos timezone/moneda por comodidad).
       setNombre(""); setId(""); setIdTocado(false); setPhoneNumberId(""); setAccessToken("");
-      setUbicacion(""); setServicios([]); setFaqs([]); setDatos(""); setPoliticas("");
-      setTarifas(""); setParabrisas(""); setUsuario(""); setPassword("");
+      setUbicacion(""); setServicios([]); setFaqs([]); setDatos([]); setPoliticas([]);
+      setSecciones([]); setUsuario(""); setPassword("");
+      setTipoNegocio(""); setPais(""); setFormasPago(""); setRegistro(""); setTono(""); setInstrucciones("");
       setTokenHandle(null); setAvisoConexion(""); setErrConexion("");
     },
   });
@@ -179,10 +189,11 @@ export default function FormularioNegocio({ hayDb }: { hayDb: boolean }) {
     setOkMsg("");
     const kb: KnowledgeBase = {
       faq: faqs.filter((f) => f.pregunta.trim() && f.respuesta.trim()).map((f) => ({ pregunta: f.pregunta.trim(), respuesta: f.respuesta.trim() })),
-      datos: lineas(datos),
-      politicas: lineas(politicas),
-      tarifas: lineas(tarifas),
-      parabrisas: lineas(parabrisas),
+      datos: limpiar(datos),
+      politicas: limpiar(politicas),
+      secciones: secciones
+        .map((s) => ({ ...s, titulo: s.titulo.trim(), items: limpiar(s.items) }))
+        .filter((s) => s.titulo && s.items.length > 0),
     };
     const body: AltaTenant = {
       tenant: {
@@ -197,6 +208,12 @@ export default function FormularioNegocio({ hayDb }: { hayDb: boolean }) {
         horario: construirHorario(),
         servicios: construirServicios(),
         kb,
+        tipoNegocio: tipoNegocio.trim() || undefined,
+        pais: pais.trim() || undefined,
+        formasPago: formasPago.trim() || undefined,
+        registro: registro.trim() || undefined,
+        tono: tono.trim() || undefined,
+        instrucciones: instrucciones.trim() || undefined,
       },
       usuario: usuario.trim(),
       password,
@@ -249,7 +266,7 @@ export default function FormularioNegocio({ hayDb }: { hayDb: boolean }) {
               setIdTocado(true);
               setId(e.target.value);
             }}
-            placeholder="ej: lavacar-rosales"
+            placeholder="ej: mi-negocio"
             required
           />
         </div>
@@ -357,22 +374,74 @@ export default function FormularioNegocio({ hayDb }: { hayDb: boolean }) {
         + Agregar servicio
       </button>
 
+      <h4>Perfil del negocio</h4>
+      <div className="campo">
+        <label htmlFor="oTipoNegocio">Tipo de negocio</label>
+        <input
+          id="oTipoNegocio"
+          placeholder="ej: una barbería, un consultorio dental, una empresa de software"
+          value={tipoNegocio}
+          onChange={(e) => setTipoNegocio(e.target.value)}
+        />
+      </div>
+      <div className="admin-grid">
+        <div className="campo">
+          <label htmlFor="oPais">País</label>
+          <input id="oPais" placeholder="se infiere de la zona horaria" value={pais} onChange={(e) => setPais(e.target.value)} />
+        </div>
+        <div className="campo">
+          <label htmlFor="oRegistro">Trato al cliente</label>
+          <select id="oRegistro" value={registro} onChange={(e) => setRegistro(e.target.value)}>
+            <option value="">Automático (según el país)</option>
+            <option value="vos">Vos (cercano)</option>
+            <option value="tu">Tú (cercano)</option>
+            <option value="usted">Usted (formal)</option>
+          </select>
+        </div>
+      </div>
+      <div className="campo">
+        <label htmlFor="oTono">Tono</label>
+        <input id="oTono" placeholder="ej: cordial y breve; cercano y profesional" value={tono} onChange={(e) => setTono(e.target.value)} />
+      </div>
+      <div className="campo">
+        <label htmlFor="oFormasPago">Formas de pago</label>
+        <input id="oFormasPago" placeholder="ej: SINPE Móvil y efectivo" value={formasPago} onChange={(e) => setFormasPago(e.target.value)} />
+      </div>
+      <div className="campo">
+        <label htmlFor="oInstrucciones">Instrucciones para el bot</label>
+        <textarea
+          id="oInstrucciones"
+          rows={6}
+          placeholder={"Reglas propias del negocio, con tus palabras. Ej:\n- El corte incluye lavado.\n- No atendemos sin cita."}
+          value={instrucciones}
+          onChange={(e) => setInstrucciones(e.target.value)}
+        />
+      </div>
+
       <h4>Base de conocimiento</h4>
-      <div className="campo">
-        <label htmlFor="oDatos">Datos (uno por línea)</label>
-        <textarea id="oDatos" value={datos} onChange={(e) => setDatos(e.target.value)} rows={3} />
+      <div className="kb-grupo">
+        <label>Información general</label>
+        <EditorItems
+          items={datos}
+          onChange={setDatos}
+          placeholder="Un dato por línea…"
+          ejemplos={["Aceptamos SINPE Móvil y efectivo", "Hay parqueo"]}
+          textoAgregar="Agregar dato"
+        />
       </div>
-      <div className="campo">
-        <label htmlFor="oPol">Políticas (una por línea)</label>
-        <textarea id="oPol" value={politicas} onChange={(e) => setPoliticas(e.target.value)} rows={3} />
+      <div className="kb-grupo">
+        <label>Políticas</label>
+        <EditorItems
+          items={politicas}
+          onChange={setPoliticas}
+          placeholder="Una política por línea…"
+          ejemplos={["Cancelaciones con 24h de anticipación"]}
+          textoAgregar="Agregar política"
+        />
       </div>
-      <div className="campo">
-        <label htmlFor="oTar">Tarifas (una por línea)</label>
-        <textarea id="oTar" value={tarifas} onChange={(e) => setTarifas(e.target.value)} rows={3} />
-      </div>
-      <div className="campo">
-        <label htmlFor="oPar">Parabrisas (una por línea)</label>
-        <textarea id="oPar" value={parabrisas} onChange={(e) => setParabrisas(e.target.value)} rows={3} />
+      <div className="kb-grupo">
+        <label>Secciones propias (precios, menú, servicios…)</label>
+        <EditorSecciones secciones={secciones} onChange={setSecciones} />
       </div>
 
       <h4>Preguntas frecuentes</h4>

@@ -633,6 +633,37 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .btn-punteado { display: block; width: 100%; text-align: center; padding: 10px; border: 1px dashed var(--border-2); border-radius: var(--radius-sm); color: var(--text-2); font-size: var(--step--1); font-weight: 600; transition: background .12s, border-color .12s, color .12s; }
 .btn-punteado:hover { border-color: var(--accent-line); color: var(--accent); background: var(--accent-soft); }
 
+/* ── Base de conocimiento: editor por ítems + secciones libres (EditorConocimiento.tsx) ──
+   Reemplaza los textarea "una por línea" por filas editables. Compartido por
+   #miNegocio (self-service) y #admin (alta), que estilan sus inputs igual por id. */
+.kb-grupo { padding: var(--space-md) 0; border-top: 1px solid var(--border); }
+.kb-grupo:first-of-type { border-top: none; padding-top: var(--space-2xs); }
+.kb-grupo-cabecera { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); }
+.kb-grupo-titulo { display: flex; align-items: center; gap: 8px; font-size: var(--step-0); font-weight: 700; color: var(--text); }
+.kb-grupo-titulo svg { color: var(--accent); flex-shrink: 0; }
+.kb-grupo-ayuda { font-size: var(--step--1); color: var(--text-muted); margin: 4px 0 var(--space-sm); }
+.kb-count { min-width: 22px; height: 22px; padding: 0 7px; border-radius: var(--radius-pill); background: var(--surface-2); color: var(--text-2); font-size: 12px; font-weight: 700; display: grid; place-items: center; flex-shrink: 0; }
+
+.kb-items { display: flex; flex-direction: column; gap: var(--space-xs); }
+.kb-item { display: flex; align-items: center; gap: var(--space-xs); }
+.kb-item-input { flex: 1; min-width: 0; }
+.kb-item-borrar { flex-shrink: 0; width: 40px; height: 40px; display: grid; place-items: center; border-radius: var(--radius-sm); color: var(--text-3); transition: background .12s, color .12s; }
+.kb-item-borrar:hover { background: var(--danger-soft); color: var(--danger); }
+.kb-empty { font-size: var(--step--1); color: var(--text-muted); margin: 0 0 var(--space-xs); }
+.kb-empty-ej { color: var(--text-3); }
+
+.kb-secciones { display: flex; flex-direction: column; gap: var(--space-md); }
+.kb-seccion { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-md); background: var(--surface-2); }
+.kb-seccion-head { display: flex; align-items: center; gap: var(--space-xs); margin-bottom: var(--space-sm); }
+.kb-seccion-titulo { flex: 1; min-width: 0; font-weight: 700; }
+
+/* Los inputs dentro de #miNegocio/#admin heredan el radius/padding grande de la regla
+   por id; para las filas de ítems queremos algo más compacto (mismo patrón id-prefijado
+   que .svc-*-input). */
+#miNegocio .kb-item-input, #admin .kb-item-input,
+#miNegocio .kb-seccion-titulo, #admin .kb-seccion-titulo { border-radius: var(--radius-sm); padding: 9px 12px; }
+#miNegocio .kb-grupo label, #admin .kb-grupo label { margin-top: 0; }
+
 /* Campos monoespaciados — nombres de plantillas de Meta, Place ID, etc. */
 .mono { font-family: var(--mono, ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace); }
 

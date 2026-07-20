@@ -52,14 +52,35 @@ export interface HorarioDia {
   cierra: string | null; // "18:00"
 }
 
+/**
+ * Sección de conocimiento nombrada por el dueño (multi-mercado): reemplaza a los
+ * campos fijos `tarifas`/`parabrisas` que eran de lavacar. El dueño la titula como
+ * quiera ("Precios", "Menú", "Tratamientos"…) y llena sus ítems, uno por línea.
+ */
+export interface SeccionConocimiento {
+  /** Slug estable derivado del título; sirve de key en el prompt/UI. */
+  id: string;
+  /** Nombre visible que elige el dueño. */
+  titulo: string;
+  /** Ítems de la sección, uno por línea. */
+  items: string[];
+}
+
 /** Base de conocimiento del negocio. SIN RAG todavía: va directo al prompt. */
 export interface KnowledgeBase {
   faq: { pregunta: string; respuesta: string }[];
+  /** Información general del negocio (universal a cualquier rubro). Una línea c/u. */
   datos: string[];
+  /** Políticas del negocio (universal a cualquier rubro). Una línea c/u. */
   politicas: string[];
-  /** Tabla de precios de servicios por orden de llegada (sin cita). Una línea c/u. */
+  /**
+   * Secciones libres nombradas por el dueño (multi-mercado). Se inyectan al prompt
+   * bajo su título. Reemplaza a los antiguos `tarifas`/`parabrisas`.
+   */
+  secciones?: SeccionConocimiento[];
+  /** @deprecated Migrado a `secciones` al leer (ver normalizarKb); ya no se escribe. */
   tarifas?: string[];
-  /** Tabla de precios de servicios de parabrisas (pulido / repelente / sellado). Una línea c/u. */
+  /** @deprecated Migrado a `secciones` al leer (ver normalizarKb); ya no se escribe. */
   parabrisas?: string[];
 }
 
@@ -149,6 +170,20 @@ export interface Tenant {
    * (no corre el job para este tenant).
    */
   googlePlaceId?: string;
+  // ── Perfil del negocio (B7, motor multi-mercado) ──
+  // Con estos campos el system prompt se arma para cualquier rubro (ver src/agent/systemPrompt.ts).
+  /** Rubro/persona del negocio: "una barbería", "una empresa de software e IA". undefined = "un negocio". */
+  tipoNegocio?: string;
+  /** País del negocio. undefined = se infiere de la zona horaria. */
+  pais?: string;
+  /** Formas de pago (texto libre). undefined/"" = no se menciona en el prompt. */
+  formasPago?: string;
+  /** Registro del trato al cliente. undefined = se infiere del país. */
+  registro?: "vos" | "tu" | "usted";
+  /** Tono/estilo del bot (texto corto). undefined = default "cordial y breve". */
+  tono?: string;
+  /** Instrucciones libres del dueño para el bot (reglas particulares del negocio). undefined = ninguna. */
+  instrucciones?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

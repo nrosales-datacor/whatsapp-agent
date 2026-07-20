@@ -48,7 +48,7 @@ async function ejecutarTool(
 ): Promise<string> {
   const { tenant, repo, clienteWa } = ctx;
 
-  // Candado: solo se agendan servicios marcados como agendables (pulidos).
+  // Candado: solo se agendan servicios marcados como agendables.
   const servicioEsAgendable = (servicioId: string) =>
     tenant.servicios.some((s) => s.id === servicioId && s.agendable);
 
@@ -59,7 +59,7 @@ async function ejecutarTool(
     if (!servicioEsAgendable(servicioId)) {
       return JSON.stringify({
         ok: false,
-        motivo: "ese servicio no se agenda; los lavados son por orden de llegada. Solo los pulidos requieren cita.",
+        motivo: "ese servicio no se agenda (no requiere cita). Solo se agendan los servicios marcados como agendables.",
       });
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
@@ -101,7 +101,7 @@ async function ejecutarTool(
     if (!servicioEsAgendable(servicioId)) {
       return JSON.stringify({
         ok: false,
-        motivo: "ese servicio no se agenda; los lavados son por orden de llegada. Solo los pulidos requieren cita.",
+        motivo: "ese servicio no se agenda (no requiere cita). Solo se agendan los servicios marcados como agendables.",
       });
     }
     const citas = await repo.citasPorFecha(tenant.id, fecha);

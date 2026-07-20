@@ -7,7 +7,7 @@
 import "dotenv/config";
 import postgres from "postgres";
 
-const TENANT = "lavacar-rosales";
+const TENANT = "selyon";
 const NUMS = [
   "50687123344", "50670112233", "50671778899", "50689998877", "50688456677",
   "50689112266", "50683221100", "50662445566", "50685334411", "50688221144",

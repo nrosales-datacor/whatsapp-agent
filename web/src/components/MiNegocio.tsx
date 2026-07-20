@@ -8,8 +8,10 @@ import {
   type Features,
   type HorarioDia,
   type KnowledgeBase,
+  type SeccionConocimiento,
   type Service,
 } from "../api";
+import { EditorItems, EditorSecciones } from "./EditorConocimiento";
 import ErrorState from "./ErrorState";
 import EstadoVacio from "./EstadoVacio";
 import Icono, { type IconoId } from "./Iconos";
@@ -28,6 +30,7 @@ import { useToast } from "./Toast";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const SUBNAV: { id: string; label: string; icono: IconoId }[] = [
+  { id: "mnPerfil", label: "Perfil del negocio", icono: "bot" },
   { id: "mnMarca", label: "Marca", icono: "palette" },
   { id: "mnServicios", label: "Servicios", icono: "wrench" },
   { id: "mnHorario", label: "Horario", icono: "clock" },
@@ -71,7 +74,8 @@ interface BloqueoForm {
 
 const DIAS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 
-const lineas = (s: string): string[] => s.split("\n").map((l) => l.trim()).filter(Boolean);
+/** Normaliza los ítems de una lista antes de enviarlos: trim + descarta vacíos. */
+const limpiar = (items: string[]): string[] => items.map((s) => s.trim()).filter(Boolean);
 
 function slugify(s: string): string {
   return s
@@ -136,10 +140,9 @@ export default function MiNegocio({ features }: { features: Features }) {
   const [horario, setHorario] = useState<DiaForm[]>([]);
   const [bloqueos, setBloqueos] = useState<BloqueoForm[]>([]);
   const [faqs, setFaqs] = useState<FaqForm[]>([]);
-  const [datos, setDatos] = useState("");
-  const [politicas, setPoliticas] = useState("");
-  const [tarifas, setTarifas] = useState("");
-  const [parabrisas, setParabrisas] = useState("");
+  const [datos, setDatos] = useState<string[]>([]);
+  const [politicas, setPoliticas] = useState<string[]>([]);
+  const [secciones, setSecciones] = useState<SeccionConocimiento[]>([]);
   const [linkResenas, setLinkResenas] = useState("");
   const [plantillaMarketing, setPlantillaMarketing] = useState("");
   const [plantillaReapertura, setPlantillaReapertura] = useState("");
@@ -152,6 +155,13 @@ export default function MiNegocio({ features }: { features: Features }) {
   const [rescateToque2Texto, setRescateToque2Texto] = useState("");
   const [rescatePlantilla, setRescatePlantilla] = useState("");
   const [googlePlaceId, setGooglePlaceId] = useState("");
+  // Perfil del negocio (B7, motor multi-mercado).
+  const [tipoNegocio, setTipoNegocio] = useState("");
+  const [pais, setPais] = useState("");
+  const [formasPago, setFormasPago] = useState("");
+  const [registro, setRegistro] = useState("");
+  const [tono, setTono] = useState("");
+  const [instrucciones, setInstrucciones] = useState("");
   // Snapshot del último estado guardado (o recién cargado): compararlo contra el
   // estado actual es lo que enciende "Cambios sin guardar" en la barra fija.
   const [snapshotInicial, setSnapshotInicial] = useState<string | null>(null);
@@ -164,10 +174,10 @@ export default function MiNegocio({ features }: { features: Features }) {
 
   function construirSnapshotActual() {
     return JSON.stringify({
-      servicios, horario, bloqueos, faqs, datos, politicas, tarifas, parabrisas,
+      servicios, horario, bloqueos, faqs, datos, politicas, secciones,
       linkResenas, plantillaMarketing, plantillaReapertura, colorAcento, colorHeader, logoUrl,
       rescateActivo, rescateHorasEspera, rescateToque1Texto, rescateToque2Texto, rescatePlantilla,
-      googlePlaceId,
+      googlePlaceId, tipoNegocio, pais, formasPago, registro, tono, instrucciones,
     });
   }
 
@@ -176,10 +186,9 @@ export default function MiNegocio({ features }: { features: Features }) {
     const horF = horarioAForm(data.horario);
     const bloqF = bloqueosAForm(data.bloqueos);
     const faqF = data.kb.faq.map((f) => ({ ...f }));
-    const datosF = (data.kb.datos ?? []).join("\n");
-    const politicasF = (data.kb.politicas ?? []).join("\n");
-    const tarifasF = (data.kb.tarifas ?? []).join("\n");
-    const parabrisasF = (data.kb.parabrisas ?? []).join("\n");
+    const datosF = data.kb.datos ?? [];
+    const politicasF = data.kb.politicas ?? [];
+    const seccionesF = (data.kb.secciones ?? []).map((s) => ({ ...s, items: [...s.items] }));
     const linkResenasF = data.linkResenas ?? "";
     const plantillaMarketingF = data.plantillaMarketing ?? "";
     const plantillaReaperturaF = data.plantillaReapertura ?? "";
@@ -191,6 +200,12 @@ export default function MiNegocio({ features }: { features: Features }) {
     const rescateToque2TextoF = data.rescateToque2Texto ?? "";
     const rescatePlantillaF = data.rescatePlantilla ?? "";
     const googlePlaceIdF = data.googlePlaceId ?? "";
+    const tipoNegocioF = data.tipoNegocio ?? "";
+    const paisF = data.pais ?? "";
+    const formasPagoF = data.formasPago ?? "";
+    const registroF = data.registro ?? "";
+    const tonoF = data.tono ?? "";
+    const instruccionesF = data.instrucciones ?? "";
 
     setServicios(servF);
     setHorario(horF);
@@ -198,8 +213,7 @@ export default function MiNegocio({ features }: { features: Features }) {
     setFaqs(faqF);
     setDatos(datosF);
     setPoliticas(politicasF);
-    setTarifas(tarifasF);
-    setParabrisas(parabrisasF);
+    setSecciones(seccionesF);
     setLinkResenas(linkResenasF);
     setPlantillaMarketing(plantillaMarketingF);
     setPlantillaReapertura(plantillaReaperturaF);
@@ -212,17 +226,25 @@ export default function MiNegocio({ features }: { features: Features }) {
     setRescateToque2Texto(rescateToque2TextoF);
     setRescatePlantilla(rescatePlantillaF);
     setGooglePlaceId(googlePlaceIdF);
+    setTipoNegocio(tipoNegocioF);
+    setPais(paisF);
+    setFormasPago(formasPagoF);
+    setRegistro(registroF);
+    setTono(tonoF);
+    setInstrucciones(instruccionesF);
 
     setSnapshotInicial(
       JSON.stringify({
         servicios: servF, horario: horF, bloqueos: bloqF, faqs: faqF,
-        datos: datosF, politicas: politicasF, tarifas: tarifasF, parabrisas: parabrisasF,
+        datos: datosF, politicas: politicasF, secciones: seccionesF,
         linkResenas: linkResenasF, plantillaMarketing: plantillaMarketingF,
         plantillaReapertura: plantillaReaperturaF, colorAcento: colorAcentoF,
         colorHeader: colorHeaderF, logoUrl: logoUrlF,
         rescateActivo: data.rescateActivo, rescateHorasEspera: rescateHorasEsperaF,
         rescateToque1Texto: rescateToque1TextoF, rescateToque2Texto: rescateToque2TextoF,
         rescatePlantilla: rescatePlantillaF, googlePlaceId: googlePlaceIdF,
+        tipoNegocio: tipoNegocioF, pais: paisF, formasPago: formasPagoF,
+        registro: registroF, tono: tonoF, instrucciones: instruccionesF,
       })
     );
   }
@@ -384,10 +406,11 @@ export default function MiNegocio({ features }: { features: Features }) {
       faq: faqs
         .filter((f) => f.pregunta.trim() && f.respuesta.trim())
         .map((f) => ({ pregunta: f.pregunta.trim(), respuesta: f.respuesta.trim() })),
-      datos: lineas(datos),
-      politicas: lineas(politicas),
-      tarifas: lineas(tarifas),
-      parabrisas: lineas(parabrisas),
+      datos: limpiar(datos),
+      politicas: limpiar(politicas),
+      secciones: secciones
+        .map((s) => ({ ...s, titulo: s.titulo.trim(), items: limpiar(s.items) }))
+        .filter((s) => s.titulo && s.items.length > 0),
     };
     guardar.mutate({
       horario: construirHorario(),
@@ -412,6 +435,13 @@ export default function MiNegocio({ features }: { features: Features }) {
       // Sin plan Pro el input de Place ID está oculto (abajo); no reenviar un valor
       // viejo que el backend rechazaría por el gating de resenasPro (Carril D, 0.1).
       googlePlaceId: features.resenasPro ? googlePlaceId.trim() : "",
+      // Perfil del negocio (B7): disponible para todos los planes.
+      tipoNegocio: tipoNegocio.trim(),
+      pais: pais.trim(),
+      formasPago: formasPago.trim(),
+      registro: registro.trim(),
+      tono: tono.trim(),
+      instrucciones: instrucciones.trim(),
     });
   }
 
@@ -456,6 +486,80 @@ export default function MiNegocio({ features }: { features: Features }) {
 
         <div className="mn-content" ref={contenidoRef}>
           <div className="dash-body mn-content-inner">
+            <div className="card admin-form" id="mnPerfil">
+              <h3>Perfil del negocio</h3>
+              <p className="mn-section-sub">
+                Quién es tu negocio y cómo habla el bot. Con esto el asistente se presenta y responde según tu rubro.
+              </p>
+              <div className="campo">
+                <label htmlFor="cTipoNegocio">Tipo de negocio</label>
+                <input
+                  id="cTipoNegocio"
+                  placeholder="ej: una barbería, un consultorio dental, una empresa de software"
+                  value={tipoNegocio}
+                  onChange={(e) => setTipoNegocio(e.target.value)}
+                />
+                <p className="campo-ayuda">Así se presenta el bot: "Sos el asistente de [tu negocio], {tipoNegocio.trim() || "un negocio"}…".</p>
+              </div>
+              <div className="admin-servicio">
+                <div className="campo campo-inline">
+                  <label htmlFor="cPais">País</label>
+                  <input
+                    id="cPais"
+                    placeholder="se infiere de la zona horaria"
+                    value={pais}
+                    onChange={(e) => setPais(e.target.value)}
+                  />
+                </div>
+                <div className="campo campo-inline">
+                  <label htmlFor="cRegistro">Trato al cliente</label>
+                  <select id="cRegistro" value={registro} onChange={(e) => setRegistro(e.target.value)}>
+                    <option value="">Automático (según el país)</option>
+                    <option value="vos">Vos (cercano)</option>
+                    <option value="tu">Tú (cercano)</option>
+                    <option value="usted">Usted (formal)</option>
+                  </select>
+                </div>
+              </div>
+              <div className="campo">
+                <label htmlFor="cTono">Tono</label>
+                <input
+                  id="cTono"
+                  placeholder="ej: cordial y breve; cercano y profesional"
+                  value={tono}
+                  onChange={(e) => setTono(e.target.value)}
+                />
+              </div>
+              <div className="campo">
+                <label htmlFor="cFormasPago">Formas de pago</label>
+                <input
+                  id="cFormasPago"
+                  placeholder="ej: SINPE Móvil y efectivo; transferencia y tarjeta"
+                  value={formasPago}
+                  onChange={(e) => setFormasPago(e.target.value)}
+                />
+              </div>
+              <div className="campo">
+                <label htmlFor="cInstrucciones">Instrucciones para el bot</label>
+                <textarea
+                  id="cInstrucciones"
+                  rows={8}
+                  placeholder={
+                    "Las reglas propias de tu negocio, con tus palabras. Ej:\n" +
+                    "- El corte incluye lavado de cabello.\n" +
+                    "- No atendemos sin cita.\n" +
+                    "- Si preguntan por X, respondé Y."
+                  }
+                  value={instrucciones}
+                  onChange={(e) => setInstrucciones(e.target.value)}
+                />
+                <p className="campo-ayuda">
+                  El bot las sigue al pie de la letra. Escribí acá cualquier regla, aclaración o excepción que no
+                  encaje en los servicios ni en la base de conocimiento.
+                </p>
+              </div>
+            </div>
+
             <div className="card admin-form" id="mnMarca">
               <h3>
                 Marca {!features.whiteLabel && <span className="badge badge-pro">🔒 Plan Pro</span>}
@@ -1006,22 +1110,61 @@ export default function MiNegocio({ features }: { features: Features }) {
 
             <div className="card admin-form" id="mnBaseConocimiento">
               <h3>Base de conocimiento</h3>
-              <p className="mn-section-sub">Lo que el bot sabe para responder preguntas generales.</p>
-              <div className="campo">
-                <label htmlFor="cDatos">Datos (uno por línea)</label>
-                <textarea id="cDatos" value={datos} onChange={(e) => setDatos(e.target.value)} rows={3} />
+              <p className="mn-section-sub">
+                Lo que el bot sabe para responder preguntas de tus clientes. Cada línea es un dato suelto.
+              </p>
+
+              <div className="kb-grupo">
+                <div className="kb-grupo-cabecera">
+                  <div className="kb-grupo-titulo">
+                    <Icono id="quote" size={16} />
+                    Información general
+                  </div>
+                  <div className="kb-count">{datos.filter((d) => d.trim()).length}</div>
+                </div>
+                <p className="kb-grupo-ayuda">
+                  Datos sueltos del negocio: ubicación, formas de pago, tiempos de espera, beneficios…
+                </p>
+                <EditorItems
+                  items={datos}
+                  onChange={setDatos}
+                  placeholder="Un dato por línea…"
+                  ejemplos={["Aceptamos SINPE Móvil y efectivo", "Hay parqueo mientras esperás"]}
+                  textoAgregar="Agregar dato"
+                />
               </div>
-              <div className="campo">
-                <label htmlFor="cPol">Políticas (una por línea)</label>
-                <textarea id="cPol" value={politicas} onChange={(e) => setPoliticas(e.target.value)} rows={3} />
+
+              <div className="kb-grupo">
+                <div className="kb-grupo-cabecera">
+                  <div className="kb-grupo-titulo">
+                    <Icono id="shield" size={16} />
+                    Políticas
+                  </div>
+                  <div className="kb-count">{politicas.filter((p) => p.trim()).length}</div>
+                </div>
+                <p className="kb-grupo-ayuda">Reglas y condiciones que el bot debe respetar y comunicar.</p>
+                <EditorItems
+                  items={politicas}
+                  onChange={setPoliticas}
+                  placeholder="Una política por línea…"
+                  ejemplos={["Cancelaciones con 24h de anticipación", "No se hacen devoluciones"]}
+                  textoAgregar="Agregar política"
+                />
               </div>
-              <div className="campo">
-                <label htmlFor="cTar">Tarifas (una por línea)</label>
-                <textarea id="cTar" value={tarifas} onChange={(e) => setTarifas(e.target.value)} rows={3} />
-              </div>
-              <div className="campo">
-                <label htmlFor="cPar">Parabrisas (una por línea)</label>
-                <textarea id="cPar" value={parabrisas} onChange={(e) => setParabrisas(e.target.value)} rows={3} />
+
+              <div className="kb-grupo">
+                <div className="kb-grupo-cabecera">
+                  <div className="kb-grupo-titulo">
+                    <Icono id="bookopen" size={16} />
+                    Secciones propias
+                  </div>
+                  <div className="kb-count">{secciones.filter((s) => s.titulo.trim()).length}</div>
+                </div>
+                <p className="kb-grupo-ayuda">
+                  Todo lo específico de tu negocio, en las secciones que vos definas (precios, menú,
+                  tratamientos…). El bot recibe cada sección con su título.
+                </p>
+                <EditorSecciones secciones={secciones} onChange={setSecciones} />
               </div>
             </div>
 

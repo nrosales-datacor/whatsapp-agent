@@ -47,7 +47,7 @@ if (!existsSync(indexDist)) {
 // login del operador funciona en memoria sin commitear ningún hash. auth.ts lee
 // PANEL_SESSION_SECRET en el load, por eso se setea arriba antes de importarlo.
 const { hashearPassword } = await import("../../src/panel/auth");
-process.env.PANEL_PASSWORD_HASH_ROSALES = hashearPassword(E2E.password);
+process.env.PANEL_PASSWORD_HASH_SELYON = hashearPassword(E2E.password);
 
 // (4) Instala el dispatcher de fetch mockeado (Graph API) ANTES de importar el server:
 // src/server.ts → handleWebhook → whatsapp/transcribir.ts construye `new OpenAI()` en el

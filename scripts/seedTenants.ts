@@ -1,12 +1,12 @@
 import "dotenv/config";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { TENANT_FALLBACK_ROSALES } from "../src/config/tenants";
+import { TENANT_FALLBACK_SELYON } from "../src/config/tenants";
 import { waTenants, waUsuarios } from "../src/db/schema";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Siembra (o actualiza) en la base el tenant inicial "lavacar-rosales" y su usuario
-// de panel, a partir de la config hardcodeada (TENANT_FALLBACK_ROSALES). IDEMPOTENTE
+// Siembra (o actualiza) en la base el tenant inicial "selyon" y su usuario
+// de panel, a partir de la config hardcodeada (TENANT_FALLBACK_SELYON). IDEMPOTENTE
 // (upsert): se puede correr en cada deploy sin duplicar ni romper. (ROADMAP B2)
 //
 //   Ejecutar:  npx tsx scripts/seedTenants.ts
@@ -21,10 +21,10 @@ if (!url) {
   process.exit(1);
 }
 
-const hash = process.env.PANEL_PASSWORD_HASH_ROSALES;
+const hash = process.env.PANEL_PASSWORD_HASH_SELYON;
 if (!hash) {
   console.error(
-    "❌ Falta PANEL_PASSWORD_HASH_ROSALES en el .env (es la contraseña del panel del negocio). " +
+    "❌ Falta PANEL_PASSWORD_HASH_SELYON en el .env (es la contraseña del panel del negocio). " +
       'Generala con: npx tsx scripts/hashPassword.ts "TU_CLAVE"',
   );
   process.exit(1);
@@ -35,10 +35,10 @@ const sql = esSupabase ? postgres(url, { ssl: "require", prepare: false, max: 1 
 
 try {
   const db = drizzle(sql);
-  const t = TENANT_FALLBACK_ROSALES;
+  const t = TENANT_FALLBACK_SELYON;
 
-  // El id del tenant es el slug ("lavacar-rosales"): debe coincidir con el tenant_id
-  // ya guardado en wa_conversaciones/wa_citas. Es inmutable.
+  // El id del tenant es el slug ("selyon"): debe coincidir con el tenant_id ya guardado
+  // en wa_conversaciones/wa_citas. Es inmutable.
   const datos = {
     id: t.id,
     nombre: t.nombre,
@@ -51,6 +51,14 @@ try {
     horario: t.horario,
     servicios: t.servicios,
     kb: t.kb,
+    bloqueos: t.bloqueos,
+    // Perfil del negocio (B7): sin esto el prompt del tenant sembrado caería a defaults.
+    tipoNegocio: t.tipoNegocio ?? null,
+    pais: t.pais ?? null,
+    formasPago: t.formasPago ?? null,
+    registro: t.registro ?? null,
+    tono: t.tono ?? null,
+    instrucciones: t.instrucciones ?? null,
   };
 
   await db

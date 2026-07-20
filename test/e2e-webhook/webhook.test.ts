@@ -4,7 +4,7 @@ import { afterEach, test } from "node:test";
 import { RepositorioEnMemoria } from "../../src/booking/inMemoryRepository";
 import { ingerirEntrante, responderEntrante, type Pendiente } from "../../src/handleWebhook";
 import { cargarTenants } from "../../src/config/tenantStore";
-import { TENANT_FALLBACK_ROSALES } from "../../src/config/tenants";
+import { TENANT_FALLBACK_SELYON } from "../../src/config/tenants";
 import type { Conversacion, HorarioDia, Tenant } from "../../src/types";
 import { crearCita, crearTenant } from "../helpers/fixtures";
 import {
@@ -363,7 +363,7 @@ test("respeta la ventana humana: si un humano toma la conversación mientras el 
 test("dedup por wamid: reenviar el mismo mensaje no re-procesa (ingerirEntrante)", async () => {
   delete process.env.DATABASE_URL; // fuerza el fallback en memoria del tenantStore
   await cargarTenants();
-  const pnid = TENANT_FALLBACK_ROSALES.phoneNumberId;
+  const pnid = TENANT_FALLBACK_SELYON.phoneNumberId;
   const repo = new RepositorioEnMemoria();
   const body = cuerpoTextoEntrante({ phoneNumberId: pnid, clienteWa: "50611110000", texto: "hola", messageId: "wamid.dup.1" });
 

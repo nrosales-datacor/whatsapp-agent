@@ -99,25 +99,19 @@ test → agente 100% determinista). `test/helpers/setupEnv.ts` fija `OPENAI_API_
 **Nota:** la sincronización a Google Calendar en `agendar_cita` es no-op sin `GCAL_*` (no se ejerce acá); su lógica pura
 ya está cubierta indirectamente por el repo. `notificarOperador` sin VAPID solo loguea, así que tampoco toca red.
 
-### 4. ✅ Evals del agente (LLM — no determinista, corre aparte)
+### 4. ⏸️ Evals del agente (LLM — pendientes de reescribir para Selyon)
 
-Harness en `eval/correrEval.ts` (`npm run eval`), tenant de fixture con KB completa en `eval/fixtureEval.ts`,
-11 transcripciones fijas en `eval/transcripciones/*.json`. Corre `correrAgente` contra **OpenAI real** (necesita
-`OPENAI_API_KEY`; sin ella aborta con código 2) sobre un repo en memoria — **nunca toca producción**. Observa qué
-herramienta eligió el agente espiando `globalThis.fetch` (lee los `tool_calls` de la respuesta sobre un clon, sin
-tocar el flujo real).
+El harness de evals (`eval/`, `npm run eval`) estaba escrito para el piloto Lavacar Rosales
+(11 transcripciones con reglas de pulido/parabrisas). Con el pivote a **Selyon** y la
+generalización del system prompt (B7) esas transcripciones dejaron de aplicar, así que se
+**eliminó el harness lavacar** (tenant fixture + transcripciones + `correrEval.ts` + script
+`npm run eval`).
 
-- Aserciones **laxas** (vocabulario en `Espera`): `herramienta`/`herramientaAlguna`/`herramientaNo`/`sinHerramienta`,
-  `escala`, `fueraDeAlcance`, `interactivo`, `contiene`/`contieneAlguno`/`noContiene`, y `fechaAnioActual`
-  (verifica que no inventó el año en los args de fecha).
-- Casos cubren: cotiza lavado y **pulido con el precio fijo del prompt**, lavado **no se agenda** (orden de llegada),
-  **fuera de alcance** (no escala), **escala** ante pregunta de negocio desconocida, **carrocería** se revisa en persona,
-  **repelente ≠ pulido**, pulido ambiguo pregunta cuál, **ofrece horarios** como lista, **no inventa disponibilidad**,
-  y **consultar_mi_cita** con cita sembrada. Los 11 pasan en verde contra `gpt-4o-mini`.
-- **No en cada push** (cuesta tokens): manual o job nocturno. `EVAL_REPETICIONES=N` mide la tasa ante no determinismo
-  (marca ⚠️ inestable si pasa en unas y falla en otras); `EVAL_CASO=<substr>` filtra un caso al iterar. Exit ≠ 0 si algún
-  caso no fue verde en todas sus repeticiones.
-- Es el ángulo de **calidad/valor** que ningún unit test cubre.
+**Pendiente:** rearmar el harness con transcripciones de conversación de Selyon (o del
+próximo negocio real) — es el ángulo de **calidad/valor** que ningún unit test cubre.
+Mientras tanto, la no-regresión del motor genérico se chequea con un snippet que construye
+`construirSystemPrompt` para distintos tenants (persona correcta, agenda condicional,
+instrucciones inyectadas).
 
 ### 5. ✅ Fiabilidad y concurrencia (validar lo que B1/B4 prometen)
 
@@ -241,9 +235,7 @@ test/
   security/        # sesión firmada, anti-timing, firma del webhook (ángulo 8)
   e2e-panel/       # Playwright: servidor.ts (server E2E), *.spec.ts, constantes.ts
   helpers/         # fabricadores de tenant/cita/conversación, mock de Graph/OpenAI
-eval/
-  transcripciones/ # casos fijos del agente
-  correrEval.ts
+# eval/ — eliminado en el pivote a Selyon (era lavacar); pendiente rearmar (ver ángulo 4)
 playwright.config.ts  # webServer = test/e2e-panel/servidor.ts, workers:1
 scripts/
   verificarMigraciones.ts  # guardrail de drift (ángulo 7)
@@ -254,15 +246,13 @@ scripts/
 "scripts": {
   "test": "tsx --test test/unit/*.test.ts test/tenant/*.test.ts test/e2e-webhook/*.test.ts test/reliability/*.test.ts test/security/*.test.ts",
   "test:e2e": "npm run web:build && playwright test",  // panel (build + Playwright)
-  "db:check": "tsx scripts/verificarMigraciones.ts",   // drift de schema (ángulo 7)
-  "eval": "tsx eval/correrEval.ts"                      // LLM, manual/nocturno
+  "db:check": "tsx scripts/verificarMigraciones.ts"    // drift de schema (ángulo 7)
 }
 ```
 
 CI (`.github/workflows/ci-cd.yml`): `npm test` y `npm run db:check` corren en el job `verificar`
 (antes del typecheck); el E2E del panel es el job separado `e2e-panel` (build + `npx playwright install`
 + `npx playwright test`). Ambos jobs **bloquean el deploy** (`desplegar.needs: [verificar, e2e-panel]`).
-`eval` NO en el push (tokens).
 
 ---
 
