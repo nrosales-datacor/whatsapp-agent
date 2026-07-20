@@ -2,8 +2,9 @@ import type { ChatCompletionTool } from "openai/resources/chat/completions";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Herramientas del agente (OpenAI function calling).
-// Aplican SOLO a servicios agendables (pulidos). Los lavados son por orden de
-// llegada y NO se agendan. La ejecución vive en runAgent.ts.
+// Aplican SOLO a servicios marcados como agendables. Los servicios no agendables no
+// usan estas herramientas. La ejecución vive en runAgent.ts. Las descripciones son
+// genéricas (multi-mercado): el detalle de cada negocio lo pone el system prompt.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const TOOLS: ChatCompletionTool[] = [
@@ -12,12 +13,12 @@ export const TOOLS: ChatCompletionTool[] = [
     function: {
       name: "consultar_disponibilidad",
       description:
-        "Devuelve los espacios libres para agendar un PULIDO en una fecha. Solo para servicios agendables (pulidos), no para lavados.",
+        "Devuelve los espacios libres para agendar un servicio en una fecha. Solo para servicios agendables.",
       parameters: {
         type: "object",
         properties: {
           fecha: { type: "string", description: "Fecha a consultar en formato YYYY-MM-DD." },
-          servicioId: { type: "string", description: "id del servicio con pulido (ej: 'lavado_pulido_sellador', 'pulido_sellador', 'pulido_focos')." },
+          servicioId: { type: "string", description: "id del servicio agendable a consultar." },
         },
         required: ["fecha", "servicioId"],
         additionalProperties: false,
@@ -29,12 +30,12 @@ export const TOOLS: ChatCompletionTool[] = [
     function: {
       name: "ofrecer_horarios",
       description:
-        "Muestra al cliente los horarios libres de un PULIDO como una LISTA TOCABLE de WhatsApp (en vez de escribirlos en texto). Usala cuando ya tengas claro el servicio y la fecha y quieras que el cliente elija la hora con un toque. El cliente responderá tocando una opción. Si hay muchos horarios, pasá la franja ('mañana' o 'tarde') para que la lista sea corta; si aún no sabés la franja, preguntásela antes.",
+        "Muestra al cliente los horarios libres de un servicio como una LISTA TOCABLE de WhatsApp (en vez de escribirlos en texto). Usala cuando ya tengas claro el servicio y la fecha y quieras que el cliente elija la hora con un toque. El cliente responderá tocando una opción. Si hay muchos horarios, pasá la franja ('mañana' o 'tarde') para que la lista sea corta; si aún no sabés la franja, preguntásela antes.",
       parameters: {
         type: "object",
         properties: {
           fecha: { type: "string", description: "Fecha a mostrar en formato YYYY-MM-DD." },
-          servicioId: { type: "string", description: "id del servicio con pulido a agendar." },
+          servicioId: { type: "string", description: "id del servicio agendable a mostrar." },
           franja: {
             type: "string",
             enum: ["mañana", "tarde", "todos"],
@@ -51,19 +52,19 @@ export const TOOLS: ChatCompletionTool[] = [
     function: {
       name: "agendar_cita",
       description:
-        "Crea una cita de PULIDO confirmada. Llamar SOLO tras confirmar los datos con el cliente y verificar disponibilidad. No usar para lavados.",
+        "Crea una cita confirmada de un servicio agendable. Llamar SOLO tras confirmar los datos con el cliente y verificar disponibilidad.",
       parameters: {
         type: "object",
         properties: {
           nombre: { type: "string", description: "Nombre del cliente." },
-          servicioId: { type: "string", description: "id del pulido elegido." },
+          servicioId: { type: "string", description: "id del servicio agendable elegido." },
           fecha: { type: "string", description: "Fecha en formato YYYY-MM-DD." },
           hora: { type: "string", description: "Hora en formato HH:mm (24h)." },
-          placa: { type: "string", description: "Placa del vehículo (opcional)." },
+          placa: { type: "string", description: "Dato identificador opcional del cliente (ej: placa del vehículo). Omitir si no aplica." },
           precio: {
             type: "number",
             description:
-              "Precio cotizado en colones (ej: 15000), tomado de la tabla de parabrisas según el vehículo. Para pulido de focos (se cotiza en persona) omitir.",
+              "Precio cotizado en la moneda del negocio (ej: 15000), según lo que le dijiste al cliente. Omitir si el servicio se cotiza en persona o no tiene precio fijo.",
           },
         },
         required: ["nombre", "servicioId", "fecha", "hora"],
@@ -76,7 +77,7 @@ export const TOOLS: ChatCompletionTool[] = [
     function: {
       name: "consultar_mi_cita",
       description:
-        "Devuelve las citas de PULIDO activas (futuras) del cliente con el que estás chateando, identificadas por su número de WhatsApp. Usala cuando el cliente pregunte '¿cuándo es mi cita?' o antes de reprogramar/cancelar para saber cuál es.",
+        "Devuelve las citas activas (futuras) del cliente con el que estás chateando, identificadas por su número de WhatsApp. Usala cuando el cliente pregunte '¿cuándo es mi cita?' o antes de reprogramar/cancelar para saber cuál es.",
       parameters: { type: "object", properties: {}, additionalProperties: false },
     },
   },
@@ -124,12 +125,12 @@ export const TOOLS: ChatCompletionTool[] = [
     function: {
       name: "registrar_cotizacion",
       description:
-        "Registra que le diste un PRECIO a un PULIDO con intención de venta pero el cliente NO agendó cita en el momento. Habilita un seguimiento automático más tarde si no vuelve a escribir. Llamala SIEMPRE que cotices un pulido y el cliente no cierre la cita ahí mismo. No la uses para lavados (no se agendan) ni si ya agendó.",
+        "Registra que le diste un PRECIO a un servicio agendable con intención de venta pero el cliente NO agendó cita en el momento. Habilita un seguimiento automático más tarde si no vuelve a escribir. Llamala SIEMPRE que cotices un servicio agendable y el cliente no cierre la cita ahí mismo. No la uses para servicios que no se agendan ni si ya agendó.",
       parameters: {
         type: "object",
         properties: {
-          servicioId: { type: "string", description: "id del servicio de pulido cotizado." },
-          monto: { type: "number", description: "Monto cotizado en colones (el mismo que le dijiste al cliente)." },
+          servicioId: { type: "string", description: "id del servicio agendable cotizado." },
+          monto: { type: "number", description: "Monto cotizado en la moneda del negocio (el mismo que le dijiste al cliente)." },
         },
         required: ["servicioId", "monto"],
         additionalProperties: false,
@@ -175,7 +176,7 @@ export const TOOLS: ChatCompletionTool[] = [
     function: {
       name: "escalar_a_humano",
       description:
-        "Pasa la conversación a una persona del equipo cuando NO podés resolver lo que el cliente necesita: una pregunta SOBRE EL NEGOCIO que no está en tu información, un reclamo, un caso especial, o algo que requiere a un encargado. NO la uses para pedidos FUERA del lavacar (esos se responden con amabilidad, sin escalar) ni cuando SÍ tenés la respuesta.",
+        "Pasa la conversación a una persona del equipo cuando NO podés resolver lo que el cliente necesita: una pregunta SOBRE EL NEGOCIO que no está en tu información, un reclamo, un caso especial, o algo que requiere a un encargado. NO la uses para pedidos FUERA del negocio (esos se responden con amabilidad, sin escalar) ni cuando SÍ tenés la respuesta.",
       parameters: {
         type: "object",
         properties: {

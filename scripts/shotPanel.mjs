@@ -17,7 +17,7 @@ const base = process.argv[2] && !process.argv[2].startsWith("--") ? process.argv
 const outDir = resolve(arg("--out", "./design-shots"));
 const label = arg("--label", "before");
 // La contraseña NO se hardcodea: se lee del entorno (.env). Así no queda en git.
-const USUARIO = process.env.PANEL_DEMO_USUARIO || "lavacar-rosales";
+const USUARIO = process.env.PANEL_DEMO_USUARIO || "selyon";
 const PASSWORD = process.env.PANEL_DEMO_PASSWORD;
 if (!PASSWORD) {
   console.error("Falta PANEL_DEMO_PASSWORD (contraseña del panel para el login de las capturas). Ponela en .env.");

@@ -1,4 +1,4 @@
-import type { Bloqueo, HorarioDia, Service } from "../types";
+import type { Bloqueo, HorarioDia, KnowledgeBase, SeccionConocimiento, Service } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Validación server-side de la config de un negocio (horario/servicios/faq/
@@ -134,6 +134,114 @@ export function validarFaq(v: unknown): { pregunta: string; respuesta: string }[
     if (pregunta && respuesta) out.push({ pregunta: pregunta.slice(0, 300), respuesta: respuesta.slice(0, 1000) });
   }
   return out;
+}
+
+/** Convierte un texto a slug estable (para el id de una sección de conocimiento). */
+function aSlug(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 50);
+}
+
+/**
+ * Valida las secciones libres de la base de conocimiento (multi-mercado): cada una
+ * con un `titulo` que el dueño elige y sus `items` (uno por línea). Descarta las que
+ * no tengan título o queden sin ítems. Deriva un `id` slug del título y desambigua
+ * colisiones, así el prompt/UI tienen una key estable. Tope de 12 secciones (defensa
+ * contra prompts gigantes; alcanza de sobra para cualquier rubro).
+ */
+export function validarSecciones(v: unknown): SeccionConocimiento[] {
+  if (!Array.isArray(v)) return [];
+  const out: SeccionConocimiento[] = [];
+  const vistos = new Set<string>();
+  for (const s of v) {
+    if (out.length >= 12) break;
+    if (!s || typeof s !== "object") continue;
+    const r = s as Record<string, unknown>;
+    const titulo = String(r.titulo ?? "").trim().slice(0, 60);
+    const items = limpiarLineas(r.items);
+    if (!titulo || items.length === 0) continue;
+    const base = aSlug(titulo) || aSlug(String(r.id ?? "")) || "seccion";
+    let id = base;
+    let n = 2;
+    while (vistos.has(id)) id = `${base}-${n++}`;
+    vistos.add(id);
+    out.push({ id, titulo, items });
+  }
+  return out;
+}
+
+/**
+ * Normaliza un kb crudo (venga de la DB o de un cliente) a la forma vigente. Su
+ * trabajo CRÍTICO es la migración perezosa: los tenants guardados antes de las
+ * "secciones libres" tienen `tarifas`/`parabrisas` (lavacar) y ningún `secciones`;
+ * acá se convierten a secciones nombradas para que el prompt no pierda esos datos.
+ * Idempotente: si el kb ya tiene `secciones`, se deja tal cual (validado).
+ */
+export function normalizarKb(kb: unknown): KnowledgeBase {
+  const raw = (kb && typeof kb === "object" ? kb : {}) as Record<string, unknown>;
+  const secciones = validarSecciones(raw.secciones);
+  // Migración legacy: solo si el kb todavía no tiene secciones propias.
+  if (secciones.length === 0) {
+    const tarifas = limpiarLineas(raw.tarifas);
+    const parabrisas = limpiarLineas(raw.parabrisas);
+    if (tarifas.length) secciones.push({ id: "precios-de-lavado", titulo: "Precios de lavado", items: tarifas });
+    if (parabrisas.length)
+      secciones.push({ id: "servicios-de-parabrisas", titulo: "Servicios de parabrisas", items: parabrisas });
+  }
+  return {
+    faq: validarFaq(raw.faq),
+    datos: limpiarLineas(raw.datos),
+    politicas: limpiarLineas(raw.politicas),
+    secciones,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Perfil del negocio (B7, motor multi-mercado): campos que arman el system prompt
+// para cualquier rubro. Todos opcionales — vacío = el prompt usa un default o infiere.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Recorta un texto libre a un máximo de caracteres (trim + slice). "" si viene vacío. */
+export function limpiarTexto(v: unknown, max: number): string {
+  return String(v ?? "").trim().slice(0, max);
+}
+
+/** Valida el registro del trato al cliente. Devuelve "" si no es uno de los válidos. */
+export function validarRegistro(v: unknown): "vos" | "tu" | "usted" | "" {
+  const s = String(v ?? "").trim().toLowerCase();
+  return s === "vos" || s === "tu" || s === "usted" ? s : "";
+}
+
+// Mapa chico de zonas horarias LATAM → país + registro por defecto. No pretende ser
+// exhaustivo: cubre los mercados probables y cae a un neutro ("", "tu") para el resto.
+const PAIS_POR_TZ: Record<string, { pais: string; registro: "vos" | "tu" | "usted" }> = {
+  "America/Costa_Rica": { pais: "Costa Rica", registro: "vos" },
+  "America/Guatemala": { pais: "Guatemala", registro: "vos" },
+  "America/Managua": { pais: "Nicaragua", registro: "vos" },
+  "America/Tegucigalpa": { pais: "Honduras", registro: "usted" },
+  "America/El_Salvador": { pais: "El Salvador", registro: "vos" },
+  "America/Panama": { pais: "Panamá", registro: "tu" },
+  "America/Mexico_City": { pais: "México", registro: "tu" },
+  "America/Bogota": { pais: "Colombia", registro: "usted" },
+  "America/Lima": { pais: "Perú", registro: "tu" },
+  "America/Santiago": { pais: "Chile", registro: "tu" },
+  "America/Guayaquil": { pais: "Ecuador", registro: "tu" },
+  "America/Caracas": { pais: "Venezuela", registro: "tu" },
+  "America/Montevideo": { pais: "Uruguay", registro: "tu" },
+  "America/Asuncion": { pais: "Paraguay", registro: "tu" },
+  "America/La_Paz": { pais: "Bolivia", registro: "tu" },
+  "America/Santo_Domingo": { pais: "República Dominicana", registro: "tu" },
+};
+
+/** Infiere país + registro a partir de la zona horaria del tenant (fallback neutro). */
+export function inferirPaisRegistro(timezone: string): { pais: string; registro: "vos" | "tu" | "usted" } {
+  if (timezone.startsWith("America/Argentina/")) return { pais: "Argentina", registro: "vos" };
+  return PAIS_POR_TZ[timezone] ?? { pais: "", registro: "tu" };
 }
 
 /**

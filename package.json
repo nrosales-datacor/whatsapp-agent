@@ -10,7 +10,6 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/unit/*.test.ts test/tenant/*.test.ts test/e2e-webhook/*.test.ts test/reliability/*.test.ts test/security/*.test.ts",
     "test:e2e": "npm run web:build && playwright test",
-    "eval": "tsx eval/correrEval.ts",
     "db:check": "tsx scripts/verificarMigraciones.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",

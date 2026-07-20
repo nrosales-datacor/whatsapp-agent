@@ -19,6 +19,7 @@ import {
 } from "../config/tenantStore";
 import {
   limpiarLineas,
+  limpiarTexto,
   validarBloqueos,
   validarColorHex,
   validarFaq,
@@ -29,7 +30,9 @@ import {
   validarNombrePlantillaMarketing,
   validarNombrePlantillaReapertura,
   validarNombrePlantillaRescate,
+  validarRegistro,
   validarRescateHoras,
+  validarSecciones,
   validarServicios,
   validarTextoRescate,
 } from "../config/validadores";
@@ -300,6 +303,14 @@ function validarAltaTenant(body: any): ResultadoAlta {
   const timezone = String(t.timezone ?? "").trim() || "America/Costa_Rica";
   const moneda = String(t.moneda ?? "").trim() || "₡";
 
+  // Perfil del negocio (B7, motor multi-mercado): textos libres acotados + registro validado.
+  const tipoNegocio = limpiarTexto(t.tipoNegocio, 120);
+  const pais = limpiarTexto(t.pais, 60);
+  const formasPago = limpiarTexto(t.formasPago, 300);
+  const registro = validarRegistro(t.registro);
+  const tono = limpiarTexto(t.tono, 120);
+  const instrucciones = limpiarTexto(t.instrucciones, 4000);
+
   let intervaloAgendaMin = 30;
   if (t.intervaloAgendaMin !== undefined && t.intervaloAgendaMin !== null && t.intervaloAgendaMin !== "") {
     const n = Number(t.intervaloAgendaMin);
@@ -318,8 +329,7 @@ function validarAltaTenant(body: any): ResultadoAlta {
     faq: validarFaq(t.kb?.faq),
     datos: limpiarLineas(t.kb?.datos),
     politicas: limpiarLineas(t.kb?.politicas),
-    tarifas: limpiarLineas(t.kb?.tarifas),
-    parabrisas: limpiarLineas(t.kb?.parabrisas),
+    secciones: validarSecciones(t.kb?.secciones),
   };
 
   const usuario = String(body.usuario ?? "").trim();
@@ -345,6 +355,12 @@ function validarAltaTenant(body: any): ResultadoAlta {
     // pestaña "Facturación" del panel (el piloto ya existente quedó en "pro" gratis por
     // la migración aditiva, esto NO afecta tenants ya creados).
     plan: "basico",
+    ...(tipoNegocio && { tipoNegocio }),
+    ...(pais && { pais }),
+    ...(formasPago && { formasPago }),
+    ...(registro && { registro }),
+    ...(tono && { tono }),
+    ...(instrucciones && { instrucciones }),
   };
   return { ok: true, tenant, usuario, password };
 }
@@ -993,6 +1009,12 @@ export async function manejarPanel(
       rescateToque2Texto: tenant.rescateToque2Texto ?? "",
       rescatePlantilla: tenant.rescatePlantilla ?? "",
       googlePlaceId: tenant.googlePlaceId ?? "",
+      tipoNegocio: tenant.tipoNegocio ?? "",
+      pais: tenant.pais ?? "",
+      formasPago: tenant.formasPago ?? "",
+      registro: tenant.registro ?? "",
+      tono: tenant.tono ?? "",
+      instrucciones: tenant.instrucciones ?? "",
     });
     return true;
   }
@@ -1084,9 +1106,16 @@ export async function manejarPanel(
       faq: validarFaq(body?.kb?.faq),
       datos: limpiarLineas(body?.kb?.datos),
       politicas: limpiarLineas(body?.kb?.politicas),
-      tarifas: limpiarLineas(body?.kb?.tarifas),
-      parabrisas: limpiarLineas(body?.kb?.parabrisas),
+      secciones: validarSecciones(body?.kb?.secciones),
     };
+
+    // Perfil del negocio (B7, motor multi-mercado): textos libres acotados + registro validado.
+    const tipoNegocio = limpiarTexto(body?.tipoNegocio, 120);
+    const pais = limpiarTexto(body?.pais, 60);
+    const formasPago = limpiarTexto(body?.formasPago, 300);
+    const registro = validarRegistro(body?.registro);
+    const tono = limpiarTexto(body?.tono, 120);
+    const instrucciones = limpiarTexto(body?.instrucciones, 4000);
 
     try {
       await actualizarConfigTenant(tenant.id, {
@@ -1106,6 +1135,12 @@ export async function manejarPanel(
         rescateToque2Texto: rescateToque2Texto || null,
         rescatePlantilla: rescatePlantilla || null,
         googlePlaceId: googlePlaceId || null,
+        tipoNegocio: tipoNegocio || null,
+        pais: pais || null,
+        formasPago: formasPago || null,
+        registro: registro || null,
+        tono: tono || null,
+        instrucciones: instrucciones || null,
       });
     } catch (e) {
       if (e instanceof Error && e.message === "SIN_DB") {

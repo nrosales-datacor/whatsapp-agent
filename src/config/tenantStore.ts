@@ -2,7 +2,8 @@ import { and, eq } from "drizzle-orm";
 import type { Bloqueo, EstadoFacturacion, HorarioDia, KnowledgeBase, Plan, Rol, Service, Tenant } from "../types";
 import { crearDb } from "../db/client";
 import { waTenants, waUsuarios } from "../db/schema";
-import { TENANT_FALLBACK_ROSALES } from "./tenants";
+import { TENANT_FALLBACK_SELYON } from "./tenants";
+import { normalizarKb } from "./validadores";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fuente ÚNICA de tenants para todo el código (ROADMAP B2). La base
@@ -71,12 +72,12 @@ function construirCache(
 }
 
 // Caché de emergencia: el tenant hardcodeado + un usuario sintético desde el hash
-// de .env. Mantiene el bot atendiendo a rosales si la base aún no está sembrada.
+// de .env. Mantiene el bot atendiendo a Selyon si la base aún no está sembrada.
 // Es el único login del negocio → dueño.
 function cacheFallback(): Cache {
-  const t = TENANT_FALLBACK_ROSALES;
+  const t = TENANT_FALLBACK_SELYON;
   const usuarios = [];
-  const hash = process.env.PANEL_PASSWORD_HASH_ROSALES;
+  const hash = process.env.PANEL_PASSWORD_HASH_SELYON;
   if (hash) {
     usuarios.push({
       id: "fallback",
@@ -103,7 +104,10 @@ function filaATenant(f: typeof waTenants.$inferSelect): Tenant {
     intervaloAgendaMin: f.intervaloAgendaMin,
     horario: f.horario,
     servicios: f.servicios,
-    kb: f.kb,
+    // normalizarKb migra al vuelo los kb viejos (tarifas/parabrisas → secciones): sin
+    // esto, un tenant guardado antes de las "secciones libres" perdería esos datos del
+    // prompt (systemPrompt ya no lee tarifas/parabrisas). Ver [[deploy-migracion-obligatoria]].
+    kb: normalizarKb(f.kb),
     bloqueos: f.bloqueos,
     linkResenas: f.linkResenas ?? undefined,
     plantillaMarketing: f.plantillaMarketing ?? undefined,
@@ -122,6 +126,12 @@ function filaATenant(f: typeof waTenants.$inferSelect): Tenant {
     rescateToque2Texto: f.rescateToque2Texto ?? undefined,
     rescatePlantilla: f.rescatePlantilla ?? undefined,
     googlePlaceId: f.googlePlaceId ?? undefined,
+    tipoNegocio: f.tipoNegocio ?? undefined,
+    pais: f.pais ?? undefined,
+    formasPago: f.formasPago ?? undefined,
+    registro: (f.registro as Tenant["registro"]) ?? undefined,
+    tono: f.tono ?? undefined,
+    instrucciones: f.instrucciones ?? undefined,
   };
 }
 
@@ -310,6 +320,12 @@ export async function actualizarConfigTenant(
     rescateToque2Texto: string | null;
     rescatePlantilla: string | null;
     googlePlaceId: string | null;
+    tipoNegocio: string | null;
+    pais: string | null;
+    formasPago: string | null;
+    registro: string | null;
+    tono: string | null;
+    instrucciones: string | null;
   },
 ): Promise<void> {
   if (!hayDb) throw new Error("SIN_DB");
@@ -333,6 +349,12 @@ export async function actualizarConfigTenant(
       rescateToque2Texto: patch.rescateToque2Texto,
       rescatePlantilla: patch.rescatePlantilla,
       googlePlaceId: patch.googlePlaceId,
+      tipoNegocio: patch.tipoNegocio,
+      pais: patch.pais,
+      formasPago: patch.formasPago,
+      registro: patch.registro,
+      tono: patch.tono,
+      instrucciones: patch.instrucciones,
       actualizadoEn: new Date(),
     })
     .where(eq(waTenants.id, tenantId));

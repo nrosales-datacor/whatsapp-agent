@@ -215,7 +215,7 @@ const REPUTACION_DEMO = [
 ];
 
 export async function seedDemo(repo: Repositorio): Promise<void> {
-  const tid = listarTenants()[0]?.id ?? "lavacar-rosales";
+  const tid = listarTenants()[0]?.id ?? "selyon";
   for (const c of CONVERSACIONES) {
     const conv = await repo.obtenerOConversacion(tid, c.wa);
     for (const m of c.msgs) {
