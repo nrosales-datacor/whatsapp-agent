@@ -80,6 +80,11 @@ try {
   console.log(`✅ Usuario de panel '${t.id}' sembrado/actualizado.`);
 } catch (e) {
   console.error("❌ Error:", e instanceof Error ? e.message : e);
+  // Drizzle envuelve los errores de query: el motivo real de Postgres queda en
+  // `.cause`, no en `.message` (que solo trae la query fallida + params).
+  if (e instanceof Error && e.cause instanceof Error) {
+    console.error("   causa:", e.cause.message);
+  }
   process.exitCode = 1;
 } finally {
   await sql.end();
