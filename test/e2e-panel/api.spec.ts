@@ -36,7 +36,7 @@ function mintAdmin(): string {
 async function crearCita(request: APIRequestContext, fecha: string, hora: string) {
   const res = await request.post("/api/panel/citas", {
     headers: { cookie: cookie("dueno"), origin: E2E.baseURL },
-    data: { clienteNombre: "Cliente E2E", clienteWa: "50600000000", servicioId: "pulido_focos", fecha, hora },
+    data: { clienteNombre: "Cliente E2E", clienteWa: "50600000000", servicioId: "reunion-diagnostico", fecha, hora },
   });
   expect(res.status(), await res.text()).toBe(200);
   const body = await res.json();
