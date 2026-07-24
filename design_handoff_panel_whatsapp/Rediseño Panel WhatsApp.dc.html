@@ -502,8 +502,20 @@
              </div></div>
              <div style="display:flex;align-items:center;gap:6px;"><div style="width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.8);"><i data-lucide="moon" style="width:17px;height:17px;"></i></div><div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.8);padding:0 8px;font-size:13px;"><i data-lucide="log-out" style="width:16px;height:16px;"></i>Salir</div></div>
            </div>
-           <div style="flex:1;overflow:hidden;display:flex;justify-content:center;padding:28px 36px;">
-             <div style="width:920px;">
+           <div style="flex:1;overflow:hidden;display:flex;">
+             <div style="width:250px;flex-shrink:0;border-right:1px solid var(--border);background:var(--surface);padding:22px 14px;display:flex;flex-direction:column;gap:2px;overflow-y:auto;">
+               <div style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--fg-3);font-weight:600;padding:0 12px 12px;">Configuración</div>
+               <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="9">
+                 <div onClick="{{ n.onClick }}" style="display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:9px;cursor:pointer;background:{{ n.bg }};position:relative;">
+                   <span style="position:absolute;left:0;top:7px;bottom:7px;width:3px;border-radius:0 3px 3px 0;background:{{ n.bar }};"></span>
+                   <i data-lucide="{{ n.icon }}" style="width:16px;height:16px;color:{{ n.fg }};flex-shrink:0;"></i>
+                   <span style="font-size:13.5px;color:{{ n.fg }};font-weight:{{ n.fw }};line-height:1.3;">{{ n.label }}</span>
+                 </div>
+               </sc-for>
+             </div>
+             <div id="mn-scroll" style="flex:1;overflow-y:auto;position:relative;">
+               <div style="max-width:880px;margin:0 auto;padding:28px 40px 24px;display:flex;flex-direction:column;gap:26px;">
+                 <div id="mn-servicios">
                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
                  <div><h3 style="font-family:'Noto Sans';font-weight:700;font-size:24px;letter-spacing:-.015em;margin:0;color:var(--fg-1);">Servicios</h3><div style="font-size:13.5px;color:var(--fg-3);margin-top:3px;">Lo que el bot puede cotizar y agendar. Arrastrá para reordenar.</div></div>
                  <div style="display:flex;align-items:center;gap:7px;background:var(--accent);color:#fff;font-size:13.5px;font-weight:600;padding:10px 16px;border-radius:9px;box-shadow:var(--sh1);"><i data-lucide="plus" style="width:16px;height:16px;"></i>Nuevo servicio</div>
@@ -570,6 +582,146 @@
                      </div>
                    </div>
                  </sc-for>
+               </div>
+                 </div>
+
+                 <!-- HORARIO -->
+                 <div id="mn-horario" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:24px;">
+                   <div style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3);font-weight:600;">Horario</div>
+                   <div style="font-size:13px;color:var(--fg-3);margin-top:4px;">Cuándo el bot ofrece citas y responde “¿están abiertos?”.</div>
+                   <div style="display:flex;flex-direction:column;gap:10px;margin-top:18px;">
+                     <sc-for list="{{ schedule }}" as="d" hint-placeholder-count="7">
+                       <div style="display:grid;grid-template-columns:180px 1fr 1fr 96px;gap:16px;align-items:end;padding:14px 16px;border:1px solid var(--border);border-radius:11px;background:var(--surface-2);">
+                         <div style="display:flex;align-items:center;gap:12px;padding-bottom:2px;">
+                           <div style="width:44px;height:24px;border-radius:20px;background:{{ d.toggleBg }};position:relative;flex-shrink:0;"><div style="position:absolute;top:2px;left:{{ d.knob }};width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:var(--sh1);"></div></div>
+                           <span style="font-size:14px;font-weight:500;color:var(--fg-1);">{{ d.d }}</span>
+                         </div>
+                         <div style="opacity:{{ d.op }};">
+                           <div style="font-size:11px;font-weight:600;color:var(--fg-2);margin-bottom:5px;">Abre</div>
+                           <div style="border:1px solid var(--border-strong);border-radius:9px;padding:9px 12px;font-size:14px;color:var(--fg-1);background:var(--surface);display:flex;align-items:center;justify-content:space-between;">{{ d.open }}<i data-lucide="clock" style="width:15px;height:15px;color:var(--fg-3);"></i></div>
+                         </div>
+                         <div style="opacity:{{ d.op }};">
+                           <div style="font-size:11px;font-weight:600;color:var(--fg-2);margin-bottom:5px;">Cierra</div>
+                           <div style="border:1px solid var(--border-strong);border-radius:9px;padding:9px 12px;font-size:14px;color:var(--fg-1);background:var(--surface);display:flex;align-items:center;justify-content:space-between;">{{ d.close }}<i data-lucide="clock" style="width:15px;height:15px;color:var(--fg-3);"></i></div>
+                         </div>
+                         <span style="justify-self:end;align-self:center;font-size:11.5px;font-weight:600;padding:4px 11px;border-radius:20px;background:{{ d.statusBg }};color:{{ d.statusFg }};">{{ d.statusTxt }}</span>
+                       </div>
+                     </sc-for>
+                   </div>
+                 </div>
+
+                 <!-- FERIADOS Y BLOQUEOS -->
+                 <div id="mn-feriados" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:24px;">
+                   <div style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3);font-weight:600;">Feriados y bloqueos</div>
+                   <div style="font-size:13px;color:var(--fg-3);margin-top:4px;">Días u horas en que el bot no agenda, aunque el horario esté abierto.</div>
+                   <div style="display:flex;flex-direction:column;gap:10px;margin-top:18px;">
+                     <sc-for list="{{ blocks }}" as="b" hint-placeholder-count="2">
+                       <div style="display:flex;align-items:center;gap:14px;padding:14px 16px;border:1px solid var(--border);border-radius:11px;background:var(--surface-2);">
+                         <div style="width:38px;height:38px;border-radius:10px;background:var(--warning-soft);color:var(--warning);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i data-lucide="{{ b.icon }}" style="width:18px;height:18px;"></i></div>
+                         <div style="flex:1;"><div style="font-size:14px;font-weight:600;color:var(--fg-1);">{{ b.label }}</div><div style="font-size:12.5px;color:var(--fg-3);margin-top:2px;">{{ b.sub }}</div></div>
+                         <div style="font-size:13px;color:var(--fg-3);font-weight:500;cursor:pointer;">Quitar</div>
+                       </div>
+                     </sc-for>
+                     <div style="display:flex;align-items:center;justify-content:center;gap:8px;padding:13px;border:1.5px dashed var(--border-strong);border-radius:11px;color:var(--accent);font-size:13.5px;font-weight:600;cursor:pointer;"><i data-lucide="plus" style="width:16px;height:16px;"></i>Agregar bloqueo</div>
+                   </div>
+                 </div>
+
+                 <!-- RESEÑAS DE GOOGLE -->
+                 <div id="mn-resenas" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:24px;">
+                   <div style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3);font-weight:600;">Reseñas de Google</div>
+                   <div style="font-size:13px;color:var(--fg-3);margin-top:4px;">El bot pide reseña después de un buen servicio.</div>
+                   <div style="margin-top:18px;">
+                     <div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:6px;">Link para pedir reseña <span style="font-weight:400;color:var(--fg-3);">— Google Maps → “Escribir una reseña”</span></div>
+                     <div style="border:1px solid var(--border-strong);border-radius:9px;padding:11px 14px;font-size:14px;color:var(--fg-3);background:var(--surface);">https://g.page/r/…</div>
+                   </div>
+                   <div style="height:1px;background:var(--border);margin:22px 0;"></div>
+                   <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+                     <div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-2);font-weight:600;">Motor de reseñas completo</div>
+                     <span style="background:var(--accent-soft);color:var(--accent-active);font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px;letter-spacing:.02em;">Plan Pro</span>
+                   </div>
+                   <div style="font-size:12px;font-weight:600;color:var(--fg-2);margin:8px 0 6px;">Place ID de Google <span style="font-weight:400;color:var(--fg-3);">— para graficar la reputación en el panel</span></div>
+                   <div style="border:1px solid var(--border-strong);border-radius:9px;padding:11px 14px;font-size:13.5px;color:var(--fg-1);background:var(--surface);font-family:monospace;">ChIJN1t_tDeuEmsRUsoyG83frY4</div>
+                   <div style="font-size:12.5px;color:var(--fg-3);line-height:1.55;margin-top:10px;">Con el Place ID configurado, un job diario consulta tu calificación de Google y el panel grafica su evolución. Con plan Pro, el seguimiento post-servicio usa 3 opciones (Excelente / Bien / Mal) y solo “Excelente” recibe el link de reseña.</div>
+                 </div>
+
+                 <!-- VENTANA DE 24 HORAS -->
+                 <div id="mn-ventana" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:24px;">
+                   <div style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3);font-weight:600;">Ventana de 24 horas</div>
+                   <div style="font-size:13px;color:var(--fg-3);margin-top:4px;">Para reabrir una conversación cuando pasaron más de 24 h desde el último mensaje.</div>
+                   <div style="margin-top:18px;">
+                     <div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:6px;">Plantilla de reapertura aprobada <span style="font-weight:400;color:var(--fg-3);">— nombre exacto en Meta</span></div>
+                     <div style="border:1px solid var(--border-strong);border-radius:9px;padding:11px 14px;font-size:14px;color:var(--fg-1);background:var(--surface);font-family:monospace;">reapertura_conversacion</div>
+                     <div style="font-size:12.5px;color:var(--fg-3);line-height:1.55;margin-top:10px;">Es una plantilla de <strong style="color:var(--fg-2);font-weight:600;">utilidad</strong> (no marketing). Sin ella, el botón “Reabrir conversación” del chat no aparece.</div>
+                   </div>
+                 </div>
+
+                 <!-- CAMPAÑAS -->
+                 <div id="mn-campanas" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:24px;">
+                   <div style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3);font-weight:600;">Campañas</div>
+                   <div style="font-size:13px;color:var(--fg-3);margin-top:4px;">Plantilla usada para los envíos masivos desde la pestaña Campañas.</div>
+                   <div style="margin-top:18px;">
+                     <div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:6px;">Plantilla de marketing aprobada <span style="font-weight:400;color:var(--fg-3);">— nombre exacto en Meta</span></div>
+                     <div style="border:1px solid var(--border-strong);border-radius:9px;padding:11px 14px;font-size:14px;color:var(--fg-1);background:var(--surface);font-family:monospace;">promo_general</div>
+                   </div>
+                 </div>
+
+                 <!-- RESCATE DE VENTAS -->
+                 <div id="mn-rescate" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:24px;">
+                   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;">
+                     <div><div style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3);font-weight:600;">Rescate de ventas</div><div style="font-size:13px;color:var(--fg-3);margin-top:4px;max-width:480px;">Si el bot cotiza y el cliente no agenda, le manda un seguimiento automático (máx. 2 toques). El resultado se ve en la tarjeta “₡ rescatados” del panel.</div></div>
+                     <div style="display:flex;align-items:center;gap:9px;flex-shrink:0;padding-top:2px;"><span style="font-size:12.5px;font-weight:600;color:var(--accent-active);">Activo</span><div style="width:44px;height:24px;border-radius:20px;background:var(--accent);position:relative;"><div style="position:absolute;top:2px;left:22px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:var(--sh1);"></div></div></div>
+                   </div>
+                   <div style="display:flex;flex-direction:column;gap:16px;margin-top:20px;">
+                     <div style="max-width:220px;">
+                       <div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:6px;">Horas de espera antes del 1.º toque</div>
+                       <div style="border:1px solid var(--border-strong);border-radius:9px;padding:11px 14px;font-size:14px;color:var(--fg-1);background:var(--surface);display:flex;align-items:center;justify-content:space-between;"><span class="tnum">3</span><span style="color:var(--fg-3);font-size:12.5px;">horas</span></div>
+                     </div>
+                     <div>
+                       <div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:6px;">Texto del primer toque <span style="font-weight:400;color:var(--fg-3);">— variables: {servicio}, {monto}, {n} horarios libres</span></div>
+                       <div style="border:1px solid var(--border-strong);border-radius:9px;padding:12px 14px;font-size:14px;color:var(--fg-1);background:var(--surface);line-height:1.5;min-height:56px;">¡Hola! ¿Te guardo el espacio para el {servicio} ({monto})? Me quedan {n} horarios libres.</div>
+                     </div>
+                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                       <div><div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:6px;">Variable del segundo toque</div><div style="border:1px solid var(--border-strong);border-radius:9px;padding:11px 14px;font-size:14px;color:var(--fg-1);background:var(--surface);">pulido de parabrisas</div></div>
+                       <div><div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:6px;">Plantilla de Meta del 2.º toque</div><div style="border:1px solid var(--border-strong);border-radius:9px;padding:11px 14px;font-size:14px;color:var(--fg-1);background:var(--surface);font-family:monospace;">rescate_cotizacion</div></div>
+                     </div>
+                     <div style="font-size:12.5px;color:var(--fg-3);line-height:1.55;">El segundo toque sale un día después, fuera de la ventana de 24 h: necesita una plantilla aprobada en Meta. Sin ella, el rescate se detiene tras el primer toque.</div>
+                   </div>
+                 </div>
+
+                 <!-- BASE DE CONOCIMIENTO -->
+                 <div id="mn-conocimiento" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:24px;">
+                   <div style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3);font-weight:600;">Base de conocimiento</div>
+                   <div style="font-size:13px;color:var(--fg-3);margin-top:4px;">Lo que el bot sabe del negocio. Una idea por línea.</div>
+                   <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:18px;">
+                     <div><div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:6px;">Datos</div><div style="border:1px solid var(--border-strong);border-radius:9px;padding:12px 14px;font-size:13px;color:var(--fg-1);background:var(--surface);line-height:1.6;min-height:120px;">Los lavados se atienden por orden de llegada, sin cita.<br>El lavado dura entre 45 min y 1 h 30, según el vehículo.<br>Hay parqueo: puede dejar el carro mientras hace mandados.<br>Aceptamos SINPE Móvil y efectivo (no tarjeta).</div></div>
+                     <div><div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:6px;">Políticas</div><div style="border:1px solid var(--border-strong);border-radius:9px;padding:12px 14px;font-size:13px;color:var(--fg-1);background:var(--surface);line-height:1.6;min-height:120px;">Los lavados no requieren cita: por orden de llegada.<br>Los servicios CON pulido requieren cita.<br>El tratamiento repelente/sellado NUNCA es pulido.</div></div>
+                     <div><div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:6px;">Tarifas</div><div style="border:1px solid var(--border-strong);border-radius:9px;padding:12px 14px;font-size:13px;color:var(--fg-1);background:var(--surface);line-height:1.6;min-height:120px;">Camioneta (Montero, Fortuner): ₡7.000 básico · ₡8.000 cera húmedo.<br>Buseta: ₡9.000 básico · ₡10.000 cera húmedo.<br>Camión: ₡11.000 básico · ₡12.000 cera húmedo.<br>Moto: ₡3.000.</div></div>
+                     <div><div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:6px;">Parabrisas</div><div style="border:1px solid var(--border-strong);border-radius:9px;padding:12px 14px;font-size:13px;color:var(--fg-1);background:var(--surface);line-height:1.6;min-height:120px;">Estos precios tratan SOLO el parabrisas delantero.<br>Sedán → Lavado + repelente: ₡10.000.<br>Lavado + pulido + repelente y sellador (con cita): ₡18.000.</div></div>
+                   </div>
+                 </div>
+
+                 <!-- PREGUNTAS FRECUENTES -->
+                 <div id="mn-faq" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:24px;">
+                   <div style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3);font-weight:600;">Preguntas frecuentes</div>
+                   <div style="font-size:13px;color:var(--fg-3);margin-top:4px;">Respuestas listas que el bot usa tal cual.</div>
+                   <div style="display:flex;flex-direction:column;gap:10px;margin-top:18px;">
+                     <sc-for list="{{ faqs }}" as="f" hint-placeholder-count="5">
+                       <div style="display:grid;grid-template-columns:1fr 1fr 64px;gap:12px;align-items:center;padding:12px 14px;border:1px solid var(--border);border-radius:11px;background:var(--surface-2);">
+                         <div style="border:1px solid var(--border-strong);border-radius:9px;padding:10px 12px;font-size:13.5px;color:var(--fg-1);background:var(--surface);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ f.q }}</div>
+                         <div style="border:1px solid var(--border-strong);border-radius:9px;padding:10px 12px;font-size:13.5px;color:var(--fg-2);background:var(--surface);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ f.a }}</div>
+                         <div style="font-size:13px;color:var(--fg-3);font-weight:500;text-align:right;cursor:pointer;">Quitar</div>
+                       </div>
+                     </sc-for>
+                     <div style="display:flex;align-items:center;justify-content:center;gap:8px;padding:13px;border:1.5px dashed var(--border-strong);border-radius:11px;color:var(--accent);font-size:13.5px;font-weight:600;cursor:pointer;"><i data-lucide="plus" style="width:16px;height:16px;"></i>Agregar pregunta</div>
+                   </div>
+                 </div>
+
+                 <!-- BARRA GUARDAR (fija) -->
+                 <div style="position:sticky;bottom:0;margin:8px -40px 0;padding:16px 40px 20px;background:linear-gradient(to top, #F4F6F6 60%, rgba(244,246,246,0));display:flex;align-items:center;gap:12px;">
+                   <span style="margin-right:auto;font-size:12.5px;color:var(--fg-3);display:flex;align-items:center;gap:8px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--warning);"></span>Cambios sin guardar</span>
+                   <div style="font-size:13.5px;font-weight:500;color:var(--fg-2);padding:10px 16px;border:1px solid var(--border-strong);border-radius:9px;background:var(--surface);cursor:pointer;">Descartar</div>
+                   <div style="display:flex;align-items:center;gap:7px;font-size:13.5px;font-weight:600;color:#fff;background:var(--accent);padding:10px 18px;border-radius:9px;box-shadow:var(--sh1);cursor:pointer;"><i data-lucide="check" style="width:16px;height:16px;"></i>Guardar cambios</div>
+                 </div>
                </div>
              </div>
            </div>
@@ -832,6 +984,114 @@
      </div>
    </section>
 
+   <!-- ============ USUARIOS ============ -->
+   <section style="display:flex;flex-direction:column;gap:24px;">
+     <div style="display:flex;flex-direction:column;gap:6px;">
+       <div style="font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--fg-3);font-weight:600;">08 · Equipo</div>
+       <h2 style="font-family:'Noto Sans';font-weight:700;font-size:30px;letter-spacing:-.015em;margin:0;color:var(--fg-1);">Usuarios · roles y acceso</h2>
+     </div>
+     <div style="display:flex;gap:32px;align-items:flex-start;flex-wrap:wrap;">
+       <div style="width:300px;flex-shrink:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:22px;position:sticky;top:24px;">
+         <div style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:12px;">Qué cambió</div>
+         <sc-for list="{{ annUsuarios }}" as="b" hint-placeholder-count="3">
+           <div style="display:flex;gap:10px;margin-bottom:14px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);margin-top:7px;flex-shrink:0;"></span><span style="font-size:13px;color:var(--fg-2);line-height:1.5;">{{ b }}</span></div>
+         </sc-for>
+       </div>
+
+       <!-- desktop usuarios -->
+       <div style="border-radius:var(--r-xl);box-shadow:var(--sh3);overflow:hidden;background:var(--surface);border:1px solid var(--border-strong);">
+         <div style="height:38px;background:var(--surface-2);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:14px;">
+           <div style="display:flex;gap:7px;"><span style="width:11px;height:11px;border-radius:50%;background:#E4E7E6;"></span><span style="width:11px;height:11px;border-radius:50%;background:#E4E7E6;"></span><span style="width:11px;height:11px;border-radius:50%;background:#E4E7E6;"></span></div>
+           <div style="flex:1;max-width:320px;height:22px;background:var(--bg-page);border-radius:6px;display:flex;align-items:center;padding:0 10px;font-size:11px;color:var(--fg-3);">app.lavacar.cr/usuarios</div>
+           <div style="font-size:11px;color:var(--fg-4);">Desktop · 1440</div>
+         </div>
+         <div style="width:1440px;height:900px;background:var(--bg-page);display:flex;flex-direction:column;overflow:hidden;">
+           <div style="height:64px;background:var(--header);display:flex;align-items:center;padding:0 22px;gap:20px;flex-shrink:0;">
+             <div style="display:flex;align-items:center;gap:12px;"><div style="width:38px;height:38px;border-radius:10px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Noto Sans';font-weight:700;font-size:15px;">LR</div><div style="line-height:1.15;"><div style="color:#fff;font-weight:600;font-size:15px;font-family:'Noto Sans';">Lavacar Rosales</div><div style="color:rgba(255,255,255,.6);font-size:12px;">WhatsApp Business</div></div></div>
+             <div style="flex:1;display:flex;justify-content:center;"><div style="display:flex;gap:2px;background:rgba(255,255,255,.09);padding:4px;border-radius:11px;">
+               <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.82);padding:7px 14px;border-radius:8px;font-size:13px;"><i data-lucide="message-square" style="width:15px;height:15px;"></i>Bandeja<span style="background:var(--accent);color:#fff;font-size:11px;font-weight:700;padding:1px 6px;border-radius:20px;">2</span></div>
+               <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.82);padding:7px 14px;border-radius:8px;font-size:13px;"><i data-lucide="bar-chart-2" style="width:15px;height:15px;"></i>Panel</div>
+               <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.82);padding:7px 14px;border-radius:8px;font-size:13px;"><i data-lucide="calendar" style="width:15px;height:15px;"></i>Agenda</div>
+               <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.82);padding:7px 14px;border-radius:8px;font-size:13px;"><i data-lucide="settings" style="width:15px;height:15px;"></i>Mi negocio</div>
+               <div style="display:flex;align-items:center;gap:7px;background:#fff;color:var(--header);padding:7px 14px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:var(--sh1);"><i data-lucide="users" style="width:15px;height:15px;"></i>Usuarios</div>
+               <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.82);padding:7px 14px;border-radius:8px;font-size:13px;"><i data-lucide="send" style="width:15px;height:15px;"></i>Campañas</div>
+             </div></div>
+             <div style="display:flex;align-items:center;gap:6px;"><div style="width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.8);"><i data-lucide="moon" style="width:17px;height:17px;"></i></div><div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.8);padding:0 8px;font-size:13px;"><i data-lucide="log-out" style="width:16px;height:16px;"></i>Salir</div></div>
+           </div>
+           <div style="flex:1;overflow:hidden;display:flex;justify-content:center;padding:32px 36px;">
+             <div style="width:760px;display:flex;flex-direction:column;gap:24px;">
+               <div>
+                 <h3 style="font-family:'Noto Sans';font-weight:700;font-size:26px;letter-spacing:-.015em;margin:0;color:var(--fg-1);">Usuarios</h3>
+                 <div style="font-size:13.5px;color:var(--fg-3);margin-top:3px;">Quién puede entrar al panel y con qué permisos.</div>
+               </div>
+
+               <!-- EQUIPO -->
+               <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);overflow:hidden;">
+                 <div style="padding:18px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;"><span style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3);font-weight:600;">Equipo</span><span style="background:var(--bg-page);color:var(--fg-2);font-size:12px;font-weight:600;padding:2px 9px;border-radius:20px;">3</span></div>
+                 <div style="display:grid;grid-template-columns:2.2fr 1.5fr 1.1fr 1.4fr;gap:16px;padding:12px 22px;border-bottom:1px solid var(--border);background:var(--surface-2);">
+                   <div style="font-size:11.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--fg-3);">Usuario</div>
+                   <div style="font-size:11.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--fg-3);">Rol</div>
+                   <div style="font-size:11.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--fg-3);">Estado</div>
+                   <div style="font-size:11.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--fg-3);text-align:right;">Acciones</div>
+                 </div>
+                 <sc-for list="{{ users }}" as="u" hint-placeholder-count="3">
+                   <div style="display:grid;grid-template-columns:2.2fr 1.5fr 1.1fr 1.4fr;gap:16px;padding:16px 22px;border-bottom:1px solid var(--border);align-items:center;">
+                     <div style="display:flex;align-items:center;gap:12px;">
+                       <div style="width:38px;height:38px;border-radius:10px;background:{{ u.avBg }};color:{{ u.avFg }};display:flex;align-items:center;justify-content:center;font-family:'Noto Sans';font-weight:700;font-size:13px;flex-shrink:0;">{{ u.initials }}</div>
+                       <span style="font-size:14px;font-weight:500;color:var(--fg-1);">{{ u.nameLabel }}</span>
+                     </div>
+                     <div><div style="display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border-strong);border-radius:9px;padding:8px 12px;font-size:13.5px;color:var(--fg-1);background:var(--surface);min-width:120px;justify-content:space-between;">{{ u.role }}<i data-lucide="chevron-down" style="width:15px;height:15px;color:var(--fg-3);"></i></div></div>
+                     <div><span style="display:inline-flex;align-items:center;gap:6px;background:{{ u.stBg }};color:{{ u.stFg }};font-size:12px;font-weight:600;padding:4px 11px;border-radius:20px;"><span style="width:6px;height:6px;border-radius:50%;background:{{ u.stDot }};"></span>{{ u.stTxt }}</span></div>
+                     <div style="text-align:right;font-size:13px;font-weight:500;color:var(--fg-2);cursor:pointer;">{{ u.actionTxt }}</div>
+                   </div>
+                 </sc-for>
+               </div>
+
+               <!-- AGREGAR USUARIO -->
+               <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:24px;">
+                 <div style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3);font-weight:600;">Agregar usuario</div>
+                 <div style="display:grid;grid-template-columns:1.4fr 1.4fr 1fr;gap:14px;margin-top:18px;">
+                   <div><div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:6px;">Usuario</div><div style="border:1px solid var(--border-strong);border-radius:9px;padding:11px 14px;font-size:14px;color:var(--fg-3);background:var(--surface);">nombre.usuario</div></div>
+                   <div><div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:6px;">Contraseña</div><div style="border:1px solid var(--border-strong);border-radius:9px;padding:11px 14px;font-size:14px;color:var(--fg-3);background:var(--surface);display:flex;align-items:center;justify-content:space-between;">••••••••<i data-lucide="eye" style="width:16px;height:16px;color:var(--fg-3);"></i></div></div>
+                   <div><div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:6px;">Rol</div><div style="border:1px solid var(--border-strong);border-radius:9px;padding:11px 14px;font-size:14px;color:var(--fg-1);background:var(--surface);display:flex;align-items:center;justify-content:space-between;">Operador<i data-lucide="chevron-down" style="width:15px;height:15px;color:var(--fg-3);"></i></div></div>
+                 </div>
+                 <div style="display:flex;align-items:center;justify-content:space-between;margin-top:18px;">
+                   <div style="font-size:12.5px;color:var(--fg-3);display:flex;align-items:center;gap:7px;"><i data-lucide="info" style="width:15px;height:15px;"></i>El Operador ve bandeja y agenda; el Dueño configura todo.</div>
+                   <div style="display:flex;align-items:center;gap:7px;font-size:13.5px;font-weight:600;color:#fff;background:var(--accent);padding:10px 18px;border-radius:9px;box-shadow:var(--sh1);cursor:pointer;"><i data-lucide="user-plus" style="width:16px;height:16px;"></i>Agregar usuario</div>
+                 </div>
+               </div>
+             </div>
+           </div>
+         </div>
+       </div>
+
+       <!-- mobile usuarios -->
+       <div style="width:414px;background:#1a1a1a;border-radius:44px;padding:12px;box-shadow:var(--sh3);flex-shrink:0;">
+         <div style="border-radius:34px;overflow:hidden;background:var(--bg-page);">
+           <div style="height:34px;background:var(--header);display:flex;align-items:center;justify-content:space-between;padding:0 28px;color:#fff;font-size:12px;font-weight:600;"><span class="tnum">9:41</span><span style="display:flex;gap:5px;align-items:center;"><i data-lucide="signal" style="width:14px;height:14px;"></i><i data-lucide="wifi" style="width:14px;height:14px;"></i><i data-lucide="battery-full" style="width:16px;height:16px;"></i></span></div>
+           <div style="background:var(--header);padding:8px 16px 14px;display:flex;align-items:center;gap:11px;"><div style="width:34px;height:34px;border-radius:9px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Noto Sans';font-weight:700;font-size:13px;">LR</div><div style="flex:1;line-height:1.15;"><div style="color:#fff;font-weight:600;font-size:14px;font-family:'Noto Sans';">Usuarios</div><div style="color:rgba(255,255,255,.6);font-size:11px;">Equipo · 3</div></div><i data-lucide="moon" style="width:18px;height:18px;color:rgba(255,255,255,.8);"></i></div>
+           <div style="height:606px;overflow:hidden;padding:16px 14px;display:flex;flex-direction:column;gap:12px;">
+             <sc-for list="{{ users }}" as="u" hint-placeholder-count="3">
+               <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:14px;display:flex;align-items:center;gap:12px;">
+                 <div style="width:40px;height:40px;border-radius:11px;background:{{ u.avBg }};color:{{ u.avFg }};display:flex;align-items:center;justify-content:center;font-family:'Noto Sans';font-weight:700;font-size:14px;flex-shrink:0;">{{ u.initials }}</div>
+                 <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:600;color:var(--fg-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ u.nameLabel }}</div><div style="font-size:12.5px;color:var(--fg-3);margin-top:1px;">{{ u.role }}</div></div>
+                 <span style="display:inline-flex;align-items:center;gap:5px;background:{{ u.stBg }};color:{{ u.stFg }};font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;flex-shrink:0;"><span style="width:5px;height:5px;border-radius:50%;background:{{ u.stDot }};"></span>{{ u.stTxt }}</span>
+               </div>
+             </sc-for>
+             <div style="display:flex;align-items:center;justify-content:center;gap:8px;padding:14px;border:1.5px dashed var(--border-strong);border-radius:var(--r-lg);color:var(--accent);font-size:13.5px;font-weight:600;margin-top:2px;"><i data-lucide="user-plus" style="width:16px;height:16px;"></i>Agregar usuario</div>
+           </div>
+           <div style="display:flex;background:var(--surface);border-top:1px solid var(--border);padding:8px 6px 16px;">
+             <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--fg-3);"><i data-lucide="message-square" style="width:22px;height:22px;"></i><span style="font-size:10.5px;">Bandeja</span></div>
+             <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--fg-3);"><i data-lucide="bar-chart-2" style="width:22px;height:22px;"></i><span style="font-size:10.5px;">Panel</span></div>
+             <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--fg-3);"><i data-lucide="calendar" style="width:22px;height:22px;"></i><span style="font-size:10.5px;">Agenda</span></div>
+             <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--fg-3);"><i data-lucide="settings" style="width:22px;height:22px;"></i><span style="font-size:10.5px;">Negocio</span></div>
+             <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--accent);"><i data-lucide="users" style="width:22px;height:22px;"></i><span style="font-size:10.5px;font-weight:600;">Usuarios</span></div>
+           </div>
+         </div>
+       </div>
+     </div>
+   </section>
+
   </div>
  </div>
 </div>
@@ -844,9 +1104,15 @@ class Component extends DCLogic {
     const m=a.map((v,i)=>Math.round(v+(b[i]-v)*amt));
     return '#'+m.map(v=>v.toString(16).padStart(2,'0')).join('');
   }
+  state = { activeSection: 'servicios' };
   componentDidMount(){ this._icons(); }
   componentDidUpdate(){ this._icons(); }
   _icons(){ if(window.lucide){ try{ window.lucide.createIcons(); }catch(e){} } }
+  jumpTo(id){
+    this.setState({activeSection:id});
+    const c=document.getElementById('mn-scroll'), t=document.getElementById('mn-'+id);
+    if(c&&t){ const cr=c.getBoundingClientRect(), tr=t.getBoundingClientRect(); c.scrollTop += (tr.top-cr.top)-16; }
+  }
 
   interesBars(score){
     const on='var(--accent)', off='var(--border-strong)';
@@ -961,6 +1227,55 @@ class Component extends DCLogic {
       svc('Lavado completo con cera','lavado_completo','9 000','40 min','precio fijo', true, 'Aromatización interior', '2 500')
     ];
 
+    const day=(d,open,close,on)=>({d,open,close,on,toggleBg:on?'var(--accent)':'var(--border-strong)',knob:on?'22px':'2px',op:on?'1':'.4',statusTxt:on?'Abierto':'Cerrado',statusBg:on?'var(--accent-soft)':'var(--bg-page)',statusFg:on?'var(--accent-active)':'var(--fg-3)'});
+    const schedule=[
+      day('Lunes','6:00 a.m.','6:00 p.m.',true),
+      day('Martes','6:00 a.m.','6:00 p.m.',true),
+      day('Miércoles','6:00 a.m.','6:00 p.m.',true),
+      day('Jueves','6:00 a.m.','6:00 p.m.',true),
+      day('Viernes','6:00 a.m.','6:00 p.m.',true),
+      day('Sábado','6:00 a.m.','6:00 p.m.',true),
+      day('Domingo','—','—',false)
+    ];
+    const blocks=[
+      {label:'25 dic · Navidad',sub:'Cerrado todo el día',icon:'calendar-x'},
+      {label:'1 ene · Año nuevo',sub:'Cerrado todo el día',icon:'calendar-x'}
+    ];
+    const faqs=[
+      {q:'¿Hay dónde sentarse mientras lavan mi carro?',a:'Sí, hay un espacio para sentarse y esperar.'},
+      {q:'¿Puedo dejar el carro y volver más tarde?',a:'Claro, puede dejar el vehículo parqueado y hacer mandados.'},
+      {q:'¿Tienen algún beneficio para clientes frecuentes?',a:'Sí: cada 10 lavados, el siguiente es gratis.'},
+      {q:'¿Lavan motos?',a:'Sí, el lavado de moto cuesta ₡3.000.'},
+      {q:'¿Necesito cita para lavar?',a:'No, los lavados son por orden de llegada. Solo el pulido lleva cita.'}
+    ];
+    const users=[
+      {user:'lavacar-rosales',you:true,role:'Dueño',active:true},
+      {user:'maria-caja',you:false,role:'Operador',active:true},
+      {user:'jose-lavado',you:false,role:'Operador',active:false}
+    ].map(u=>Object.assign({},u,{
+      nameLabel: u.you ? u.user+' (vos)' : u.user,
+      avBg: u.you?'var(--accent)':'var(--accent-soft)',
+      avFg: u.you?'#fff':'var(--accent-active)',
+      initials: u.user.slice(0,2).toUpperCase(),
+      stTxt: u.active?'Activo':'Inactivo',
+      stBg: u.active?'var(--success-soft)':'var(--bg-page)',
+      stFg: u.active?'var(--success)':'var(--fg-3)',
+      stDot: u.active?'var(--success)':'var(--fg-4)',
+      actionTxt: u.active?'Desactivar':'Activar'
+    }));
+    const activeSection=this.state.activeSection||'servicios';
+    const navItems=[
+      ['servicios','Servicios','wrench'],
+      ['horario','Horario','clock'],
+      ['feriados','Feriados y bloqueos','calendar-x'],
+      ['resenas','Reseñas de Google','star'],
+      ['ventana','Ventana de 24 horas','message-circle'],
+      ['campanas','Campañas','send'],
+      ['rescate','Rescate de ventas','life-buoy'],
+      ['conocimiento','Base de conocimiento','book-open'],
+      ['faq','Preguntas frecuentes','help-circle']
+    ].map(([id,label,icon])=>{const on=id===activeSection;return{id,label,icon,onClick:()=>this.jumpTo(id),bg:on?'var(--accent-soft)':'transparent',fg:on?'var(--accent-active)':'var(--fg-2)',fw:on?'600':'500',bar:on?'var(--accent)':'transparent'};});
+
     const hours=['7 a.m.','8 a.m.','9 a.m.','10 a.m.','11 a.m.','12 m.d.','1 p.m.','2 p.m.','3 p.m.','4 p.m.','5 p.m.','6 p.m.'];
     const appt=(name,service,vehicle,time,top,height,status)=>{
       const map={
@@ -980,6 +1295,7 @@ class Component extends DCLogic {
 
     return {
       themeVars, convos, convosMobile, chat, kpiDinero, kpiActividad, kpiRiesgo, chartDays, services, hours, appts,
+      schedule, blocks, faqs, users, navItems,
       annInbox:[
         'El “lead score” suelto (90/75/65…) pasa a ser un medidor de interés con etiqueta Alto/Medio/Bajo y leyenda — deja de ser un número críptico.',
         'Una barra ámbar y un chip marcan las conversaciones que necesitan que intervengás (sin responder o pidió humano); hay filtro dedicado.',
@@ -994,10 +1310,16 @@ class Component extends DCLogic {
         '“Citas por día” se muestra como gráfico de barras con aire, no apretado abajo.'
       ],
       annNeg:[
-        'Cada servicio es una tarjeta que respira: sin inputs truncados ni checkboxes desalineados.',
-        'Los flags (Precio variable, Agendable, Ofrecer add-on) son switches alineados, cada uno con su ayuda.',
-        'Los campos del add-on solo aparecen cuando el switch está activo — menos ruido visual.',
-        'Grilla consistente en desktop y campos a ancho completo con toque cómodo en móvil.'
+        'Barra lateral pegajosa con salto directo a cada sección (Servicios, Horario, Reseñas, Rescate…) — se deja de hacer scroll a ciegas en una página larga.',
+        'Cada bloque de configuración vive en su propia tarjeta con eyebrow, ayuda contextual y campos que respiran.',
+        'Horario como filas alineadas con switch por día; el día cerrado atenúa sus campos en vez de esconderlos.',
+        'Los flags (Precio variable, Agendable, Add-on, Rescate) son switches con su ayuda; los campos dependientes solo aparecen al activar.',
+        '“Guardar cambios” pasa a barra inferior fija y primaria — siempre a la vista, nunca perdida al final.'
+      ],
+      annUsuarios:[
+        'El equipo se lee como tarjeta con avatar, usuario y rol; el estado es un chip (Activo/Inactivo), no texto suelto.',
+        'El rol es un selector claro y “vos” marca tu propia cuenta para no desactivarte por error.',
+        'Alta de usuario en un bloque aparte, con jerarquía de campos y acción primaria evidente.'
       ],
       annAgenda:[
         'Vista de día con línea de tiempo por hora: cada cita ocupa su franja real, se ve la carga del día de un vistazo.',
