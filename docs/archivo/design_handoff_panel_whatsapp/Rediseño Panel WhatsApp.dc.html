@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=Roboto:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
+  a{color:var(--accent);text-decoration:none;}
+  a:hover{color:var(--accent-hover);}
+  ::-webkit-scrollbar{width:10px;height:10px;}
+  ::-webkit-scrollbar-thumb{background:#c9d2cf;border-radius:8px;border:3px solid transparent;background-clip:content-box;}
+  input,textarea,select,button{font-family:inherit;}
+  .tnum{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";}
+</style>
+</helmet>
+<div style="--bg-desk:#E7EBEA;--bg-page:#F4F6F6;--surface:#FFFFFF;--surface-2:#FAFBFB;--fg-1:#132320;--fg-2:#54655F;--fg-3:#8A9691;--fg-4:#AAB4B0;--border:#E7ECEA;--border-strong:#D6DDDA;--header:#0F3D34;--accent:#0F7A66;--accent-hover:#0C6353;--accent-active:#0A5446;--accent-soft:#E4F2EE;--accent-softer:#F0F8F5;--success:#1F9D57;--success-soft:#E7F4EC;--warning:#B5730A;--warning-soft:#FAF0DC;--danger:#C72B3F;--danger-soft:#FBEAEC;--info:#248DE3;--info-soft:#E6F0FB;--r-sm:6px;--r-md:8px;--r-lg:12px;--r-xl:18px;--sh1:0 1px 2px rgba(16,32,28,.05),0 1px 3px rgba(16,32,28,.05);--sh2:0 4px 14px rgba(16,32,28,.07),0 2px 5px rgba(16,32,28,.05);--sh3:0 18px 44px rgba(14,30,26,.16),0 5px 12px rgba(14,30,26,.07);font-family:'Roboto',system-ui,sans-serif;background:var(--bg-desk);color:var(--fg-1);padding:64px;min-width:2100px;line-height:1.45;">
+ <div style="{{ themeVars }}">
+  <div style="max-width:1980px;margin:0 auto;display:flex;flex-direction:column;gap:72px;">
+
+   <!-- DOC HEADER -->
+   <header style="display:flex;flex-direction:column;gap:14px;max-width:1000px;">
+     <div style="display:inline-flex;align-items:center;gap:10px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:600;">
+       <span style="width:26px;height:2px;background:var(--accent);display:inline-block;"></span> Rediseño UX/UI · Panel WhatsApp IA
+     </div>
+     <h1 style="font-family:'Noto Sans';font-weight:800;font-size:44px;letter-spacing:-.02em;margin:0;color:var(--fg-1);line-height:1.05;">Panel del agente de WhatsApp — dirección premium</h1>
+     <p style="font-size:17px;color:var(--fg-2);margin:0;max-width:820px;">Rediseño para <strong style="color:var(--fg-1);font-weight:600;">Lavacar Rosales</strong>. Neutrales sofisticados, jerarquía tipográfica fuerte, elevación en capas y acento por tokens (white-label). Prioridad: Bandeja y Panel. Tema claro, desktop 1440 y móvil 390. Podés cambiar el acento y el color del encabezado desde Tweaks.</p>
+   </header>
+
+   <!-- ============ SISTEMA DE DISEÑO ============ -->
+   <section style="display:flex;flex-direction:column;gap:20px;">
+     <div style="font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--fg-3);font-weight:600;">01 · Sistema de diseño</div>
+     <div style="display:flex;flex-wrap:wrap;gap:20px;">
+       <!-- Acento -->
+       <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:22px;width:320px;">
+         <div style="font-size:13px;font-weight:600;color:var(--fg-1);margin-bottom:4px;">Acento · configurable por negocio</div>
+         <div style="font-size:12px;color:var(--fg-3);margin-bottom:14px;">Se aplica con moderación: CTAs, estado activo, un dato clave.</div>
+         <div style="display:flex;gap:8px;">
+           <div style="flex:1;"><div style="height:52px;background:var(--accent);border-radius:8px;"></div><div style="font-size:11px;color:var(--fg-3);margin-top:6px;">accent</div></div>
+           <div style="flex:1;"><div style="height:52px;background:var(--accent-hover);border-radius:8px;"></div><div style="font-size:11px;color:var(--fg-3);margin-top:6px;">hover</div></div>
+           <div style="flex:1;"><div style="height:52px;background:var(--accent-active);border-radius:8px;"></div><div style="font-size:11px;color:var(--fg-3);margin-top:6px;">active</div></div>
+           <div style="flex:1;"><div style="height:52px;background:var(--accent-soft);border:1px solid var(--border);border-radius:8px;"></div><div style="font-size:11px;color:var(--fg-3);margin-top:6px;">soft</div></div>
+         </div>
+       </div>
+       <!-- Neutrales -->
+       <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:22px;width:360px;">
+         <div style="font-size:13px;font-weight:600;color:var(--fg-1);margin-bottom:14px;">Neutrales sofisticados</div>
+         <div style="display:flex;gap:8px;">
+           <div style="flex:1;"><div style="height:52px;background:var(--bg-page);border:1px solid var(--border);border-radius:8px;"></div><div style="font-size:11px;color:var(--fg-3);margin-top:6px;">page</div></div>
+           <div style="flex:1;"><div style="height:52px;background:var(--surface);border:1px solid var(--border-strong);border-radius:8px;"></div><div style="font-size:11px;color:var(--fg-3);margin-top:6px;">surface</div></div>
+           <div style="flex:1;"><div style="height:52px;background:var(--fg-3);border-radius:8px;"></div><div style="font-size:11px;color:var(--fg-3);margin-top:6px;">fg-3</div></div>
+           <div style="flex:1;"><div style="height:52px;background:var(--fg-2);border-radius:8px;"></div><div style="font-size:11px;color:var(--fg-3);margin-top:6px;">fg-2</div></div>
+           <div style="flex:1;"><div style="height:52px;background:var(--fg-1);border-radius:8px;"></div><div style="font-size:11px;color:var(--fg-3);margin-top:6px;">fg-1</div></div>
+         </div>
+       </div>
+       <!-- Semánticos -->
+       <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:22px;width:300px;">
+         <div style="font-size:13px;font-weight:600;color:var(--fg-1);margin-bottom:14px;">Estado (semántico sobrio)</div>
+         <div style="display:flex;gap:8px;">
+           <div style="flex:1;"><div style="height:52px;background:var(--success);border-radius:8px;"></div><div style="font-size:11px;color:var(--fg-3);margin-top:6px;">éxito</div></div>
+           <div style="flex:1;"><div style="height:52px;background:var(--warning);border-radius:8px;"></div><div style="font-size:11px;color:var(--fg-3);margin-top:6px;">riesgo</div></div>
+           <div style="flex:1;"><div style="height:52px;background:var(--danger);border-radius:8px;"></div><div style="font-size:11px;color:var(--fg-3);margin-top:6px;">error</div></div>
+           <div style="flex:1;"><div style="height:52px;background:var(--info);border-radius:8px;"></div><div style="font-size:11px;color:var(--fg-3);margin-top:6px;">info</div></div>
+         </div>
+       </div>
+       <!-- Tipografía -->
+       <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:22px;width:340px;">
+         <div style="font-size:13px;font-weight:600;color:var(--fg-1);margin-bottom:12px;">Tipografía</div>
+         <div style="font-family:'Noto Sans';font-weight:800;font-size:30px;letter-spacing:-.02em;color:var(--fg-1);line-height:1;">Noto Sans</div>
+         <div style="font-size:12px;color:var(--fg-3);margin:2px 0 14px;">Display · títulos · números clave</div>
+         <div style="font-family:'Roboto';font-size:16px;color:var(--fg-1);">Roboto — cuerpo, UI y datos</div>
+         <div class="tnum" style="font-family:'Roboto';font-size:16px;color:var(--fg-2);margin-top:2px;">₡ 180 000 · 69% · 12:41 (tabular)</div>
+       </div>
+       <!-- Elevación -->
+       <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:22px;width:360px;">
+         <div style="font-size:13px;font-weight:600;color:var(--fg-1);margin-bottom:16px;">Elevación en capas · radios 6/8/12</div>
+         <div style="display:flex;gap:16px;align-items:center;">
+           <div style="flex:1;height:52px;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:var(--sh1);"></div>
+           <div style="flex:1;height:52px;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:var(--sh2);"></div>
+           <div style="flex:1;height:52px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--sh3);"></div>
+         </div>
+         <div style="display:flex;gap:16px;margin-top:6px;font-size:11px;color:var(--fg-3);"><div style="flex:1;">tarjeta</div><div style="flex:1;">flotante</div><div style="flex:1;">modal/menú</div></div>
+       </div>
+     </div>
+   </section>
+
+   <!-- ============ BANDEJA / INBOX ============ -->
+   <section style="display:flex;flex-direction:column;gap:24px;">
+     <div style="display:flex;flex-direction:column;gap:6px;">
+       <div style="font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--fg-3);font-weight:600;">02 · Prioritaria</div>
+       <h2 style="font-family:'Noto Sans';font-weight:700;font-size:30px;letter-spacing:-.015em;margin:0;color:var(--fg-1);">Bandeja · lista y conversación</h2>
+     </div>
+     <div style="display:flex;gap:32px;align-items:flex-start;flex-wrap:wrap;">
+       <!-- Anotaciones -->
+       <div style="width:300px;flex-shrink:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:22px;position:sticky;top:24px;">
+         <div style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:12px;">Qué cambió</div>
+         <sc-for list="{{ annInbox }}" as="b" hint-placeholder-count="5">
+           <div style="display:flex;gap:10px;margin-bottom:14px;">
+             <span style="width:6px;height:6px;border-radius:50%;background:var(--accent);margin-top:7px;flex-shrink:0;"></span>
+             <span style="font-size:13px;color:var(--fg-2);line-height:1.5;">{{ b }}</span>
+           </div>
+         </sc-for>
+       </div>
+
+       <!-- Desktop frame -->
+       <div style="border-radius:var(--r-xl);box-shadow:var(--sh3);overflow:hidden;background:var(--surface);border:1px solid var(--border-strong);">
+         <div style="height:38px;background:var(--surface-2);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:14px;">
+           <div style="display:flex;gap:7px;"><span style="width:11px;height:11px;border-radius:50%;background:#E4E7E6;"></span><span style="width:11px;height:11px;border-radius:50%;background:#E4E7E6;"></span><span style="width:11px;height:11px;border-radius:50%;background:#E4E7E6;"></span></div>
+           <div style="flex:1;max-width:320px;height:22px;background:var(--bg-page);border-radius:6px;display:flex;align-items:center;padding:0 10px;font-size:11px;color:var(--fg-3);">app.lavacar.cr/inbox</div>
+           <div style="font-size:11px;color:var(--fg-4);">Desktop · 1440</div>
+         </div>
+         <div style="width:1440px;height:892px;background:var(--bg-page);display:flex;flex-direction:column;">
+           <!-- APP HEADER -->
+           <div style="height:64px;background:var(--header);display:flex;align-items:center;padding:0 22px;gap:20px;flex-shrink:0;">
+             <div style="display:flex;align-items:center;gap:12px;">
+               <div style="width:38px;height:38px;border-radius:10px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Noto Sans';font-weight:700;font-size:15px;">LR</div>
+               <div style="line-height:1.15;"><div style="color:#fff;font-weight:600;font-size:15px;font-family:'Noto Sans';">Lavacar Rosales</div><div style="color:rgba(255,255,255,.6);font-size:12px;">WhatsApp Business</div></div>
+             </div>
+             <div style="flex:1;display:flex;justify-content:center;">
+               <div style="display:flex;gap:2px;background:rgba(255,255,255,.09);padding:4px;border-radius:11px;">
+                 <div style="display:flex;align-items:center;gap:7px;background:#fff;color:var(--header);padding:7px 14px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:var(--sh1);"><i data-lucide="message-square" style="width:15px;height:15px;"></i>Bandeja<span style="background:var(--accent);color:#fff;font-size:11px;font-weight:700;padding:1px 6px;border-radius:20px;">2</span></div>
+                 <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.82);padding:7px 14px;border-radius:8px;font-size:13px;"><i data-lucide="bar-chart-2" style="width:15px;height:15px;"></i>Panel</div>
+                 <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.82);padding:7px 14px;border-radius:8px;font-size:13px;"><i data-lucide="calendar" style="width:15px;height:15px;"></i>Agenda</div>
+                 <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.82);padding:7px 14px;border-radius:8px;font-size:13px;"><i data-lucide="settings" style="width:15px;height:15px;"></i>Mi negocio</div>
+                 <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.82);padding:7px 14px;border-radius:8px;font-size:13px;"><i data-lucide="users" style="width:15px;height:15px;"></i>Usuarios</div>
+                 <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.82);padding:7px 14px;border-radius:8px;font-size:13px;"><i data-lucide="send" style="width:15px;height:15px;"></i>Campañas</div>
+               </div>
+             </div>
+             <div style="display:flex;align-items:center;gap:6px;">
+               <div style="width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.8);"><i data-lucide="moon" style="width:17px;height:17px;"></i></div>
+               <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.8);padding:0 8px;font-size:13px;"><i data-lucide="log-out" style="width:16px;height:16px;"></i>Salir</div>
+             </div>
+           </div>
+           <!-- BODY -->
+           <div style="flex:1;display:flex;min-height:0;">
+             <!-- LIST -->
+             <div style="width:372px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;">
+               <div style="padding:16px 16px 12px;display:flex;flex-direction:column;gap:12px;border-bottom:1px solid var(--border);">
+                 <div style="display:flex;align-items:center;gap:9px;background:var(--bg-page);border:1px solid var(--border);border-radius:9px;padding:9px 12px;">
+                   <i data-lucide="search" style="width:16px;height:16px;color:var(--fg-3);"></i>
+                   <span style="font-size:14px;color:var(--fg-3);">Buscar conversación…</span>
+                 </div>
+                 <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                   <div style="background:var(--accent);color:#fff;font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:20px;">Todos <span style="opacity:.75;">16</span></div>
+                   <div style="background:var(--bg-page);border:1px solid var(--border);color:var(--fg-2);font-size:12.5px;padding:6px 12px;border-radius:20px;">Bot <span style="color:var(--fg-3);">15</span></div>
+                   <div style="background:var(--bg-page);border:1px solid var(--border);color:var(--fg-2);font-size:12.5px;padding:6px 12px;border-radius:20px;">Vos <span style="color:var(--fg-3);">1</span></div>
+                   <div style="background:var(--warning-soft);border:1px solid #EFD9AF;color:var(--warning);font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:20px;display:flex;align-items:center;gap:5px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--warning);"></span>Necesita respuesta 1</div>
+                 </div>
+               </div>
+               <div style="flex:1;overflow:hidden;">
+                 <sc-for list="{{ convos }}" as="c" hint-placeholder-count="8">
+                   <div style="display:flex;gap:12px;padding:13px 16px 13px {{ c.padL }};border-bottom:1px solid var(--border);position:relative;background:{{ c.rowBg }};">
+                     <sc-if value="{{ c.needs }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--warning);"></div></sc-if>
+                     <div style="width:42px;height:42px;border-radius:50%;background:{{ c.avBg }};color:{{ c.avFg }};display:flex;align-items:center;justify-content:center;font-family:'Noto Sans';font-weight:600;font-size:14px;flex-shrink:0;">{{ c.initials }}</div>
+                     <div style="flex:1;min-width:0;">
+                       <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
+                         <span style="font-family:'Noto Sans';font-weight:600;font-size:14.5px;color:var(--fg-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ c.name }}</span>
+                         <span class="tnum" style="font-size:11.5px;color:var(--fg-3);flex-shrink:0;">{{ c.time }}</span>
+                       </div>
+                       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:3px;">
+                         <span style="font-size:13px;color:var(--fg-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;">{{ c.preview }}</span>
+                         <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+                           <sc-if value="{{ c.unread }}" hint-placeholder-val="{{ false }}"><span style="background:var(--accent);color:#fff;font-size:11px;font-weight:700;min-width:18px;height:18px;padding:0 5px;border-radius:20px;display:flex;align-items:center;justify-content:center;">{{ c.unread }}</span></sc-if>
+                           <sc-if value="{{ c.isBot }}" hint-placeholder-val="{{ true }}"><span style="display:inline-flex;align-items:center;gap:4px;background:var(--bg-page);border:1px solid var(--border);color:var(--fg-2);font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:5px;"><i data-lucide="bot" style="width:12px;height:12px;"></i>Bot</span></sc-if>
+                           <sc-if value="{{ c.isHuman }}" hint-placeholder-val="{{ false }}"><span style="display:inline-flex;align-items:center;gap:4px;background:var(--warning-soft);color:var(--warning);font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:5px;"><i data-lucide="user" style="width:12px;height:12px;"></i>Vos</span></sc-if>
+                         </div>
+                       </div>
+                       <div style="display:flex;align-items:center;gap:10px;margin-top:7px;">
+                         <div style="display:flex;align-items:center;gap:5px;">
+                           <div style="display:flex;gap:2px;align-items:flex-end;">
+                             <span style="width:3px;height:6px;border-radius:1px;background:{{ c.b1 }};"></span>
+                             <span style="width:3px;height:9px;border-radius:1px;background:{{ c.b2 }};"></span>
+                             <span style="width:3px;height:12px;border-radius:1px;background:{{ c.b3 }};"></span>
+                           </div>
+                           <span style="font-size:11px;color:var(--fg-3);">Interés {{ c.interes }}</span>
+                         </div>
+                         <sc-if value="{{ c.needs }}" hint-placeholder-val="{{ false }}"><span style="display:inline-flex;align-items:center;gap:5px;background:var(--warning-soft);color:var(--warning);font-size:11px;font-weight:600;padding:2px 8px;border-radius:5px;"><i data-lucide="alarm-clock" style="width:12px;height:12px;"></i>{{ c.needsLabel }}</span></sc-if>
+                       </div>
+                     </div>
+                   </div>
+                 </sc-for>
+               </div>
+             </div>
+             <!-- CHAT -->
+             <div style="flex:1;display:flex;flex-direction:column;min-width:0;background:var(--bg-page);">
+               <div style="background:var(--surface);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:16px;">
+                 <div style="width:42px;height:42px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Noto Sans';font-weight:600;font-size:15px;">DR</div>
+                 <div style="flex:1;min-width:0;">
+                   <div style="display:flex;align-items:center;gap:10px;">
+                     <span style="font-family:'Noto Sans';font-weight:700;font-size:17px;color:var(--fg-1);">Diego Ramírez</span>
+                     <span style="display:inline-flex;align-items:center;gap:5px;background:var(--accent-soft);color:var(--accent-active);font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:6px;"><i data-lucide="bot" style="width:13px;height:13px;"></i>Lo atiende el bot</span>
+                   </div>
+                   <div style="display:flex;align-items:center;gap:12px;margin-top:4px;font-size:12.5px;color:var(--fg-3);">
+                     <span class="tnum">+506 8712 3344</span><span>·</span>
+                     <span style="display:inline-flex;align-items:center;gap:4px;"><i data-lucide="clock" style="width:13px;height:13px;"></i>Ventana cierra en 23 h 52 m</span><span>·</span>
+                     <a href="#" style="color:var(--accent);font-weight:500;">Ver ficha del cliente</a>
+                   </div>
+                 </div>
+                 <div style="display:flex;align-items:center;gap:10px;">
+                   <div style="display:flex;gap:8px;">
+                     <div style="display:flex;align-items:center;gap:7px;background:var(--accent);color:#fff;font-size:13.5px;font-weight:600;padding:9px 15px;border-radius:9px;box-shadow:var(--sh1);"><i data-lucide="calendar-plus" style="width:16px;height:16px;"></i>Agendá cita</div>
+                     <div style="display:flex;align-items:center;gap:7px;background:var(--surface);border:1px solid var(--border-strong);color:var(--fg-1);font-size:13.5px;font-weight:500;padding:9px 15px;border-radius:9px;"><i data-lucide="file-text" style="width:16px;height:16px;color:var(--fg-2);"></i>Cotización</div>
+                     <div style="display:flex;align-items:center;gap:7px;background:var(--surface);border:1px solid var(--border-strong);color:var(--fg-1);font-size:13.5px;font-weight:500;padding:9px 15px;border-radius:9px;"><i data-lucide="check-check" style="width:16px;height:16px;color:var(--success);"></i>Atendido</div>
+                   </div>
+                   <div style="width:1px;height:26px;background:var(--border);"></div>
+                   <div style="display:flex;align-items:center;gap:7px;background:var(--fg-1);color:#fff;font-size:13.5px;font-weight:600;padding:9px 16px;border-radius:9px;"><i data-lucide="hand" style="width:16px;height:16px;"></i>Atender yo</div>
+                 </div>
+               </div>
+               <div style="flex:1;overflow:hidden;padding:22px 26px;display:flex;flex-direction:column;gap:14px;">
+                 <div style="text-align:center;"><span style="background:var(--surface);border:1px solid var(--border);color:var(--fg-3);font-size:11.5px;padding:4px 12px;border-radius:20px;">Hoy</span></div>
+                 <sc-for list="{{ chat }}" as="m" hint-placeholder-count="7">
+                   <div style="display:flex;justify-content:{{ m.align }};">
+                     <div style="max-width:62%;">
+                       <sc-if value="{{ m.isBot }}" hint-placeholder-val="{{ false }}"><div style="display:flex;align-items:center;gap:5px;margin-bottom:4px;font-size:10.5px;font-weight:700;letter-spacing:.06em;color:var(--accent);"><i data-lucide="bot" style="width:12px;height:12px;"></i>AGENTE IA</div></sc-if>
+                       <div style="background:{{ m.bg }};border:{{ m.border }};color:var(--fg-1);font-size:14.5px;line-height:1.5;padding:11px 15px;border-radius:{{ m.radius }};box-shadow:var(--sh1);">{{ m.text }}</div>
+                       <div class="tnum" style="font-size:11px;color:var(--fg-3);margin-top:4px;text-align:{{ m.timeAlign }};">{{ m.time }}</div>
+                     </div>
+                   </div>
+                 </sc-for>
+               </div>
+               <div style="padding:16px 24px;background:var(--surface);border-top:1px solid var(--border);display:flex;align-items:center;gap:12px;">
+                 <div style="width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--fg-3);border:1px solid var(--border);"><i data-lucide="paperclip" style="width:18px;height:18px;"></i></div>
+                 <div style="flex:1;background:var(--bg-page);border:1px solid var(--border);border-radius:10px;padding:11px 16px;font-size:14px;color:var(--fg-3);">Escribí un mensaje…</div>
+                 <div style="width:44px;height:44px;border-radius:10px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:var(--sh1);"><i data-lucide="send-horizontal" style="width:19px;height:19px;"></i></div>
+               </div>
+             </div>
+           </div>
+         </div>
+       </div>
+
+       <!-- Mobile inbox + legend -->
+       <div style="display:flex;flex-direction:column;gap:24px;align-items:center;">
+         <div style="width:414px;background:#1a1a1a;border-radius:44px;padding:12px;box-shadow:var(--sh3);">
+           <div style="border-radius:34px;overflow:hidden;background:var(--surface);">
+             <div style="height:34px;background:var(--header);display:flex;align-items:center;justify-content:space-between;padding:0 28px;color:#fff;font-size:12px;font-weight:600;"><span class="tnum">9:41</span><span style="display:flex;gap:5px;align-items:center;"><i data-lucide="signal" style="width:14px;height:14px;"></i><i data-lucide="wifi" style="width:14px;height:14px;"></i><i data-lucide="battery-full" style="width:16px;height:16px;"></i></span></div>
+             <!-- mobile app header -->
+             <div style="background:var(--header);padding:8px 16px 14px;display:flex;align-items:center;gap:11px;">
+               <div style="width:34px;height:34px;border-radius:9px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Noto Sans';font-weight:700;font-size:13px;">LR</div>
+               <div style="flex:1;line-height:1.15;"><div style="color:#fff;font-weight:600;font-size:14px;font-family:'Noto Sans';">Lavacar Rosales</div><div style="color:rgba(255,255,255,.6);font-size:11px;">Bandeja</div></div>
+               <i data-lucide="moon" style="width:18px;height:18px;color:rgba(255,255,255,.8);"></i>
+               <i data-lucide="log-out" style="width:18px;height:18px;color:rgba(255,255,255,.8);"></i>
+             </div>
+             <div style="padding:12px 14px 8px;background:var(--surface);">
+               <div style="display:flex;align-items:center;gap:9px;background:var(--bg-page);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px;"><i data-lucide="search" style="width:16px;height:16px;color:var(--fg-3);"></i><span style="font-size:14px;color:var(--fg-3);">Buscar…</span></div>
+               <div style="display:flex;gap:6px;overflow:hidden;">
+                 <div style="background:var(--accent);color:#fff;font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:20px;white-space:nowrap;">Todos 16</div>
+                 <div style="background:var(--warning-soft);color:var(--warning);font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:20px;white-space:nowrap;display:flex;gap:5px;align-items:center;"><span style="width:6px;height:6px;border-radius:50%;background:var(--warning);"></span>Necesita respuesta 1</div>
+                 <div style="background:var(--bg-page);border:1px solid var(--border);color:var(--fg-2);font-size:12.5px;padding:6px 12px;border-radius:20px;white-space:nowrap;">Bot 15</div>
+               </div>
+             </div>
+             <div style="height:560px;overflow:hidden;background:var(--surface);">
+               <sc-for list="{{ convosMobile }}" as="c" hint-placeholder-count="6">
+                 <div style="display:flex;gap:11px;padding:12px 14px 12px {{ c.padL }};border-bottom:1px solid var(--border);position:relative;background:{{ c.rowBg }};">
+                   <sc-if value="{{ c.needs }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--warning);"></div></sc-if>
+                   <div style="width:40px;height:40px;border-radius:50%;background:{{ c.avBg }};color:{{ c.avFg }};display:flex;align-items:center;justify-content:center;font-family:'Noto Sans';font-weight:600;font-size:13px;flex-shrink:0;">{{ c.initials }}</div>
+                   <div style="flex:1;min-width:0;">
+                     <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;"><span style="font-family:'Noto Sans';font-weight:600;font-size:14px;color:var(--fg-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ c.name }}</span><span class="tnum" style="font-size:11px;color:var(--fg-3);flex-shrink:0;">{{ c.time }}</span></div>
+                     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:2px;"><span style="font-size:12.5px;color:var(--fg-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;">{{ c.preview }}</span><div style="display:flex;gap:5px;flex-shrink:0;"><sc-if value="{{ c.unread }}" hint-placeholder-val="{{ false }}"><span style="background:var(--accent);color:#fff;font-size:10.5px;font-weight:700;min-width:17px;height:17px;padding:0 5px;border-radius:20px;display:flex;align-items:center;justify-content:center;">{{ c.unread }}</span></sc-if></div></div>
+                     <div style="display:flex;align-items:center;gap:9px;margin-top:6px;">
+                       <div style="display:flex;align-items:center;gap:4px;"><div style="display:flex;gap:2px;align-items:flex-end;"><span style="width:3px;height:5px;border-radius:1px;background:{{ c.b1 }};"></span><span style="width:3px;height:8px;border-radius:1px;background:{{ c.b2 }};"></span><span style="width:3px;height:11px;border-radius:1px;background:{{ c.b3 }};"></span></div><span style="font-size:10.5px;color:var(--fg-3);">{{ c.interes }}</span></div>
+                       <sc-if value="{{ c.isBot }}" hint-placeholder-val="{{ true }}"><span style="display:inline-flex;align-items:center;gap:3px;background:var(--bg-page);border:1px solid var(--border);color:var(--fg-2);font-size:10px;font-weight:600;padding:2px 6px;border-radius:5px;"><i data-lucide="bot" style="width:11px;height:11px;"></i>Bot</span></sc-if>
+                       <sc-if value="{{ c.needs }}" hint-placeholder-val="{{ false }}"><span style="display:inline-flex;align-items:center;gap:3px;background:var(--warning-soft);color:var(--warning);font-size:10px;font-weight:700;padding:2px 6px;border-radius:5px;"><i data-lucide="user" style="width:11px;height:11px;"></i>Vos</span></sc-if>
+                     </div>
+                   </div>
+                 </div>
+               </sc-for>
+             </div>
+             <!-- bottom nav -->
+             <div style="display:flex;background:var(--surface);border-top:1px solid var(--border);padding:8px 6px 16px;">
+               <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--accent);position:relative;"><i data-lucide="message-square" style="width:22px;height:22px;"></i><span style="font-size:10.5px;font-weight:600;">Bandeja</span><span style="position:absolute;top:-4px;left:50%;margin-left:4px;background:var(--accent);color:#fff;font-size:9px;font-weight:700;min-width:15px;height:15px;padding:0 4px;border-radius:20px;display:flex;align-items:center;justify-content:center;">2</span></div>
+               <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--fg-3);"><i data-lucide="bar-chart-2" style="width:22px;height:22px;"></i><span style="font-size:10.5px;">Panel</span></div>
+               <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--fg-3);"><i data-lucide="calendar" style="width:22px;height:22px;"></i><span style="font-size:10.5px;">Agenda</span></div>
+               <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--fg-3);"><i data-lucide="settings" style="width:22px;height:22px;"></i><span style="font-size:10.5px;">Negocio</span></div>
+               <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--fg-3);"><i data-lucide="send" style="width:22px;height:22px;"></i><span style="font-size:10.5px;">Campañas</span></div>
+             </div>
+           </div>
+         </div>
+         <div style="width:414px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:20px;">
+           <div style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:14px;">Leyenda · Interés del cliente</div>
+           <div style="display:flex;flex-direction:column;gap:12px;">
+             <div style="display:flex;align-items:center;gap:10px;"><div style="display:flex;gap:2px;align-items:flex-end;"><span style="width:4px;height:7px;border-radius:1px;background:var(--accent);"></span><span style="width:4px;height:11px;border-radius:1px;background:var(--accent);"></span><span style="width:4px;height:15px;border-radius:1px;background:var(--accent);"></span></div><span style="font-size:13px;color:var(--fg-1);font-weight:600;">Alto</span><span style="font-size:13px;color:var(--fg-2);">Listo para agendar / cotizó · priorizá</span></div>
+             <div style="display:flex;align-items:center;gap:10px;"><div style="display:flex;gap:2px;align-items:flex-end;"><span style="width:4px;height:7px;border-radius:1px;background:var(--accent);"></span><span style="width:4px;height:11px;border-radius:1px;background:var(--accent);"></span><span style="width:4px;height:15px;border-radius:1px;background:var(--border-strong);"></span></div><span style="font-size:13px;color:var(--fg-1);font-weight:600;">Medio</span><span style="font-size:13px;color:var(--fg-2);">Consultando precios / disponibilidad</span></div>
+             <div style="display:flex;align-items:center;gap:10px;"><div style="display:flex;gap:2px;align-items:flex-end;"><span style="width:4px;height:7px;border-radius:1px;background:var(--accent);"></span><span style="width:4px;height:11px;border-radius:1px;background:var(--border-strong);"></span><span style="width:4px;height:15px;border-radius:1px;background:var(--border-strong);"></span></div><span style="font-size:13px;color:var(--fg-1);font-weight:600;">Bajo</span><span style="font-size:13px;color:var(--fg-2);">Consulta general, sin intención clara</span></div>
+             <div style="height:1px;background:var(--border);margin:2px 0;"></div>
+             <div style="display:flex;align-items:center;gap:10px;"><span style="width:3px;height:18px;background:var(--warning);border-radius:2px;"></span><span style="font-size:13px;color:var(--fg-2);"><strong style="color:var(--fg-1);">Barra ámbar:</strong> necesita que intervengás (sin responder o pidió humano).</span></div>
+           </div>
+         </div>
+       </div>
+     </div>
+   </section>
+
+   <!-- ============ DASHBOARD ============ -->
+   <section style="display:flex;flex-direction:column;gap:24px;">
+     <div style="display:flex;flex-direction:column;gap:6px;">
+       <div style="font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--fg-3);font-weight:600;">03 · Prioritaria</div>
+       <h2 style="font-family:'Noto Sans';font-weight:700;font-size:30px;letter-spacing:-.015em;margin:0;color:var(--fg-1);">Panel · KPIs agrupados</h2>
+     </div>
+     <div style="display:flex;gap:32px;align-items:flex-start;flex-wrap:wrap;">
+       <div style="width:300px;flex-shrink:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:22px;position:sticky;top:24px;">
+         <div style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:12px;">Qué cambió</div>
+         <sc-for list="{{ annDash }}" as="b" hint-placeholder-count="4">
+           <div style="display:flex;gap:10px;margin-bottom:14px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);margin-top:7px;flex-shrink:0;"></span><span style="font-size:13px;color:var(--fg-2);line-height:1.5;">{{ b }}</span></div>
+         </sc-for>
+       </div>
+
+       <!-- Desktop dashboard frame -->
+       <div style="border-radius:var(--r-xl);box-shadow:var(--sh3);overflow:hidden;background:var(--surface);border:1px solid var(--border-strong);">
+         <div style="height:38px;background:var(--surface-2);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:14px;">
+           <div style="display:flex;gap:7px;"><span style="width:11px;height:11px;border-radius:50%;background:#E4E7E6;"></span><span style="width:11px;height:11px;border-radius:50%;background:#E4E7E6;"></span><span style="width:11px;height:11px;border-radius:50%;background:#E4E7E6;"></span></div>
+           <div style="flex:1;max-width:320px;height:22px;background:var(--bg-page);border-radius:6px;display:flex;align-items:center;padding:0 10px;font-size:11px;color:var(--fg-3);">app.lavacar.cr/panel</div>
+           <div style="font-size:11px;color:var(--fg-4);">Desktop · 1440</div>
+         </div>
+         <div style="width:1440px;background:var(--bg-page);display:flex;flex-direction:column;">
+           <!-- header (Panel active) -->
+           <div style="height:64px;background:var(--header);display:flex;align-items:center;padding:0 22px;gap:20px;flex-shrink:0;">
+             <div style="display:flex;align-items:center;gap:12px;"><div style="width:38px;height:38px;border-radius:10px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Noto Sans';font-weight:700;font-size:15px;">LR</div><div style="line-height:1.15;"><div style="color:#fff;font-weight:600;font-size:15px;font-family:'Noto Sans';">Lavacar Rosales</div><div style="color:rgba(255,255,255,.6);font-size:12px;">WhatsApp Business</div></div></div>
+             <div style="flex:1;display:flex;justify-content:center;"><div style="display:flex;gap:2px;background:rgba(255,255,255,.09);padding:4px;border-radius:11px;">
+               <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.82);padding:7px 14px;border-radius:8px;font-size:13px;"><i data-lucide="message-square" style="width:15px;height:15px;"></i>Bandeja<span style="background:var(--accent);color:#fff;font-size:11px;font-weight:700;padding:1px 6px;border-radius:20px;">2</span></div>
+               <div style="display:flex;align-items:center;gap:7px;background:#fff;color:var(--header);padding:7px 14px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:var(--sh1);"><i data-lucide="bar-chart-2" style="width:15px;height:15px;"></i>Panel</div>
+               <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.82);padding:7px 14px;border-radius:8px;font-size:13px;"><i data-lucide="calendar" style="width:15px;height:15px;"></i>Agenda</div>
+               <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.82);padding:7px 14px;border-radius:8px;font-size:13px;"><i data-lucide="settings" style="width:15px;height:15px;"></i>Mi negocio</div>
+               <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.82);padding:7px 14px;border-radius:8px;font-size:13px;"><i data-lucide="users" style="width:15px;height:15px;"></i>Usuarios</div>
+               <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.82);padding:7px 14px;border-radius:8px;font-size:13px;"><i data-lucide="send" style="width:15px;height:15px;"></i>Campañas</div>
+             </div></div>
+             <div style="display:flex;align-items:center;gap:6px;"><div style="width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.8);"><i data-lucide="moon" style="width:17px;height:17px;"></i></div><div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.8);padding:0 8px;font-size:13px;"><i data-lucide="log-out" style="width:16px;height:16px;"></i>Salir</div></div>
+           </div>
+           <div style="padding:28px 36px;">
+             <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:22px;">
+               <div><h3 style="font-family:'Noto Sans';font-weight:700;font-size:26px;letter-spacing:-.015em;margin:0;color:var(--fg-1);">Panel · Lavacar Rosales</h3><div style="font-size:13.5px;color:var(--fg-3);margin-top:3px;">Resumen de los últimos 30 días</div></div>
+               <div style="display:flex;gap:2px;background:var(--surface);border:1px solid var(--border);padding:3px;border-radius:9px;box-shadow:var(--sh1);"><span style="font-size:13px;color:var(--fg-3);padding:6px 12px;">7 días</span><span style="font-size:13px;font-weight:600;background:var(--accent-soft);color:var(--accent-active);padding:6px 12px;border-radius:6px;">30 días</span><span style="font-size:13px;color:var(--fg-3);padding:6px 12px;">Año</span></div>
+             </div>
+             <!-- content grid: hero+dinero left, right column -->
+             <div style="display:grid;grid-template-columns:1.7fr 1fr;gap:20px;">
+               <!-- HERO rescate -->
+               <div style="grid-column:1/-1;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh2);padding:26px 28px;display:flex;align-items:center;gap:40px;">
+                 <div style="flex:1;">
+                   <div style="display:flex;align-items:center;gap:8px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:10px;"><i data-lucide="shield-check" style="width:15px;height:15px;"></i>Plata rescatada por el bot</div>
+                   <div class="tnum" style="font-family:'Noto Sans';font-weight:800;font-size:52px;letter-spacing:-.02em;color:var(--accent-active);line-height:1;"><span style="font-size:30px;font-weight:700;color:var(--fg-3);vertical-align:6px;margin-right:2px;">₡</span>35 000</div>
+                   <div style="font-size:14.5px;color:var(--fg-2);margin-top:12px;max-width:440px;line-height:1.5;">El bot recuperó <strong style="color:var(--fg-1);">4 conversaciones</strong> que se iban a perder y las convirtió en citas — sin que intervinieras.</div>
+                   <div style="display:flex;gap:24px;margin-top:16px;">
+                     <div><div class="tnum" style="font-family:'Noto Sans';font-weight:700;font-size:20px;color:var(--fg-1);">67%</div><div style="font-size:12px;color:var(--fg-3);">Tasa de rescate</div></div>
+                     <div style="width:1px;background:var(--border);"></div>
+                     <div><div class="tnum" style="font-family:'Noto Sans';font-weight:700;font-size:20px;color:var(--fg-1);">94%</div><div style="font-size:12px;color:var(--fg-3);">Sin intervención humana</div></div>
+                     <div style="width:1px;background:var(--border);"></div>
+                     <div><div style="display:inline-flex;align-items:center;gap:4px;color:var(--success);font-weight:700;font-size:20px;font-family:'Noto Sans';"><i data-lucide="trending-up" style="width:18px;height:18px;"></i>+18%</div><div style="font-size:12px;color:var(--fg-3);">vs. mes anterior</div></div>
+                   </div>
+                 </div>
+                 <div style="width:320px;flex-shrink:0;">
+                   <svg viewBox="0 0 320 130" style="width:100%;height:130px;overflow:visible;">
+                     <defs><linearGradient id="spark" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity="0.18"></stop><stop offset="1" stop-color="var(--accent)" stop-opacity="0"></stop></linearGradient></defs>
+                     <polyline points="0,105 40,92 80,96 120,70 160,74 200,52 240,44 280,30 320,20" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></polyline>
+                     <polygon points="0,105 40,92 80,96 120,70 160,74 200,52 240,44 280,30 320,20 320,130 0,130" fill="url(#spark)"></polygon>
+                     <circle cx="320" cy="20" r="4" fill="var(--accent)"></circle>
+                   </svg>
+                   <div style="font-size:11.5px;color:var(--fg-3);text-align:center;margin-top:4px;">Rescate acumulado · últimas 9 semanas</div>
+                 </div>
+               </div>
+
+               <!-- DINERO group -->
+               <div style="grid-column:1/-1;">
+                 <div style="display:flex;align-items:center;gap:10px;margin:6px 0 12px;"><span style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3);font-weight:600;">Dinero</span><span style="flex:1;height:1px;background:var(--border);"></span></div>
+                 <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;">
+                   <sc-for list="{{ kpiDinero }}" as="k" hint-placeholder-count="3">
+                     <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:18px 20px;">
+                       <div style="display:flex;justify-content:space-between;align-items:flex-start;"><div style="font-size:13px;color:var(--fg-2);font-weight:500;">{{ k.label }}</div><div style="width:32px;height:32px;border-radius:8px;background:var(--accent-soft);display:flex;align-items:center;justify-content:center;color:var(--accent-active);"><i data-lucide="{{ k.icon }}" style="width:16px;height:16px;"></i></div></div>
+                       <div class="tnum" style="font-family:'Noto Sans';font-weight:700;font-size:30px;letter-spacing:-.01em;color:var(--fg-1);margin-top:12px;"><span style="font-size:18px;color:var(--fg-3);margin-right:1px;">{{ k.prefix }}</span>{{ k.value }}<span style="font-size:18px;color:var(--fg-3);">{{ k.suffix }}</span></div>
+                       <div style="display:flex;align-items:center;gap:7px;margin-top:8px;">
+                         <sc-if value="{{ k.good }}" hint-placeholder-val="{{ true }}"><span style="display:inline-flex;align-items:center;gap:3px;color:var(--success);font-size:12px;font-weight:600;">{{ k.arrow }} {{ k.dtext }}</span></sc-if>
+                         <sc-if value="{{ k.bad }}" hint-placeholder-val="{{ false }}"><span style="display:inline-flex;align-items:center;gap:3px;color:var(--danger);font-size:12px;font-weight:600;">{{ k.arrow }} {{ k.dtext }}</span></sc-if>
+                         <span style="font-size:12px;color:var(--fg-3);">{{ k.hint }}</span>
+                       </div>
+                     </div>
+                   </sc-for>
+                 </div>
+               </div>
+
+               <!-- ACTIVIDAD group -->
+               <div>
+                 <div style="display:flex;align-items:center;gap:10px;margin:10px 0 12px;"><span style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3);font-weight:600;">Actividad del bot</span><span style="flex:1;height:1px;background:var(--border);"></span></div>
+                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                   <sc-for list="{{ kpiActividad }}" as="k" hint-placeholder-count="4">
+                     <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:16px 18px;">
+                       <div style="display:flex;align-items:center;gap:9px;"><div style="width:30px;height:30px;border-radius:8px;background:var(--bg-page);display:flex;align-items:center;justify-content:center;color:var(--fg-2);"><i data-lucide="{{ k.icon }}" style="width:15px;height:15px;"></i></div><div style="font-size:12.5px;color:var(--fg-2);font-weight:500;">{{ k.label }}</div></div>
+                       <div class="tnum" style="font-family:'Noto Sans';font-weight:700;font-size:26px;color:var(--fg-1);margin-top:10px;">{{ k.value }}<span style="font-size:16px;color:var(--fg-3);">{{ k.suffix }}</span></div>
+                     </div>
+                   </sc-for>
+                 </div>
+               </div>
+
+               <!-- RIESGO group -->
+               <div>
+                 <div style="display:flex;align-items:center;gap:10px;margin:10px 0 12px;"><span style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3);font-weight:600;">Riesgo y calidad</span><span style="flex:1;height:1px;background:var(--border);"></span></div>
+                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                   <sc-for list="{{ kpiRiesgo }}" as="k" hint-placeholder-count="4">
+                     <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:16px 18px;">
+                       <div style="display:flex;align-items:center;gap:9px;"><div style="width:30px;height:30px;border-radius:8px;background:{{ k.iconBg }};display:flex;align-items:center;justify-content:center;color:{{ k.iconFg }};"><i data-lucide="{{ k.icon }}" style="width:15px;height:15px;"></i></div><div style="font-size:12.5px;color:var(--fg-2);font-weight:500;">{{ k.label }}</div></div>
+                       <div class="tnum" style="font-family:'Noto Sans';font-weight:700;font-size:26px;color:var(--fg-1);margin-top:10px;">{{ k.value }}<span style="font-size:16px;color:var(--fg-3);">{{ k.suffix }}</span></div>
+                     </div>
+                   </sc-for>
+                 </div>
+               </div>
+
+               <!-- CHART -->
+               <div style="grid-column:1/-1;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:20px 24px;margin-top:2px;">
+                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;"><div style="font-size:13px;font-weight:600;color:var(--fg-1);">Citas por día</div><div style="font-size:12px;color:var(--fg-3);">Total 20 citas · promedio 2/día</div></div>
+                 <div style="display:flex;align-items:flex-end;gap:14px;height:150px;">
+                   <sc-for list="{{ chartDays }}" as="d" hint-placeholder-count="10">
+                     <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;height:100%;justify-content:flex-end;">
+                       <span class="tnum" style="font-size:12px;font-weight:700;color:var(--fg-1);">{{ d.count }}</span>
+                       <div style="width:100%;max-width:46px;background:{{ d.barBg }};border-radius:6px 6px 0 0;height:{{ d.h }};"></div>
+                       <span class="tnum" style="font-size:11px;color:var(--fg-3);">{{ d.label }}</span>
+                     </div>
+                   </sc-for>
+                 </div>
+               </div>
+             </div>
+           </div>
+         </div>
+       </div>
+
+       <!-- Mobile dashboard -->
+       <div style="width:414px;background:#1a1a1a;border-radius:44px;padding:12px;box-shadow:var(--sh3);flex-shrink:0;">
+         <div style="border-radius:34px;overflow:hidden;background:var(--bg-page);">
+           <div style="height:34px;background:var(--header);display:flex;align-items:center;justify-content:space-between;padding:0 28px;color:#fff;font-size:12px;font-weight:600;"><span class="tnum">9:41</span><span style="display:flex;gap:5px;align-items:center;"><i data-lucide="signal" style="width:14px;height:14px;"></i><i data-lucide="wifi" style="width:14px;height:14px;"></i><i data-lucide="battery-full" style="width:16px;height:16px;"></i></span></div>
+           <div style="background:var(--header);padding:8px 16px 14px;display:flex;align-items:center;gap:11px;"><div style="width:34px;height:34px;border-radius:9px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Noto Sans';font-weight:700;font-size:13px;">LR</div><div style="flex:1;line-height:1.15;"><div style="color:#fff;font-weight:600;font-size:14px;font-family:'Noto Sans';">Lavacar Rosales</div><div style="color:rgba(255,255,255,.6);font-size:11px;">Panel</div></div><i data-lucide="moon" style="width:18px;height:18px;color:rgba(255,255,255,.8);"></i><i data-lucide="log-out" style="width:18px;height:18px;color:rgba(255,255,255,.8);"></i></div>
+           <div style="height:606px;overflow:hidden;padding:16px 14px;display:flex;flex-direction:column;gap:16px;">
+             <!-- hero -->
+             <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh2);padding:18px;">
+               <div style="display:flex;align-items:center;gap:7px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:8px;"><i data-lucide="shield-check" style="width:14px;height:14px;"></i>Plata rescatada por el bot</div>
+               <div class="tnum" style="font-family:'Noto Sans';font-weight:800;font-size:40px;letter-spacing:-.02em;color:var(--accent-active);line-height:1;"><span style="font-size:24px;color:var(--fg-3);vertical-align:5px;">₡</span>35 000</div>
+               <div style="display:flex;gap:16px;margin-top:14px;"><div><div class="tnum" style="font-family:'Noto Sans';font-weight:700;font-size:16px;color:var(--fg-1);">67%</div><div style="font-size:11px;color:var(--fg-3);">Rescate</div></div><div><div class="tnum" style="font-family:'Noto Sans';font-weight:700;font-size:16px;color:var(--fg-1);">94%</div><div style="font-size:11px;color:var(--fg-3);">Sin humano</div></div><div><div style="display:inline-flex;align-items:center;gap:3px;color:var(--success);font-weight:700;font-size:16px;font-family:'Noto Sans';"><i data-lucide="trending-up" style="width:14px;height:14px;"></i>+18%</div><div style="font-size:11px;color:var(--fg-3);">vs. mes</div></div></div>
+             </div>
+             <div style="display:flex;align-items:center;gap:8px;"><span style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3);font-weight:600;">Dinero</span><span style="flex:1;height:1px;background:var(--border);"></span></div>
+             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+               <sc-for list="{{ kpiDinero }}" as="k" hint-placeholder-count="3">
+                 <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);box-shadow:var(--sh1);padding:14px;">
+                   <div style="font-size:11.5px;color:var(--fg-2);">{{ k.label }}</div>
+                   <div class="tnum" style="font-family:'Noto Sans';font-weight:700;font-size:22px;color:var(--fg-1);margin-top:6px;"><span style="font-size:14px;color:var(--fg-3);">{{ k.prefix }}</span>{{ k.value }}<span style="font-size:14px;color:var(--fg-3);">{{ k.suffix }}</span></div>
+                 </div>
+               </sc-for>
+             </div>
+             <div style="display:flex;align-items:center;gap:8px;"><span style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3);font-weight:600;">Actividad</span><span style="flex:1;height:1px;background:var(--border);"></span></div>
+             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+               <sc-for list="{{ kpiActividad }}" as="k" hint-placeholder-count="4">
+                 <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);box-shadow:var(--sh1);padding:14px;"><div style="font-size:11.5px;color:var(--fg-2);">{{ k.label }}</div><div class="tnum" style="font-family:'Noto Sans';font-weight:700;font-size:22px;color:var(--fg-1);margin-top:6px;">{{ k.value }}<span style="font-size:14px;color:var(--fg-3);">{{ k.suffix }}</span></div></div>
+               </sc-for>
+             </div>
+           </div>
+           <div style="display:flex;background:var(--surface);border-top:1px solid var(--border);padding:8px 6px 16px;">
+             <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--fg-3);position:relative;"><i data-lucide="message-square" style="width:22px;height:22px;"></i><span style="font-size:10.5px;">Bandeja</span><span style="position:absolute;top:-4px;left:50%;margin-left:4px;background:var(--accent);color:#fff;font-size:9px;font-weight:700;min-width:15px;height:15px;padding:0 4px;border-radius:20px;display:flex;align-items:center;justify-content:center;">2</span></div>
+             <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--accent);"><i data-lucide="bar-chart-2" style="width:22px;height:22px;"></i><span style="font-size:10.5px;font-weight:600;">Panel</span></div>
+             <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--fg-3);"><i data-lucide="calendar" style="width:22px;height:22px;"></i><span style="font-size:10.5px;">Agenda</span></div>
+             <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--fg-3);"><i data-lucide="settings" style="width:22px;height:22px;"></i><span style="font-size:10.5px;">Negocio</span></div>
+             <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--fg-3);"><i data-lucide="send" style="width:22px;height:22px;"></i><span style="font-size:10.5px;">Campañas</span></div>
+           </div>
+         </div>
+       </div>
+     </div>
+   </section>
+
+   <!-- ============ MI NEGOCIO ============ -->
+   <section style="display:flex;flex-direction:column;gap:24px;">
+     <div style="display:flex;flex-direction:column;gap:6px;">
+       <div style="font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--fg-3);font-weight:600;">04 · Config</div>
+       <h2 style="font-family:'Noto Sans';font-weight:700;font-size:30px;letter-spacing:-.015em;margin:0;color:var(--fg-1);">Mi negocio · editor de servicios</h2>
+     </div>
+     <div style="display:flex;gap:32px;align-items:flex-start;flex-wrap:wrap;">
+       <div style="width:300px;flex-shrink:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:22px;position:sticky;top:24px;">
+         <div style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:12px;">Qué cambió</div>
+         <sc-for list="{{ annNeg }}" as="b" hint-placeholder-count="4">
+           <div style="display:flex;gap:10px;margin-bottom:14px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);margin-top:7px;flex-shrink:0;"></span><span style="font-size:13px;color:var(--fg-2);line-height:1.5;">{{ b }}</span></div>
+         </sc-for>
+       </div>
+
+       <!-- desktop mi negocio -->
+       <div style="border-radius:var(--r-xl);box-shadow:var(--sh3);overflow:hidden;background:var(--surface);border:1px solid var(--border-strong);">
+         <div style="height:38px;background:var(--surface-2);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:14px;">
+           <div style="display:flex;gap:7px;"><span style="width:11px;height:11px;border-radius:50%;background:#E4E7E6;"></span><span style="width:11px;height:11px;border-radius:50%;background:#E4E7E6;"></span><span style="width:11px;height:11px;border-radius:50%;background:#E4E7E6;"></span></div>
+           <div style="flex:1;max-width:320px;height:22px;background:var(--bg-page);border-radius:6px;display:flex;align-items:center;padding:0 10px;font-size:11px;color:var(--fg-3);">app.lavacar.cr/mi-negocio</div>
+           <div style="font-size:11px;color:var(--fg-4);">Desktop · 1440</div>
+         </div>
+         <div style="width:1440px;height:900px;background:var(--bg-page);display:flex;flex-direction:column;overflow:hidden;">
+           <div style="height:64px;background:var(--header);display:flex;align-items:center;padding:0 22px;gap:20px;flex-shrink:0;">
+             <div style="display:flex;align-items:center;gap:12px;"><div style="width:38px;height:38px;border-radius:10px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Noto Sans';font-weight:700;font-size:15px;">LR</div><div style="line-height:1.15;"><div style="color:#fff;font-weight:600;font-size:15px;font-family:'Noto Sans';">Lavacar Rosales</div><div style="color:rgba(255,255,255,.6);font-size:12px;">WhatsApp Business</div></div></div>
+             <div style="flex:1;display:flex;justify-content:center;"><div style="display:flex;gap:2px;background:rgba(255,255,255,.09);padding:4px;border-radius:11px;">
+               <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.82);padding:7px 14px;border-radius:8px;font-size:13px;"><i data-lucide="message-square" style="width:15px;height:15px;"></i>Bandeja<span style="background:var(--accent);color:#fff;font-size:11px;font-weight:700;padding:1px 6px;border-radius:20px;">2</span></div>
+               <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.82);padding:7px 14px;border-radius:8px;font-size:13px;"><i data-lucide="bar-chart-2" style="width:15px;height:15px;"></i>Panel</div>
+               <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.82);padding:7px 14px;border-radius:8px;font-size:13px;"><i data-lucide="calendar" style="width:15px;height:15px;"></i>Agenda</div>
+               <div style="display:flex;align-items:center;gap:7px;background:#fff;color:var(--header);padding:7px 14px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:var(--sh1);"><i data-lucide="settings" style="width:15px;height:15px;"></i>Mi negocio</div>
+               <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.82);padding:7px 14px;border-radius:8px;font-size:13px;"><i data-lucide="users" style="width:15px;height:15px;"></i>Usuarios</div>
+               <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.82);padding:7px 14px;border-radius:8px;font-size:13px;"><i data-lucide="send" style="width:15px;height:15px;"></i>Campañas</div>
+             </div></div>
+             <div style="display:flex;align-items:center;gap:6px;"><div style="width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.8);"><i data-lucide="moon" style="width:17px;height:17px;"></i></div><div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.8);padding:0 8px;font-size:13px;"><i data-lucide="log-out" style="width:16px;height:16px;"></i>Salir</div></div>
+           </div>
+           <div style="flex:1;overflow:hidden;display:flex;justify-content:center;padding:28px 36px;">
+             <div style="width:920px;">
+               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+                 <div><h3 style="font-family:'Noto Sans';font-weight:700;font-size:24px;letter-spacing:-.015em;margin:0;color:var(--fg-1);">Servicios</h3><div style="font-size:13.5px;color:var(--fg-3);margin-top:3px;">Lo que el bot puede cotizar y agendar. Arrastrá para reordenar.</div></div>
+                 <div style="display:flex;align-items:center;gap:7px;background:var(--accent);color:#fff;font-size:13.5px;font-weight:600;padding:10px 16px;border-radius:9px;box-shadow:var(--sh1);"><i data-lucide="plus" style="width:16px;height:16px;"></i>Nuevo servicio</div>
+               </div>
+               <div style="display:flex;flex-direction:column;gap:16px;">
+                 <sc-for list="{{ services }}" as="s" hint-placeholder-count="3">
+                   <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);overflow:hidden;">
+                     <div style="display:flex;align-items:center;gap:14px;padding:18px 22px;border-bottom:1px solid var(--border);">
+                       <i data-lucide="grip-vertical" style="width:18px;height:18px;color:var(--fg-4);cursor:grab;"></i>
+                       <div style="flex:1;">
+                         <div style="font-family:'Noto Sans';font-weight:600;font-size:17px;color:var(--fg-1);">{{ s.name }}</div>
+                         <div style="display:inline-flex;align-items:center;gap:6px;margin-top:4px;background:var(--bg-page);border:1px solid var(--border);border-radius:5px;padding:2px 8px;font-family:monospace;font-size:11.5px;color:var(--fg-3);"><i data-lucide="hash" style="width:11px;height:11px;"></i>{{ s.slug }}</div>
+                       </div>
+                       <sc-if value="{{ s.agendableOn }}" hint-placeholder-val="{{ true }}"><span style="display:inline-flex;align-items:center;gap:5px;background:var(--accent-soft);color:var(--accent-active);font-size:12px;font-weight:600;padding:5px 11px;border-radius:20px;"><i data-lucide="calendar-check" style="width:14px;height:14px;"></i>Agendable</span></sc-if>
+                       <div style="width:34px;height:34px;border-radius:8px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--fg-3);"><i data-lucide="trash-2" style="width:16px;height:16px;"></i></div>
+                     </div>
+                     <div style="padding:20px 22px;display:grid;grid-template-columns:1.4fr 1fr;gap:22px;">
+                       <!-- left: name + desc -->
+                       <div style="display:flex;flex-direction:column;gap:16px;">
+                         <div>
+                           <div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:6px;">Nombre visible</div>
+                           <div style="border:1px solid var(--border-strong);border-radius:9px;padding:11px 14px;font-size:14px;color:var(--fg-1);background:var(--surface);">{{ s.name }}</div>
+                         </div>
+                         <div>
+                           <div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:6px;">Nota de precio <span style="font-weight:400;color:var(--fg-3);">— cómo lo explica el bot</span></div>
+                           <div style="border:1px solid var(--border-strong);border-radius:9px;padding:11px 14px;font-size:14px;color:var(--fg-1);background:var(--surface);min-height:44px;">{{ s.priceNote }}</div>
+                         </div>
+                       </div>
+                       <!-- right: price + toggles -->
+                       <div style="display:flex;flex-direction:column;gap:16px;">
+                         <div style="display:flex;gap:14px;">
+                           <div style="flex:1;">
+                             <div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:6px;">Precio base</div>
+                             <div style="border:1px solid var(--border-strong);border-radius:9px;padding:11px 14px;font-size:14px;color:var(--fg-1);background:var(--surface);display:flex;align-items:center;gap:6px;"><span style="color:var(--fg-3);">₡</span><span class="tnum">{{ s.price }}</span></div>
+                           </div>
+                           <div style="flex:1;">
+                             <div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:6px;">Duración</div>
+                             <div style="border:1px solid var(--border-strong);border-radius:9px;padding:11px 14px;font-size:14px;color:var(--fg-1);background:var(--surface);">{{ s.duration }}</div>
+                           </div>
+                         </div>
+                         <div style="display:flex;flex-direction:column;gap:10px;background:var(--bg-page);border-radius:10px;padding:14px 16px;">
+                           <div style="display:flex;align-items:center;justify-content:space-between;">
+                             <div><div style="font-size:13px;font-weight:500;color:var(--fg-1);">Precio variable</div><div style="font-size:11.5px;color:var(--fg-3);">El precio cambia según el vehículo</div></div>
+                             <div style="width:42px;height:24px;border-radius:20px;background:var(--accent);position:relative;flex-shrink:0;"><div style="position:absolute;top:2px;left:20px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:var(--sh1);"></div></div>
+                           </div>
+                           <div style="height:1px;background:var(--border);"></div>
+                           <div style="display:flex;align-items:center;justify-content:space-between;">
+                             <div><div style="font-size:13px;font-weight:500;color:var(--fg-1);">Agendable</div><div style="font-size:11.5px;color:var(--fg-3);">El bot puede reservar una cita</div></div>
+                             <div style="width:42px;height:24px;border-radius:20px;background:var(--accent);position:relative;flex-shrink:0;"><div style="position:absolute;top:2px;left:20px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:var(--sh1);"></div></div>
+                           </div>
+                           <div style="height:1px;background:var(--border);"></div>
+                           <div style="display:flex;align-items:center;justify-content:space-between;">
+                             <div><div style="font-size:13px;font-weight:500;color:var(--fg-1);">Ofrecer add-on</div><div style="font-size:11.5px;color:var(--fg-3);">Sugerir un extra al cotizar</div></div>
+                             <div style="width:42px;height:24px;border-radius:20px;background:{{ s.addonToggleBg }};position:relative;flex-shrink:0;"><div style="position:absolute;top:2px;left:{{ s.addonKnob }};width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:var(--sh1);"></div></div>
+                           </div>
+                         </div>
+                         <sc-if value="{{ s.addonOn }}" hint-placeholder-val="{{ false }}">
+                           <div style="display:flex;gap:12px;">
+                             <div style="flex:1.4;"><div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:6px;">Add-on sugerido</div><div style="border:1px solid var(--border-strong);border-radius:9px;padding:11px 14px;font-size:14px;color:var(--fg-1);display:flex;justify-content:space-between;align-items:center;">{{ s.addonName }}<i data-lucide="chevron-down" style="width:16px;height:16px;color:var(--fg-3);"></i></div></div>
+                             <div style="flex:1;"><div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:6px;">Precio promo</div><div style="border:1px solid var(--border-strong);border-radius:9px;padding:11px 14px;font-size:14px;color:var(--fg-1);display:flex;align-items:center;gap:6px;"><span style="color:var(--fg-3);">₡</span><span class="tnum">{{ s.addonPrice }}</span></div></div>
+                           </div>
+                         </sc-if>
+                       </div>
+                     </div>
+                   </div>
+                 </sc-for>
+               </div>
+             </div>
+           </div>
+         </div>
+       </div>
+
+       <!-- mobile mi negocio -->
+       <div style="width:414px;background:#1a1a1a;border-radius:44px;padding:12px;box-shadow:var(--sh3);flex-shrink:0;">
+         <div style="border-radius:34px;overflow:hidden;background:var(--bg-page);">
+           <div style="height:34px;background:var(--header);display:flex;align-items:center;justify-content:space-between;padding:0 28px;color:#fff;font-size:12px;font-weight:600;"><span class="tnum">9:41</span><span style="display:flex;gap:5px;align-items:center;"><i data-lucide="signal" style="width:14px;height:14px;"></i><i data-lucide="wifi" style="width:14px;height:14px;"></i><i data-lucide="battery-full" style="width:16px;height:16px;"></i></span></div>
+           <div style="background:var(--header);padding:8px 16px 14px;display:flex;align-items:center;gap:11px;"><div style="width:34px;height:34px;border-radius:9px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Noto Sans';font-weight:700;font-size:13px;">LR</div><div style="flex:1;line-height:1.15;"><div style="color:#fff;font-weight:600;font-size:14px;font-family:'Noto Sans';">Mi negocio</div><div style="color:rgba(255,255,255,.6);font-size:11px;">Servicios</div></div><i data-lucide="moon" style="width:18px;height:18px;color:rgba(255,255,255,.8);"></i></div>
+           <div style="height:606px;overflow:hidden;padding:16px 14px;display:flex;flex-direction:column;gap:14px;">
+             <div style="display:flex;justify-content:space-between;align-items:center;"><div style="font-family:'Noto Sans';font-weight:700;font-size:19px;color:var(--fg-1);">Servicios</div><div style="display:flex;align-items:center;gap:5px;background:var(--accent);color:#fff;font-size:12.5px;font-weight:600;padding:8px 12px;border-radius:8px;"><i data-lucide="plus" style="width:14px;height:14px;"></i>Nuevo</div></div>
+             <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);overflow:hidden;">
+               <div style="padding:16px 16px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:10px;"><div style="flex:1;"><div style="font-family:'Noto Sans';font-weight:600;font-size:15px;color:var(--fg-1);line-height:1.3;">Lavado + pulido de parabrisas + repelente y sellador</div><div style="display:inline-flex;align-items:center;gap:5px;margin-top:6px;background:var(--accent-soft);color:var(--accent-active);font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;"><i data-lucide="calendar-check" style="width:12px;height:12px;"></i>Agendable</div></div></div>
+               <div style="padding:16px;display:flex;flex-direction:column;gap:14px;">
+                 <div style="display:flex;gap:12px;"><div style="flex:1;"><div style="font-size:11.5px;font-weight:600;color:var(--fg-2);margin-bottom:5px;">Precio base</div><div style="border:1px solid var(--border-strong);border-radius:9px;padding:11px 12px;font-size:14px;color:var(--fg-1);display:flex;gap:5px;"><span style="color:var(--fg-3);">₡</span><span>variable</span></div></div><div style="flex:1;"><div style="font-size:11.5px;font-weight:600;color:var(--fg-2);margin-bottom:5px;">Duración</div><div style="border:1px solid var(--border-strong);border-radius:9px;padding:11px 12px;font-size:14px;color:var(--fg-1);">1–1.5 h</div></div></div>
+                 <div><div style="font-size:11.5px;font-weight:600;color:var(--fg-2);margin-bottom:5px;">Nota de precio</div><div style="border:1px solid var(--border-strong);border-radius:9px;padding:11px 12px;font-size:14px;color:var(--fg-1);">según vehículo (ver tabla de parabrisas)</div></div>
+                 <div style="display:flex;flex-direction:column;gap:12px;background:var(--bg-page);border-radius:10px;padding:14px;">
+                   <div style="display:flex;align-items:center;justify-content:space-between;"><div style="font-size:13px;font-weight:500;color:var(--fg-1);">Precio variable</div><div style="width:42px;height:24px;border-radius:20px;background:var(--accent);position:relative;"><div style="position:absolute;top:2px;left:20px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:var(--sh1);"></div></div></div>
+                   <div style="height:1px;background:var(--border);"></div>
+                   <div style="display:flex;align-items:center;justify-content:space-between;"><div style="font-size:13px;font-weight:500;color:var(--fg-1);">Agendable</div><div style="width:42px;height:24px;border-radius:20px;background:var(--accent);position:relative;"><div style="position:absolute;top:2px;left:20px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:var(--sh1);"></div></div></div>
+                   <div style="height:1px;background:var(--border);"></div>
+                   <div style="display:flex;align-items:center;justify-content:space-between;"><div style="font-size:13px;font-weight:500;color:var(--fg-1);">Ofrecer add-on</div><div style="width:42px;height:24px;border-radius:20px;background:var(--border-strong);position:relative;"><div style="position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:var(--sh1);"></div></div></div>
+                 </div>
+               </div>
+             </div>
+           </div>
+           <div style="display:flex;background:var(--surface);border-top:1px solid var(--border);padding:8px 6px 16px;">
+             <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--fg-3);"><i data-lucide="message-square" style="width:22px;height:22px;"></i><span style="font-size:10.5px;">Bandeja</span></div>
+             <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--fg-3);"><i data-lucide="bar-chart-2" style="width:22px;height:22px;"></i><span style="font-size:10.5px;">Panel</span></div>
+             <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--fg-3);"><i data-lucide="calendar" style="width:22px;height:22px;"></i><span style="font-size:10.5px;">Agenda</span></div>
+             <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--accent);"><i data-lucide="settings" style="width:22px;height:22px;"></i><span style="font-size:10.5px;font-weight:600;">Negocio</span></div>
+             <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--fg-3);"><i data-lucide="send" style="width:22px;height:22px;"></i><span style="font-size:10.5px;">Campañas</span></div>
+           </div>
+         </div>
+       </div>
+     </div>
+   </section>
+
+   <!-- ============ AGENDA ============ -->
+   <section style="display:flex;flex-direction:column;gap:24px;">
+     <div style="display:flex;flex-direction:column;gap:6px;">
+       <div style="font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--fg-3);font-weight:600;">05 · Citas</div>
+       <h2 style="font-family:'Noto Sans';font-weight:700;font-size:30px;letter-spacing:-.015em;margin:0;color:var(--fg-1);">Agenda · día con línea de tiempo</h2>
+     </div>
+     <div style="display:flex;gap:32px;align-items:flex-start;flex-wrap:wrap;">
+       <div style="width:300px;flex-shrink:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:22px;position:sticky;top:24px;">
+         <div style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:12px;">Qué cambió</div>
+         <sc-for list="{{ annAgenda }}" as="b" hint-placeholder-count="4"><div style="display:flex;gap:10px;margin-bottom:14px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);margin-top:7px;flex-shrink:0;"></span><span style="font-size:13px;color:var(--fg-2);line-height:1.5;">{{ b }}</span></div></sc-for>
+       </div>
+       <!-- desktop agenda -->
+       <div style="border-radius:var(--r-xl);box-shadow:var(--sh3);overflow:hidden;background:var(--surface);border:1px solid var(--border-strong);">
+         <div style="height:38px;background:var(--surface-2);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:14px;"><div style="display:flex;gap:7px;"><span style="width:11px;height:11px;border-radius:50%;background:#E4E7E6;"></span><span style="width:11px;height:11px;border-radius:50%;background:#E4E7E6;"></span><span style="width:11px;height:11px;border-radius:50%;background:#E4E7E6;"></span></div><div style="flex:1;max-width:320px;height:22px;background:var(--bg-page);border-radius:6px;display:flex;align-items:center;padding:0 10px;font-size:11px;color:var(--fg-3);">app.lavacar.cr/agenda</div><div style="font-size:11px;color:var(--fg-4);">Desktop · 1440</div></div>
+         <div style="width:1440px;background:var(--bg-page);display:flex;flex-direction:column;">
+           <div style="height:64px;background:var(--header);display:flex;align-items:center;padding:0 22px;gap:20px;flex-shrink:0;">
+             <div style="display:flex;align-items:center;gap:12px;"><div style="width:38px;height:38px;border-radius:10px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Noto Sans';font-weight:700;font-size:15px;">LR</div><div style="line-height:1.15;"><div style="color:#fff;font-weight:600;font-size:15px;font-family:'Noto Sans';">Lavacar Rosales</div><div style="color:rgba(255,255,255,.6);font-size:12px;">WhatsApp Business</div></div></div>
+             <div style="flex:1;display:flex;justify-content:center;"><div style="display:flex;gap:2px;background:rgba(255,255,255,.09);padding:4px;border-radius:11px;">
+               <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.82);padding:7px 14px;border-radius:8px;font-size:13px;"><i data-lucide="message-square" style="width:15px;height:15px;"></i>Bandeja<span style="background:var(--accent);color:#fff;font-size:11px;font-weight:700;padding:1px 6px;border-radius:20px;">2</span></div>
+               <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.82);padding:7px 14px;border-radius:8px;font-size:13px;"><i data-lucide="bar-chart-2" style="width:15px;height:15px;"></i>Panel</div>
+               <div style="display:flex;align-items:center;gap:7px;background:#fff;color:var(--header);padding:7px 14px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:var(--sh1);"><i data-lucide="calendar" style="width:15px;height:15px;"></i>Agenda</div>
+               <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.82);padding:7px 14px;border-radius:8px;font-size:13px;"><i data-lucide="settings" style="width:15px;height:15px;"></i>Mi negocio</div>
+               <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.82);padding:7px 14px;border-radius:8px;font-size:13px;"><i data-lucide="users" style="width:15px;height:15px;"></i>Usuarios</div>
+               <div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.82);padding:7px 14px;border-radius:8px;font-size:13px;"><i data-lucide="send" style="width:15px;height:15px;"></i>Campañas</div>
+             </div></div>
+             <div style="display:flex;align-items:center;gap:6px;"><div style="width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.8);"><i data-lucide="moon" style="width:17px;height:17px;"></i></div><div style="display:flex;align-items:center;gap:7px;color:rgba(255,255,255,.8);padding:0 8px;font-size:13px;"><i data-lucide="log-out" style="width:16px;height:16px;"></i>Salir</div></div>
+           </div>
+           <div style="padding:28px 36px;">
+             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:22px;">
+               <div style="display:flex;align-items:center;gap:18px;">
+                 <div style="display:flex;gap:2px;background:var(--surface);border:1px solid var(--border);padding:3px;border-radius:9px;box-shadow:var(--sh1);"><span style="font-size:13px;font-weight:600;background:var(--accent-soft);color:var(--accent-active);padding:7px 16px;border-radius:6px;">Día</span><span style="font-size:13px;color:var(--fg-3);padding:7px 16px;">Semana</span></div>
+                 <div style="display:flex;align-items:center;gap:10px;"><div style="width:32px;height:32px;border:1px solid var(--border);border-radius:8px;background:var(--surface);display:flex;align-items:center;justify-content:center;color:var(--fg-2);"><i data-lucide="chevron-left" style="width:16px;height:16px;"></i></div><span style="font-size:13px;font-weight:600;color:var(--fg-2);border:1px solid var(--border);background:var(--surface);padding:7px 14px;border-radius:8px;">Hoy</span><div style="width:32px;height:32px;border:1px solid var(--border);border-radius:8px;background:var(--surface);display:flex;align-items:center;justify-content:center;color:var(--fg-2);"><i data-lucide="chevron-right" style="width:16px;height:16px;"></i></div></div>
+                 <div style="font-family:'Noto Sans';font-weight:700;font-size:20px;color:var(--fg-1);">Viernes 18 de julio</div>
+               </div>
+               <div style="display:flex;align-items:center;gap:7px;background:var(--accent);color:#fff;font-size:13.5px;font-weight:600;padding:10px 16px;border-radius:9px;box-shadow:var(--sh1);"><i data-lucide="calendar-plus" style="width:16px;height:16px;"></i>Nueva cita</div>
+             </div>
+             <div style="display:grid;grid-template-columns:1fr 300px;gap:20px;align-items:start;">
+               <!-- timeline -->
+               <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);overflow:hidden;">
+                 <div style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;"><span style="font-size:13px;font-weight:600;color:var(--fg-1);">Citas del día</span><span style="font-size:12px;color:var(--fg-3);">5 citas · 8 a.m. – 4:30 p.m.</span></div>
+                 <div style="position:relative;padding:8px 0;">
+                   <div>
+                     <sc-for list="{{ hours }}" as="h" hint-placeholder-count="12"><div style="height:64px;border-top:1px solid var(--border);display:flex;"><span class="tnum" style="width:72px;flex-shrink:0;font-size:11.5px;color:var(--fg-3);padding:6px 0 0 16px;">{{ h }}</span></div></sc-for>
+                   </div>
+                   <div style="position:absolute;top:8px;left:0;right:0;">
+                     <sc-for list="{{ appts }}" as="a" hint-placeholder-count="5">
+                       <div style="position:absolute;left:80px;right:16px;top:{{ a.top }};height:{{ a.height }};background:var(--surface);border:1px solid var(--border);border-left:3px solid {{ a.barColor }};border-radius:8px;box-shadow:var(--sh1);padding:8px 14px;display:flex;justify-content:space-between;align-items:center;overflow:hidden;">
+                         <div style="min-width:0;"><div style="display:flex;align-items:center;gap:8px;"><span style="font-family:'Noto Sans';font-weight:600;font-size:13.5px;color:var(--fg-1);">{{ a.name }}</span><span class="tnum" style="font-size:12px;color:var(--fg-3);">{{ a.time }}</span></div><div style="font-size:12px;color:var(--fg-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;">{{ a.service }} · {{ a.vehicle }}</div></div>
+                         <span style="background:{{ a.pillBg }};color:{{ a.pillFg }};font-size:10.5px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap;flex-shrink:0;">{{ a.pillText }}</span>
+                       </div>
+                     </sc-for>
+                   </div>
+                 </div>
+               </div>
+               <!-- resumen -->
+               <div style="display:flex;flex-direction:column;gap:16px;position:sticky;top:24px;">
+                 <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:20px;">
+                   <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3);font-weight:600;margin-bottom:14px;">Resumen del día</div>
+                   <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;"><span style="font-size:13.5px;color:var(--fg-2);">Citas</span><span class="tnum" style="font-family:'Noto Sans';font-weight:700;font-size:18px;color:var(--fg-1);">5</span></div>
+                   <div style="height:1px;background:var(--border);"></div>
+                   <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;"><span style="font-size:13.5px;color:var(--fg-2);">Ingreso estimado</span><span class="tnum" style="font-family:'Noto Sans';font-weight:700;font-size:18px;color:var(--accent-active);">₡89 000</span></div>
+                   <div style="height:1px;background:var(--border);"></div>
+                   <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;"><span style="font-size:13.5px;color:var(--fg-2);">Sin confirmar</span><span style="display:inline-flex;align-items:center;gap:5px;background:var(--warning-soft);color:var(--warning);font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px;"><i data-lucide="alert-triangle" style="width:13px;height:13px;"></i>1 en riesgo</span></div>
+                 </div>
+                 <div style="background:var(--warning-soft);border:1px solid #EFD9AF;border-radius:var(--r-lg);padding:16px;display:flex;gap:11px;"><i data-lucide="bell" style="width:17px;height:17px;color:var(--warning);flex-shrink:0;margin-top:1px;"></i><div><div style="font-size:13px;font-weight:600;color:var(--fg-1);">Rafael no confirmó las 3:30 p.m.</div><div style="font-size:12.5px;color:var(--fg-2);margin-top:2px;">Mandale un recordatorio para bajar el riesgo de no-show.</div><div style="font-size:12.5px;font-weight:600;color:var(--warning);margin-top:8px;">Enviar recordatorio →</div></div></div>
+               </div>
+             </div>
+           </div>
+         </div>
+       </div>
+       <!-- mobile agenda -->
+       <div style="width:414px;background:#1a1a1a;border-radius:44px;padding:12px;box-shadow:var(--sh3);flex-shrink:0;">
+         <div style="border-radius:34px;overflow:hidden;background:var(--bg-page);">
+           <div style="height:34px;background:var(--header);display:flex;align-items:center;justify-content:space-between;padding:0 28px;color:#fff;font-size:12px;font-weight:600;"><span class="tnum">9:41</span><span style="display:flex;gap:5px;align-items:center;"><i data-lucide="signal" style="width:14px;height:14px;"></i><i data-lucide="wifi" style="width:14px;height:14px;"></i><i data-lucide="battery-full" style="width:16px;height:16px;"></i></span></div>
+           <div style="background:var(--header);padding:8px 16px 14px;display:flex;align-items:center;gap:11px;"><div style="width:34px;height:34px;border-radius:9px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Noto Sans';font-weight:700;font-size:13px;">LR</div><div style="flex:1;line-height:1.15;"><div style="color:#fff;font-weight:600;font-size:14px;font-family:'Noto Sans';">Agenda</div><div style="color:rgba(255,255,255,.6);font-size:11px;">Viernes 18 jul</div></div><i data-lucide="calendar-plus" style="width:19px;height:19px;color:#fff;"></i></div>
+           <div style="padding:12px 14px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;"><div style="display:flex;gap:2px;background:var(--bg-page);padding:3px;border-radius:8px;"><span style="font-size:12.5px;font-weight:600;background:var(--surface);color:var(--accent-active);padding:6px 16px;border-radius:6px;box-shadow:var(--sh1);">Día</span><span style="font-size:12.5px;color:var(--fg-3);padding:6px 16px;">Semana</span></div><div style="display:flex;align-items:center;gap:8px;color:var(--fg-3);"><i data-lucide="chevron-left" style="width:18px;height:18px;"></i><i data-lucide="chevron-right" style="width:18px;height:18px;"></i></div></div>
+           <div style="height:560px;overflow:hidden;padding:14px;display:flex;flex-direction:column;gap:10px;background:var(--bg-page);">
+             <sc-for list="{{ appts }}" as="a" hint-placeholder-count="5">
+               <div style="display:flex;gap:12px;">
+                 <div class="tnum" style="width:58px;flex-shrink:0;font-size:12px;font-weight:600;color:var(--fg-2);text-align:right;padding-top:14px;">{{ a.time }}</div>
+                 <div style="flex:1;background:var(--surface);border:1px solid var(--border);border-left:3px solid {{ a.barColor }};border-radius:9px;box-shadow:var(--sh1);padding:12px 14px;">
+                   <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;"><span style="font-family:'Noto Sans';font-weight:600;font-size:14px;color:var(--fg-1);">{{ a.name }}</span><span style="background:{{ a.pillBg }};color:{{ a.pillFg }};font-size:9.5px;font-weight:600;padding:3px 7px;border-radius:20px;white-space:nowrap;flex-shrink:0;">{{ a.pillText }}</span></div>
+                   <div style="font-size:12px;color:var(--fg-2);margin-top:3px;">{{ a.service }}</div>
+                   <div style="font-size:11.5px;color:var(--fg-3);margin-top:1px;">{{ a.vehicle }}</div>
+                 </div>
+               </div>
+             </sc-for>
+           </div>
+           <div style="display:flex;background:var(--surface);border-top:1px solid var(--border);padding:8px 6px 16px;">
+             <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--fg-3);"><i data-lucide="message-square" style="width:22px;height:22px;"></i><span style="font-size:10.5px;">Bandeja</span></div>
+             <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--fg-3);"><i data-lucide="bar-chart-2" style="width:22px;height:22px;"></i><span style="font-size:10.5px;">Panel</span></div>
+             <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--accent);"><i data-lucide="calendar" style="width:22px;height:22px;"></i><span style="font-size:10.5px;font-weight:600;">Agenda</span></div>
+             <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--fg-3);"><i data-lucide="settings" style="width:22px;height:22px;"></i><span style="font-size:10.5px;">Negocio</span></div>
+             <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--fg-3);"><i data-lucide="send" style="width:22px;height:22px;"></i><span style="font-size:10.5px;">Campañas</span></div>
+           </div>
+         </div>
+       </div>
+     </div>
+   </section>
+
+   <!-- ============ FICHA DEL CLIENTE ============ -->
+   <section style="display:flex;flex-direction:column;gap:24px;">
+     <div style="display:flex;flex-direction:column;gap:6px;">
+       <div style="font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--fg-3);font-weight:600;">06 · Modal</div>
+       <h2 style="font-family:'Noto Sans';font-weight:700;font-size:30px;letter-spacing:-.015em;margin:0;color:var(--fg-1);">Ficha del cliente</h2>
+     </div>
+     <div style="display:flex;gap:32px;align-items:flex-start;flex-wrap:wrap;">
+       <div style="width:300px;flex-shrink:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:22px;position:sticky;top:24px;">
+         <div style="font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:12px;">Qué cambió</div>
+         <sc-for list="{{ annFicha }}" as="b" hint-placeholder-count="4"><div style="display:flex;gap:10px;margin-bottom:14px;"><span style="width:6px;height:6px;border-radius:50%;background:var(--accent);margin-top:7px;flex-shrink:0;"></span><span style="font-size:13px;color:var(--fg-2);line-height:1.5;">{{ b }}</span></div></sc-for>
+       </div>
+       <!-- modal on backdrop -->
+       <div style="width:960px;height:680px;border-radius:var(--r-xl);overflow:hidden;background:rgba(19,35,32,.55);box-shadow:var(--sh3);display:flex;align-items:center;justify-content:center;position:relative;">
+         <div style="position:absolute;inset:0;background:linear-gradient(135deg, rgba(19,35,32,.35), rgba(19,35,32,.6));"></div>
+         <div style="position:relative;width:560px;background:var(--surface);border-radius:16px;box-shadow:0 30px 70px rgba(10,25,20,.4);overflow:hidden;">
+           <div style="padding:22px 24px;display:flex;align-items:center;gap:14px;border-bottom:1px solid var(--border);">
+             <div style="width:52px;height:52px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Noto Sans';font-weight:600;font-size:18px;">DR</div>
+             <div style="flex:1;"><div style="display:flex;align-items:center;gap:9px;"><span style="font-family:'Noto Sans';font-weight:700;font-size:20px;color:var(--fg-1);">Diego Ramírez</span><span style="display:inline-flex;align-items:center;gap:5px;background:var(--accent-soft);color:var(--accent-active);font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;"><i data-lucide="star" style="width:12px;height:12px;"></i>Cliente frecuente</span></div><div class="tnum" style="font-size:13px;color:var(--fg-3);margin-top:2px;">+506 8712 3344</div></div>
+             <div style="width:34px;height:34px;border-radius:8px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--fg-3);"><i data-lucide="x" style="width:17px;height:17px;"></i></div>
+           </div>
+           <div style="padding:22px 24px;max-height:520px;overflow:hidden;">
+             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:22px;">
+               <div style="background:var(--bg-page);border-radius:10px;padding:13px 15px;"><div style="font-size:11.5px;color:var(--fg-3);margin-bottom:4px;">Vehículo · Placa</div><div style="font-family:'Noto Sans';font-weight:600;font-size:15px;color:var(--fg-1);">Toyota Hilux · <span class="tnum">C 162345</span></div></div>
+               <div style="background:var(--bg-page);border-radius:10px;padding:13px 15px;"><div style="font-size:11.5px;color:var(--fg-3);margin-bottom:4px;">Total de citas</div><div class="tnum" style="font-family:'Noto Sans';font-weight:600;font-size:15px;color:var(--fg-1);">2</div></div>
+               <div style="background:var(--bg-page);border-radius:10px;padding:13px 15px;"><div style="font-size:11.5px;color:var(--fg-3);margin-bottom:4px;">Última visita</div><div class="tnum" style="font-family:'Noto Sans';font-weight:600;font-size:15px;color:var(--fg-1);">18/07/2026</div></div>
+               <div style="background:var(--bg-page);border-radius:10px;padding:13px 15px;"><div style="font-size:11.5px;color:var(--fg-3);margin-bottom:4px;">Cliente desde</div><div class="tnum" style="font-family:'Noto Sans';font-weight:600;font-size:15px;color:var(--fg-1);">17/07/2026</div></div>
+             </div>
+             <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3);font-weight:600;margin-bottom:12px;">Historial de servicios</div>
+             <div style="position:relative;padding-left:20px;margin-bottom:22px;">
+               <div style="position:absolute;left:4px;top:6px;bottom:6px;width:2px;background:var(--border);"></div>
+               <div style="position:relative;margin-bottom:12px;"><span style="position:absolute;left:-20px;top:4px;width:10px;height:10px;border-radius:50%;background:var(--success);border:2px solid var(--surface);"></span><div style="font-size:13.5px;font-weight:600;color:var(--fg-1);">Lavado + pulido de parabrisas + repelente y sellador</div><div class="tnum" style="font-size:12px;color:var(--fg-3);margin-top:2px;">18/07/2026 08:00 · <span style="color:var(--success);font-weight:600;">completada</span></div></div>
+               <div style="position:relative;"><span style="position:absolute;left:-20px;top:4px;width:10px;height:10px;border-radius:50%;background:var(--accent);border:2px solid var(--surface);"></span><div style="font-size:13.5px;font-weight:600;color:var(--fg-1);">Pulido de parabrisas + repelente y sellador</div><div class="tnum" style="font-size:12px;color:var(--fg-3);margin-top:2px;">27/06/2026 10:00 · <span style="color:var(--accent-active);font-weight:600;">agendada</span></div></div>
+             </div>
+             <div style="background:#FBF7EE;border:1px solid #EEE3CC;border-radius:10px;padding:15px;">
+               <div style="display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;color:var(--warning);margin-bottom:8px;"><i data-lucide="lock" style="width:13px;height:13px;"></i>NOTAS PRIVADAS</div>
+               <div style="font-size:13.5px;color:var(--fg-1);line-height:1.5;">Cliente frecuente. Trae la Hilux. Paga con SINPE.</div>
+               <div style="display:flex;justify-content:flex-end;margin-top:12px;"><span style="background:var(--accent);color:#fff;font-size:12.5px;font-weight:600;padding:8px 16px;border-radius:8px;">Guardar notas</span></div>
+             </div>
+           </div>
+         </div>
+       </div>
+     </div>
+   </section>
+
+   <!-- ============ LOGIN + ESTADOS ============ -->
+   <section style="display:flex;flex-direction:column;gap:24px;">
+     <div style="display:flex;flex-direction:column;gap:6px;">
+       <div style="font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--fg-3);font-weight:600;">07 · Acceso y estados</div>
+       <h2 style="font-family:'Noto Sans';font-weight:700;font-size:30px;letter-spacing:-.015em;margin:0;color:var(--fg-1);">Login · estados vacíos y de error</h2>
+     </div>
+     <div style="display:flex;gap:32px;align-items:flex-start;flex-wrap:wrap;">
+       <!-- login desktop -->
+       <div style="width:900px;height:600px;border-radius:var(--r-xl);overflow:hidden;box-shadow:var(--sh3);border:1px solid var(--border-strong);display:flex;">
+         <div style="width:360px;background:var(--header);color:#fff;padding:44px 40px;display:flex;flex-direction:column;justify-content:space-between;">
+           <div style="display:flex;align-items:center;gap:11px;"><div style="width:40px;height:40px;border-radius:10px;background:var(--accent);display:flex;align-items:center;justify-content:center;font-family:'Noto Sans';font-weight:700;font-size:15px;">LR</div><div style="font-family:'Noto Sans';font-weight:600;font-size:16px;">Lavacar Rosales</div></div>
+           <div><div style="font-family:'Noto Sans';font-weight:700;font-size:28px;line-height:1.2;letter-spacing:-.01em;">Tu asistente atiende, cotiza y agenda por vos.</div><div style="font-size:14px;color:rgba(255,255,255,.7);margin-top:14px;line-height:1.5;">Entrá al panel para ver las conversaciones que lleva el bot y las citas del día.</div></div>
+           <div style="font-size:12px;color:rgba(255,255,255,.45);">WhatsApp Business · agente con IA</div>
+         </div>
+         <div style="flex:1;background:var(--surface);display:flex;align-items:center;justify-content:center;padding:40px;">
+           <div style="width:320px;">
+             <h3 style="font-family:'Noto Sans';font-weight:700;font-size:24px;letter-spacing:-.01em;margin:0 0 6px;color:var(--fg-1);">Ingresá a tu panel</h3>
+             <p style="font-size:14px;color:var(--fg-3);margin:0 0 26px;">Usá el correo con el que te registraste.</p>
+             <div style="font-size:12.5px;font-weight:600;color:var(--fg-2);margin-bottom:6px;">Correo</div>
+             <div style="border:1px solid var(--border-strong);border-radius:9px;padding:12px 14px;font-size:14px;color:var(--fg-1);margin-bottom:16px;">vos@lavacarrosales.cr</div>
+             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><span style="font-size:12.5px;font-weight:600;color:var(--fg-2);">Contraseña</span><a href="#" style="font-size:12.5px;color:var(--accent);">¿La olvidaste?</a></div>
+             <div style="border:1px solid var(--border-strong);border-radius:9px;padding:12px 14px;font-size:14px;color:var(--fg-3);margin-bottom:22px;display:flex;justify-content:space-between;align-items:center;">••••••••••<i data-lucide="eye" style="width:16px;height:16px;"></i></div>
+             <div style="background:var(--accent);color:#fff;font-size:14.5px;font-weight:600;padding:13px;border-radius:9px;text-align:center;box-shadow:var(--sh1);">Entrar</div>
+             <div style="text-align:center;font-size:12.5px;color:var(--fg-3);margin-top:18px;">¿Problemas para entrar? <a href="#" style="color:var(--accent);">Escribinos</a></div>
+           </div>
+         </div>
+       </div>
+       <!-- login mobile -->
+       <div style="width:414px;background:#1a1a1a;border-radius:44px;padding:12px;box-shadow:var(--sh3);flex-shrink:0;">
+         <div style="border-radius:34px;overflow:hidden;background:var(--surface);height:668px;display:flex;flex-direction:column;">
+           <div style="height:34px;background:var(--surface);display:flex;align-items:center;justify-content:space-between;padding:0 28px;color:var(--fg-2);font-size:12px;font-weight:600;"><span class="tnum">9:41</span><span style="display:flex;gap:5px;align-items:center;"><i data-lucide="signal" style="width:14px;height:14px;"></i><i data-lucide="wifi" style="width:14px;height:14px;"></i><i data-lucide="battery-full" style="width:16px;height:16px;"></i></span></div>
+           <div style="flex:1;padding:40px 28px;display:flex;flex-direction:column;">
+             <div style="width:56px;height:56px;border-radius:14px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Noto Sans';font-weight:700;font-size:20px;margin-bottom:22px;">LR</div>
+             <h3 style="font-family:'Noto Sans';font-weight:700;font-size:24px;letter-spacing:-.01em;margin:0 0 4px;color:var(--fg-1);">Lavacar Rosales</h3>
+             <p style="font-size:14px;color:var(--fg-3);margin:0 0 30px;">Ingresá a tu panel de WhatsApp.</p>
+             <div style="font-size:12.5px;font-weight:600;color:var(--fg-2);margin-bottom:6px;">Correo</div>
+             <div style="border:1px solid var(--border-strong);border-radius:10px;padding:13px 14px;font-size:14px;color:var(--fg-1);margin-bottom:16px;">vos@lavacarrosales.cr</div>
+             <div style="font-size:12.5px;font-weight:600;color:var(--fg-2);margin-bottom:6px;">Contraseña</div>
+             <div style="border:1px solid var(--border-strong);border-radius:10px;padding:13px 14px;font-size:14px;color:var(--fg-3);margin-bottom:26px;display:flex;justify-content:space-between;align-items:center;">••••••••••<i data-lucide="eye" style="width:16px;height:16px;"></i></div>
+             <div style="background:var(--accent);color:#fff;font-size:15px;font-weight:600;padding:15px;border-radius:10px;text-align:center;box-shadow:var(--sh1);">Entrar</div>
+             <div style="flex:1;"></div>
+             <div style="text-align:center;font-size:12.5px;color:var(--fg-3);">¿Olvidaste la contraseña? <a href="#" style="color:var(--accent);">Recuperala</a></div>
+           </div>
+         </div>
+       </div>
+       <!-- estados -->
+       <div style="display:flex;flex-direction:column;gap:20px;width:440px;">
+         <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:16px;">
+           <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3);font-weight:600;margin-bottom:12px;">Vacío · sin conversación elegida</div>
+           <div style="background:var(--bg-page);border-radius:12px;padding:40px 30px;text-align:center;">
+             <div style="width:56px;height:56px;border-radius:14px;background:var(--accent-soft);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;color:var(--accent-active);"><i data-lucide="message-square-dashed" style="width:26px;height:26px;"></i></div>
+             <div style="font-family:'Noto Sans';font-weight:700;font-size:18px;color:var(--fg-1);">Elegí una conversación</div>
+             <div style="font-size:13.5px;color:var(--fg-2);margin-top:6px;line-height:1.5;max-width:280px;margin-left:auto;margin-right:auto;">Seleccioná un contacto de la izquierda. El bot ya está respondiendo — vos entrás solo cuando haga falta.</div>
+             <div style="display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border-strong);color:var(--fg-1);font-size:13px;font-weight:600;padding:9px 15px;border-radius:8px;margin-top:16px;"><i data-lucide="alarm-clock" style="width:15px;height:15px;color:var(--warning);"></i>Ver la que necesita respuesta</div>
+           </div>
+         </div>
+         <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:16px;">
+           <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3);font-weight:600;margin-bottom:12px;">Error de carga</div>
+           <div style="background:var(--bg-page);border-radius:12px;padding:36px 30px;text-align:center;">
+             <div style="width:56px;height:56px;border-radius:14px;background:var(--danger-soft);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;color:var(--danger);"><i data-lucide="cloud-off" style="width:26px;height:26px;"></i></div>
+             <div style="font-family:'Noto Sans';font-weight:700;font-size:18px;color:var(--fg-1);">No pudimos cargar las campañas</div>
+             <div style="font-size:13.5px;color:var(--fg-2);margin-top:6px;line-height:1.5;max-width:290px;margin-left:auto;margin-right:auto;">Puede ser la conexión. Tus datos están a salvo — probá de nuevo en un momento.</div>
+             <div style="display:inline-flex;align-items:center;gap:6px;background:var(--accent);color:#fff;font-size:13px;font-weight:600;padding:9px 16px;border-radius:8px;margin-top:16px;"><i data-lucide="rotate-cw" style="width:15px;height:15px;"></i>Reintentar</div>
+           </div>
+         </div>
+         <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--sh1);padding:16px;">
+           <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--fg-3);font-weight:600;margin-bottom:12px;">Vacío · agenda sin citas</div>
+           <div style="background:var(--bg-page);border-radius:12px;padding:36px 30px;text-align:center;">
+             <div style="width:56px;height:56px;border-radius:14px;background:var(--accent-soft);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;color:var(--accent-active);"><i data-lucide="calendar-days" style="width:26px;height:26px;"></i></div>
+             <div style="font-family:'Noto Sans';font-weight:700;font-size:18px;color:var(--fg-1);">Sin citas para este día</div>
+             <div style="font-size:13.5px;color:var(--fg-2);margin-top:6px;line-height:1.5;max-width:280px;margin-left:auto;margin-right:auto;">Cuando el bot agende, las vas a ver acá. También podés crear una a mano.</div>
+             <div style="display:inline-flex;align-items:center;gap:6px;background:var(--accent);color:#fff;font-size:13px;font-weight:600;padding:9px 16px;border-radius:8px;margin-top:16px;"><i data-lucide="calendar-plus" style="width:15px;height:15px;"></i>Agendá la primera</div>
+           </div>
+         </div>
+       </div>
+     </div>
+   </section>
+
+  </div>
+ </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1400,&quot;height&quot;:900},&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#0F7A66&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[[&quot;#0F7A66&quot;,&quot;#0C6353&quot;,&quot;#E4F2EE&quot;],[&quot;#248DE3&quot;,&quot;#1B6FB8&quot;,&quot;#E1EFFB&quot;],[&quot;#7A3FF2&quot;,&quot;#5F2FC0&quot;,&quot;#EEE7FD&quot;],[&quot;#C7513B&quot;,&quot;#A23C2A&quot;,&quot;#FBEAE5&quot;]],&quot;section&quot;:&quot;White-label&quot;},&quot;headerColor&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#0F3D34&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#0F3D34&quot;,&quot;#103050&quot;,&quot;#1E1B2E&quot;,&quot;#2A2A2E&quot;],&quot;section&quot;:&quot;White-label&quot;}}">
+class Component extends DCLogic {
+  mix(hex, target, amt){
+    const p=h=>{h=h.replace('#','');if(h.length===3)h=h.split('').map(c=>c+c).join('');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];};
+    const a=p(hex),b=p(target);
+    const m=a.map((v,i)=>Math.round(v+(b[i]-v)*amt));
+    return '#'+m.map(v=>v.toString(16).padStart(2,'0')).join('');
+  }
+  componentDidMount(){ this._icons(); }
+  componentDidUpdate(){ this._icons(); }
+  _icons(){ if(window.lucide){ try{ window.lucide.createIcons(); }catch(e){} } }
+
+  interesBars(score){
+    const on='var(--accent)', off='var(--border-strong)';
+    if(score>=80) return {interes:'alto', b1:on,b2:on,b3:on};
+    if(score>=60) return {interes:'medio', b1:on,b2:on,b3:off};
+    return {interes:'bajo', b1:on,b2:off,b3:off};
+  }
+  buildConvo(c){
+    const bars=this.interesBars(c.score);
+    const isPhone=c.name.startsWith('+');
+    return Object.assign({}, c, bars, {
+      isBot: c.channel==='bot',
+      isHuman: c.channel==='human',
+      initials: isPhone ? '☎' : c.name.split(' ').map(w=>w[0]).slice(0,2).join(''),
+      avBg: c.needs ? 'var(--accent)' : (c.channel==='human'?'var(--warning-soft)':'var(--accent-soft)'),
+      avFg: c.needs ? '#fff' : (c.channel==='human'?'var(--warning)':'var(--accent-active)'),
+      rowBg: c.active ? 'var(--accent-softer)' : (c.needs?'var(--warning-soft)':'transparent'),
+      padL: c.needs ? '19px' : '16px',
+      needsLabel: c.needs==='humano' ? 'Pidió hablar con vos' : (c.needs==='sinresp' ? 'Sin responder '+c.wait : '')
+    });
+  }
+
+  renderVals(){
+    const accent = this.props.accent || '#0F7A66';
+    const header = this.props.headerColor || '#0F3D34';
+    const themeVars = [
+      '--accent:'+accent,
+      '--accent-hover:'+this.mix(accent,'#000000',0.16),
+      '--accent-active:'+this.mix(accent,'#000000',0.30),
+      '--accent-soft:'+this.mix(accent,'#ffffff',0.86),
+      '--accent-softer:'+this.mix(accent,'#ffffff',0.93),
+      '--header:'+header
+    ].join(';')+';';
+
+    const raw=[
+      {name:'Esteban Soto', preview:'Es física, 1 1234 5678', time:'12:33', channel:'human', score:90, unread:2, needs:'humano', active:false},
+      {name:'+506 7177 8899', preview:'¿Están abiertos hoy?', time:'12:25', channel:'bot', score:65, needs:'sinresp', wait:'22m'},
+      {name:'Diego Ramírez', preview:'Gracias!! ahí estaré', time:'12:41', channel:'bot', score:90, active:true},
+      {name:'+506 8999 8877', preview:'Pura vida! Soy chofer de Uber, ¿tienen…', time:'11:59', channel:'bot', score:65},
+      {name:'Gabriela Mora', preview:'¡Con gusto! Aquí le esperamos.', time:'11:32', channel:'bot', score:75},
+      {name:'+506 8911 2266', preview:'¿El repelente incluye el pulido o es…', time:'10:57', channel:'bot', score:65},
+      {name:'Andrea Campos', preview:'¡Listo! La dejo agendada. Cualquier…', time:'10:07', channel:'bot', score:75},
+      {name:'Rafael Jiménez', preview:'¡Claro! Pulido de parabrisas con cit…', time:'08:57', channel:'bot', score:75},
+      {name:'+506 8533 4411', preview:'¡Sí! El lavado de moto sale ₡3.000 y…', time:'07:23', channel:'bot', score:50},
+      {name:'Natalia Rojas', preview:'Perfecto, su cita queda el jueves a l…', time:'05:17', channel:'bot', score:75}
+    ];
+    const convos = raw.map(c=>this.buildConvo(c));
+    const convosMobile = convos.slice(0,7);
+
+    const chat=[
+      {from:'them', text:'Una Hilux', time:'11:15'},
+      {from:'bot', text:'Perfecto. Para una Hilux, el Lavado + pulido de parabrisas + repelente y sellador sale ₡22.000 e incluye lavado completo con cera en húmedo. El pulido lleva cita y toma de 1 a 1.5 horas. ¿Te lo agendo?', time:'11:16'},
+      {from:'them', text:'Sí porfa, mañana temprano si se puede', time:'12:13'},
+      {from:'bot', text:'¡Claro! Mañana tengo libre a las 8:00 a.m. o a las 9:30 a.m. ¿Cuál te queda mejor?', time:'12:14'},
+      {from:'them', text:'A las 8 perfecto', time:'12:35'},
+      {from:'bot', text:'Listo ✅ Te agendé el Lavado + pulido + repelente y sellador para mañana a las 8:00 a.m. en Lavacar Rosales. Cualquier cosa me escribís. ¡Nos vemos! 🚗', time:'12:39'},
+      {from:'them', text:'Gracias!! ahí estaré', time:'12:41'}
+    ].map(m=>{
+      const bot=m.from==='bot';
+      return Object.assign({},m,{
+        isBot:bot,
+        align: bot?'flex-start':'flex-end',
+        timeAlign: bot?'left':'right',
+        bg: bot?'var(--accent-soft)':'var(--surface)',
+        border: bot?'1px solid transparent':'1px solid var(--border)',
+        radius: bot?'4px 14px 14px 14px':'14px 4px 14px 14px'
+      });
+    });
+
+    const dmoney=(label,prefix,value,arrow,dtext,good,hint,icon)=>({label,prefix,value,suffix:'',arrow,dtext,good:!!good,bad:!good,hint,icon});
+    const kpiDinero=[
+      dmoney('Ingresos estimados','₡','180 000','▲','12%',true,'este mes','banknote'),
+      dmoney('Ticket promedio','₡','17 818','▲','4%',true,'por cita','receipt'),
+      dmoney('Extra por add-ons','₡','16 000','▲','9%',true,'upsell','plus-circle')
+    ];
+    const act=(label,value,suffix,icon)=>({label,value,suffix,icon});
+    const kpiActividad=[
+      act('Conversaciones','16','','messages-square'),
+      act('Citas agendadas','11','','calendar-check'),
+      act('Conversión','69','%','target'),
+      act('Ahorro del bot','94','%','bot')
+    ];
+    const risk=(label,value,suffix,icon,tone)=>({label,value,suffix,icon,
+      iconBg: tone==='bad'?'var(--danger-soft)':(tone==='good'?'var(--success-soft)':'var(--bg-page)'),
+      iconFg: tone==='bad'?'var(--danger)':(tone==='good'?'var(--success)':'var(--fg-2)')});
+    const kpiRiesgo=[
+      risk('Tasa de no-show','50','%','alert-triangle','bad'),
+      risk('Tasa de rescate','67','%','shield-check','good'),
+      risk('Aceptación de upsell','67','%','trending-up','good'),
+      risk('Reseñas enviadas','2','','star',null)
+    ];
+
+    const days=[
+      {label:'27/6',count:2},{label:'30/6',count:1},{label:'3/7',count:3},{label:'5/7',count:2},{label:'7/7',count:1},
+      {label:'9/7',count:3},{label:'10/7',count:2},{label:'12/7',count:4},{label:'15/7',count:2},{label:'17/7',count:1}
+    ];
+    const max=Math.max(...days.map(d=>d.count));
+    const chartDays=days.map((d,i)=>Object.assign({},d,{
+      h: Math.round((d.count/max)*120)+'px',
+      barBg: i===days.length-1 ? 'var(--accent)' : 'var(--accent-soft)'
+    }));
+
+    const svc=(name,slug,price,duration,priceNote,addonOn,addonName,addonPrice)=>({
+      name,slug,price,duration,priceNote,agendableOn:true,
+      addonOn:!!addonOn, addonName, addonPrice,
+      addonToggleBg: addonOn?'var(--accent)':'var(--border-strong)',
+      addonKnob: addonOn?'20px':'2px'
+    });
+    const services=[
+      svc('Lavado + pulido de parabrisas + repelente y sellador','lavado_pulido_sellador','variable','1–1.5 h','según vehículo (ver tabla de parabrisas)', true, 'Repelente premium (6 meses)', '4 000'),
+      svc('Pulido de parabrisas + repelente y sellador (sin lavado)','pulido_sellador','variable','45–60 min','según vehículo (ver tabla de parabrisas)', false, '— sin add-on sugerido —', ''),
+      svc('Lavado completo con cera','lavado_completo','9 000','40 min','precio fijo', true, 'Aromatización interior', '2 500')
+    ];
+
+    const hours=['7 a.m.','8 a.m.','9 a.m.','10 a.m.','11 a.m.','12 m.d.','1 p.m.','2 p.m.','3 p.m.','4 p.m.','5 p.m.','6 p.m.'];
+    const appt=(name,service,vehicle,time,top,height,status)=>{
+      const map={
+        confirmada:{bar:'var(--accent)',pillBg:'var(--accent-soft)',pillFg:'var(--accent-active)',text:'Confirmada'},
+        pendiente:{bar:'var(--info)',pillBg:'var(--info-soft)',pillFg:'var(--info)',text:'Pendiente'},
+        riesgo:{bar:'var(--warning)',pillBg:'var(--warning-soft)',pillFg:'var(--warning)',text:'Sin confirmar · riesgo'}
+      }[status];
+      return {name,service,vehicle,time,top:top+'px',height:height+'px',barColor:map.bar,pillBg:map.pillBg,pillFg:map.pillFg,pillText:map.text};
+    };
+    const appts=[
+      appt('Diego Ramírez','Lavado + pulido + repelente y sellador','Toyota Hilux · C 162345','8:00 a.m.',64,90,'confirmada'),
+      appt('María Vargas','Lavado completo con cera','Toyota Corolla · BMW 042','9:30 a.m.',160,42,'confirmada'),
+      appt('Chofer (Uber)','Pulido de parabrisas + sellador','Hyundai Accent','11:00 a.m.',256,58,'pendiente'),
+      appt('Andrea Campos','Lavado + aromatización interior','Honda CR-V · CL 8890','1:00 p.m.',384,58,'confirmada'),
+      appt('Rafael Jiménez','Pulido de parabrisas + sellador','Nissan Frontier','3:30 p.m.',544,58,'riesgo')
+    ];
+
+    return {
+      themeVars, convos, convosMobile, chat, kpiDinero, kpiActividad, kpiRiesgo, chartDays, services, hours, appts,
+      annInbox:[
+        'El “lead score” suelto (90/75/65…) pasa a ser un medidor de interés con etiqueta Alto/Medio/Bajo y leyenda — deja de ser un número críptico.',
+        'Una barra ámbar y un chip marcan las conversaciones que necesitan que intervengás (sin responder o pidió humano); hay filtro dedicado.',
+        'Avatar con iniciales reemplaza el número dentro del círculo; el nombre y el último mensaje ganan jerarquía.',
+        'Cabecera del chat en una sola línea de estado; acciones con jerarquía clara (Agendá = primaria, resto secundarias).',
+        '“Vos” en lugar de “HUMANO”, y burbujas del bot etiquetadas como Agente IA.'
+      ],
+      annDash:[
+        'Los 12 KPIs planos se agrupan en Dinero · Actividad del bot · Riesgo y calidad — ya se sabe qué mirar primero.',
+        'La plata rescatada por el bot es el héroe: número grande, contexto en lenguaje del dueño y sparkline de tendencia.',
+        'Números tabulares y deltas con color semántico sobrio (verde sube / rojo baja), unidades discretas.',
+        '“Citas por día” se muestra como gráfico de barras con aire, no apretado abajo.'
+      ],
+      annNeg:[
+        'Cada servicio es una tarjeta que respira: sin inputs truncados ni checkboxes desalineados.',
+        'Los flags (Precio variable, Agendable, Ofrecer add-on) son switches alineados, cada uno con su ayuda.',
+        'Los campos del add-on solo aparecen cuando el switch está activo — menos ruido visual.',
+        'Grilla consistente en desktop y campos a ancho completo con toque cómodo en móvil.'
+      ],
+      annAgenda:[
+        'Vista de día con línea de tiempo por hora: cada cita ocupa su franja real, se ve la carga del día de un vistazo.',
+        'Estado por color sobrio: confirmada (acento), pendiente (info) y sin confirmar / riesgo de no-show (ámbar).',
+        'Resumen del día al lado (citas, ingreso estimado, en riesgo) para actuar sin contar tarjetas.',
+        'El estado “sin citas” deja de ser una línea pobre y guía a agendar la primera.'
+      ],
+      annFicha:[
+        'Jerarquía en 3 bloques: datos clave, historial de servicios y notas privadas — cada uno se lee solo.',
+        'Los datos clave son tiles con número tabular; el vehículo y la placa dejan de perderse en una lista.',
+        'El historial es una línea de tiempo con estado (completada / agendada), no filas planas.',
+        'Notas privadas separadas visualmente (fondo cálido, candado) para que no se confundan con datos del cliente.'
+      ],
+      annEstados:[
+        'Estados vacíos cálidos con una acción clara, no solo texto gris.',
+        'El error de carga explica qué pasó y ofrece reintentar, en tono tranquilo.',
+        'Consistentes con el sistema: mismo ícono contenido, tipografía y espaciado.'
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

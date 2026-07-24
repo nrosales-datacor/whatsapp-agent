@@ -1,19 +1,5 @@
 # Handoff: Rediseño UX/UI — Panel del agente de WhatsApp IA (white-label)
 
-## Estado de implementación
-**Leyenda:** ✅ hecho · ⬜ pendiente · 🔶 parcial
-
-- ✅ **Bandeja / Inbox** — medidor de interés, señal "necesita respuesta", header de chat simplificado. Ver ROADMAP A9.
-- ✅ **Panel / Dashboard** — hero de rescate, KPIs agrupados (Dinero/Actividad/Riesgo), gráfico vertical. Ver ROADMAP A9.
-- ✅ **Mi negocio — editor de servicios** — tarjetas por servicio con grip de arrastre (reordena de verdad), chip de slug editable, pill "Agendable", switches alineados con ayuda, campos de add-on condicionales. Ver ROADMAP A9.
-- ✅ **Agenda — línea de tiempo** — timeline por hora (bloques posicionados por hora+duración del servicio), pills Confirmada/Pendiente/Sin confirmar·riesgo (derivadas en el cliente, sin campo nuevo de backend), rail "Resumen del día" + aviso de riesgo, lista simple hora+tarjeta en móvil, modal de detalle con las acciones (antes inline en la fila). Ver ROADMAP A9.
-- ✅ **Ficha del cliente (modal)** — header propio (avatar + nombre + pill "Cliente frecuente" + teléfono) sobre el `.ficha-head` genérico; datos clave en tiles 2×2; historial de servicios como timeline vertical con puntos de color por estado; notas privadas en bloque cálido diferenciado. Ver ROADMAP A9d.
-- ✅ **Login** — layout de dos paneles en desktop (marca a la izquierda, form a la derecha) que colapsa a un bloque de marca compacto en móvil; ojo para mostrar/ocultar contraseña; "¿La olvidaste?" y "¿Problemas para entrar? Escribinos" apuntan al WhatsApp de soporte real (no hay backend de recuperación de contraseña). Ver ROADMAP A9e.
-- ✅ **Estados vacíos y de error** — `EstadoVacio`/`ErrorState` (creados en A9c) extendidos a todo el panel: vacío de "sin conversación" con CTA a la que necesita respuesta, `ErrorState` con ícono cloud-off + tono cálido + reintentar con ícono, y vacíos ad-hoc (bandeja, usuarios, campañas, servicios) migrados al mismo patrón. Ver ROADMAP A9f.
-- 🔶 **Design Tokens** — color (white-label + dark mode) y números tabulares adoptados sobre el sistema de tokens ya existente en `global.css` (de un rediseño previo, A8). NO se igualaron 1:1 los valores de este doc: tipografía body (pide Roboto, el codebase usa Noto Sans + Inter), radios (pide 6/8/12/18px, el codebase usa 10/16/999px) ni sombras en 3 capas (el codebase tiene 2, `--shadow`/`--shadow-overlay`).
-
----
-
 ## Overview
 Rediseño visual/UX del panel web de administración de un **agente de WhatsApp con IA para lavacars**, vendido como SaaS **white-label multi-tenant**. El panel es donde el negocio supervisa las conversaciones que lleva el bot, las citas, las métricas y la configuración.
 
@@ -104,7 +90,7 @@ Preferir bordes finos + sombras suaves sobre bordes duros. Sin acentos de borde 
 
 ## Screens / Views
 
-### 1. Bandeja / Inbox (PRIORITARIA) — desktop (lista + chat) y móvil ✅ HECHO
+### 1. Bandeja / Inbox (PRIORITARIA) — desktop (lista + chat) y móvil
 **Propósito:** el operador ve las conversaciones que lleva el bot y decide cuándo intervenir.
 
 **Layout desktop (1440):** header 64px + body flex. Lista izquierda 372px (`--surface`, borde derecho) + chat flex.
@@ -126,7 +112,7 @@ Preferir bordes finos + sombras suaves sobre bordes duros. Sin acentos de borde 
 
 **Cambios clave:** score→medidor con leyenda; señal ámbar de intervención; avatar con iniciales; "Vos" en vez de "HUMANO"; acciones jerarquizadas.
 
-### 2. Panel / Dashboard (PRIORITARIA) — desktop y móvil ✅ HECHO
+### 2. Panel / Dashboard (PRIORITARIA) — desktop y móvil
 **Propósito:** el dueño ve el rendimiento del bot; el dato #1 es **plata rescatada por el bot**.
 
 **Layout desktop:** header + contenido con título "Panel · Lavacar Rosales", subtítulo "Resumen de los últimos 30 días" y selector de rango segmentado (7 días / 30 días activo / Año).
@@ -142,21 +128,31 @@ Preferir bordes finos + sombras suaves sobre bordes duros. Sin acentos de borde 
 
 **Cambios clave:** agrupación en 3 secciones; héroe de rescate; deltas semánticos; gráfico con aire.
 
-### 3. Mi negocio — editor de servicios — desktop y móvil ✅ HECHO
-**Propósito:** configurar qué puede cotizar/agendar el bot. Corrige el editor apretado actual.
+### 3. Mi negocio — configuración completa — desktop y móvil
+**Propósito:** configurar todo lo que sabe/hace el bot. Corrige el editor apretado actual y **la página larga sin orientación**: es un formulario extenso con muchas secciones.
 
-**Layout desktop:** contenido centrado 920px. Título "Servicios" + subtítulo + botón "Nuevo servicio" (`--accent`).
-- **Tarjeta por servicio** (`--surface`, `--sh1`): cabecera con handle de arrastre (grip-vertical), nombre visible (Noto Sans 17 semibold), chip de slug monospace (`#hash`), pill "Agendable", botón borrar.
-- Cuerpo en grid 1.4fr / 1fr:
-  - Izquierda: "Nombre visible" (input) y "Nota de precio" (textarea, "según vehículo…").
-  - Derecha: "Precio base" (con ₡, tabular) + "Duración"; luego un bloque `--bg-page` con **3 switches** alineados, cada uno con título + ayuda: **Precio variable**, **Agendable**, **Ofrecer add-on**. El add-on solo muestra sus campos ("Add-on sugerido" select + "Precio promo") **cuando el switch está activo**.
-- **Switch:** pista 42×24 (on = `--accent`, off = `--border-strong`), knob 20px blanco con `--sh1`, translate a 20px/2px.
+**Layout desktop:** dentro del área de la app (bajo el header de 64px), **dos columnas**:
+- **Sub-nav pegajosa (250px, izquierda):** `--surface`, borde derecho `--border`, padding 22px/14px. Eyebrow "Configuración". Lista de ítems (ícono Lucide 16px + label): Servicios (wrench), Horario (clock), Feriados y bloqueos (calendar-x), Reseñas de Google (star), Ventana de 24 horas (message-circle), Campañas (send), Rescate de ventas (life-buoy), Base de conocimiento (book-open), Preguntas frecuentes (help-circle). El **ítem activo** = fondo `--accent-soft`, texto `--accent-active`, barra de 3px `--accent` pegada al borde izquierdo. **Clic → salta** (scroll suave) a esa sección dentro del panel de contenido y lo marca activo. Ideal: scrollspy que actualiza el activo al hacer scroll manual.
+- **Contenido con scroll (columna derecha):** `overflow-y:auto`; interior centrado max-width 880px, padding 28px/40px, secciones apiladas con gap 26px. Cada sección es una **tarjeta** (`--surface`, `--border`, radio `--r-lg`, `--sh1`, padding 24px) con `id` (para el salto) + eyebrow de título + subtítulo `--fg-3`.
 
-**Layout móvil:** una tarjeta apilada, campos a ancho completo, switches ocupando el ancho; bottom nav (Negocio activo).
+**Secciones (en orden):**
+1. **Servicios** — título "Servicios" + subtítulo + botón "Nuevo servicio" (`--accent`). Tarjeta por servicio (`--sh1`): cabecera con handle (grip-vertical), nombre (Noto Sans 17 semibold), chip de slug monospace (`#hash`), pill "Agendable", borrar. Cuerpo grid 1.4fr/1fr: izq. "Nombre visible" + "Nota de precio"; der. "Precio base" (₡, tabular) + "Duración", y bloque `--bg-page` con **3 switches** (Precio variable, Agendable, Ofrecer add-on), cada uno con título + ayuda. El add-on revela sus campos ("Add-on sugerido" select + "Precio promo") **solo con el switch activo**.
+2. **Horario** — filas por día (grid `180px 1fr 1fr 96px`, fondo `--surface-2`, radio 11px): switch on/off + nombre del día · campo "Abre" · campo "Cierra" (input con ícono clock) · chip de estado (Abierto=`--accent-soft`/`--accent-active`, Cerrado=`--bg-page`/`--fg-3`). **Día cerrado:** switch off + los dos campos de hora a `opacity:.4`.
+3. **Feriados y bloqueos** — filas (ícono en chip `--warning-soft`/`--warning` + label + subtexto + "Quitar") y botón punteado "Agregar bloqueo".
+4. **Reseñas de Google** — campo "Link para pedir reseña" (placeholder `https://g.page/r/…`); divisor; sub-bloque **"Motor de reseñas completo"** con badge "Plan Pro" (`--accent-soft`) + campo "Place ID de Google" (monospace) + ayuda.
+5. **Ventana de 24 horas** — campo "Plantilla de reapertura aprobada" (monospace, ej. `reapertura_conversacion`) + ayuda (plantilla de **utilidad**; sin ella no aparece "Reabrir conversación").
+6. **Campañas** — campo "Plantilla de marketing aprobada" (monospace, ej. `promo_general`).
+7. **Rescate de ventas** — cabecera con switch "Activo" a la derecha; "Horas de espera antes del 1.º toque" (número, ej. 3); textarea "Texto del primer toque" (variables `{servicio} {monto} {n}`); grid 2col "Variable del 2.º toque" + "Plantilla de Meta del 2.º toque" (monospace); ayuda.
+8. **Base de conocimiento** — grid 2×2 de textareas: Datos, Políticas, Tarifas, Parabrisas (una idea por línea, `min-height` ~120px).
+9. **Preguntas frecuentes** — filas grid `1fr 1fr 64px` (pregunta · respuesta · "Quitar") + botón punteado "Agregar pregunta".
+- **Barra "Guardar cambios" fija** (`position:sticky; bottom:0`) al pie del contenedor de scroll, con degradado de fondo hacia `--bg-page`: a la izquierda "● Cambios sin guardar" (punto `--warning`), a la derecha "Descartar" (secundario) + "Guardar cambios" (`--accent`, ícono check).
+- **Switch:** pista 42–44×24 (on=`--accent`, off=`--border-strong`), knob 20px blanco `--sh1`, translate 20–22px/2px.
 
-**Cambios clave:** tarjetas que respiran; switches alineados con ayuda; campos del add-on condicionales; sin inputs truncados.
+**Layout móvil:** una sección a la vez (la sub-nav pasa a chips horizontales scrolleables o selector arriba); tarjetas apiladas, campos a ancho completo, switches al ancho; bottom nav (Negocio activo). El botón Guardar queda fijo abajo.
 
-### 4. Agenda — día con línea de tiempo — desktop y móvil ✅ HECHO
+**Cambios clave:** sub-nav lateral con salto a cada sección (deja de ser scroll a ciegas); cada bloque de config en su propia tarjeta que respira; horario alineado con switch por día y campos atenuados si cierra; flags como switches con ayuda y campos dependientes condicionales; Guardar como barra fija primaria.
+
+### 4. Agenda — día con línea de tiempo — desktop y móvil
 **Propósito:** ver las citas del día. Corrige el vacío/poca densidad actual.
 
 **Layout desktop:** header + toolbar (segmentado Día/Semana, ‹ Hoy ›, "Viernes 18 de julio", botón "Nueva cita"). Grid 1fr / 300px.
@@ -166,13 +162,7 @@ Preferir bordes finos + sombras suaves sobre bordes duros. Sin acentos de borde 
 
 **Layout móvil:** lista de citas con hora a la izquierda y tarjeta con borde de estado a la derecha; bottom nav (Agenda activo).
 
-**Notas de implementación:**
-- El schema de `Cita` no tiene un estado explícito para Confirmada/Pendiente/Riesgo — se derivan en el cliente desde `confirmadaEn`/`recordatorioMismoDiaEn` (ver `estadoVisual()` en `Agenda.tsx`), sin agregar campos nuevos de backend. "Riesgo" = ya se envió el recordatorio del mismo día y el cliente no confirmó.
-- El rango de horas del timeline es dinámico (7–18 por default, se expande si alguna cita cae fuera) en vez de fijo, para no recortar citas tempranas/tardías.
-- Sin endpoint de "reenviar recordatorio" (no existe en el backend y no se inventó uno): el CTA del aviso de riesgo ("Ver en la agenda →") hace scroll + resalta el bloque correspondiente en vez de disparar un envío.
-- Las acciones por cita (Confirmar/Reprogramar/Completar/No se presentó/Cancelar), antes siempre visibles en la fila, ahora viven en un modal de detalle que se abre al tocar el bloque/fila — el timeline de referencia no tiene lugar para botones inline.
-
-### 5. Ficha del cliente (modal) ✅ HECHO
+### 5. Ficha del cliente (modal)
 **Propósito:** ver datos, historial y notas de un cliente.
 
 **Layout:** overlay `rgba(19,35,32,.55)` + modal 560px centrado, `--sh3`, radio 16px.
@@ -183,36 +173,34 @@ Preferir bordes finos + sombras suaves sobre bordes duros. Sin acentos de borde 
 
 **Cambios clave:** 3 bloques jerárquicos; datos en tiles; historial como timeline; notas separadas visualmente.
 
-**Notas de implementación:**
-- El componente ya existía (`FichaModal.tsx`, cableado a `GET/POST /api/panel/conversaciones/:id/ficha|notas` desde A4) — este paso fue **solo el rediseño visual**, sin tocar la capa de datos.
-- **"Cliente frecuente"** no es un campo de backend: se deriva en el cliente (`totalCitas >= 3`), mismo criterio que `estadoVisual()` en Agenda. El seed de demo no genera ningún cliente con 3+ citas (el máximo es 2), así que el pill no se pudo verificar contra datos reales — igual que pasó con el estado "riesgo" en A9c.
-- Colores de la tarjeta de notas y del pill "Cliente frecuente" son **tokens fijos** (`--notas-bg/--notas-border/--notas-fg`, `--frecuente/--frecuente-soft`), no derivados de `--accent`: son bloques semánticos (privacidad, reconocimiento), no deben cambiar de color al cambiar el acento del tenant. Modo oscuro con valores propios (cálido oscuro intencional, no un claro invertido).
-- El historial reusa las clases `badge-estado`/`.completada`/`.cancelada`/`.no_show` que ya existían para Agenda, en vez de crear un set de badges paralelo.
-
-### 6. Login (desktop y móvil) ✅ HECHO
+### 6. Login (desktop y móvil)
 **Propósito:** acceso white-label.
 
 **Layout desktop (900×600):** panel de marca izquierdo (360px, fondo `--header`, texto blanco): logo LR + nombre arriba, titular "Tu asistente atiende, cotiza y agenda por vos." + subtítulo al medio, footer discreto. Panel derecho (`--surface`): tarjeta 320px con "Ingresá a tu panel", campo Correo, campo Contraseña (con "¿La olvidaste?" y ojo), botón "Entrar" (`--accent`), y "¿Problemas para entrar? Escribinos".
 
 **Layout móvil:** logo LR 56px, nombre, subtítulo, campos, botón "Entrar", link "Recuperala" abajo.
 
-**Notas de implementación:**
-- **Campo "Correo" → se mantuvo "Usuario".** El backend loguea con un campo `usuario` (slug tipo `lavacar-rosales`, `POST /api/panel/login`), no un email — cambiar la etiqueta a "Correo" sin cambiar el backend habría sido mentirle al operador sobre qué tiene que escribir. Se respetó el resto del layout (dos paneles, ojo, links) tal cual el mock.
-- **"¿La olvidaste?" y "¿Problemas para entrar? Escribinos" no llaman a ningún backend** (no existe recuperación de contraseña self-service ni un canal de soporte por email) — ambos apuntan al mismo número de WhatsApp de soporte (`wa.me`) que ya usa la landing para ventas/demo, con un mensaje precargado distinto cada uno. Es el reflejo honesto del proceso real hoy (alguien del equipo resetea el hash a mano), no una promesa de un flujo que no existe.
-- `#login` se mantiene como el formulario centrado de siempre (reusado tal cual por `CambiarClaveObligatorio.tsx`, sin el panel de marca); `Login.tsx` lo envuelve en un `.login-shell` nuevo que agrega el panel izquierdo — así no hubo que tocar la pantalla de cambio de clave obligatorio.
-
-### 7. Estados vacíos y de error ✅ HECHO
+### 7. Estados vacíos y de error
 - **Vacío — sin conversación:** ícono en chip `--accent-soft` (message-square-dashed), "Elegí una conversación", ayuda cálida, y CTA secundaria "Ver la que necesita respuesta" (con ícono ámbar).
 - **Error de carga:** ícono danger (cloud-off), "No pudimos cargar las campañas", tono tranquilo ("Tus datos están a salvo…"), CTA "Reintentar" (`--accent`, rotate-cw).
-- **Vacío — agenda sin citas:** ícono acento (calendar-days), "Sin citas para este día", ayuda, CTA "Agendá la primera" — ya hecho en A9c.
+- **Vacío — agenda sin citas:** ícono acento (calendar-days), "Sin citas para este día", ayuda, CTA "Agendá la primera".
 
 Patrón: chip de ícono 56px + título Noto Sans 18 + ayuda fg-2 (máx ~290px) + una acción clara. Contenedor `--bg-page` radio 12px, centrado.
 
-**Notas de implementación:**
-- `ErrorState.tsx` (ícono fijo `alert`, sin chip) se rediseñó para compartir el mismo contenedor `.estado-vacio` que `EstadoVacio.tsx` — mismo look, solo cambia el tono del chip de ícono (`.estado-vacio-icono-danger`, rojo) y el ícono (`cloudoff`). La ayuda "Tus datos están a salvo…" quedó fija DENTRO del componente (no repetida en cada una de las 9 pantallas que lo usan) — los mensajes específicos por pantalla ("No se pudieron cargar las citas.", etc.) ya existían de antes y no hacía falta tocarlos.
-- El vacío de "sin conversación" (`Chat.tsx`) ahora sabe si hay una conversación que necesita respuesta (calculado en `Panel.tsx` con el mismo `necesitaRespuesta()` que ya usaba la Bandeja para el filtro/chip) y muestra la CTA solo si existe una; al tocarla abre esa conversación (reusa `abrir()`).
-- De paso se migraron al mismo patrón `EstadoVacio` los vacíos "a mano" que ya existían sin ícono/CTA: lista de conversaciones filtrada (con CTA "Ver todos" que limpia el filtro/búsqueda), tabla de usuarios, historial de campañas, y la lista de servicios de "Mi negocio" (que **no tenía ningún mensaje** — un hueco vacío sin ningún indicio). Y se agregó el `ErrorState` que faltaba para el listado de conversaciones de la Bandeja (antes un fetch fallido se veía igual que "no tenés conversaciones", sin distinguir error de vacío real).
-- El pill "Cliente frecuente" (A9d) ya había dejado precedente de que el seed de demo no alcanza para forzar todos los estados; acá pasó de nuevo con "Mi negocio sin servicios" (el seed siempre trae servicios) — no se pudo verificar por captura contra datos reales, solo por revisión de código. En cambio, el `ErrorState` de "Usuarios"/"Campañas" SÍ se verificó contra un error real (esas rutas devuelven 503 en modo memoria porque requieren Postgres), no forzado.
+### 8. Usuarios — equipo, roles y acceso — desktop y móvil
+**Propósito:** administrar quién entra al panel y con qué permisos. Solo lo ve el **Dueño**.
+
+**Layout desktop:** contenido centrado 760px. Título "Usuarios" (Noto Sans 26) + subtítulo.
+- **Equipo** (tarjeta `--surface`, `--sh1`): cabecera "Equipo" + chip con el conteo. **Tabla** grid `2.2fr 1.5fr 1.1fr 1.4fr`: fila de encabezado (`--surface-2`, labels uppercase `--fg-3`: Usuario / Rol / Estado / Acciones) + filas:
+  - **Usuario:** avatar 38px (radio 10px; el dueño = `--accent`/blanco, resto = `--accent-soft`/`--accent-active`) con iniciales + nombre. Tu propia cuenta muestra "(vos)".
+  - **Rol:** selector (borde `--border-strong`, chevron-down) — Dueño / Operador.
+  - **Estado:** chip con punto — Activo (`--success-soft`/`--success`) / Inactivo (`--bg-page`/`--fg-3`).
+  - **Acciones:** "Desactivar" / "Activar" (texto, alineado a la derecha). **No** permitir desactivarte a vos mismo.
+- **Agregar usuario** (tarjeta): eyebrow + grid `1.4fr 1.4fr 1fr`: "Usuario" (input) · "Contraseña" (input con ojo) · "Rol" (select, default Operador). Pie: hint "El Operador ve bandeja y agenda; el Dueño configura todo." + botón "Agregar usuario" (`--accent`, user-plus).
+
+**Layout móvil:** el equipo pasa a **tarjetas** (avatar + nombre/rol + chip de estado); botón punteado "Agregar usuario"; bottom nav (Usuarios activo).
+
+**Cambios clave:** equipo legible como tabla/tarjeta con avatar; estado en chip (no texto suelto); rol como selector; "vos" marcado para no autodesactivarse; alta en bloque aparte con acción primaria clara.
 
 ---
 
@@ -221,7 +209,8 @@ Patrón: chip de ícono 56px + título Noto Sans 18 + ayuda fg-2 (máx ~290px) +
 - **Bandeja:** clic en fila abre el chat; filtros acotan la lista; "Atender yo" pasa la conversación de bot a humano y habilita el composer; "Atendido" marca la conversación.
 - **Chat:** "Agendá cita" / "Cotización" abren sus flujos existentes (no cambian en este rediseño).
 - **Agenda:** ‹ › cambian de día; Día/Semana cambian de vista; "Nueva cita" abre creación; "Enviar recordatorio" dispara el recordatorio al cliente en riesgo.
-- **Mi negocio:** switches conmutan flags; activar "Ofrecer add-on" revela los campos de add-on; arrastrar reordena servicios.
+- **Mi negocio:** la sub-nav lateral **salta** (scroll suave) a la sección y la marca activa; ideal scrollspy al hacer scroll manual. Switches conmutan flags; activar "Ofrecer add-on" revela sus campos; el switch de día en Horario atenúa sus campos de hora al apagar; arrastrar reordena servicios; "Agregar bloqueo/pregunta" añade filas; "Guardar cambios" (barra fija) persiste todo el formulario.
+- **Usuarios:** cambiar el select de Rol actualiza permisos; "Desactivar/Activar" conmuta el estado (bloqueado para la propia cuenta); "Agregar usuario" crea la cuenta con el rol elegido.
 - **Ficha:** "Guardar notas" persiste las notas privadas.
 - **Transiciones:** `--ease-standard cubic-bezier(.2,0,0,1)`, duraciones 120/180/280ms; fades + translateY 4–8px. Sin bounces ni scale.
 - **Focus:** ring 3px `rgba(36,141,227,.35)` accesible.
@@ -240,4 +229,4 @@ Ver la sección **Design Tokens** arriba (color, tipografía, espaciado, radios,
 - **Emoji:** aparecen solo dentro de mensajes de chat de ejemplo (contenido del cliente), no en el chrome de la UI.
 
 ## Files
-- `Rediseño Panel WhatsApp.dc.html` — prototipo hifi con las 7 pantallas (desktop + móvil), tema claro, y tokens en el `:root` del contenedor raíz. Es referencia visual, no código a copiar.
+- `Rediseño Panel WhatsApp.dc.html` — prototipo hifi con las 8 pantallas (Sistema de diseño, Bandeja, Panel, **Mi negocio** con sub-nav + todas las secciones, Agenda, Ficha, Login/estados, **Usuarios**), desktop + móvil, tema claro, y tokens en el `:root` del contenedor raíz. Es referencia visual, no código a copiar.
