@@ -70,9 +70,13 @@ try {
     });
   console.log(`✅ Tenant '${t.id}' sembrado/actualizado (phone_number_id: ${t.phoneNumberId}).`);
 
+  // rol solo va en el INSERT (no en el update): es el único usuario que trae este
+  // seed, así que nace dueño del negocio (el default de la columna es "operador",
+  // ver migración 0011). No se toca en el update para no pisar un rol que el propio
+  // dueño haya cambiado después desde "Usuarios".
   await db
     .insert(waUsuarios)
-    .values({ usuario: t.id, passwordHash: hash, tenantId: t.id })
+    .values({ usuario: t.id, passwordHash: hash, tenantId: t.id, rol: "dueno" })
     .onConflictDoUpdate({
       target: waUsuarios.usuario,
       set: { passwordHash: hash, tenantId: t.id },
