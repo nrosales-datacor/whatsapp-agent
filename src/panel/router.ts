@@ -23,6 +23,7 @@ import {
   validarBloqueos,
   validarColorHex,
   validarFaq,
+  validarGoogleCalendarId,
   validarGooglePlaceId,
   validarHorario,
   validarLinkResenas,
@@ -1009,6 +1010,9 @@ export async function manejarPanel(
       rescateToque2Texto: tenant.rescateToque2Texto ?? "",
       rescatePlantilla: tenant.rescatePlantilla ?? "",
       googlePlaceId: tenant.googlePlaceId ?? "",
+      googleCalendarId: tenant.googleCalendarId ?? "",
+      // El dueño necesita saber a qué cuenta compartirle su calendario (auditoría BLOQ-05).
+      calendarioServiceAccount: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ?? "",
       tipoNegocio: tenant.tipoNegocio ?? "",
       pais: tenant.pais ?? "",
       formasPago: tenant.formasPago ?? "",
@@ -1102,6 +1106,14 @@ export async function manejarPanel(
       return json(res, 403, { ok: false, error: "plan_requerido", plan: "pro" }), true;
     }
 
+    // Google Calendar del negocio (auditoría BLOQ-05). Sin gating por plan: la agenda
+    // es parte del producto Básico, y el calendario propio es lo que evita que las citas
+    // de un negocio terminen en el calendario de otro.
+    const googleCalendarId = validarGoogleCalendarId(body?.googleCalendarId);
+    if (googleCalendarId === null) {
+      return json(res, 400, { ok: false, error: "ID de Google Calendar inválido (tiene forma de correo, ej: negocio@gmail.com)" }), true;
+    }
+
     const kb: KnowledgeBase = {
       faq: validarFaq(body?.kb?.faq),
       datos: limpiarLineas(body?.kb?.datos),
@@ -1135,6 +1147,7 @@ export async function manejarPanel(
         rescateToque2Texto: rescateToque2Texto || null,
         rescatePlantilla: rescatePlantilla || null,
         googlePlaceId: googlePlaceId || null,
+        googleCalendarId: googleCalendarId || null,
         tipoNegocio: tipoNegocio || null,
         pais: pais || null,
         formasPago: formasPago || null,
@@ -1299,7 +1312,7 @@ export async function manejarPanel(
     if (accion === "cancelar" && metodo === "POST") {
       const cita = await repo.cancelarCita(tenant.id, citaId);
       if (!cita) return json(res, 404, { ok: false, error: "No existe" }), true;
-      await sincronizarCancelacionGcal(cita);
+      await sincronizarCancelacionGcal(tenant, cita);
       return json(res, 200, { ok: true, cita }), true;
     }
 

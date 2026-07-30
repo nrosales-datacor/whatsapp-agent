@@ -129,6 +129,40 @@ test.describe("Seguridad: el accessToken de WhatsApp nunca vuelve al navegador (
   });
 });
 
+// Google Calendar por negocio (auditoría BLOQ-05): el calendario dejó de ser una env
+// global compartida por todos los tenants. El panel necesita dos cosas del backend: el
+// calendario del propio negocio y el email de la service account (para que el dueño sepa
+// a quién compartírselo), y el POST tiene que rechazar valores que reabrirían la fuga.
+test.describe("Google Calendar por negocio (BLOQ-05)", () => {
+  test("GET config expone el calendario del negocio y la service account", async ({ request }) => {
+    const res = await request.get("/api/panel/config", { headers: { cookie: cookie("dueno") } });
+    expect(res.status()).toBe(200);
+    const cfg = await res.json();
+    // El tenant de demo no tiene calendario configurado → cadena vacía, no undefined:
+    // el form del panel necesita un valor controlado.
+    expect(cfg.googleCalendarId).toBe("");
+    expect(typeof cfg.calendarioServiceAccount).toBe("string");
+  });
+
+  // La validación del valor (rechazar "primary" y cualquier cosa que no tenga forma de
+  // correo) NO se puede probar acá: `POST /config` corta con 503 "requiere base de datos"
+  // ANTES de llegar a los validadores, y el server E2E corre en memoria. Ese caso vive en
+  // test/unit/validadores.test.ts → "validarGoogleCalendarId", que es su nivel correcto.
+  test("POST config sin base de datos no persiste nada (503, no 200)", async ({ request }) => {
+    const res = await request.post("/api/panel/config", {
+      headers: { cookie: cookie("dueno"), origin: E2E.baseURL }, // el POST valida el Origin (CSRF)
+      data: {
+        horario: {},
+        servicios: [],
+        kb: { faq: [], datos: [], politicas: [], secciones: [] },
+        bloqueos: [],
+        googleCalendarId: "negocio@gmail.com",
+      },
+    });
+    expect(res.status()).toBe(503);
+  });
+});
+
 test.describe("Assets PWA", () => {
   test("service worker: 200 + Service-Worker-Allowed: /panel/", async ({ request }) => {
     const res = await request.get("/panel/sw.js");

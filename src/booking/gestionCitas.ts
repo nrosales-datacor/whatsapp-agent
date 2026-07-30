@@ -20,7 +20,7 @@ export function hoyEnTz(timezone: string): string {
  * flujo que llama a esta función (bot o panel).
  */
 export async function sincronizarCreacionGcal(tenant: Tenant, repo: Repositorio, cita: Cita): Promise<void> {
-  if (!calendarioConfigurado()) return;
+  if (!calendarioConfigurado(tenant)) return;
   try {
     const eventId = await crearEventoCita(tenant, cita);
     if (eventId) await repo.guardarGcalEventId(cita.id, eventId);
@@ -31,7 +31,7 @@ export async function sincronizarCreacionGcal(tenant: Tenant, repo: Repositorio,
 
 /** Refleja el nuevo horario de una cita reprogramada en su evento de Calendar (si tiene). */
 export async function sincronizarReprogramacionGcal(tenant: Tenant, cita: Cita): Promise<void> {
-  if (!calendarioConfigurado() || !cita.gcalEventId) return;
+  if (!calendarioConfigurado(tenant) || !cita.gcalEventId) return;
   try {
     await actualizarEventoCita(tenant, cita);
   } catch (e) {
@@ -39,11 +39,14 @@ export async function sincronizarReprogramacionGcal(tenant: Tenant, cita: Cita):
   }
 }
 
-/** Borra el evento de Calendar de una cita cancelada (si tiene). */
-export async function sincronizarCancelacionGcal(cita: Cita): Promise<void> {
+/**
+ * Borra el evento de Calendar de una cita cancelada (si tiene). Recibe el `tenant`
+ * porque el calendario es por negocio (auditoría BLOQ-05).
+ */
+export async function sincronizarCancelacionGcal(tenant: Tenant, cita: Cita): Promise<void> {
   if (!cita.gcalEventId) return;
   try {
-    await eliminarEventoCita(cita.gcalEventId);
+    await eliminarEventoCita(tenant, cita.gcalEventId);
   } catch (e) {
     console.error(`[gcal] no se pudo borrar el evento de la cita ${cita.id}:`, e);
   }

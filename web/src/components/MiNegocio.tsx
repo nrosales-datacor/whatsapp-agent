@@ -35,6 +35,7 @@ const SUBNAV: { id: string; label: string; icono: IconoId }[] = [
   { id: "mnServicios", label: "Servicios", icono: "wrench" },
   { id: "mnHorario", label: "Horario", icono: "clock" },
   { id: "mnFeriados", label: "Feriados y bloqueos", icono: "calendarx" },
+  { id: "mnCalendario", label: "Google Calendar", icono: "calcheck" },
   { id: "mnResenas", label: "Reseñas de Google", icono: "star" },
   { id: "mnVentana24", label: "Ventana de 24 horas", icono: "messagecircle" },
   { id: "mnCampanias", label: "Campañas", icono: "send" },
@@ -155,6 +156,10 @@ export default function MiNegocio({ features }: { features: Features }) {
   const [rescateToque2Texto, setRescateToque2Texto] = useState("");
   const [rescatePlantilla, setRescatePlantilla] = useState("");
   const [googlePlaceId, setGooglePlaceId] = useState("");
+  // Google Calendar del negocio (auditoría BLOQ-05): antes era una env global
+  // compartida por todos los tenants. `calendarioServiceAccount` es de solo lectura
+  // (lo expone el backend): es la cuenta a la que el dueño tiene que compartir su calendario.
+  const [googleCalendarId, setGoogleCalendarId] = useState("");
   // Perfil del negocio (B7, motor multi-mercado).
   const [tipoNegocio, setTipoNegocio] = useState("");
   const [pais, setPais] = useState("");
@@ -177,7 +182,7 @@ export default function MiNegocio({ features }: { features: Features }) {
       servicios, horario, bloqueos, faqs, datos, politicas, secciones,
       linkResenas, plantillaMarketing, plantillaReapertura, colorAcento, colorHeader, logoUrl,
       rescateActivo, rescateHorasEspera, rescateToque1Texto, rescateToque2Texto, rescatePlantilla,
-      googlePlaceId, tipoNegocio, pais, formasPago, registro, tono, instrucciones,
+      googlePlaceId, googleCalendarId, tipoNegocio, pais, formasPago, registro, tono, instrucciones,
     });
   }
 
@@ -200,6 +205,7 @@ export default function MiNegocio({ features }: { features: Features }) {
     const rescateToque2TextoF = data.rescateToque2Texto ?? "";
     const rescatePlantillaF = data.rescatePlantilla ?? "";
     const googlePlaceIdF = data.googlePlaceId ?? "";
+    const googleCalendarIdF = data.googleCalendarId ?? "";
     const tipoNegocioF = data.tipoNegocio ?? "";
     const paisF = data.pais ?? "";
     const formasPagoF = data.formasPago ?? "";
@@ -226,6 +232,7 @@ export default function MiNegocio({ features }: { features: Features }) {
     setRescateToque2Texto(rescateToque2TextoF);
     setRescatePlantilla(rescatePlantillaF);
     setGooglePlaceId(googlePlaceIdF);
+    setGoogleCalendarId(googleCalendarIdF);
     setTipoNegocio(tipoNegocioF);
     setPais(paisF);
     setFormasPago(formasPagoF);
@@ -243,6 +250,7 @@ export default function MiNegocio({ features }: { features: Features }) {
         rescateActivo: data.rescateActivo, rescateHorasEspera: rescateHorasEsperaF,
         rescateToque1Texto: rescateToque1TextoF, rescateToque2Texto: rescateToque2TextoF,
         rescatePlantilla: rescatePlantillaF, googlePlaceId: googlePlaceIdF,
+        googleCalendarId: googleCalendarIdF,
         tipoNegocio: tipoNegocioF, pais: paisF, formasPago: formasPagoF,
         registro: registroF, tono: tonoF, instrucciones: instruccionesF,
       })
@@ -435,6 +443,9 @@ export default function MiNegocio({ features }: { features: Features }) {
       // Sin plan Pro el input de Place ID está oculto (abajo); no reenviar un valor
       // viejo que el backend rechazaría por el gating de resenasPro (Carril D, 0.1).
       googlePlaceId: features.resenasPro ? googlePlaceId.trim() : "",
+      // Sin gating por plan: la agenda es parte del Básico y el calendario propio es
+      // justamente lo que evita que las citas de un negocio caigan en el de otro.
+      googleCalendarId: googleCalendarId.trim(),
       // Perfil del negocio (B7): disponible para todos los planes.
       tipoNegocio: tipoNegocio.trim(),
       pais: pais.trim(),
@@ -952,6 +963,40 @@ export default function MiNegocio({ features }: { features: Features }) {
               >
                 + Agregar bloqueo
               </button>
+            </div>
+
+            <div className="card admin-form" id="mnCalendario">
+              <h3>Google Calendar</h3>
+              <p className="mn-section-sub">
+                Opcional: si conectás tu calendario, cada cita del bot aparece también ahí.
+              </p>
+              <div className="campo">
+                <label htmlFor="cGoogleCalendarId">ID de tu calendario</label>
+                <input
+                  id="cGoogleCalendarId"
+                  className="mono"
+                  placeholder="tunegocio@gmail.com"
+                  value={googleCalendarId}
+                  onChange={(e) => setGoogleCalendarId(e.target.value)}
+                />
+                <p className="campo-ayuda">
+                  En <code>calendar.google.com</code> → Configuración del calendario → "ID del calendario" (para el
+                  calendario principal es tu propio correo de Gmail).{" "}
+                  {q.data?.calendarioServiceAccount ? (
+                    <>
+                      Antes de guardar, compartí ese calendario con{" "}
+                      <code>{q.data.calendarioServiceAccount}</code> dándole permiso de <strong>"Hacer cambios en
+                      eventos"</strong>; si no, no vamos a poder escribir tus citas.
+                    </>
+                  ) : (
+                    <>
+                      La integración todavía no está habilitada en el servidor: escribinos y la activamos.
+                    </>
+                  )}{" "}
+                  Dejalo vacío para no sincronizar nada (tus citas siempre se guardan en el panel, el calendario es
+                  solo un espejo).
+                </p>
+              </div>
             </div>
 
             <div className="card admin-form" id="mnResenas">

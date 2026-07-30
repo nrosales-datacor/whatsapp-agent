@@ -5,6 +5,7 @@ import {
   validarBloqueos,
   validarColorHex,
   validarFaq,
+  validarGoogleCalendarId,
   validarGooglePlaceId,
   validarHorario,
   validarLinkResenas,
@@ -176,4 +177,18 @@ test("validarGooglePlaceId: vacío es válido, formato alfanumérico con _/- es 
   assert.equal(validarGooglePlaceId("ChIJN1t_tDeuEmsRUsoyG83frY4"), "ChIJN1t_tDeuEmsRUsoyG83frY4");
   assert.equal(validarGooglePlaceId("muy corto"), null); // tiene espacio y es menor a 10 chars
   assert.equal(validarGooglePlaceId("<script>x</script>"), null);
+});
+
+test("validarGoogleCalendarId: vacío es válido; exige forma de correo y rechaza 'primary'", () => {
+  assert.equal(validarGoogleCalendarId(""), "");
+  assert.equal(validarGoogleCalendarId("negocio@gmail.com"), "negocio@gmail.com");
+  assert.equal(
+    validarGoogleCalendarId("  c_abc123@group.calendar.google.com  "),
+    "c_abc123@group.calendar.google.com",
+  );
+  // "primary" apuntaría al calendario de NUESTRA service account, el mismo para todos
+  // los tenants: es justo la fuga entre negocios que BLOQ-05 elimina.
+  assert.equal(validarGoogleCalendarId("primary"), null);
+  assert.equal(validarGoogleCalendarId("no-es-un-correo"), null);
+  assert.equal(validarGoogleCalendarId("a@b"), null); // sin TLD
 });

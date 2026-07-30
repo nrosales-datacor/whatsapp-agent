@@ -126,6 +126,7 @@ function filaATenant(f: typeof waTenants.$inferSelect): Tenant {
     rescateToque2Texto: f.rescateToque2Texto ?? undefined,
     rescatePlantilla: f.rescatePlantilla ?? undefined,
     googlePlaceId: f.googlePlaceId ?? undefined,
+    googleCalendarId: f.googleCalendarId ?? undefined,
     tipoNegocio: f.tipoNegocio ?? undefined,
     pais: f.pais ?? undefined,
     formasPago: f.formasPago ?? undefined,
@@ -289,6 +290,7 @@ export async function crearTenant(tenant: Tenant, u: NuevoUsuario): Promise<void
       rescateToque2Texto: tenant.rescateToque2Texto ?? null,
       rescatePlantilla: tenant.rescatePlantilla ?? null,
       googlePlaceId: tenant.googlePlaceId ?? null,
+      googleCalendarId: tenant.googleCalendarId ?? null,
     });
     // El usuario del alta es, por definición, el dueño del negocio recién creado.
     await tx.insert(waUsuarios).values({ usuario: u.usuario, passwordHash: u.passwordHash, tenantId: tenant.id, rol: "dueno" });
@@ -320,6 +322,7 @@ export async function actualizarConfigTenant(
     rescateToque2Texto: string | null;
     rescatePlantilla: string | null;
     googlePlaceId: string | null;
+    googleCalendarId: string | null;
     tipoNegocio: string | null;
     pais: string | null;
     formasPago: string | null;
@@ -349,6 +352,7 @@ export async function actualizarConfigTenant(
       rescateToque2Texto: patch.rescateToque2Texto,
       rescatePlantilla: patch.rescatePlantilla,
       googlePlaceId: patch.googlePlaceId,
+      googleCalendarId: patch.googleCalendarId,
       tipoNegocio: patch.tipoNegocio,
       pais: patch.pais,
       formasPago: patch.formasPago,

@@ -310,6 +310,18 @@ export interface ConfigNegocio {
   rescatePlantilla: string;
   /** Place ID de Google (Carril D, 1.3-c): habilita el job diario de reputación. "" = sin configurar. */
   googlePlaceId: string;
+  /**
+   * ID del Google Calendar DEL NEGOCIO (auditoría BLOQ-05). "" = sin configurar (no se
+   * sincroniza nada con Calendar; las citas viven en el panel igual).
+   */
+  googleCalendarId: string;
+  /**
+   * Solo lectura: la service account a la que el dueño debe compartir su calendario.
+   * "" = la integración no está habilitada en el servidor. Opcional porque este tipo
+   * describe tanto la respuesta del GET como el cuerpo del POST, y este campo solo
+   * viaja de vuelta (el POST lo ignora).
+   */
+  calendarioServiceAccount?: string;
   // ── Perfil del negocio (B7, motor multi-mercado) ──
   /** Rubro/persona: "una barbería", "una empresa de software". "" = "un negocio". */
   tipoNegocio: string;

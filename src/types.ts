@@ -170,6 +170,12 @@ export interface Tenant {
    * (no corre el job para este tenant).
    */
   googlePlaceId?: string;
+  /**
+   * ID del Google Calendar DE ESTE NEGOCIO (auditoría BLOQ-05). undefined = sin
+   * configurar → no se sincronizan citas con Calendar para este tenant. Nunca se cae
+   * al calendario de otro negocio: ver src/calendar/googleCalendar.ts.
+   */
+  googleCalendarId?: string;
   // ── Perfil del negocio (B7, motor multi-mercado) ──
   // Con estos campos el system prompt se arma para cualquier rubro (ver src/agent/systemPrompt.ts).
   /** Rubro/persona del negocio: "una barbería", "una empresa de software e IA". undefined = "un negocio". */

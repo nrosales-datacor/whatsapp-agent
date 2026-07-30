@@ -15,6 +15,9 @@ export const RE_NOMBRE_PLANTILLA = /^[a-z0-9_]+$/;
 export const RE_COLOR_HEX = /^#[0-9a-f]{6}$/i;
 // Los Place ID de Google son alfanuméricos con "_"/"-" (ej: "ChIJN1t_tDeuEmsRUsoyG83frY4").
 export const RE_GOOGLE_PLACE_ID = /^[A-Za-z0-9_-]{10,300}$/;
+// El ID de un Google Calendar siempre tiene forma de correo: el principal es el gmail
+// del negocio y los secundarios terminan en "@group.calendar.google.com".
+export const RE_GOOGLE_CALENDAR_ID = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
 
 export function limpiarLineas(v: unknown): string[] {
   if (!Array.isArray(v)) return [];
@@ -369,5 +372,23 @@ export function validarGooglePlaceId(v: unknown): string | null {
   const s = String(v ?? "").trim();
   if (!s) return "";
   if (!RE_GOOGLE_PLACE_ID.test(s)) return null;
+  return s;
+}
+
+/**
+ * Valida el ID del Google Calendar del negocio (auditoría BLOQ-05: el calendario
+ * pasó de env global a columna por tenant). Vacío = sin configurar (no se sincroniza
+ * nada con Calendar para este negocio). Devuelve null si el formato es inválido.
+ *
+ * Siempre tiene forma de correo: el calendario principal es el propio gmail
+ * ("negocio@gmail.com") y los secundarios son "…@group.calendar.google.com".
+ * Se rechaza a propósito el alias "primary" de Google: apuntaría al calendario de
+ * NUESTRA service account, es decir el mismo para todos los tenants — justo la fuga
+ * entre negocios que este cambio elimina.
+ */
+export function validarGoogleCalendarId(v: unknown): string | null {
+  const s = String(v ?? "").trim();
+  if (!s) return "";
+  if (s.length > 300 || !RE_GOOGLE_CALENDAR_ID.test(s)) return null;
   return s;
 }

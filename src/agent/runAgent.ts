@@ -13,6 +13,7 @@ import {
 } from "../booking/gestionCitas";
 import { registrarLatenciaAgente } from "../observabilidad/metricas";
 import { tenantPuede } from "../billing/planes";
+import { OPENAI_MAX_REINTENTOS, TIMEOUT_OPENAI_MS } from "../red/timeouts";
 
 const MODELO = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const MAX_PASOS = 4; // tope de iteraciones de tool-calling por mensaje
@@ -21,7 +22,12 @@ const MAX_PASOS = 4; // tope de iteraciones de tool-calling por mensaje
 // solo se necesita cuando llega un mensaje real.
 let _openai: OpenAI | null = null;
 function getOpenAI(): OpenAI {
-  if (!_openai) _openai = new OpenAI(); // toma OPENAI_API_KEY del entorno
+  // timeout/maxRetries explícitos: los defaults del SDK (600 s × 3 intentos) dejan
+  // el worker serial colgado hasta 30 min y con él la cola de TODOS los tenants
+  // (ver src/red/timeouts.ts). Si se agota, la cola durable reintenta el job.
+  if (!_openai) {
+    _openai = new OpenAI({ timeout: TIMEOUT_OPENAI_MS, maxRetries: OPENAI_MAX_REINTENTOS });
+  }
   return _openai;
 }
 
@@ -119,9 +125,12 @@ async function ejecutarTool(
     const fecha = String(args.fecha);
     const hora = String(args.hora);
     if (!servicioEsAgendable(servicioId)) {
+      // Sin texto de rubro: el motivo lo lee el modelo y puede parafrasearlo al cliente,
+      // así que "los lavados son por orden de llegada" no puede vivir en un motor
+      // multi-mercado (auditoría BLOQ-07). Mismo texto que las otras dos tools.
       return JSON.stringify({
         ok: false,
-        motivo: "ese servicio no se agenda; los lavados son por orden de llegada.",
+        motivo: "ese servicio no se agenda (no requiere cita). Solo se agendan los servicios marcados como agendables.",
       });
     }
     // Validar el formato de fecha/hora ANTES de persistir: la cita se muestra en el
@@ -130,7 +139,16 @@ async function ejecutarTool(
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(hora)) {
       return JSON.stringify({ ok: false, motivo: "formato inválido: usá fecha YYYY-MM-DD y hora HH:mm (24h)." });
     }
-    // Validar que el espacio siga libre antes de crear (evita doble reserva).
+    // No agendar en el pasado (auditoría BLOQ-08). `reprogramar_cita` ya lo validaba y
+    // el panel también; el camino del bot —el que usa el cliente final— no. El único
+    // freno era una instrucción del prompt, o sea una sugerencia a un modelo: en la
+    // verificación empírica el modelo rechazó una fecha absurda pero SÍ aceptó una hora
+    // ya transcurrida de hoy, porque confía en lo que le devolvió `ofrecer_horarios`.
+    if (fecha < hoyEnTz(tenant.timezone)) {
+      return JSON.stringify({ ok: false, motivo: "no se puede agendar en una fecha pasada." });
+    }
+    // Validar que el espacio siga libre antes de crear (evita doble reserva). Con el
+    // arreglo de BLOQ-09, esta lista además ya no incluye horas pasadas de hoy.
     const citas = await repo.citasPorFecha(tenant.id, fecha);
     const libres = espaciosDisponibles(tenant, fecha, servicioId, citas);
     if (!libres.includes(hora)) {
@@ -226,7 +244,7 @@ async function ejecutarTool(
     if (nombre === "cancelar_cita") {
       const cancelada = await repo.cancelarCita(tenant.id, objetivo.id);
       if (!cancelada) return JSON.stringify({ ok: false, motivo: "no se pudo cancelar la cita." });
-      await sincronizarCancelacionGcal(cancelada);
+      await sincronizarCancelacionGcal(tenant, cancelada);
       return JSON.stringify({ ok: true, cancelada: citaResumen(cancelada) });
     }
 
