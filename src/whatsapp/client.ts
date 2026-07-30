@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import type { MensajeInteractivo, OpcionInteractiva, Sentimiento, Tenant } from "../types";
 import { registrarMensajeSaliente } from "../observabilidad/uso";
+import { conTimeout, TIMEOUT_GRAPH_MS, TIMEOUT_MEDIA_MS } from "../red/timeouts";
 
 // ⚠️ La versión del Graph API cambia con el tiempo. Confirmá la vigente en la
 // documentación de Meta antes de producción. Se deja configurable por .env.
@@ -268,6 +269,8 @@ async function postMensaje(
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: cuerpo,
+        // Sin señal, undici espera ~300 s por intento × 3 intentos = 15 min colgado.
+        signal: conTimeout(TIMEOUT_GRAPH_MS),
       });
     } catch (e) {
       // fetch lanzó (DNS/red/timeout): siempre transitorio.
@@ -410,6 +413,7 @@ export async function descargarMedia(
 
   const metaRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${mediaId}`, {
     headers: { Authorization: `Bearer ${token}` },
+    signal: conTimeout(TIMEOUT_GRAPH_MS),
   });
   if (!metaRes.ok) {
     const detalle = await metaRes.text();
@@ -417,7 +421,11 @@ export async function descargarMedia(
   }
   const { url, mime_type } = (await metaRes.json()) as { url: string; mime_type: string };
 
-  const archivoRes = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  // Timeout más holgado que el resto de Graph: acá viajan bytes (audio/foto), no JSON.
+  const archivoRes = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: conTimeout(TIMEOUT_MEDIA_MS),
+  });
   if (!archivoRes.ok) throw new Error(`Error descargando media (${archivoRes.status})`);
   const buffer = Buffer.from(await archivoRes.arrayBuffer());
   return { buffer, mimeType: mime_type ?? "application/octet-stream" };

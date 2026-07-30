@@ -5,14 +5,28 @@ import { TENANT_FALLBACK_SELYON } from "../src/config/tenants";
 import { waTenants, waUsuarios } from "../src/db/schema";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Siembra (o actualiza) en la base el tenant inicial "selyon" y su usuario
-// de panel, a partir de la config hardcodeada (TENANT_FALLBACK_SELYON). IDEMPOTENTE
-// (upsert): se puede correr en cada deploy sin duplicar ni romper. (ROADMAP B2)
+// Siembra en la base el tenant inicial "selyon" y su usuario de panel, a partir de
+// la config hardcodeada (TENANT_FALLBACK_SELYON). IDEMPOTENTE: se puede correr en
+// cada deploy sin duplicar ni romper. (ROADMAP B2)
 //
 //   Ejecutar:  npx tsx scripts/seedTenants.ts
 //
 // Va en el deploy DESPUÉS de migrar.ts y ANTES del pm2 restart, para que al reiniciar
 // el bot ya encuentre al tenant en la base (ver DEPLOY.md).
+//
+// ⚠️ NO PISA LO QUE EL DUEÑO EDITÓ (auditoría ALTO-08, 2026-07-27). Este script corre
+// en CADA push a main (`.github/workflows/ci-cd.yml`) y antes hacía un
+// `onConflictDoUpdate` con TODOS los campos: si el dueño afinaba su base de
+// conocimiento, sus servicios o su horario desde "Mi negocio" un martes, el próximo
+// deploy —aunque fuera por un cambio de CSS— le revertía todo a los valores
+// hardcodeados del repo, y su contraseña a la del .env. Para un cliente que paga eso
+// es pérdida de datos.
+//
+// Regla nueva: en el INSERT va todo (bootstrap de un tenant que no existe); en el
+// UPDATE van SOLO los campos de infraestructura que administramos nosotros y que el
+// dueño no puede editar desde el panel (`phone_number_id`, `access_token`,
+// `google_calendar_id` si el .env lo trae). Todo lo demás —horario, servicios, kb,
+// perfil, marca, contraseña— es del dueño y se respeta.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const url = process.env.DATABASE_URL;
@@ -61,27 +75,40 @@ try {
     instrucciones: t.instrucciones ?? null,
   };
 
+  // Campos de INFRAESTRUCTURA: los administramos nosotros, no el dueño desde el panel,
+  // así que sí se refrescan en cada corrida (un token rotado tiene que llegar a la base).
+  // El resto de `datos` solo aplica al INSERT inicial.
+  const infraestructura = {
+    phoneNumberId: t.phoneNumberId,
+    accessToken: t.accessToken ?? null,
+    actualizadoEn: new Date(),
+  };
+
   await db
     .insert(waTenants)
     .values(datos)
-    .onConflictDoUpdate({
-      target: waTenants.id,
-      set: { ...datos, actualizadoEn: new Date() },
-    });
-  console.log(`✅ Tenant '${t.id}' sembrado/actualizado (phone_number_id: ${t.phoneNumberId}).`);
+    .onConflictDoUpdate({ target: waTenants.id, set: infraestructura });
+  console.log(
+    `✅ Tenant '${t.id}' listo (phone_number_id: ${t.phoneNumberId}). ` +
+      `Si ya existía, se respetó su config editada desde el panel.`,
+  );
 
-  // rol solo va en el INSERT (no en el update): es el único usuario que trae este
-  // seed, así que nace dueño del negocio (el default de la columna es "operador",
-  // ver migración 0011). No se toca en el update para no pisar un rol que el propio
-  // dueño haya cambiado después desde "Usuarios".
-  await db
+  // La contraseña NO se pisa (auditoría ALTO-08): si el dueño la cambió desde el panel,
+  // un deploy no puede devolverla a la del .env. Solo se siembra si el usuario no existe.
+  // Para resetear una clave existente está el flujo del superadmin (Carril D 0.5).
+  // `rol` también va solo en el INSERT: nace dueño del negocio (el default de la columna
+  // es "operador", ver migración 0011) y no se toca después para no pisar un rol que el
+  // propio dueño haya cambiado desde "Usuarios".
+  const usuarioSembrado = await db
     .insert(waUsuarios)
     .values({ usuario: t.id, passwordHash: hash, tenantId: t.id, rol: "dueno" })
-    .onConflictDoUpdate({
-      target: waUsuarios.usuario,
-      set: { passwordHash: hash, tenantId: t.id },
-    });
-  console.log(`✅ Usuario de panel '${t.id}' sembrado/actualizado.`);
+    .onConflictDoNothing({ target: waUsuarios.usuario })
+    .returning({ id: waUsuarios.id });
+  console.log(
+    usuarioSembrado.length > 0
+      ? `✅ Usuario de panel '${t.id}' creado.`
+      : `✅ Usuario de panel '${t.id}' ya existía: no se toca su contraseña (usá el reset del superadmin).`,
+  );
 } catch (e) {
   console.error("❌ Error:", e instanceof Error ? e.message : e);
   // Drizzle envuelve los errores de query: el motivo real de Postgres queda en

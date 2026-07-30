@@ -1,0 +1,1 @@
+ALTER TABLE "wa_tenants" ADD COLUMN "google_calendar_id" text;

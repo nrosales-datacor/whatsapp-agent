@@ -8,7 +8,7 @@ import { crearDb } from "./db/client";
 import { iniciarRecordatorios } from "./reminders/scheduler";
 import { iniciarReputacion, placesConfigurado } from "./reputacion/places";
 import { cargarTenants } from "./config/tenantStore";
-import { calendarioConfigurado } from "./calendar/googleCalendar";
+import { credencialesCalendarioConfiguradas } from "./calendar/googleCalendar";
 import { manejarPanel } from "./panel/router";
 import { manejarLanding } from "./landing/servirLanding";
 import { pushConfigurado } from "./panel/push";
@@ -140,7 +140,12 @@ server.listen(PORT, () => {
   const modo = db ? "PostgreSQL (Drizzle)" : "memoria (no persiste)";
   console.log(`Agente escuchando en http://localhost:${PORT}`);
   console.log(`Webhook: http://localhost:${PORT}${RUTA_WEBHOOK}  ·  Almacenamiento: ${modo}`);
-  console.log(`Google Calendar: ${calendarioConfigurado() ? "conectado ✅" : "no configurado (opcional)"}`);
+  // El calendario es POR NEGOCIO (auditoría BLOQ-05): acá solo se puede reportar si
+  // están las credenciales globales de la service account. Que un tenant tenga su
+  // calendario conectado se ve en su "Mi negocio", no al arrancar el proceso.
+  console.log(
+    `Google Calendar (credenciales): ${credencialesCalendarioConfiguradas() ? "presentes ✅ (cada negocio configura su calendario)" : "no configuradas (opcional)"}`,
+  );
   console.log(`Notificaciones push: ${pushConfigurado() ? "configuradas ✅" : "no configuradas (faltan llaves VAPID)"}`);
   console.log(`Sentry: ${sentryConfigurado() ? "activo ✅" : "no configurado (opcional, falta SENTRY_DSN)"}`);
   console.log(`Reputación (Places API): ${placesConfigurado() ? "configurada ✅" : "no configurada (opcional, falta GOOGLE_PLACES_API_KEY)"}`);

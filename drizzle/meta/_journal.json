@@ -162,6 +162,13 @@
       "when": 1784578525205,
       "tag": "0022_majestic_rictor",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1785435561456,
+      "tag": "0023_gifted_wolfsbane",
+      "breakpoints": true
     }
   ]
 }

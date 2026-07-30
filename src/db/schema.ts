@@ -219,6 +219,11 @@ export const waTenants = pgTable(
     // el job diario de Places API (rating + total de reseñas → snapshot_reputacion).
     // null = sin configurar (no corre el job para este tenant).
     googlePlaceId: text("google_place_id"),
+    // Google Calendar DEL NEGOCIO (auditoría BLOQ-05). Antes el calendario era una env
+    // GLOBAL (GOOGLE_CALENDAR_ID), así que con dos clientes las citas de uno aparecían
+    // en el calendario del otro — fuga de datos personales entre tenants. null = sin
+    // configurar → la sincronización con Calendar queda apagada para este negocio.
+    googleCalendarId: text("google_calendar_id"),
     // Perfil del negocio (B7, motor multi-mercado): con estos campos el system prompt
     // se arma para CUALQUIER rubro, no solo lavacar. null = sin configurar (el prompt
     // usa un default o lo infiere de la zona horaria). Ver src/agent/systemPrompt.ts.

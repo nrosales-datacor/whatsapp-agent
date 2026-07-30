@@ -256,6 +256,30 @@ pm2 logs whatsapp-bot            # debe decir "Agente escuchando" + "Notificacio
 > caído. Dar de alta OTRO negocio = insertar filas en `wa_tenants`/`wa_usuarios` (el bot lo
 > toma solo en ~1 min, sin redeploy); también se puede por pantalla (onboarding, ver paso 14).
 
+> ⚠️ **El seed NO pisa lo que el dueño editó** (auditoría ALTO-08, arreglado el 2026-07-30).
+> Como el script corre en **cada push a `main`** por el pipeline, antes hacía un
+> `onConflictDoUpdate` con TODOS los campos: si el dueño afinaba su base de conocimiento,
+> sus servicios o su horario desde "Mi negocio" un martes, el próximo deploy —aunque fuera
+> por un cambio de CSS— le revertía todo, y su contraseña volvía a la del `.env`. Ahora:
+> el INSERT siembra todo (bootstrap), y el UPDATE toca **solo** `phone_number_id` y
+> `access_token` (infraestructura que administramos nosotros). El usuario del panel se crea
+> si no existe y su contraseña **nunca** se sobreescribe — para resetear una clave está el
+> flujo del superadmin (`/panel/admin` → Detalle → "Resetear clave").
+
+> 📅 **Google Calendar es por negocio, no por `.env`** (auditoría BLOQ-05, arreglado el
+> 2026-07-30). En el `.env` van solo las credenciales de la **service account** (globales,
+> son nuestras). El calendario de cada negocio vive en `wa_tenants.google_calendar_id` y lo
+> pega el propio dueño en **"Mi negocio" → "Google Calendar"**, después de compartir ese
+> calendario con el email de la service account (permiso "Hacer cambios en eventos").
+>
+> Antes `GOOGLE_CALENDAR_ID` era una env **global**: con dos clientes, las citas de uno
+> —con nombre, teléfono, servicio y precio del cliente final— se escribían en el Google
+> Calendar del otro, y una cancelación podía borrar eventos ajenos. Para no romper el
+> piloto, la env se sigue respetando **solo** para el tenant nombrado en
+> `GOOGLE_CALENDAR_TENANT_ID`; cualquier otro negocio sin su columna configurada queda con
+> Calendar **apagado** (nunca redirigido a un calendario ajeno). Acción recomendada en el
+> droplet: pegar el calendario del piloto desde el panel y borrar ambas variables del `.env`.
+
 ## 14. Habilitar el onboarding de negocios (área de superadmin)
 
 El panel tiene un área protegida en **`/panel/admin`** para dar de alta un negocio nuevo
