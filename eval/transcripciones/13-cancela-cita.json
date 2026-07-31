@@ -1,0 +1,17 @@
+{
+  "nombre": "13-cancela-cita",
+  "descripcion": "Cancela la cita existente (C1.1) recién después de que el cliente confirma",
+  "seedCitas": [{ "servicioId": "reunion-diagnostico", "enDias": 2, "hora": "09:00", "nombre": "Marco Jiménez" }],
+  "historial": [
+    { "rol": "user", "contenido": "Necesito cancelar mi reunión" },
+    {
+      "rol": "assistant",
+      "contenido": "Entiendo Marco. ¿Te confirmo la cancelación de la Reunión de diagnóstico?"
+    }
+  ],
+  "usuario": "Sí, cancelala por favor",
+  "espera": {
+    "herramienta": "cancelar_cita",
+    "escala": false
+  }
+}

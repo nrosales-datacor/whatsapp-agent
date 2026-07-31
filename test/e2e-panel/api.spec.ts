@@ -32,11 +32,27 @@ function mintAdmin(): string {
   return `panel_admin_sesion=${Buffer.from(`${payload}.${firma}`).toString("base64url")}`;
 }
 
+// El servicioId NO se hardcodea: se lee del tenant vivo por `GET /me` (que ya devuelve
+// solo los agendables). El catálogo lo define el seed de demo y ya cambió de rubro dos
+// veces — fijarlo acá rompe este E2E cada vez que cambia (pasó con `pulido_focos` y
+// después con `reunion-diagnostico`). Se cachea: es el mismo tenant en toda la corrida.
+let servicioAgendable: string | null = null;
+async function primerServicioAgendable(request: APIRequestContext): Promise<string> {
+  if (servicioAgendable) return servicioAgendable;
+  const res = await request.get("/api/panel/me", { headers: { cookie: cookie("dueno") } });
+  expect(res.status(), await res.text()).toBe(200);
+  const servicios = (await res.json()).servicios as { id: string }[];
+  expect(servicios?.length ?? 0, "el tenant de la demo no tiene servicios agendables").toBeGreaterThan(0);
+  servicioAgendable = servicios[0].id;
+  return servicioAgendable;
+}
+
 // Helpers de la agenda (POST autenticado como dueño, mismo origen).
 async function crearCita(request: APIRequestContext, fecha: string, hora: string) {
+  const servicioId = await primerServicioAgendable(request);
   const res = await request.post("/api/panel/citas", {
     headers: { cookie: cookie("dueno"), origin: E2E.baseURL },
-    data: { clienteNombre: "Cliente E2E", clienteWa: "50600000000", servicioId: "reunion-diagnostico", fecha, hora },
+    data: { clienteNombre: "Cliente E2E", clienteWa: "50600000000", servicioId, fecha, hora },
   });
   expect(res.status(), await res.text()).toBe(200);
   const body = await res.json();

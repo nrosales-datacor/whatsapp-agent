@@ -507,7 +507,7 @@ function ModalDetalleCita({
           </div>
           {cita.placa && (
             <div className="dato">
-              <span>Placa</span>
+              <span>Referencia</span>
               <b className="tnum">{cita.placa}</b>
             </div>
           )}
@@ -707,8 +707,8 @@ function ModalCita({ servicios, cita, onCerrar, onGuardado }: ModalProps) {
 
           {!modoReprogramar && (
             <>
-              <label htmlFor="aPlaca">Placa (opcional)</label>
-              <input id="aPlaca" value={placa} onChange={(e) => setPlaca(e.target.value)} placeholder="Ej: CL-123456" />
+              <label htmlFor="aPlaca">Referencia (opcional)</label>
+              <input id="aPlaca" value={placa} onChange={(e) => setPlaca(e.target.value)} placeholder="Ej: placa, expediente…" />
 
               <label htmlFor="aPrecio">Precio (opcional)</label>
               <input

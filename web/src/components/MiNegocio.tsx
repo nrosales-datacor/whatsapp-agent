@@ -732,7 +732,7 @@ export default function MiNegocio({ features }: { features: Features }) {
                           </label>
                           <textarea
                             id={`svcNota${i}`}
-                            placeholder="según vehículo…"
+                            placeholder="según el caso…"
                             rows={2}
                             value={s.precioNota}
                             onChange={(e) => setServ(i, "precioNota", e.target.value)}
@@ -774,7 +774,7 @@ export default function MiNegocio({ features }: { features: Features }) {
                           <label className="svc-switch-row">
                             <div>
                               <div className="svc-switch-titulo">Precio variable</div>
-                              <div className="svc-switch-ayuda">El precio cambia según el vehículo</div>
+                              <div className="svc-switch-ayuda">El precio cambia según el caso</div>
                             </div>
                             <span className="switch">
                               <input
@@ -1097,7 +1097,7 @@ export default function MiNegocio({ features }: { features: Features }) {
               {features.rescateCotizaciones ? (
                 <>
                   <p className="campo-ayuda">
-                    Cuando el bot cotiza un pulido y el cliente no agenda, le manda un seguimiento automático (máx. 2
+                    Cuando el bot cotiza un servicio y el cliente no agenda, le manda un seguimiento automático (máx. 2
                     toques) si no vuelve a escribir. La tarjeta "₡ recuperados" del dashboard muestra el resultado.
                   </p>
                   <div className="campo">
@@ -1125,7 +1125,7 @@ export default function MiNegocio({ features }: { features: Features }) {
                     <label htmlFor="cRescateToque2">Texto/variable del segundo toque (llena la plantilla de Meta)</label>
                     <input
                       id="cRescateToque2"
-                      placeholder="pulido de parabrisas"
+                      placeholder="nombre del servicio cotizado"
                       value={rescateToque2Texto}
                       onChange={(e) => setRescateToque2Texto(e.target.value)}
                     />
