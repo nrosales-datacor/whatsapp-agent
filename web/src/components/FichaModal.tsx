@@ -84,7 +84,7 @@ export default function FichaModal({ convId, clienteWa, onCerrar }: Props) {
         <div className="ficha-body">
           <div className="ficha-tiles">
             <div className="ficha-tile">
-              <span className="ficha-tile-label">Vehículo · Placa</span>
+              <span className="ficha-tile-label">Referencia</span>
               <b className="ficha-tile-valor tnum">{ficha && ficha.placas.length ? ficha.placas.join(", ") : "—"}</b>
             </div>
             <div className="ficha-tile">

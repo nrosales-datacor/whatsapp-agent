@@ -195,7 +195,7 @@ export default function Campanias() {
               onChange={(e) => setMensaje(e.target.value)}
               rows={3}
               maxLength={300}
-              placeholder='Ej: "Tenemos 20% de descuento en pulido de parabrisas esta semana."'
+              placeholder='Ej: "Tenemos 20% de descuento esta semana."'
             />
             <p className="campo-ayuda">
               Se manda como {'"'}{'{{1}}'} nombre del cliente, {'{{2}}'} este mensaje{'"'} dentro de la plantilla de
