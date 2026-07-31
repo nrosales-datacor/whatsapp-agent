@@ -99,19 +99,46 @@ test → agente 100% determinista). `test/helpers/setupEnv.ts` fija `OPENAI_API_
 **Nota:** la sincronización a Google Calendar en `agendar_cita` es no-op sin `GCAL_*` (no se ejerce acá); su lógica pura
 ya está cubierta indirectamente por el repo. `notificarOperador` sin VAPID solo loguea, así que tampoco toca red.
 
-### 4. ⏸️ Evals del agente (LLM — pendientes de reescribir para Selyon)
+### 4. ✅ Evals del agente (LLM — reescritas para Selyon)
 
-El harness de evals (`eval/`, `npm run eval`) estaba escrito para el piloto Lavacar Rosales
-(11 transcripciones con reglas de pulido/parabrisas). Con el pivote a **Selyon** y la
-generalización del system prompt (B7) esas transcripciones dejaron de aplicar, así que se
-**eliminó el harness lavacar** (tenant fixture + transcripciones + `correrEval.ts` + script
-`npm run eval`).
+Es el ángulo de **calidad/valor**: ningún unit test dice si el bot cotiza bien, elige el
+servicio correcto o escala en vez de improvisar. El harness original era del piloto Lavacar
+Rosales (11 transcripciones con reglas de pulido/parabrisas) y se eliminó en el pivote a
+Selyon (B7); **se rearmó sobre el tenant Selyon** con 14 casos.
 
-**Pendiente:** rearmar el harness con transcripciones de conversación de Selyon (o del
-próximo negocio real) — es el ángulo de **calidad/valor** que ningún unit test cubre.
-Mientras tanto, la no-regresión del motor genérico se chequea con un snippet que construye
-`construirSystemPrompt` para distintos tenants (persona correcta, agenda condicional,
-instrucciones inyectadas).
+`npm run eval` corre `correrAgente` contra **OpenAI real** con las transcripciones de
+`eval/transcripciones/*.json` y aplica aserciones laxas. **No corre en CI** (cuesta tokens):
+es manual o nocturno, y necesita `OPENAI_API_KEY`.
+
+```
+eval/
+  correrEval.ts     # runner: espía de fetch (lee los tool_calls) + main
+  aserciones.ts     # tipos, carga de casos y aserciones (lógica pura, testeada)
+  fixtureEval.ts    # tenant Selyon de eval (KB y perfil completos)
+  transcripciones/  # 14 casos .json
+```
+
+**Variables:** `EVAL_REPETICIONES=N` corre cada caso N veces (el agente no es determinista:
+⚠️ = pasó en unas y falló en otras — así se mide la tasa); `EVAL_CASO=<substring>` filtra
+por nombre al iterar sobre un caso puntual.
+
+**Qué cubren los 14 casos:** la política de **no dar precios por chat** (incluido el caso
+duro: el cliente presionando por un número — `03-insiste-en-precio`), elección de la
+herramienta correcta, distinguir los dos servicios agendables (diagnóstico vs. demo), no
+inventar horarios ni años, escalada ante lo desconocido vs. deflección amable de lo ajeno
+al negocio, gestión de citas (consultar/reprogramar/cancelar) y el upsell de 1.2.
+
+**Aislamiento (importante):** el runner **borra `GOOGLE_*` y `WHATSAPP_ACCESS_TOKEN`** del
+entorno después de cargar el `.env`. Sin eso, los casos que agendan sincronizan eventos
+**reales** al Google Calendar del negocio y hay que borrarlos a mano (ya pasó una vez: ver
+la nota de verificación de C2.1 en el ROADMAP). Funciona porque ambos módulos leen esas
+variables perezosamente y caen a su no-op. `OPENAI_API_KEY` se conserva: es lo que se evalúa.
+
+**El harness se testea a sí mismo:** `test/unit/evalHarness.test.ts` (15 casos, en `npm test`,
+sin red) cubre las aserciones en ambos sentidos, que los JSON estén bien formados, que **toda
+herramienta esperada exista de verdad en `TOOLS`** y que los `servicioId` existan en el
+fixture. Sin esto, un typo (`agendar_citas`) haría fallar una eval por el motivo equivocado y
+se leería como "el agente se rompió".
 
 ### 5. ✅ Fiabilidad y concurrencia (validar lo que B1/B4 prometen)
 
@@ -235,7 +262,9 @@ test/
   security/        # sesión firmada, anti-timing, firma del webhook (ángulo 8)
   e2e-panel/       # Playwright: servidor.ts (server E2E), *.spec.ts, constantes.ts
   helpers/         # fabricadores de tenant/cita/conversación, mock de Graph/OpenAI
-# eval/ — eliminado en el pivote a Selyon (era lavacar); pendiente rearmar (ver ángulo 4)
+eval/              # evals del agente contra OpenAI real (ángulo 4, NO en CI)
+  correrEval.ts    #   runner + espía de tool_calls; aserciones.ts, fixtureEval.ts (Selyon)
+  transcripciones/ #   14 casos .json
 playwright.config.ts  # webServer = test/e2e-panel/servidor.ts, workers:1
 scripts/
   verificarMigraciones.ts  # guardrail de drift (ángulo 7)
@@ -246,6 +275,7 @@ scripts/
 "scripts": {
   "test": "tsx --test test/unit/*.test.ts test/tenant/*.test.ts test/e2e-webhook/*.test.ts test/reliability/*.test.ts test/security/*.test.ts",
   "test:e2e": "npm run web:build && playwright test",  // panel (build + Playwright)
+  "eval": "tsx eval/correrEval.ts",                    // agente vs. OpenAI real (ángulo 4, NO en CI)
   "db:check": "tsx scripts/verificarMigraciones.ts"    // drift de schema (ángulo 7)
 }
 ```

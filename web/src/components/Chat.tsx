@@ -129,7 +129,7 @@ export default function Chat({
 
   function accionCotizacion() {
     if (!id || enviar.isPending || !confirmarSiApagaBot()) return;
-    enviar.mutate("Con gusto te preparamos una cotización 📋 ¿Qué servicio necesitás para tu vehículo?", {
+    enviar.mutate("Con gusto te preparamos una cotización 📋 ¿Qué servicio necesitás?", {
       onSuccess: () => flash("Mensaje de cotización enviado"),
     });
   }

@@ -486,7 +486,7 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .dash-grupo-titulo { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; font-weight: 700; color: var(--text-3); white-space: nowrap; }
 .dash-grupo-linea { flex: 1; height: 1px; background: var(--border); }
 
-/* Hero "Plata rescatada por el bot" — el dato #1 del dashboard, aparte de los KPIs */
+/* Hero "Dinero rescatado por el bot" — el dato #1 del dashboard, aparte de los KPIs */
 .hero-rescate { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: var(--space-lg); margin-bottom: var(--space-md); }
 .hero-eyebrow { display: flex; align-items: center; gap: 7px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); font-weight: 700; margin-bottom: 10px; }
 .hero-monto { font-family: var(--font-display); font-weight: 800; font-size: clamp(1.9rem, 5vw, 2.6rem); letter-spacing: -.02em; color: var(--accent-strong); line-height: 1; }

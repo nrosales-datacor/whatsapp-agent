@@ -1,0 +1,12 @@
+{
+  "nombre": "01-saludo-presenta-negocio",
+  "descripcion": "Un saludo seco: se presenta como Selyon, trata de vos, sin herramientas",
+  "usuario": "Hola, buenas tardes",
+  "espera": {
+    "sinHerramienta": true,
+    "escala": false,
+    "fueraDeAlcance": false,
+    "contieneAlguno": ["selyon", "software", "ayudar", "ayudo"],
+    "noContiene": ["usted"]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "nombre": "08-escala-tecnico-del-negocio",
+  "descripcion": "Pregunta técnica SOBRE el servicio de Selyon que la KB no responde: escala en vez de improvisar",
+  "usuario": "El bot que ustedes hacen se puede integrar con SAP? y aguanta 50 mil mensajes por día sin caerse?",
+  "espera": {
+    "escala": true,
+    "fueraDeAlcance": false
+  }
+}

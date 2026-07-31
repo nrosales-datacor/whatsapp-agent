@@ -1,0 +1,18 @@
+{
+  "nombre": "12-reprograma-cita",
+  "descripcion": "Mueve la cita existente (C1.1) a la fecha pedida, con el año en curso",
+  "seedCitas": [{ "servicioId": "reunion-diagnostico", "enDias": 2, "hora": "09:00", "nombre": "Marco Jiménez" }],
+  "historial": [
+    { "rol": "user", "contenido": "Necesito mover mi reunión" },
+    {
+      "rol": "assistant",
+      "contenido": "Claro Marco, tenés la Reunión de diagnóstico agendada. ¿Para qué día y hora la querés mover?"
+    }
+  ],
+  "usuario": "Pasado mañana a las 2 de la tarde",
+  "espera": {
+    "herramienta": "reprogramar_cita",
+    "fechaAnioActual": true,
+    "escala": false
+  }
+}
