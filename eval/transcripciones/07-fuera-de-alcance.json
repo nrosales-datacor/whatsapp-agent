@@ -1,0 +1,10 @@
+{
+  "nombre": "07-fuera-de-alcance",
+  "descripcion": "Pedido ajeno al negocio: deflección amable, NO escala (no spamear al operador)",
+  "usuario": "Aprovechando, me escribís un poema para el cumpleaños de mi mamá?",
+  "espera": {
+    "fueraDeAlcance": true,
+    "escala": false,
+    "sinHerramienta": true
+  }
+}

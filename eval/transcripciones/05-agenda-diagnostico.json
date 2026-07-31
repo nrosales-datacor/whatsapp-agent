@@ -1,0 +1,20 @@
+{
+  "nombre": "05-agenda-diagnostico",
+  "descripcion": "Cierre del agendado tras confirmar: agenda con el servicioId correcto y el año en curso",
+  "historial": [
+    { "rol": "user", "contenido": "quiero agendar la reunión de diagnóstico" },
+    { "rol": "assistant", "contenido": "¡Genial! Para mañana tengo libre a las 9:00, 10:00 y 14:00. ¿Cuál te sirve?" },
+    { "rol": "user", "contenido": "Mañana a las 10. Soy Marco Jiménez" },
+    {
+      "rol": "assistant",
+      "contenido": "Perfecto Marco: Reunión de diagnóstico (gratis, 30 min por videollamada) mañana a las 10:00 a.m. ¿Te la confirmo?"
+    }
+  ],
+  "usuario": "Sí, confirmado",
+  "espera": {
+    "herramienta": "agendar_cita",
+    "argIncluye": { "herramienta": "agendar_cita", "args": { "servicioId": "reunion-diagnostico" } },
+    "fechaAnioActual": true,
+    "escala": false
+  }
+}

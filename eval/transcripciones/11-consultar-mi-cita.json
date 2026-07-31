@@ -1,0 +1,10 @@
+{
+  "nombre": "11-consultar-mi-cita",
+  "descripcion": "Se identifica por su número de WhatsApp: consulta la cita sin pedirle datos que ya tenemos",
+  "seedCitas": [{ "servicioId": "reunion-diagnostico", "enDias": 2, "hora": "09:00", "nombre": "Marco Jiménez" }],
+  "usuario": "Hola, a qué hora era mi reunión?",
+  "espera": {
+    "herramienta": "consultar_mi_cita",
+    "escala": false
+  }
+}
