@@ -51,14 +51,14 @@ function GrupoTitulo({ children }: { children: string }) {
   );
 }
 
-// ── Hero "Plata rescatada por el bot" ─────────────────────────────────────────
+// ── Hero "Dinero rescatado por el bot" ────────────────────────────────────────
 
 function HeroRescate({ m }: { m: Metricas }) {
   return (
     <div className="hero-rescate">
       <div className="hero-eyebrow">
         <Icono id="shield" size={15} sw={2} />
-        Plata rescatada por el bot
+        Dinero rescatado por el bot
       </div>
       <div className="hero-monto tnum">{colones(m.rescateMontoRecuperado)}</div>
       {m.rescateRecuperados > 0 ? (
