@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import { crearDb } from "../db/client";
+import { obtenerDb as obtenerPoolGlobal } from "../db/client";
 import { schema, waUsoMensual } from "../db/schema";
 
 type DB = PostgresJsDatabase<typeof schema>;
@@ -15,11 +15,12 @@ type DB = PostgresJsDatabase<typeof schema>;
 // el hot path del webhook ni el envío de mensajes.
 // ─────────────────────────────────────────────────────────────────────────────
 
-let db: ReturnType<typeof crearDb> | null = null;
-function obtenerDb(): ReturnType<typeof crearDb> | null {
+// Gateado por DATABASE_URL (no-op sin DB, ver comentario de arriba). El pool en sí
+// es el singleton compartido de todo el proceso (ROADMAP F7): antes este módulo
+// mantenía su propio pool aparte del de `tenantStore`/`server`/campañas/rescate.
+function obtenerDb(): ReturnType<typeof obtenerPoolGlobal> | null {
   if (!process.env.DATABASE_URL) return null;
-  if (!db) db = crearDb();
-  return db;
+  return obtenerPoolGlobal();
 }
 
 /** "YYYY-MM" en UTC — alcanza para un contador mensual aproximado (no requiere la tz del tenant). */

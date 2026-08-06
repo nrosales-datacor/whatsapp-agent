@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import type { Bloqueo, Empleado, EstadoFacturacion, HorarioDia, KnowledgeBase, Plan, Rol, Service, Tenant } from "../types";
-import { crearDb } from "../db/client";
+import { obtenerDb } from "../db/client";
 import { waTenants, waUsuarios } from "../db/schema";
 import { TENANT_FALLBACK_SELYON } from "./tenants";
 import { normalizarKb } from "./validadores";
@@ -137,12 +137,6 @@ function filaATenant(f: typeof waTenants.$inferSelect): Tenant {
     tono: f.tono ?? undefined,
     instrucciones: f.instrucciones ?? undefined,
   };
-}
-
-let db: ReturnType<typeof crearDb> | null = null;
-function obtenerDb() {
-  if (!db) db = crearDb();
-  return db;
 }
 
 async function recargarDesdeDb(): Promise<void> {

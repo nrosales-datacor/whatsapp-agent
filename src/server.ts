@@ -4,7 +4,7 @@ import { verificarWebhook, firmaValida } from "./whatsapp/client";
 import { ingerirEntrante, responderEntrante } from "./handleWebhook";
 import { RepositorioEnMemoria } from "./booking/inMemoryRepository";
 import { RepositorioDrizzle } from "./booking/drizzleRepository";
-import { crearDb } from "./db/client";
+import { obtenerDb } from "./db/client";
 import { iniciarRecordatorios } from "./reminders/scheduler";
 import { iniciarReputacion, placesConfigurado } from "./reputacion/places";
 import { cargarTenants } from "./config/tenantStore";
@@ -31,8 +31,10 @@ const PORT = Number(process.env.PORT ?? 3000);
 const RUTA_WEBHOOK = "/webhook";
 
 // `db` se expone por separado para pasárselo al worker (que opera directamente
-// sobre wa_jobs sin pasar por la interfaz Repositorio).
-const db = process.env.DATABASE_URL ? crearDb() : null;
+// sobre wa_jobs sin pasar por la interfaz Repositorio). `obtenerDb()` es el
+// pool único del proceso (ROADMAP F7): el resto de los módulos DB-directos
+// (tenantStore, uso, campaigns, rescate) comparten esta misma instancia.
+const db = process.env.DATABASE_URL ? obtenerDb() : null;
 const repo: Repositorio = db ? new RepositorioDrizzle(db) : new RepositorioEnMemoria();
 
 const server = http.createServer(async (req, res) => {

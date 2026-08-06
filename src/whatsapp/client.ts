@@ -8,6 +8,80 @@ import { conTimeout, TIMEOUT_GRAPH_MS, TIMEOUT_MEDIA_MS } from "../red/timeouts"
 const GRAPH_VERSION = process.env.GRAPH_API_VERSION ?? "v21.0";
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Access token de WhatsApp: mismo criterio fail-closed que `calendarioDeTenant`
+// en src/calendar/googleCalendar.ts (ver E4/BLOQ-05).
+//
+// ⚠️ AUDITORÍA ALTO-05: antes esto era `tenant.accessToken ?? process.env
+// .WHATSAPP_ACCESS_TOKEN`. Un tenant sin token propio no fallaba: mandaba (y
+// recibía) mensajes con el token global, es decir desde el NÚMERO DE PRUEBA DE
+// META de otro negocio. El cliente lo ve con sus propios ojos y el producto
+// parece roto. Ahora la env global solo cubre al tenant nombrado explícitamente
+// en `WHATSAPP_ACCESS_TOKEN_TENANT_ID` (compatibilidad con el piloto, que hoy
+// no tiene su propio token en la base): cualquier otro tenant sin `accessToken`
+// propio falla con un error claro, nunca hereda el token de otro.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Token disponible para este tenant, o null si no hay ninguno (propio ni legado). */
+function tokenDisponible(tenant: Tenant): string | null {
+  if (tenant.accessToken) return tenant.accessToken;
+  const legadoTenantId = process.env.WHATSAPP_ACCESS_TOKEN_TENANT_ID;
+  if (legadoTenantId && legadoTenantId === tenant.id && process.env.WHATSAPP_ACCESS_TOKEN) {
+    return process.env.WHATSAPP_ACCESS_TOKEN;
+  }
+  return null;
+}
+
+/**
+ * Token de acceso de ESTE negocio. Lanza si no hay ninguno disponible: NUNCA cae
+ * al token global de otro tenant (ese es justamente el bug de ALTO-05).
+ *
+ * El throw sube por `postMensaje`/`descargarMedia`, que corren en la fase 2 del
+ * webhook (después del 200 a Meta) y dentro del worker con reintentos: queda
+ * registrado como job fallido, que es el comportamiento correcto — preferimos
+ * un job en error, visible y accionable, a un mensaje enviado desde el número
+ * equivocado.
+ */
+export function tokenDeTenant(tenant: Tenant): string {
+  const token = tokenDisponible(tenant);
+  if (!token) {
+    throw new Error(
+      `Falta el access token de WhatsApp del tenant "${tenant.id}". Configurá su token propio ` +
+        `desde el panel (Mi negocio → conexión de WhatsApp) o, si es el piloto legado, definí ` +
+        `WHATSAPP_ACCESS_TOKEN_TENANT_ID="${tenant.id}" junto con WHATSAPP_ACCESS_TOKEN en el .env.`,
+    );
+  }
+  return token;
+}
+
+/**
+ * ¿Puede este negocio enviar por WhatsApp (tiene token propio o el legado por env)?
+ * A diferencia de `tokenDeTenant`, NO lanza: es para el health check (E10) y el panel
+ * admin, donde queremos MOSTRAR el estado de la conexión, no reventar la petición.
+ *
+ * OJO con el nombre: responde "¿puede enviar?", NO "¿tiene token propio?". Un tenant
+ * cubierto por la env de compatibilidad devuelve `true` acá y sin embargo NO tiene
+ * token propio — para esa pregunta está `dependeDelTokenGlobal`.
+ */
+export function puedeEnviarWhatsapp(tenant: Tenant): boolean {
+  return tokenDisponible(tenant) !== null;
+}
+
+/**
+ * ¿Este negocio está enviando con el token GLOBAL en vez del suyo? Es un estado
+ * transitorio y tolerado (compatibilidad con el piloto), pero hay que poder verlo:
+ * mientras dure, el negocio depende de una env compartida y de que nadie la cambie.
+ * Sirve para el warning de arranque, el health check (E10) y el panel admin.
+ *
+ * Se separa de `puedeEnviarWhatsapp` a propósito: mezclar ambas preguntas en un solo
+ * booleano llamado "tieneTokenPropio" haría que el panel informe "conectado con su
+ * token" cuando en realidad está colgado de la env — justo el estado que ALTO-05
+ * quería hacer visible.
+ */
+export function dependeDelTokenGlobal(tenant: Tenant): boolean {
+  return !tenant.accessToken && tokenDisponible(tenant) !== null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 1) Verificación del webhook (GET). Meta manda hub.challenge al configurarlo.
 // ─────────────────────────────────────────────────────────────────────────────
 export function verificarWebhook(params: URLSearchParams): { ok: boolean; challenge?: string } {
@@ -291,8 +365,7 @@ async function postMensaje(
   etiqueta: string,
   plantillaCategoria?: "marketing" | "utilidad",
 ): Promise<void> {
-  const token = tenant.accessToken ?? process.env.WHATSAPP_ACCESS_TOKEN;
-  if (!token) throw new Error("Falta access token de WhatsApp para el tenant " + tenant.id);
+  const token = tokenDeTenant(tenant);
 
   const url = `https://graph.facebook.com/${GRAPH_VERSION}/${tenant.phoneNumberId}/messages`;
   const cuerpo = JSON.stringify({ messaging_product: "whatsapp", ...contenido });
@@ -444,8 +517,7 @@ export async function descargarMedia(
   tenant: Tenant,
   mediaId: string,
 ): Promise<{ buffer: Buffer; mimeType: string }> {
-  const token = tenant.accessToken ?? process.env.WHATSAPP_ACCESS_TOKEN;
-  if (!token) throw new Error("Falta access token de WhatsApp para el tenant " + tenant.id);
+  const token = tokenDeTenant(tenant);
 
   const metaRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${mediaId}`, {
     headers: { Authorization: `Bearer ${token}` },

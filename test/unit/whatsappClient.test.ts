@@ -10,8 +10,12 @@ import {
   opcionHorario,
   parsearEntrante,
   respuestaPostServicio,
+  puedeEnviarWhatsapp,
+  dependeDelTokenGlobal,
+  tokenDeTenant,
   verificarWebhook,
 } from "../../src/whatsapp/client";
+import { crearTenant } from "../helpers/fixtures";
 
 // ─── Verificación del webhook (GET) ────────────────────────────────────────
 
@@ -150,4 +154,106 @@ test("botonesPostServicioPro (Pro, 3 botones) + respuestaPostServicio: round-tri
   assert.deepEqual(respuestaPostServicio(excelente.id), { citaId: "cita-8", sentimiento: "positivo" });
   assert.deepEqual(respuestaPostServicio(bien.id), { citaId: "cita-8", sentimiento: "neutral" });
   assert.deepEqual(respuestaPostServicio(mal.id), { citaId: "cita-8", sentimiento: "negativo" });
+});
+
+// ─── Access token de WhatsApp por tenant (auditoría ALTO-05) ────────────────
+//
+// El bug original: `tenant.accessToken ?? process.env.WHATSAPP_ACCESS_TOKEN` mandaba
+// los mensajes de CUALQUIER tenant sin token propio con el token global, es decir
+// desde el número de prueba de Meta de otro negocio. Estos tests fijan la regla,
+// espejo de calendario.test.ts: el token sale del tenant, la env global solo cubre
+// al tenant nombrado explícitamente, y cualquier otro sin token propio falla.
+
+/** Ejecuta `fn` con estas env y restaura las anteriores al terminar. */
+function conEnv(vars: Record<string, string | undefined>, fn: () => void): void {
+  const previas = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
+  try {
+    for (const [k, v] of Object.entries(vars)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    fn();
+  } finally {
+    for (const [k, v] of Object.entries(previas)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+}
+
+test("tokenDeTenant: usa el token propio del negocio cuando existe", () => {
+  const tenant = crearTenant({ id: "barberia", accessToken: "token-barberia" });
+  conEnv({ WHATSAPP_ACCESS_TOKEN: undefined, WHATSAPP_ACCESS_TOKEN_TENANT_ID: undefined }, () => {
+    assert.equal(tokenDeTenant(tenant), "token-barberia");
+    assert.equal(puedeEnviarWhatsapp(tenant), true);
+  });
+});
+
+test("tokenDeTenant: la env global solo aplica al tenant nombrado (compat. piloto)", () => {
+  const piloto = crearTenant({ id: "lavacar", accessToken: undefined });
+  conEnv(
+    { WHATSAPP_ACCESS_TOKEN: "token-global-piloto", WHATSAPP_ACCESS_TOKEN_TENANT_ID: "lavacar" },
+    () => {
+      assert.equal(tokenDeTenant(piloto), "token-global-piloto");
+      assert.equal(puedeEnviarWhatsapp(piloto), true);
+    },
+  );
+});
+
+test("tokenDeTenant: un tenant sin token propio NUNCA hereda el de otro (fail-closed)", () => {
+  const otro = crearTenant({ id: "barberia", accessToken: undefined });
+  // La env global existe, pero está nombrada para "lavacar", no para "barberia".
+  conEnv(
+    { WHATSAPP_ACCESS_TOKEN: "token-global-piloto", WHATSAPP_ACCESS_TOKEN_TENANT_ID: "lavacar" },
+    () => {
+      assert.throws(() => tokenDeTenant(otro), /Falta el access token de WhatsApp.*barberia/);
+      assert.equal(puedeEnviarWhatsapp(otro), false);
+    },
+  );
+});
+
+test("tokenDeTenant: sin WHATSAPP_ACCESS_TOKEN_TENANT_ID la env no aplica a nadie", () => {
+  const piloto = crearTenant({ id: "lavacar", accessToken: undefined });
+  conEnv(
+    { WHATSAPP_ACCESS_TOKEN: "token-global-piloto", WHATSAPP_ACCESS_TOKEN_TENANT_ID: undefined },
+    () => {
+      assert.throws(() => tokenDeTenant(piloto), /Falta el access token de WhatsApp/);
+      assert.equal(puedeEnviarWhatsapp(piloto), false);
+    },
+  );
+});
+
+// `dependeDelTokenGlobal` responde una pregunta DISTINTA de `puedeEnviarWhatsapp`: el
+// piloto cubierto por la env puede enviar (true) y a la vez NO tiene token propio
+// (true acá). Mezclar ambas en un solo booleano haría que el panel informe "conectado
+// con su token" cuando en realidad está colgado de una env compartida — el estado que
+// ALTO-05 quería hacer visible, no esconder.
+test("dependeDelTokenGlobal: distingue 'puede enviar' de 'tiene token propio'", () => {
+  const piloto = crearTenant({ id: "lavacar", accessToken: undefined });
+  const propio = crearTenant({ id: "barberia", accessToken: "token-barberia" });
+  const huerfano = crearTenant({ id: "dental", accessToken: undefined });
+  conEnv(
+    { WHATSAPP_ACCESS_TOKEN: "token-global-piloto", WHATSAPP_ACCESS_TOKEN_TENANT_ID: "lavacar" },
+    () => {
+      // El piloto envía, pero colgado de la env: hay que poder verlo.
+      assert.equal(puedeEnviarWhatsapp(piloto), true);
+      assert.equal(dependeDelTokenGlobal(piloto), true);
+      // Con token propio no depende de nada global.
+      assert.equal(puedeEnviarWhatsapp(propio), true);
+      assert.equal(dependeDelTokenGlobal(propio), false);
+      // Sin token y sin ser el nombrado: no envía, y no "depende" de nada (no puede).
+      assert.equal(puedeEnviarWhatsapp(huerfano), false);
+      assert.equal(dependeDelTokenGlobal(huerfano), false);
+    },
+  );
+});
+
+test("tokenDeTenant: el token propio del tenant le gana a la env global", () => {
+  const piloto = crearTenant({ id: "lavacar", accessToken: "token-nuevo-lavacar" });
+  conEnv(
+    { WHATSAPP_ACCESS_TOKEN: "token-viejo-global", WHATSAPP_ACCESS_TOKEN_TENANT_ID: "lavacar" },
+    () => {
+      assert.equal(tokenDeTenant(piloto), "token-nuevo-lavacar");
+    },
+  );
 });
