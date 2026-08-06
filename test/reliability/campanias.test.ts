@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { eq } from "drizzle-orm";
 import { crearDbEfimera } from "../helpers/pgliteDb";
 import { waCampanias, waCampaniaEnvios } from "../../src/db/schema";
-import { marcarEnviado, quedanPendientes, reclamarEnvio } from "../../src/campaigns/cola";
+import { marcarEnviado, purgarEnviosFinalizados, quedanPendientes, reclamarEnvio } from "../../src/campaigns/cola";
 import { elegirEsperaMs } from "../../src/campaigns/worker";
 import type { EstadoCampania } from "../../src/types";
 
@@ -101,4 +101,81 @@ test("throttle: espera el intervalo de envío tras procesar, y el poll cuando no
   const poll = 2000;
   assert.equal(elegirEsperaMs(true, intervalo, poll), intervalo, "tras un envío respeta CAMPANIA_ENVIO_INTERVALO_MS");
   assert.equal(elegirEsperaMs(false, intervalo, poll), poll, "sin envíos usa el poll normal");
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Purga por retención (ROADMAP F11): purgarEnviosFinalizados solo borra envíos
+// de campañas PADRE ya 'completada'/'cancelada' y viejas.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const diasAtras = (d: number) => new Date(Date.now() - d * 24 * 60 * 60 * 1000);
+
+test("purgarEnviosFinalizados: borra envíos de una campaña 'completada' vieja, respeta el corte de días", async () => {
+  const { db, cerrar } = await crearDbEfimera();
+  try {
+    const vieja = await crearCampania(db, "completada");
+    await db.update(waCampanias).set({ completadaEn: diasAtras(10) }).where(eq(waCampanias.id, vieja));
+    await sembrarEnvios(db, vieja, 3);
+
+    const reciente = await crearCampania(db, "completada");
+    await db.update(waCampanias).set({ completadaEn: diasAtras(1) }).where(eq(waCampanias.id, reciente));
+    await sembrarEnvios(db, reciente, 2);
+
+    const borrados = await purgarEnviosFinalizados(db, 7);
+    assert.equal(borrados, 3, "solo los envíos de la campaña completada hace 10 días cruzan el corte de 7");
+
+    assert.equal(await quedanPendientes(db, vieja), false, "sin filas propias, no hay 'pendiente' para la vieja");
+    const restantesReciente = await db.select().from(waCampaniaEnvios).where(eq(waCampaniaEnvios.campaniaId, reciente));
+    assert.equal(restantesReciente.length, 2, "los envíos de la campaña reciente no se tocan");
+  } finally {
+    await cerrar();
+  }
+});
+
+test("purgarEnviosFinalizados: NO toca envíos de una campaña 'enviando' (en curso) sin importar la antigüedad", async () => {
+  const { db, cerrar } = await crearDbEfimera();
+  try {
+    const campaniaId = await crearCampania(db, "enviando");
+    await db.update(waCampanias).set({ iniciadaEn: diasAtras(30) }).where(eq(waCampanias.id, campaniaId));
+    await sembrarEnvios(db, campaniaId, 4);
+
+    const borrados = await purgarEnviosFinalizados(db, 7);
+    assert.equal(borrados, 0, "'enviando' no es un estado final: la purga no la toca aunque sea vieja");
+
+    const restantes = await db.select().from(waCampaniaEnvios).where(eq(waCampaniaEnvios.campaniaId, campaniaId));
+    assert.equal(restantes.length, 4);
+  } finally {
+    await cerrar();
+  }
+});
+
+test("purgarEnviosFinalizados: campaña 'cancelada' usa creada_en como corte (no tiene completada_en)", async () => {
+  const { db, cerrar } = await crearDbEfimera();
+  try {
+    const campaniaId = await crearCampania(db, "cancelada");
+    await db.update(waCampanias).set({ creadaEn: diasAtras(10) }).where(eq(waCampanias.id, campaniaId));
+    await sembrarEnvios(db, campaniaId, 2);
+
+    const borrados = await purgarEnviosFinalizados(db, 7);
+    assert.equal(borrados, 2, "cancelada hace 10 días (por creada_en, sin completada_en) cruza el corte de 7");
+  } finally {
+    await cerrar();
+  }
+});
+
+test("purgarEnviosFinalizados: borra por lotes y termina (no loop infinito)", async () => {
+  const { db, cerrar } = await crearDbEfimera();
+  try {
+    const campaniaId = await crearCampania(db, "completada");
+    await db.update(waCampanias).set({ completadaEn: diasAtras(10) }).where(eq(waCampanias.id, campaniaId));
+    await sembrarEnvios(db, campaniaId, 5);
+
+    const borrados = await purgarEnviosFinalizados(db, 7, 2); // lote de 2, con 5 filas → 3 vueltas
+    assert.equal(borrados, 5);
+
+    const restantes = await db.select().from(waCampaniaEnvios).where(eq(waCampaniaEnvios.campaniaId, campaniaId));
+    assert.equal(restantes.length, 0);
+  } finally {
+    await cerrar();
+  }
 });

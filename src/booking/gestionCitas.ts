@@ -23,7 +23,7 @@ export async function sincronizarCreacionGcal(tenant: Tenant, repo: Repositorio,
   if (!calendarioConfigurado(tenant)) return;
   try {
     const eventId = await crearEventoCita(tenant, cita);
-    if (eventId) await repo.guardarGcalEventId(cita.id, eventId);
+    if (eventId) await repo.guardarGcalEventId(tenant.id, cita.id, eventId);
   } catch (e) {
     console.error(`[gcal] no se pudo crear el evento de la cita ${cita.id}:`, e);
   }

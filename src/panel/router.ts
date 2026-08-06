@@ -1224,7 +1224,7 @@ export async function manejarPanel(
   if (ruta === "push/desuscribir" && metodo === "POST") {
     const body = await leerBody(req);
     if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
-    if (body?.endpoint) await repo.borrarPushSub(String(body.endpoint));
+    if (body?.endpoint) await repo.borrarPushSub(tenant.id, String(body.endpoint));
     return json(res, 200, { ok: true }), true;
   }
 
@@ -1503,7 +1503,7 @@ export async function manejarPanel(
       }
       // Al responder un humano, la conversación queda en modo humano.
       if (conv.modo !== "humano") await repo.setModoConversacion(tenant.id, conv.id, "humano");
-      await repo.guardarMensaje(conv.id, {
+      await repo.guardarMensaje(tenant.id, conv.id, {
         rol: "assistant",
         contenido: t,
         creadoEn: new Date().toISOString(),
@@ -1534,7 +1534,7 @@ export async function manejarPanel(
         console.error("[panel] enviarPlantilla (reabrir) falló:", e);
         return json(res, 502, { ok: false, error: "No se pudo enviar la plantilla de reapertura" }), true;
       }
-      await repo.guardarMensaje(conv.id, {
+      await repo.guardarMensaje(tenant.id, conv.id, {
         rol: "assistant",
         contenido: "📩 Plantilla de reapertura enviada (conversación fuera de la ventana de 24h).",
         creadoEn: new Date().toISOString(),

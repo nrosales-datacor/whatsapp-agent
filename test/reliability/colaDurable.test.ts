@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { and, eq } from "drizzle-orm";
 import { crearDbEfimera } from "../helpers/pgliteDb";
 import { waJobs } from "../../src/db/schema";
-import { marcarFalloOReintentar, marcarHecho, reclamarUno, reencolarVencidos } from "../../src/queue/cola";
+import { marcarFalloOReintentar, marcarHecho, purgarJobsHechos, reclamarUno, reencolarVencidos } from "../../src/queue/cola";
 import { RepositorioDrizzle } from "../../src/booking/drizzleRepository";
 import type { Conversacion, PendienteSerializado } from "../../src/types";
 
@@ -151,6 +151,77 @@ test("guardarEntranteYEncolar es idempotente por wamid: un reintento de Meta NO 
 
     const jobs = await db.select().from(waJobs).where(and(eq(waJobs.tenantId, TENANT), eq(waJobs.waMessageId, "wamid.dup.1")));
     assert.equal(jobs.length, 1, "debe existir exactamente UN job para ese mensaje");
+  } finally {
+    await cerrar();
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Purga por retención (ROADMAP F11): purgarJobsHechos borra SOLO "hecho" viejos.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const diasAtras = (d: number) => new Date(Date.now() - d * 24 * 60 * 60 * 1000);
+
+test("purgarJobsHechos: borra 'hecho' más viejos que la retención, respeta el corte de días", async () => {
+  const { db, cerrar } = await crearDbEfimera();
+  try {
+    const viejo = await encolarDirecto(db, convVacia(), { estado: "hecho", finalizadoEn: diasAtras(10) });
+    const reciente = await encolarDirecto(db, convVacia(), { estado: "hecho", finalizadoEn: diasAtras(2) });
+
+    const borrados = await purgarJobsHechos(db, 7);
+    assert.equal(borrados, 1, "solo el job de hace 10 días cruza el corte de 7");
+
+    const restantes = await db.select({ id: waJobs.id }).from(waJobs);
+    assert.deepEqual(
+      restantes.map((r) => r.id).sort(),
+      [reciente].sort(),
+      "el 'hecho' reciente sigue ahí; el viejo se borró",
+    );
+    assert.equal(restantes.some((r) => r.id === viejo), false);
+  } finally {
+    await cerrar();
+  }
+});
+
+test("purgarJobsHechos: NO toca 'pendiente'/'procesando'/'error' sin importar la antigüedad", async () => {
+  const { db, cerrar } = await crearDbEfimera();
+  try {
+    const pendiente = await encolarDirecto(db, convVacia(), { estado: "pendiente", creadoEn: diasAtras(30) });
+    const procesando = await encolarDirecto(db, convVacia(), {
+      estado: "procesando",
+      lockedAt: diasAtras(30),
+      creadoEn: diasAtras(30),
+    });
+    const enError = await encolarDirecto(db, convVacia(), {
+      estado: "error",
+      finalizadoEn: diasAtras(30),
+      ultimoError: "boom",
+    });
+
+    const borrados = await purgarJobsHechos(db, 7);
+    assert.equal(borrados, 0, "ninguno de los tres estados es 'hecho': la purga no toca nada");
+
+    const restantes = await db.select({ id: waJobs.id }).from(waJobs);
+    assert.equal(restantes.length, 3);
+    assert.deepEqual(restantes.map((r) => r.id).sort(), [pendiente, procesando, enError].sort());
+  } finally {
+    await cerrar();
+  }
+});
+
+test("purgarJobsHechos: borra por lotes y termina (no loop infinito) aunque haya más filas que el tamaño de lote", async () => {
+  const { db, cerrar } = await crearDbEfimera();
+  try {
+    const ids = await Promise.all(
+      Array.from({ length: 5 }, () => encolarDirecto(db, convVacia(), { estado: "hecho", finalizadoEn: diasAtras(10) })),
+    );
+
+    const borrados = await purgarJobsHechos(db, 7, 2); // tamaño de lote 2, con 5 filas → 3 vueltas
+    assert.equal(borrados, 5, "borra las 5 filas aunque el lote sea más chico");
+
+    const restantes = await db.select({ id: waJobs.id }).from(waJobs);
+    assert.equal(restantes.length, 0);
+    assert.equal(ids.length, 5); // sanity: se sembraron las 5 esperadas
   } finally {
     await cerrar();
   }
