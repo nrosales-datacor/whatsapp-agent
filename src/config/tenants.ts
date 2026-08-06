@@ -116,6 +116,9 @@ const selyon: Tenant = {
   },
 
   bloqueos: [],
+  // Selyon atiende como un solo recurso (una agenda de reuniones): sin equipo cargado,
+  // la disponibilidad se comporta igual que antes de ALTO-07.
+  empleados: [],
 
   // Grandfathering (C4.3): nace en "pro" para no gatear features durante las pruebas.
   plan: "pro",

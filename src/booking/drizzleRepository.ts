@@ -52,6 +52,7 @@ function filaACita(r: typeof waCitas.$inferSelect): Cita {
     clienteWa: r.clienteWa,
     clienteNombre: r.clienteNombre,
     servicioId: r.servicioId,
+    empleadoId: r.empleadoId ?? undefined,
     fecha: r.fecha,
     hora: r.hora,
     placa: r.placa ?? undefined,
@@ -230,6 +231,7 @@ export class RepositorioDrizzle implements Repositorio {
         clienteWa: cita.clienteWa,
         clienteNombre: cita.clienteNombre,
         servicioId: cita.servicioId,
+        empleadoId: cita.empleadoId,
         fecha: cita.fecha,
         hora: cita.hora,
         placa: cita.placa,
@@ -266,6 +268,24 @@ export class RepositorioDrizzle implements Repositorio {
     const [r] = await this.db
       .update(waCitas)
       .set({ fecha, hora, recordatorioDiaAntesEn: null, recordatorioMismoDiaEn: null })
+      .where(and(eq(waCitas.id, citaId), eq(waCitas.tenantId, tenantId)))
+      .returning();
+    return r ? filaACita(r) : null;
+  }
+
+  async obtenerCitaPorId(tenantId: string, citaId: string): Promise<Cita | null> {
+    const [r] = await this.db
+      .select()
+      .from(waCitas)
+      .where(and(eq(waCitas.id, citaId), eq(waCitas.tenantId, tenantId)))
+      .limit(1);
+    return r ? filaACita(r) : null;
+  }
+
+  async reasignarCita(tenantId: string, citaId: string, empleadoId: string | null): Promise<Cita | null> {
+    const [r] = await this.db
+      .update(waCitas)
+      .set({ empleadoId })
       .where(and(eq(waCitas.id, citaId), eq(waCitas.tenantId, tenantId)))
       .returning();
     return r ? filaACita(r) : null;

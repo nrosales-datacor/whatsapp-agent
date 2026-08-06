@@ -131,6 +131,7 @@ export function crearTenantEval(opciones: OpcionesEval = {}): Tenant {
     },
 
     bloqueos: [],
+    empleados: [],
     // Pro: habilita las reglas de upsell y rescate en el prompt/tools (Fase 1).
     plan: "pro",
   };

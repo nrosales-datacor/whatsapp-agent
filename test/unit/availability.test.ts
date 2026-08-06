@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ahoraEnTz, espaciosDisponibles } from "../../src/booking/availability";
+import { ahoraEnTz, espaciosDisponibles, espaciosPorEmpleado } from "../../src/booking/availability";
 import { crearCita, crearTenant } from "../helpers/fixtures";
 
 // Reloj fijo para los casos que no prueban el piso temporal: 19/07/2026 a las 06:00 en
@@ -128,6 +128,129 @@ test("espaciosDisponibles: el margen de reserva es configurable por .env", () =>
     if (previo === undefined) delete process.env.AGENDA_MARGEN_MINIMO_MIN;
     else process.env.AGENDA_MARGEN_MINIMO_MIN = previo;
   }
+});
+
+// ── Capacidad simultánea por empleado (ALTO-07) ──────────────────────────────
+// Antes, cualquier solape bloqueaba el horario: un negocio con 2 personas atendiendo
+// perdía la mitad de su capacidad. Ahora un horario sigue vivo mientras quede alguien
+// libre, pero NUNCA se le puede duplicar el horario a una misma persona.
+
+const EQUIPO = [
+  { id: "ana", nombre: "Ana", activo: true },
+  { id: "marco", nombre: "Marco", activo: true },
+];
+
+test("espaciosPorEmpleado: sin equipo cargado se comporta como un solo recurso (legacy)", () => {
+  const tenant = crearTenant();
+  const citas = [crearCita({ fecha: "2026-07-20", hora: "09:00" })];
+  const espacios = espaciosPorEmpleado(tenant, "2026-07-20", "lavado-basico", citas, RELOJ);
+  assert.ok(!espacios.some((e) => e.hora === "09:00"));
+  // Sin equipo, `empleados` viene vacío: no hay a quién asignar.
+  assert.deepEqual(espacios.find((e) => e.hora === "09:30")?.empleados, []);
+});
+
+test("dos citas a la misma hora con personas distintas: el horario sigue disponible", () => {
+  const tenant = crearTenant({ empleados: EQUIPO });
+  const citas = [crearCita({ id: "c1", fecha: "2026-07-20", hora: "09:00", empleadoId: "ana" })];
+  const espacios = espaciosPorEmpleado(tenant, "2026-07-20", "lavado-basico", citas, RELOJ);
+  const nueve = espacios.find((e) => e.hora === "09:00");
+  // Ana está tomada, Marco no → el horario se sigue ofreciendo, pero solo con Marco.
+  assert.deepEqual(nueve?.empleados, ["marco"]);
+});
+
+test("una misma persona NO puede tener dos citas a la misma hora", () => {
+  const tenant = crearTenant({ empleados: EQUIPO });
+  const citas = [crearCita({ id: "c1", fecha: "2026-07-20", hora: "09:00", empleadoId: "ana" })];
+  const libresAna = espaciosDisponibles(tenant, "2026-07-20", "lavado-basico", citas, RELOJ, "ana");
+  const libresMarco = espaciosDisponibles(tenant, "2026-07-20", "lavado-basico", citas, RELOJ, "marco");
+  assert.ok(!libresAna.includes("09:00"), "Ana ya tiene cita a las 09:00");
+  assert.ok(libresMarco.includes("09:00"), "Marco sigue libre a las 09:00");
+});
+
+test("el horario desaparece recién cuando TODO el equipo está ocupado", () => {
+  const tenant = crearTenant({ empleados: EQUIPO });
+  const citas = [
+    crearCita({ id: "c1", fecha: "2026-07-20", hora: "09:00", empleadoId: "ana" }),
+    crearCita({ id: "c2", fecha: "2026-07-20", hora: "09:00", empleadoId: "marco" }),
+  ];
+  const libres = espaciosDisponibles(tenant, "2026-07-20", "lavado-basico", citas, RELOJ);
+  assert.ok(!libres.includes("09:00"));
+  assert.ok(libres.includes("09:30"));
+});
+
+test("un solape parcial bloquea a esa persona en todos los espacios que cruza", () => {
+  const tenant = crearTenant({ empleados: EQUIPO });
+  // Pulido de 90 min de Ana a las 09:00 → ocupa 09:00-10:30.
+  const citas = [crearCita({ id: "c1", fecha: "2026-07-20", hora: "09:00", servicioId: "pulido", empleadoId: "ana" })];
+  const libresAna = espaciosDisponibles(tenant, "2026-07-20", "lavado-basico", citas, RELOJ, "ana");
+  for (const h of ["09:00", "09:30", "10:00"]) assert.ok(!libresAna.includes(h), `Ana ocupada ${h}`);
+  assert.ok(libresAna.includes("10:30"));
+  // Marco no se ve afectado en ninguno.
+  const libresMarco = espaciosDisponibles(tenant, "2026-07-20", "lavado-basico", citas, RELOJ, "marco");
+  for (const h of ["09:00", "09:30", "10:00"]) assert.ok(libresMarco.includes(h), `Marco libre ${h}`);
+});
+
+test("solo se ofrece a quien sabe hacer ese servicio", () => {
+  const tenant = crearTenant({
+    empleados: [
+      { id: "ana", nombre: "Ana", activo: true, serviciosIds: ["lavado-basico"] },
+      { id: "marco", nombre: "Marco", activo: true }, // sin restricción = hace de todo
+    ],
+  });
+  const pulido = espaciosPorEmpleado(tenant, "2026-07-20", "pulido", [], RELOJ);
+  assert.deepEqual(pulido[0]?.empleados, ["marco"], "Ana no hace pulido");
+  const lavado = espaciosPorEmpleado(tenant, "2026-07-20", "lavado-basico", [], RELOJ);
+  assert.deepEqual(lavado[0]?.empleados, ["ana", "marco"]);
+});
+
+test("un empleado inactivo no recibe citas nuevas", () => {
+  const tenant = crearTenant({
+    empleados: [
+      { id: "ana", nombre: "Ana", activo: true },
+      { id: "marco", nombre: "Marco", activo: false },
+    ],
+  });
+  const espacios = espaciosPorEmpleado(tenant, "2026-07-20", "lavado-basico", [], RELOJ);
+  assert.deepEqual(espacios[0]?.empleados, ["ana"]);
+});
+
+test("los días libres de una persona no cierran la agenda del resto", () => {
+  const tenant = crearTenant({
+    empleados: [
+      { id: "ana", nombre: "Ana", activo: true, bloqueos: [{ desde: "2026-07-20", hasta: "2026-07-24" }] },
+      { id: "marco", nombre: "Marco", activo: true },
+    ],
+  });
+  const espacios = espaciosPorEmpleado(tenant, "2026-07-20", "lavado-basico", [], RELOJ);
+  assert.deepEqual(espacios[0]?.empleados, ["marco"], "Ana está de vacaciones");
+  assert.ok(espacios.length > 0, "el negocio sigue abierto con Marco");
+});
+
+test("si nadie del equipo puede atender ese servicio, no hay disponibilidad", () => {
+  const tenant = crearTenant({
+    empleados: [{ id: "ana", nombre: "Ana", activo: true, serviciosIds: ["lavado-basico"] }],
+  });
+  assert.deepEqual(espaciosDisponibles(tenant, "2026-07-20", "pulido", [], RELOJ), []);
+});
+
+test("una cita sin asignar consume un cupo del equipo", () => {
+  const tenant = crearTenant({ empleados: EQUIPO });
+  // Walk-in anotado a mano sin elegir persona: ocupa a alguien, no sabemos a quién.
+  const citas = [crearCita({ id: "c1", fecha: "2026-07-20", hora: "09:00", empleadoId: undefined })];
+  const espacios = espaciosPorEmpleado(tenant, "2026-07-20", "lavado-basico", citas, RELOJ);
+  // Quedan 2 elegibles - 1 sin asignar = 1 cupo: el horario sigue vivo.
+  assert.ok(espacios.some((e) => e.hora === "09:00"));
+  // Con dos sin asignar se agota la capacidad, aunque nadie figure "tomado".
+  const dos = [...citas, crearCita({ id: "c2", fecha: "2026-07-20", hora: "09:00", empleadoId: undefined })];
+  const espacios2 = espaciosPorEmpleado(tenant, "2026-07-20", "lavado-basico", dos, RELOJ);
+  assert.ok(!espacios2.some((e) => e.hora === "09:00"));
+});
+
+test("el piso temporal y el cierre se siguen respetando con equipo cargado", () => {
+  const tenant = crearTenant({ empleados: EQUIPO });
+  const libres = espaciosDisponibles(tenant, "2026-07-20", "lavado-basico", [], LUNES_0924);
+  assert.equal(libres[0], "10:00"); // 09:24 + 30 min de margen
+  assert.equal(libres.at(-1), "16:30");
 });
 
 test("ahoraEnTz: fecha y hora salen en la zona del negocio, no del servidor", () => {

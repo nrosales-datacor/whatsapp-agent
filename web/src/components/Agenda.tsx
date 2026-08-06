@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  asignarCitaPanel,
   cancelarCitaPanel,
   completarCitaPanel,
   confirmarCitaPanel,
@@ -10,6 +11,7 @@ import {
   marcarNoShowPanel,
   reprogramarCitaPanel,
   type CitaAgenda,
+  type Empleado,
   type Service,
 } from "../api";
 import { colones, fmtNum } from "../lib/formato";
@@ -103,11 +105,31 @@ function estadoVisual(cita: CitaAgenda): { tipo: EstadoVisual; etiqueta: string 
   return { tipo: "pendiente", etiqueta: "Pendiente" };
 }
 
-interface Props {
-  servicios: Service[];
+/**
+ * Carriles de la vista día (ALTO-07): una columna por persona que atiende, más una
+ * "Sin asignar" si hay citas sueltas ese día. Sin equipo cargado devuelve UN carril
+ * anónimo, y así el timeline queda pixel por pixel como era antes.
+ *
+ * Hace falta de verdad: los bloques se posicionan en absoluto solo por `top`/`height`,
+ * así que dos citas a la misma hora se dibujaban una ENCIMA de la otra.
+ */
+function carrilesDelDia(empleados: Empleado[], citasDia: CitaAgenda[]): { id: string; nombre: string }[] {
+  if (empleados.length === 0) return [{ id: "", nombre: "" }];
+  const activos = empleados.filter((e) => e.activo);
+  // Alguien inactivo con citas ese día igual necesita su carril, o sus citas
+  // desaparecerían de la vista.
+  const conCitas = empleados.filter((e) => !e.activo && citasDia.some((c) => c.empleadoId === e.id));
+  const carriles = [...activos, ...conCitas].map((e) => ({ id: e.id, nombre: e.nombre }));
+  if (citasDia.some((c) => !c.empleadoId)) carriles.push({ id: "", nombre: "Sin asignar" });
+  return carriles.length > 0 ? carriles : [{ id: "", nombre: "" }];
 }
 
-export default function Agenda({ servicios }: Props) {
+interface Props {
+  servicios: Service[];
+  empleados: Empleado[];
+}
+
+export default function Agenda({ servicios, empleados }: Props) {
   const qc = useQueryClient();
   const { flash } = useToast();
   const [vista, setVista] = useState<Vista>("dia");
@@ -165,7 +187,18 @@ export default function Agenda({ servicios }: Props) {
     },
     onError: errorGenerico,
   });
-  const pendiente = confirmar.isPending || completar.isPending || cancelar.isPending || noShow.isPending;
+  // Reasignar a otra persona (ALTO-07). El backend devuelve 409 si esa persona ya tiene
+  // una cita encimada; `errorGenerico` muestra ese mensaje tal cual.
+  const asignar = useMutation({
+    mutationFn: ({ id, empleadoId }: { id: string; empleadoId: string }) => asignarCitaPanel(id, empleadoId),
+    onSuccess: () => {
+      invalidar();
+      flash("Cita reasignada");
+    },
+    onError: errorGenerico,
+  });
+  const pendiente =
+    confirmar.isPending || completar.isPending || cancelar.isPending || noShow.isPending || asignar.isPending;
 
   function mover(saltos: number) {
     setFechaBase((f) => sumarDias(f, vista === "dia" ? saltos : saltos * 7));
@@ -190,6 +223,9 @@ export default function Agenda({ servicios }: Props) {
     horaFin = Math.max(horaFin, Math.ceil(hd + durH));
   }
   const filasHora = Array.from({ length: horaFin - horaInicio }, (_, i) => horaInicio + i);
+
+  const carriles = carrilesDelDia(empleados, citasDia);
+  const anchoCarril = 100 / carriles.length;
 
   const citasActivas = citasDia.filter((c) => c.estado !== "cancelada");
   const ingresoEstimado = citasDia
@@ -269,6 +305,16 @@ export default function Agenda({ servicios }: Props) {
                 {hora12(citasDia[0].hora)} –{" "}
                 {hora12(sumarMinutos(citasDia[citasDia.length - 1].hora, duracionCita(citasDia[citasDia.length - 1], servicios)))}
               </h3>
+              {/* Encabezado de carriles: solo si el negocio tiene equipo (ALTO-07). */}
+              {carriles.length > 1 && (
+                <div className="agenda-carriles-head">
+                  {carriles.map((c) => (
+                    <span key={c.id || "sin"} className="agenda-carril-nombre" style={{ width: `${anchoCarril}%` }}>
+                      {c.nombre}
+                    </span>
+                  ))}
+                </div>
+              )}
               <div className="agenda-timeline" style={{ height: (horaFin - horaInicio) * PX_HORA }}>
                 <div className="agenda-timeline-filas">
                   {filasHora.map((h) => (
@@ -283,15 +329,29 @@ export default function Agenda({ servicios }: Props) {
                     const top = (horaDecimal(c.hora) - horaInicio) * PX_HORA;
                     const height = Math.max((dur / 60) * PX_HORA, 30);
                     const ev = estadoVisual(c);
+                    // Carril de esta cita. Con UN solo carril no se tocan left/width: el
+                    // bloque queda con el `left:6px; right:6px` del CSS, o sea idéntico a
+                    // como se veía antes de los carriles. Con varios se pasa a left+width
+                    // (y `right:auto` vía clase, o quedaría sobre-restringido).
+                    const idx = Math.max(
+                      0,
+                      carriles.findIndex((k) => k.id === (c.empleadoId ?? "")),
+                    );
+                    const pos =
+                      carriles.length > 1
+                        ? { left: `calc(${idx * anchoCarril}% + 6px)`, width: `calc(${anchoCarril}% - 12px)` }
+                        : {};
                     return (
                       <button
                         type="button"
                         key={c.id}
                         id={`cita-${c.id}`}
                         className={
-                          `agenda-bloque agenda-bloque-${ev.tipo}` + (resaltada === c.id ? " agenda-bloque-resaltado" : "")
+                          `agenda-bloque agenda-bloque-${ev.tipo}` +
+                          (carriles.length > 1 ? " agenda-bloque-carril" : "") +
+                          (resaltada === c.id ? " agenda-bloque-resaltado" : "")
                         }
-                        style={{ top, height }}
+                        style={{ top, height, ...pos }}
                         onClick={() => setDetalle(c)}
                       >
                         <span className="agenda-bloque-top">
@@ -405,7 +465,12 @@ export default function Agenda({ servicios }: Props) {
         <ModalDetalleCita
           cita={detalle}
           servicios={servicios}
+          empleados={empleados}
           pendiente={pendiente}
+          onAsignar={(empleadoId) => {
+            asignar.mutate({ id: detalle.id, empleadoId });
+            setDetalle(null);
+          }}
           onCerrar={() => setDetalle(null)}
           onConfirmar={() => {
             confirmar.mutate(detalle.id);
@@ -433,6 +498,7 @@ export default function Agenda({ servicios }: Props) {
       {modal && (
         <ModalCita
           servicios={servicios}
+          empleados={empleados}
           cita={modal.cita}
           onCerrar={() => setModal(null)}
           onGuardado={(msg) => {
@@ -451,6 +517,7 @@ export default function Agenda({ servicios }: Props) {
 interface DetalleProps {
   cita: CitaAgenda;
   servicios: Service[];
+  empleados: Empleado[];
   pendiente: boolean;
   onCerrar: () => void;
   onConfirmar: () => void;
@@ -458,11 +525,13 @@ interface DetalleProps {
   onCancelar: () => void;
   onNoShow: () => void;
   onReprogramar: () => void;
+  onAsignar: (empleadoId: string) => void;
 }
 
 function ModalDetalleCita({
   cita,
   servicios,
+  empleados,
   pendiente,
   onCerrar,
   onConfirmar,
@@ -470,6 +539,7 @@ function ModalDetalleCita({
   onCancelar,
   onNoShow,
   onReprogramar,
+  onAsignar,
 }: DetalleProps) {
   const activa = cita.estado === "agendada";
   const ev = estadoVisual(cita);
@@ -505,6 +575,36 @@ function ModalDetalleCita({
             <span>Servicio</span>
             <b>{cita.servicioNombre}</b>
           </div>
+          {/* Quién atiende (ALTO-07). Editable mientras la cita esté activa: reasignar es
+              la salida cuando alguien falta o hay que balancear la carga del día. */}
+          {empleados.length > 0 && (
+            <div className="dato">
+              <span>Quién atiende</span>
+              {activa ? (
+                <select
+                  aria-label="Quién atiende"
+                  className="dato-select"
+                  value={cita.empleadoId ?? ""}
+                  disabled={pendiente}
+                  onChange={(e) => onAsignar(e.target.value)}
+                >
+                  <option value="">Sin asignar</option>
+                  {empleados
+                    // Un inactivo solo aparece si ES el asignado actual: se puede sacar de
+                    // ahí, pero no se le puede asignar trabajo nuevo.
+                    .filter((e) => e.activo || e.id === cita.empleadoId)
+                    .map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.nombre}
+                        {e.activo ? "" : " (inactivo)"}
+                      </option>
+                    ))}
+                </select>
+              ) : (
+                <b>{empleados.find((e) => e.id === cita.empleadoId)?.nombre ?? "Sin asignar"}</b>
+              )}
+            </div>
+          )}
           {cita.placa && (
             <div className="dato">
               <span>Referencia</span>
@@ -555,12 +655,13 @@ function ModalDetalleCita({
 
 interface ModalProps {
   servicios: Service[];
+  empleados: Empleado[];
   cita?: CitaAgenda;
   onCerrar: () => void;
   onGuardado: (mensaje: string) => void;
 }
 
-function ModalCita({ servicios, cita, onCerrar, onGuardado }: ModalProps) {
+function ModalCita({ servicios, empleados, cita, onCerrar, onGuardado }: ModalProps) {
   const { flash } = useToast();
   const modoReprogramar = !!cita;
 
@@ -571,6 +672,9 @@ function ModalCita({ servicios, cita, onCerrar, onGuardado }: ModalProps) {
   const [hora, setHora] = useState(cita?.hora ?? "");
   const [placa, setPlaca] = useState(cita?.placa ?? "");
   const [precio, setPrecio] = useState(cita?.precio != null ? String(cita.precio) : "");
+  // "" = sin asignar. Al reprogramar no se toca: mover una cita no es cambiar de
+  // profesional (para eso está "Reasignar" en el detalle).
+  const [empleadoId, setEmpleadoId] = useState("");
 
   // Al elegir un servicio nuevo (solo en alta), precargar su precio si es fijo.
   useEffect(() => {
@@ -589,6 +693,7 @@ function ModalCita({ servicios, cita, onCerrar, onGuardado }: ModalProps) {
   // la devuelve como "ocupada" y el operador ve su propia cita como un choque.
   // Si sigue en la misma fecha, tampoco vendrá en "libres" (el backend no sabe
   // que se está liberando) — se agrega a mano para que quede seleccionable.
+  const empleadosActivos = empleados.filter((e) => e.activo);
   const horasOcupadas = (disp.data?.ocupadas ?? []).filter((o) => o.citaId !== cita?.id);
   const horaPropiaDisponible = modoReprogramar && cita && cita.fecha === fecha ? [cita.hora] : [];
   const horas = Array.from(
@@ -607,6 +712,7 @@ function ModalCita({ servicios, cita, onCerrar, onGuardado }: ModalProps) {
           servicioId,
           fecha,
           hora,
+          empleadoId: empleadoId || undefined,
           placa: placa.trim() || undefined,
           precio: precio ? Number(precio) : undefined,
         });
@@ -703,6 +809,29 @@ function ModalCita({ servicios, cita, onCerrar, onGuardado }: ModalProps) {
             <p className="agenda-advertencia">
               ⚠️ Ese horario ya tiene una cita con {ocupadaElegida.clienteNombre}. Se puede guardar igual.
             </p>
+          )}
+
+          {/* Quién atiende (ALTO-07). Solo con equipo cargado; en el alta, no al
+              reprogramar (mover una cita no es cambiarle el profesional). */}
+          {!modoReprogramar && empleadosActivos.length > 0 && (
+            <>
+              <label htmlFor="aEmpleado">Quién atiende</label>
+              <select id="aEmpleado" value={empleadoId} onChange={(e) => setEmpleadoId(e.target.value)}>
+                <option value="">Sin asignar</option>
+                {empleadosActivos.map((e) => {
+                  // A diferencia del choque de horario del negocio (que se permite para
+                  // walk-ins), a una persona ocupada no se le puede encimar una cita: el
+                  // backend devuelve 409, así que la opción va deshabilitada.
+                  const ocupado = hora ? !!horasOcupadas.find((o) => o.hora === hora && o.empleadoId === e.id) : false;
+                  return (
+                    <option key={e.id} value={e.id} disabled={ocupado}>
+                      {e.nombre}
+                      {ocupado ? " — ocupado a esa hora" : ""}
+                    </option>
+                  );
+                })}
+              </select>
+            </>
           )}
 
           {!modoReprogramar && (

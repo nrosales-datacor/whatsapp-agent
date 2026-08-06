@@ -41,8 +41,29 @@ export const TOOLS: ChatCompletionTool[] = [
             enum: ["mañana", "tarde", "todos"],
             description: "Filtra los horarios: 'mañana' (antes de mediodía), 'tarde' (mediodía en adelante) o 'todos'. Por defecto 'todos'.",
           },
+          empleadoId: {
+            type: "string",
+            description:
+              "id de la persona con la que el cliente quiere atenderse. Omitir si le da igual o si el negocio no tiene equipo: en ese caso se muestran los horarios de todo el equipo.",
+          },
         },
         required: ["fecha", "servicioId"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "ofrecer_empleados",
+      description:
+        "Muestra al cliente, como LISTA TOCABLE de WhatsApp, quiénes pueden atenderlo para un servicio (más la opción 'Cualquiera'). Usala SOLO si el negocio tiene equipo y el cliente todavía no dijo con quién quiere atenderse. Si el cliente ya nombró a alguien, o dijo que le da igual, NO la llames: pasá directo a ofrecer_horarios. Devuelve ok:false si el negocio no tiene equipo cargado.",
+      parameters: {
+        type: "object",
+        properties: {
+          servicioId: { type: "string", description: "id del servicio agendable elegido." },
+        },
+        required: ["servicioId"],
         additionalProperties: false,
       },
     },
@@ -60,6 +81,11 @@ export const TOOLS: ChatCompletionTool[] = [
           servicioId: { type: "string", description: "id del servicio agendable elegido." },
           fecha: { type: "string", description: "Fecha en formato YYYY-MM-DD." },
           hora: { type: "string", description: "Hora en formato HH:mm (24h)." },
+          empleadoId: {
+            type: "string",
+            description:
+              "id de la persona que atiende, si el cliente eligió una. Omitir si le da igual: el sistema le asigna solo a alguien que esté libre.",
+          },
           placa: { type: "string", description: "Dato identificador opcional del cliente (ej: placa del vehículo). Omitir si no aplica." },
           precio: {
             type: "number",

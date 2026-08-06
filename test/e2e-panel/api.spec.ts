@@ -215,6 +215,52 @@ test.describe("Agenda: ciclo CRUD por la API", () => {
     expect((await comp.json()).ok).toBe(true);
   });
 
+  // Equipo que atiende (ALTO-07). El tenant de este harness corre SIN base y sin equipo
+  // cargado, así que acá solo se verifica el CABLEADO HTTP de lo nuevo (rutas, validación,
+  // forma de la respuesta) y que el modo "un solo recurso" siga intacto. La regla de
+  // capacidad en sí se prueba donde corresponde: test/unit/availability.test.ts (motor),
+  // test/unit/agenteEquipo.test.ts (guards del agente) y test/reliability/empleados.test.ts
+  // (el índice único, contra Postgres real).
+  test("sin equipo cargado, la disponibilidad no asigna a nadie", async ({ request }) => {
+    const servicioId = await primerServicioAgendable(request);
+    const res = await request.get(`/api/panel/citas/disponibilidad?fecha=${fechaFutura(34)}&servicioId=${servicioId}`, {
+      headers: { cookie: cookie("dueno") },
+    });
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.libres.length).toBeGreaterThan(0);
+    // `espacios` es el detalle nuevo: misma cantidad que `libres`, sin nadie a quien asignar.
+    expect(body.espacios).toHaveLength(body.libres.length);
+    expect(body.espacios[0].empleados).toEqual([]);
+  });
+
+  test("POST /citas rechaza un empleadoId que no existe en el negocio", async ({ request }) => {
+    const servicioId = await primerServicioAgendable(request);
+    const res = await request.post("/api/panel/citas", {
+      headers: { cookie: cookie("dueno"), origin: E2E.baseURL },
+      data: {
+        clienteNombre: "Cliente E2E",
+        clienteWa: "50600000000",
+        servicioId,
+        fecha: fechaFutura(35),
+        hora: "10:00",
+        empleadoId: "no-existe",
+      },
+    });
+    expect(res.status()).toBe(400);
+    expect((await res.json()).error).toMatch(/no existe/i);
+  });
+
+  test("POST /citas/{id}/asignar está cableado y valida la persona", async ({ request }) => {
+    const id = await crearCita(request, fechaFutura(36), "10:00");
+    const malo = await accionCita(request, id, "asignar", { empleadoId: "no-existe" });
+    expect(malo.status()).toBe(400);
+    // Vacío = dejar sin asignar; siempre permitido, y prueba que la ruta responde 200.
+    const vacio = await accionCita(request, id, "asignar", { empleadoId: "" });
+    expect(vacio.status()).toBe(200);
+    expect((await vacio.json()).cita.empleadoId).toBeUndefined();
+  });
+
   test("crear → no-show y crear → cancelar", async ({ request }) => {
     const idNoShow = await crearCita(request, fechaFutura(32), "09:00");
     const ns = await accionCita(request, idNoShow, "no-show");

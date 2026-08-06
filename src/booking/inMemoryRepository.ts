@@ -206,6 +206,18 @@ export class RepositorioEnMemoria implements Repositorio {
     return { ...c };
   }
 
+  async obtenerCitaPorId(tenantId: string, citaId: string): Promise<Cita | null> {
+    const c = this.citas.find((x) => x.id === citaId && x.tenantId === tenantId);
+    return c ? { ...c } : null;
+  }
+
+  async reasignarCita(tenantId: string, citaId: string, empleadoId: string | null): Promise<Cita | null> {
+    const c = this.citas.find((x) => x.id === citaId && x.tenantId === tenantId);
+    if (!c) return null;
+    c.empleadoId = empleadoId ?? undefined;
+    return { ...c };
+  }
+
   async cancelarCita(tenantId: string, citaId: string): Promise<Cita | null> {
     const c = this.citas.find((x) => x.id === citaId && x.tenantId === tenantId);
     if (!c) return null;

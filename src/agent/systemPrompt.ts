@@ -93,19 +93,38 @@ Interpretá "hoy", "mañana", "el lunes", "el 18", "18 de junio", etc. SIEMPRE e
     : `\n\n# FECHA Y HORA ACTUAL
 Ahora mismo es: ${ahoraTexto} (zona ${tenant.timezone}). Hoy es ${hoyISO}. Usá esta fecha para interpretar "hoy", "mañana", etc.`;
 
+  // Equipo que atiende (ALTO-07). Solo entra al prompt si el negocio cargó gente: un
+  // negocio de una sola persona no paga ni un token por esta rama.
+  const equipoActivo = (tenant.empleados ?? []).filter((e) => e.activo);
+  const hayEquipo = hayAgenda && equipoActivo.length > 0;
+  const reglaEquipo = hayEquipo
+    ? `
+- CON QUIÉN SE ATIENDE: en este negocio atiende más de una persona (ver "Quiénes atienden"). Si el cliente NO dijo con quién quiere, llamá \`ofrecer_empleados\` para mostrarle la lista tocable (incluye "Cualquiera"). Si ya nombró a alguien, o dijo que le da igual, NO la llames: pasá directo a \`ofrecer_horarios\`. Cuando el cliente elija persona, pasá su \`empleadoId\` tanto a \`ofrecer_horarios\` como a \`agendar_cita\`; si le da igual, omitilo y el sistema le asigna a alguien libre. Usá SIEMPRE el id de la lista de abajo, nunca el nombre escrito por el cliente. Si la persona que pidió no tiene libre ese horario, la herramienta te devuelve sus otros horarios y quiénes sí están libres a esa hora: ofrecele ambas salidas y dejalo elegir.`
+    : "";
+  const bloqueEquipo = hayEquipo
+    ? `\n\n## Quiénes atienden\n${equipoActivo
+        .map((e) => {
+          const suyos = e.serviciosIds?.length
+            ? e.serviciosIds.map((sid) => tenant.servicios.find((s) => s.id === sid)?.nombre ?? sid).join(", ")
+            : "todos los servicios";
+          return `- ${e.nombre} (id: ${e.id}) — ${suyos}`;
+        })
+        .join("\n")}`
+    : "";
+
   const reglasAgenda = hayAgenda
     ? `
 - AGENDAR: para agendar necesitás como mínimo: nombre del cliente, CUÁL servicio quiere (de la lista "Servicios que se agendan"), fecha y hora. ANTES de agendar, repetile al cliente para que confirme: el servicio, el precio (si aplica), la fecha y la hora. Al llamar la herramienta de agendar, incluí el campo "precio" con el monto que cotizaste si el servicio tiene precio.
 - SEGUIMIENTO DE COTIZACIONES: cada vez que le des un PRECIO a un servicio agendable (cotización con intención de venta) y el cliente NO agende en ese momento, llamá \`registrar_cotizacion\` con el servicio y el monto. Es silencioso (no lo menciones): habilita un recordatorio si no vuelve a escribir. No la llames para servicios que no se agendan ni si el cliente ya agendó.
 - UPSELL AL AGENDAR: si el resultado de \`agendar_cita\` trae \`addonSugerido\` (con un nombre y, si tiene, un precioPromo), ofreceselo al cliente UNA sola vez, casual, en el MISMO mensaje donde confirmás la cita. Si acepta, llamá \`agregar_addon_a_cita\` con el citaId y el addonId. Si declina o no muestra interés, llamá \`rechazar_addon\` con esos mismos ids para no volver a insistir pronto. Si no viene \`addonSugerido\`, no ofrezcas nada.
 - DISPONIBILIDAD: para OFRECERLE horarios al cliente usá \`ofrecer_horarios\` (le muestra los horarios como una LISTA TOCABLE de WhatsApp). Redactá una frase corta invitándolo a elegir y NO repitas los horarios en texto. Si hay muchos, preguntale primero si prefiere mañana o tarde y volvé a llamarla con esa franja. Usá \`consultar_disponibilidad\` (texto, no tocable) solo para VERIFICAR internamente una hora puntual que el cliente ya pidió. NUNCA inventes horarios ni digas que no hay campo sin confirmarlo con una de estas herramientas.
-- Solo podés agendar en los horarios EXACTOS que devuelve la herramienta. Si el cliente pide una hora intermedia, ofrecele la más cercana disponible.
+- Solo podés agendar en los horarios EXACTOS que devuelve la herramienta. Si el cliente pide una hora intermedia, ofrecele la más cercana disponible.${reglaEquipo}
 - GESTIÓN DE CITAS EXISTENTES: el cliente puede consultar, mover o cancelar su cita por acá; se identifica por su número de WhatsApp (no le pidas datos que ya tenés). Usá \`consultar_mi_cita\` para ver sus citas activas, \`reprogramar_cita\` para mover y \`cancelar_cita\` para cancelar, SIEMPRE después de confirmar con el cliente. Si tiene varias citas activas, preguntale a cuál se refiere y pasá el citaId de \`consultar_mi_cita\`. Si no tiene ninguna, decíselo con amabilidad${hayAgenda ? " y ofrecé agendar una" : ""}.`
     : "";
 
   const bloqueInstrucciones = instrucciones ? `\n\n# INSTRUCCIONES DEL NEGOCIO\n${instrucciones}` : "";
   const serviciosAgendaBloque = hayAgenda
-    ? `\n\n## Servicios que se agendan (usar las herramientas para reservar)\n${serviciosAgenda}`
+    ? `\n\n## Servicios que se agendan (usar las herramientas para reservar)\n${serviciosAgenda}${bloqueEquipo}`
     : "";
   const formasPagoLinea = formasPago ? `\nFormas de pago: ${formasPago}.` : "";
 

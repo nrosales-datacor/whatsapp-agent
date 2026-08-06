@@ -1,6 +1,7 @@
 import { pgTable, text, timestamp, integer, boolean, jsonb, index, uniqueIndex, numeric } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import type { AddonCita, Bloqueo, HorarioDia, KnowledgeBase, PendienteSerializado, RechazoAddon, SegmentoFiltro, Service } from "../types";
+import type { AddonCita, Bloqueo, Empleado, HorarioDia, KnowledgeBase, PendienteSerializado, RechazoAddon, SegmentoFiltro, Service } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Esquema Drizzle del agente de WhatsApp.
@@ -87,6 +88,10 @@ export const waCitas = pgTable(
     clienteWa: text("cliente_wa").notNull(),
     clienteNombre: text("cliente_nombre").notNull(),
     servicioId: text("servicio_id").notNull(),
+    // Quién atiende (ALTO-07): slug de un Empleado del arreglo wa_tenants.empleados,
+    // sin FK — mismo trato que servicio_id. null = sin asignar (citas anteriores a esta
+    // columna y negocios que no cargaron equipo): NO bloquean a ningún empleado.
+    empleadoId: text("empleado_id"),
     fecha: text("fecha").notNull(), // "YYYY-MM-DD"
     hora: text("hora").notNull(), // "HH:mm"
     placa: text("placa"),
@@ -114,6 +119,21 @@ export const waCitas = pgTable(
   },
   (t) => ({
     idxTenantFecha: index("wa_citas_tenant_fecha_idx").on(t.tenantId, t.fecha),
+    // Red de último recurso contra la doble reserva de UNA MISMA persona (ALTO-07): dos
+    // clientes tocando el mismo horario en el mismo instante ganan la carrera contra el
+    // chequeo de `espaciosDisponibles`, que lee y decide fuera de la transacción.
+    //
+    // Parcial en dos sentidos, ambos deliberados: solo citas "agendada" (una cancelada
+    // libera el espacio) y solo con empleado asignado (varias citas sin asignar a la
+    // misma hora son legítimas — es el comportamiento de siempre).
+    //
+    // ⚠️ Cubre el choque de hora EXACTA, no el solape parcial (una cita de 60 min a las
+    // 09:00 contra una de 30 a las 09:30). Eso necesitaría un EXCLUDE con btree_gist
+    // sobre columnas generadas, porque fecha/hora son `text`. La lógica de solapes sí
+    // vive completa en src/booking/availability.ts; esto es solo el guard de carrera.
+    uqEmpleadoSlot: uniqueIndex("wa_citas_empleado_slot_uq")
+      .on(t.tenantId, t.empleadoId, t.fecha, t.hora)
+      .where(sql`${t.estado} = 'agendada' AND ${t.empleadoId} IS NOT NULL`),
   }),
 );
 
@@ -179,6 +199,10 @@ export const waTenants = pgTable(
     kb: jsonb("kb").$type<KnowledgeBase>().notNull(),
     // Feriados/vacaciones puntuales (C2.2), fuera del horario semanal recurrente.
     bloqueos: jsonb("bloqueos").$type<Bloqueo[]>().notNull().default([]),
+    // Quiénes atienden: personas, bahías, sillones (ALTO-07). Mismo trato que `servicios`
+    // (lista chica read-mostly referenciada por slug desde wa_citas.empleado_id).
+    // [] = el negocio se comporta como UN solo recurso, igual que antes de esta columna.
+    empleados: jsonb("empleados").$type<Empleado[]>().notNull().default([]),
     // Link para pedir reseña de Google (Maps / "Escribir reseña"), usado en el
     // seguimiento post-servicio (C3.1). null = sin configurar (no se pide reseña).
     linkResenas: text("link_resenas"),
