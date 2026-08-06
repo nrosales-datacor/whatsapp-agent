@@ -3,6 +3,8 @@ import { listarTenants } from "../config/tenantStore";
 import { botonesPostServicio, botonesPostServicioPro, botonesRecordatorio, enviarBotones, enviarPlantilla } from "../whatsapp/client";
 import { tenantPuede } from "../billing/planes";
 import { capturarError } from "../observabilidad/sentry";
+import { mapConLimite } from "../red/concurrencia";
+import { iniciarCicloSinSolape } from "../red/programador";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RECORDATORIOS DE CITA por WhatsApp.
@@ -34,6 +36,9 @@ import { capturarError } from "../observabilidad/sentry";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const INTERVALO_MIN = Number(process.env.RECORDATORIOS_INTERVALO_MIN ?? 5);
+// Cuántos tenants se procesan a la vez en cada tick (F12): en serie no escala
+// a 50 negocios, pero todos a la vez satura la base y las APIs externas.
+const CONCURRENCIA = Number(process.env.RECORDATORIOS_CONCURRENCIA ?? 5);
 const DIA_ANTES_HORA = process.env.RECORDATORIO_DIA_ANTES_HORA ?? "17:00";
 const HORAS_ANTES = Number(process.env.RECORDATORIO_HORAS_ANTES ?? 2);
 const NO_ANTES_DE_MIN = 6 * 60; // nunca despertar al cliente antes de las 6:00 am
@@ -203,32 +208,32 @@ async function procesarTenant(tenant: Tenant, repo: Repositorio): Promise<void> 
 
 /**
  * Arranca el ciclo de recordatorios. Llamar UNA vez al iniciar el servidor.
- * Corre un primer chequeo de inmediato y luego cada INTERVALO_MIN minutos.
+ * Corre un primer chequeo de inmediato y luego cada INTERVALO_MIN minutos, sin
+ * solaparse nunca (`iniciarCicloSinSolape`, F12) y con los tenants procesados
+ * con concurrencia acotada (`mapConLimite`) en vez de en serie.
  */
 export function iniciarRecordatorios(repo: Repositorio): void {
-  const tick = async () => {
-    for (const tenant of listarTenants()) {
-      try {
-        await procesarTenant(tenant, repo);
-      } catch (e) {
-        console.error(`[recordatorios] error procesando tenant ${tenant.id}:`, e);
-        capturarError(e, { loop: "recordatorios", tenantId: tenant.id });
-      }
-    }
-  };
-  tick().catch((e) => {
-    console.error("[recordatorios] primer chequeo:", e);
-    capturarError(e, { loop: "recordatorios", momento: "primer-chequeo" });
+  iniciarCicloSinSolape({
+    etiqueta: "recordatorios",
+    intervaloMs: INTERVALO_MIN * 60 * 1000,
+    sugerenciaEscalado: "Con más tenants esto va a seguir empeorando: subir RECORDATORIOS_CONCURRENCIA o RECORDATORIOS_INTERVALO_MIN.",
+    tick: () =>
+      mapConLimite(listarTenants(), CONCURRENCIA, async (tenant) => {
+        try {
+          await procesarTenant(tenant, repo);
+        } catch (e) {
+          // Un tenant que falla no debe tumbar el tick ni frenar a los demás.
+          console.error(`[recordatorios] error procesando tenant ${tenant.id}:`, e);
+          capturarError(e, { loop: "recordatorios", tenantId: tenant.id });
+        }
+      }).then(() => undefined),
+    onError: (e, momento) => {
+      console.error(`[recordatorios] ${momento}:`, e);
+      capturarError(e, { loop: "recordatorios", momento });
+    },
   });
-  setInterval(
-    () =>
-      tick().catch((e) => {
-        console.error("[recordatorios] tick:", e);
-        capturarError(e, { loop: "recordatorios", momento: "tick" });
-      }),
-    INTERVALO_MIN * 60 * 1000,
-  );
+
   console.log(
-    `Recordatorios activos: día antes a partir de las ${DIA_ANTES_HORA} · mismo día ${HORAS_ANTES} h antes · chequeo cada ${INTERVALO_MIN} min.`,
+    `Recordatorios activos: día antes a partir de las ${DIA_ANTES_HORA} · mismo día ${HORAS_ANTES} h antes · chequeo cada ${INTERVALO_MIN} min · concurrencia ${CONCURRENCIA}.`,
   );
 }
