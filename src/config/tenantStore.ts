@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import type { Bloqueo, Empleado, EstadoFacturacion, HorarioDia, KnowledgeBase, Plan, Rol, Service, Tenant } from "../types";
 import { obtenerDb } from "../db/client";
 import { waTenants, waUsuarios } from "../db/schema";
+import { cifrar, descifrar } from "./secretos";
 import { TENANT_FALLBACK_SELYON } from "./tenants";
 import { normalizarKb } from "./validadores";
 
@@ -97,7 +98,11 @@ function filaATenant(f: typeof waTenants.$inferSelect): Tenant {
     id: f.id,
     nombre: f.nombre,
     phoneNumberId: f.phoneNumberId,
-    accessToken: f.accessToken ?? undefined,
+    // Descifrado ÚNICO punto de entrada al construir el caché (ROADMAP F2): a partir de
+    // acá, todo el código (incluido whatsapp/client.ts) sigue viendo el token en claro,
+    // sin enterarse de que en la base está cifrado. `descifrar` tolera valores heredados
+    // en texto plano (ver comentario en secretos.ts) — no hace falta migrar antes de desplegar.
+    accessToken: f.accessToken ? descifrar(f.accessToken) : undefined,
     timezone: f.timezone,
     moneda: f.moneda,
     ubicacion: f.ubicacion,
@@ -261,7 +266,9 @@ export async function crearTenant(tenant: Tenant, u: NuevoUsuario): Promise<void
       id: tenant.id,
       nombre: tenant.nombre,
       phoneNumberId: tenant.phoneNumberId,
-      accessToken: tenant.accessToken ?? null,
+      // Cifrado ÚNICO punto de escritura del token (ROADMAP F2): nunca se persiste en
+      // claro. `null` se guarda tal cual (nada que cifrar) — ver nota en secretos.ts.
+      accessToken: tenant.accessToken ? cifrar(tenant.accessToken) : null,
       timezone: tenant.timezone,
       moneda: tenant.moneda,
       ubicacion: tenant.ubicacion,

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { eq } from "drizzle-orm";
 import { crearDbEfimera } from "../helpers/pgliteDb";
 import { waCotizaciones } from "../../src/db/schema";
-import { reclamarToque1, reclamarToque2 } from "../../src/rescate/cola";
+import { purgarCotizacionesFinalizadas, reclamarToque1, reclamarToque2 } from "../../src/rescate/cola";
 import { RepositorioDrizzle } from "../../src/booking/drizzleRepository";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -122,6 +122,72 @@ test("Repositorio.actualizarCotizacionPorCita: sin toques previos → 'agendada'
     const [f2] = await db.select().from(waCotizaciones).where(eq(waCotizaciones.id, idB));
     assert.equal(f2.estado, "recuperada");
     assert.equal(f2.montoRecuperado, 18000);
+  } finally {
+    await cerrar();
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Purga por retención (ROADMAP F11): purgarCotizacionesFinalizadas solo borra
+// estados finales viejos; deja vivos los estados que el rescate sigue tocando.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("purgarCotizacionesFinalizadas: borra estados finales viejos, respeta el corte de días", async () => {
+  const { db, cerrar } = await crearDbEfimera();
+  try {
+    const vieja = await sembrarCotizacion(db, { clienteWa: "50688890001", estado: "agendada" });
+    await db.update(waCotizaciones).set({ creadaEn: horasAtras(24 * 10) }).where(eq(waCotizaciones.id, vieja));
+
+    const reciente = await sembrarCotizacion(db, { clienteWa: "50688890002", estado: "recuperada" });
+    await db.update(waCotizaciones).set({ creadaEn: horasAtras(24 * 2) }).where(eq(waCotizaciones.id, reciente));
+
+    const borrados = await purgarCotizacionesFinalizadas(db, 7);
+    assert.equal(borrados, 1, "solo la de hace 10 días cruza el corte de 7");
+
+    const restantes = await db.select({ id: waCotizaciones.id }).from(waCotizaciones);
+    assert.deepEqual(restantes.map((r) => r.id).sort(), [reciente].sort());
+  } finally {
+    await cerrar();
+  }
+});
+
+test("purgarCotizacionesFinalizadas: NO toca 'pendiente'/'toque1'/'toque2' sin importar la antigüedad", async () => {
+  const { db, cerrar } = await crearDbEfimera();
+  try {
+    const pendiente = await sembrarCotizacion(db, { clienteWa: "50688891001" });
+    await db.update(waCotizaciones).set({ creadaEn: horasAtras(24 * 30) }).where(eq(waCotizaciones.id, pendiente));
+
+    const toque1 = await sembrarCotizacion(db, { clienteWa: "50688891002", estado: "toque1", toque1En: horasAtras(24 * 30) });
+    await db.update(waCotizaciones).set({ creadaEn: horasAtras(24 * 30) }).where(eq(waCotizaciones.id, toque1));
+
+    const toque2 = await sembrarCotizacion(db, { clienteWa: "50688891003", estado: "toque2", toque2En: horasAtras(24 * 30) });
+    await db.update(waCotizaciones).set({ creadaEn: horasAtras(24 * 30) }).where(eq(waCotizaciones.id, toque2));
+
+    const borrados = await purgarCotizacionesFinalizadas(db, 7);
+    assert.equal(borrados, 0, "ninguno de los tres es un estado final: la purga no toca nada");
+
+    const restantes = await db.select({ id: waCotizaciones.id }).from(waCotizaciones);
+    assert.equal(restantes.length, 3);
+  } finally {
+    await cerrar();
+  }
+});
+
+test("purgarCotizacionesFinalizadas: borra por lotes y termina (no loop infinito)", async () => {
+  const { db, cerrar } = await crearDbEfimera();
+  try {
+    const ids = await Promise.all(
+      Array.from({ length: 5 }, (_, i) => sembrarCotizacion(db, { clienteWa: `506888920${i}`, estado: "opt_out" })),
+    );
+    for (const id of ids) {
+      await db.update(waCotizaciones).set({ creadaEn: horasAtras(24 * 10) }).where(eq(waCotizaciones.id, id));
+    }
+
+    const borrados = await purgarCotizacionesFinalizadas(db, 7, 2); // lote de 2, con 5 filas → 3 vueltas
+    assert.equal(borrados, 5);
+
+    const restantes = await db.select({ id: waCotizaciones.id }).from(waCotizaciones);
+    assert.equal(restantes.length, 0);
   } finally {
     await cerrar();
   }

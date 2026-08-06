@@ -475,6 +475,49 @@ piloto real:
 **Repetir este test de restore cada 2-3 meses** — un backup que nunca se restauró no
 es un backup confiable.
 
+## 20. Cifrado del `access_token` de WhatsApp en reposo (ROADMAP F2)
+
+El `access_token` de cada negocio se guarda **cifrado** en `wa_tenants` (AES-256-GCM,
+`src/config/secretos.ts`). Necesita una clave maestra en el `.env`:
+
+```
+TOKENS_ENCRYPTION_KEY=...   # 32 bytes en hex (64 caracteres) — obligatoria si hay DATABASE_URL
+```
+
+Generarla (una única vez, igual que `PANEL_SESSION_SECRET`):
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+> ⚠️ Sin `TOKENS_ENCRYPTION_KEY` el servidor **NO arranca** si hay `DATABASE_URL` configurada
+> (mismo fail-closed que `PANEL_SESSION_SECRET`). En desarrollo sin base se permite seguir sin
+> ella (se usa una clave aleatoria por corrida, solo para no bloquear el desarrollo local).
+
+**Migrar tokens que ya estaban en texto plano** (idempotente — se puede correr las veces que
+haga falta, no vuelve a tocar lo ya cifrado):
+
+```bash
+npx tsx scripts/cifrarTokens.ts
+```
+
+### Rotar la clave
+
+Rotar `TOKENS_ENCRYPTION_KEY` significa descifrar todo con la clave vieja y volver a cifrar
+con la nueva — no hay atajo porque el algoritmo es simétrico:
+
+1. Generá la clave nueva (comando de arriba) pero **no la reemplaces todavía** en el `.env`.
+2. Con la clave VIEJA aún activa, corré un script puntual (a mano, no versionado) que:
+   - lea cada `wa_tenants.access_token` no nulo,
+   - lo descifre con `descifrar()` (clave vieja),
+   - lo vuelva a cifrar con `cifrar()` pero apuntando `TOKENS_ENCRYPTION_KEY` a la clave NUEVA
+     (podés setear la env var solo para esa corrida: `TOKENS_ENCRYPTION_KEY=nueva npx tsx ...`),
+   - guarde el resultado.
+3. Recién ahí actualizá `TOKENS_ENCRYPTION_KEY` en el `.env` del droplet con la clave nueva y
+   hacé `pm2 restart whatsapp-bot`.
+4. Si el paso 2 se corta a la mitad, es seguro repetirlo: cada fila se recifra de forma
+   independiente y el formato `v1:...` no cambia, solo el contenido.
+
 ## Mantenimiento rápido
 
 | Acción | Comando |

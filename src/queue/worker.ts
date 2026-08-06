@@ -4,7 +4,7 @@ import type { Repositorio } from "../types";
 import { obtenerTenantPorPhoneNumberId } from "../config/tenantStore";
 import { responderEntrante } from "../handleWebhook";
 import { capturarError } from "../observabilidad/sentry";
-import { marcarFalloOReintentar, marcarHecho, reencolarVencidos, reclamarUno } from "./cola";
+import { marcarFalloOReintentar, marcarHecho, purgarJobsHechos, reencolarVencidos, reclamarUno } from "./cola";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Worker de la cola durable (ROADMAP B1).
@@ -12,6 +12,11 @@ import { marcarFalloOReintentar, marcarHecho, reencolarVencidos, reclamarUno } f
 // Loop de trabajo: reclama un job a la vez (serial → preserva orden por
 // conversación en el piloto), corre responderEntrante y marca hecho/error.
 // Loop reaper: cada 60 s reencola jobs zombis (crashed mientras procesaban).
+// Loop de purga (ROADMAP F11): cada JOBS_PURGA_INTERVALO_MIN minutos borra los
+// "hecho" más viejos que JOBS_RETENCION_DIAS. Intervalo propio y mucho más
+// espaciado que el del reaper a propósito: son loops de distinta frecuencia y
+// criticidad (el reaper protege la entrega de mensajes en curso; la purga es
+// higiene de una tabla que ya terminó su trabajo) — no se mezclan.
 //
 // Para escalar a concurrencia: lanzar iniciarWorker varias veces en el mismo
 // proceso, o shardear por tenantId. La cola (SKIP LOCKED) lo soporta sin cambios.
@@ -21,7 +26,34 @@ type DB = PostgresJsDatabase<typeof schema>;
 
 const POLL_MS = Number(process.env.QUEUE_POLL_MS ?? 1000);
 const REAPER_INTERVAL_MS = 60_000;
-const REAPER_UMBRAL_SEG = Number(process.env.QUEUE_REAPER_UMBRAL_SEG ?? 180);
+// ALTO-12 (ROADMAP F11): el reaper NO debe reencolar un job que sigue vivo y
+// legítimamente lento — eso duplicaría la respuesta al cliente (ver la
+// semántica at-least-once documentada arriba). El umbral tiene que cubrir el
+// PEOR CASO del turno del agente, no el caso típico:
+//   - runAgent.ts: MAX_PASOS = 4 iteraciones de tool-calling; cada una hace UNA
+//     llamada a OpenAI con TIMEOUT_OPENAI_MS = 20s (src/red/timeouts.ts) y
+//     OPENAI_MAX_REINTENTOS = 1 → hasta 2 intentos ⇒ ~40s por paso en el peor
+//     caso. Varios pasos también disparan una tool que llama a Google Calendar
+//     (TIMEOUT_GOOGLE_MS = 15s). Peor caso del loop completo: 4 × (40s + 15s)
+//     ≈ 220s.
+//   - El envío final por WhatsApp (whatsapp/client.ts) reintenta hasta
+//     MAX_INTENTOS_ENVIO = 3 veces con TIMEOUT_GRAPH_MS = 15s c/u más backoff
+//     entre intentos (500ms, 1500ms) ⇒ ~47s por envío, y un turno puede mandar
+//     más de un mensaje (confirmación + lista de horarios).
+//   → Peor caso total de UN job: ~220s + 47s ≈ 267s, ya por ENCIMA de los 180s
+//   originales. O sea que el umbral viejo estaba corto incluso sin E7: un turno
+//   que agotara reintentos en varios pasos podía reencolarse mientras seguía
+//   vivo. Subido a 360s (6 min) para dejar margen real (~90-100s) sobre ese
+//   peor caso, sin ser tan grande como para tardar demasiado en rescatar un job
+//   realmente colgado (crash real del proceso).
+//   El worker concurrente de E7 no cambia esta cuenta (el peor caso de UN job
+//   es el mismo esté o no compartiendo proceso con otros); lo que sí cambia es
+//   que, si el PROCESO ENTERO se cuelga, más jobs "procesando" en paralelo
+//   vencen juntos — eso es un pico de reintentos simultáneo, no un problema de
+//   umbral insuficiente por job, y no lo resuelve mover este número.
+const REAPER_UMBRAL_SEG = Number(process.env.QUEUE_REAPER_UMBRAL_SEG ?? 360);
+const PURGA_INTERVAL_MS = Number(process.env.JOBS_PURGA_INTERVALO_MIN ?? 60) * 60_000;
+const JOBS_RETENCION_DIAS = Number(process.env.JOBS_RETENCION_DIAS ?? 7);
 
 const dormir = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -80,6 +112,22 @@ export function iniciarWorker(repo: Repositorio, db: DB): void {
     }
   };
 
+  // Loop de purga (ROADMAP F11): intervalo propio, mucho más espaciado que el
+  // reaper (higiene, no recuperación de trabajo en curso). Mismo tratamiento de
+  // errores: un fallo se loguea y va a Sentry, nunca tumba el loop.
+  const loopPurga = async () => {
+    while (true) {
+      await dormir(PURGA_INTERVAL_MS);
+      try {
+        const n = await purgarJobsHechos(db, JOBS_RETENCION_DIAS);
+        if (n > 0) console.log(`[worker] purga: ${n} job(s) "hecho" borrado(s) (retención ${JOBS_RETENCION_DIAS}d)`);
+      } catch (e) {
+        console.error("[worker] purga error:", e);
+        capturarError(e, { loop: "purga" });
+      }
+    }
+  };
+
   loopTrabajo().catch((e) => {
     console.error("[worker] loop de trabajo terminó inesperadamente:", e);
     capturarError(e, { loop: "trabajo", fatal: true });
@@ -88,5 +136,13 @@ export function iniciarWorker(repo: Repositorio, db: DB): void {
     console.error("[worker] loop reaper terminó inesperadamente:", e);
     capturarError(e, { loop: "reaper", fatal: true });
   });
-  console.log(`Worker de cola iniciado (poll cada ${POLL_MS}ms, reaper cada ${REAPER_INTERVAL_MS / 1000}s).`);
+  loopPurga().catch((e) => {
+    console.error("[worker] loop purga terminó inesperadamente:", e);
+    capturarError(e, { loop: "purga", fatal: true });
+  });
+  console.log(
+    `Worker de cola iniciado (poll cada ${POLL_MS}ms, reaper cada ${REAPER_INTERVAL_MS / 1000}s, purga cada ${
+      PURGA_INTERVAL_MS / 60_000
+    }min).`,
+  );
 }

@@ -115,3 +115,41 @@ export async function quedanPendientes(db: DB, campaniaId: string): Promise<bool
   );
   return rows.length > 0;
 }
+
+/**
+ * Purga por retención (ROADMAP F11, mismo criterio que src/queue/cola.ts): borra
+ * envíos cuya campaña PADRE ya terminó ('completada' o 'cancelada') y terminó
+ * hace más de retencionDias. wa_campania_envios no tiene su propia columna de
+ * "finalizado en" por fila (una campaña cancelada deja sus envíos "pendiente"
+ * en 'error' sin timestamp propio, ver cancelarCampania), así que se usa la del
+ * PADRE: completada_en si la campaña llegó a completarse, o creada_en si se
+ * canceló antes (aproximación razonable: una campaña cancelada no sigue viva
+ * después de cancelarse).
+ *
+ * Borra en LOTES por la misma razón que la cola principal: evitar un lock largo
+ * sobre la tabla mientras el worker de campañas reclama con FOR UPDATE SKIP LOCKED.
+ * Devuelve el total de filas borradas (para loguear).
+ */
+export async function purgarEnviosFinalizados(db: DB, retencionDias = 7, tamanoLote = 500): Promise<number> {
+  let total = 0;
+  for (;;) {
+    const rows = filasDe<{ id: string }>(
+      await db.execute(sql`
+      DELETE FROM wa_campania_envios
+       WHERE id IN (
+         SELECT e.id
+           FROM wa_campania_envios e
+           JOIN wa_campanias c ON c.id = e.campania_id
+          WHERE c.estado IN ('completada', 'cancelada')
+            AND COALESCE(c.completada_en, c.creada_en) < now() - ${retencionDias} * interval '1 day'
+          ORDER BY e.creado_en ASC
+          LIMIT ${tamanoLote}
+       )
+      RETURNING id
+    `),
+    );
+    total += rows.length;
+    if (rows.length < tamanoLote) break;
+  }
+  return total;
+}

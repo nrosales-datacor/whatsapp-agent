@@ -5,7 +5,14 @@ import { obtenerTenantPorId } from "../config/tenantStore";
 import { enviarPlantilla } from "../whatsapp/client";
 import { capturarError } from "../observabilidad/sentry";
 import { obtenerDb } from "./db";
-import { marcarEnviado, marcarFalloOReintentar, marcarOmitidoOptOut, quedanPendientes, reclamarEnvio } from "./cola";
+import {
+  marcarEnviado,
+  marcarFalloOReintentar,
+  marcarOmitidoOptOut,
+  purgarEnviosFinalizados,
+  quedanPendientes,
+  reclamarEnvio,
+} from "./cola";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Worker de envío de campañas (ROADMAP C3.2). Mismo esqueleto que
@@ -18,6 +25,12 @@ import { marcarEnviado, marcarFalloOReintentar, marcarOmitidoOptOut, quedanPendi
 
 const POLL_MS = Number(process.env.CAMPANIA_POLL_MS ?? 2000);
 const INTERVALO_ENVIO_MS = Number(process.env.CAMPANIA_ENVIO_INTERVALO_MS ?? 1200);
+// Retención y purga (ROADMAP F11): mismos nombres de env que src/queue/worker.ts
+// (un solo par de variables para las tres colas, un solo dial para el operador),
+// pero cada worker las lee y las aplica de forma independiente — mismo patrón
+// que el resto de esta cola (ver [[patron-colas-independientes]]).
+const JOBS_RETENCION_DIAS = Number(process.env.JOBS_RETENCION_DIAS ?? 7);
+const PURGA_INTERVAL_MS = Number(process.env.JOBS_PURGA_INTERVALO_MIN ?? 60) * 60_000;
 
 const dormir = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -112,9 +125,29 @@ export function iniciarCampanias(): void {
       }
     }
   };
+
+  // Loop de purga (ROADMAP F11), intervalo propio y espaciado, igual criterio
+  // que src/queue/worker.ts: un fallo se loguea y va a Sentry, nunca tumba el loop.
+  const loopPurga = async () => {
+    while (true) {
+      await dormir(PURGA_INTERVAL_MS);
+      try {
+        const n = await purgarEnviosFinalizados(obtenerDb(), JOBS_RETENCION_DIAS);
+        if (n > 0) console.log(`[campanias] purga: ${n} envío(s) de campaña finalizada borrado(s)`);
+      } catch (e) {
+        console.error("[campanias] purga error:", e);
+        capturarError(e, { loop: "purga-campanias" });
+      }
+    }
+  };
+
   loop().catch((e) => {
     console.error("[campanias] el loop murió inesperadamente:", e);
     capturarError(e, { loop: "campanias", fatal: true });
+  });
+  loopPurga().catch((e) => {
+    console.error("[campanias] loop de purga terminó inesperadamente:", e);
+    capturarError(e, { loop: "purga-campanias", fatal: true });
   });
   console.log(`Worker de campañas iniciado (poll cada ${POLL_MS}ms · throttle ${INTERVALO_ENVIO_MS}ms entre envíos).`);
 }

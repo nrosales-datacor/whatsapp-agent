@@ -39,6 +39,43 @@ Para que nadie reconstruya lo que ya existe:
 
 ---
 
+## 🚨 Checklist obligatorio ANTES de pushear el Carril F a `main`
+
+Un push a `main` **despliega solo** (`.github/workflows/ci-cd.yml`). Varios ítems de este plan son
+fail-closed a propósito: si falta su variable de entorno, el sistema se niega a arrancar en vez de
+funcionar mal en silencio. Eso es lo correcto, pero significa que el `.env` del droplet tiene que
+estar listo **antes** del merge.
+
+En el droplet (`~/lavacar-whatsapp-bot/.env`):
+
+```bash
+# 1) F2 — clave de cifrado de los access_token. Sin esto el deploy FALLA.
+#    Generala UNA vez y guardala en un lugar seguro: si se pierde, los tokens
+#    cifrados quedan irrecuperables y hay que reconectar cada WABA a mano.
+echo "TOKENS_ENCRYPTION_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")" >> .env
+
+# 2) F5 — compatibilidad del piloto, que hoy NO tiene access_token propio.
+#    Sin esto el bot arranca pero queda MUDO (no puede enviar).
+echo 'WHATSAPP_ACCESS_TOKEN_TENANT_ID=selyon' >> .env
+
+pm2 restart whatsapp-bot
+```
+
+**Modos de falla si se olvida cada una** (verificados, no supuestos):
+
+| Falta | Qué pasa | ¿Se cae producción? |
+|---|---|---|
+| `TOKENS_ENCRYPTION_KEY` | `scripts/seedTenants.ts` aborta el deploy **antes** del `pm2 restart` (importa `secretos.ts`, que lanza al cargar) | **No** — el proceso viejo sigue corriendo. El deploy queda en rojo hasta arreglarlo. Es el mismo patrón de `[[deploy-migracion-obligatoria]]` |
+| `WHATSAPP_ACCESS_TOKEN_TENANT_ID` | El server arranca bien, pero `tokenDeTenant(selyon)` lanza en cada envío → los jobs quedan en `estado='error'` | **Sí, funcionalmente**: el bot recibe y no responde. Peor que el anterior porque es silencioso desde afuera |
+
+Por eso el segundo es el más peligroso de los dos y conviene ponerlos **juntos, antes del push**.
+
+Mejora de fondo (recomendada, fuera del alcance mínimo): cargarle a `selyon` su propio
+`access_token` desde el panel y borrar `WHATSAPP_ACCESS_TOKEN_TENANT_ID`. Ahí el fail-closed deja de
+tener excepciones y la env de compatibilidad se puede eliminar del código.
+
+---
+
 # FASE 0 — Aislamiento real y cero pérdida de mensajes 🔴 BLOQUEANTE
 
 > Nadie puede vender el segundo cliente con confianza mientras el aislamiento dependa de que ningún desarrollador se olvide de un `and()`, el token de WhatsApp de cada negocio esté en texto plano, y un blip de base de datos haga desaparecer mensajes sin dejar rastro.

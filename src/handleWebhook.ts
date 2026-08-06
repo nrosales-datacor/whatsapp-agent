@@ -206,7 +206,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
       imagenDataUrl = await descargarImagenComoDataUrl(tenant, entrante.imagenId!);
       if (entrante.messageId) {
         await repo
-          .actualizarMediaMensaje(conv.id, entrante.messageId, imagenDataUrl, "imagen")
+          .actualizarMediaMensaje(tenant.id, conv.id, entrante.messageId, imagenDataUrl, "imagen")
           .catch((e) => console.error("[imagen] no se pudo guardar la media en el mensaje:", e));
       }
     } catch (e) {
@@ -250,8 +250,8 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
         let salida = MENSAJE_ESCALADA;
         if (primerContacto) salida = `${AVISO_BOT.replace("%NOMBRE%", tenant.nombre)}\n\n${salida}`;
         await enviarTexto(tenant, entrante.clienteWa, salida);
-        if (primerContacto) await repo.marcarOptIn(conv.id);
-        await repo.guardarMensaje(conv.id, { rol: "assistant", contenido: MENSAJE_ESCALADA, creadoEn: new Date().toISOString() });
+        if (primerContacto) await repo.marcarOptIn(tenant.id, conv.id);
+        await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: MENSAJE_ESCALADA, creadoEn: new Date().toISOString() });
         await notificarOperador(
           repo,
           tenant,
@@ -270,8 +270,8 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
       let salida = respuesta;
       if (primerContacto) salida = `${AVISO_BOT.replace("%NOMBRE%", tenant.nombre)}\n\n${respuesta}`;
       await enviarRespuestaBot(tenant, entrante.clienteWa, salida, interactivo);
-      if (primerContacto) await repo.marcarOptIn(conv.id);
-      await repo.guardarMensaje(conv.id, { rol: "assistant", contenido: respuesta, creadoEn: new Date().toISOString() });
+      if (primerContacto) await repo.marcarOptIn(tenant.id, conv.id);
+      await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: respuesta, creadoEn: new Date().toISOString() });
       console.log(`[imagen→saliente] → ${entrante.clienteWa}: "${respuesta.slice(0, 80)}"`);
       await repo.registrarCalidad({
         tenantId: tenant.id,
@@ -358,8 +358,8 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
         let salida = MENSAJE_ESCALADA;
         if (primerContacto) salida = `${AVISO_BOT.replace("%NOMBRE%", tenant.nombre)}\n\n${salida}`;
         await enviarTexto(tenant, entrante.clienteWa, salida);
-        if (primerContacto) await repo.marcarOptIn(conv.id);
-        await repo.guardarMensaje(conv.id, { rol: "assistant", contenido: MENSAJE_ESCALADA, creadoEn: new Date().toISOString() });
+        if (primerContacto) await repo.marcarOptIn(tenant.id, conv.id);
+        await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: MENSAJE_ESCALADA, creadoEn: new Date().toISOString() });
         await notificarOperador(
           repo,
           tenant,
@@ -378,8 +378,8 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
       let salida = respuesta;
       if (primerContacto) salida = `${AVISO_BOT.replace("%NOMBRE%", tenant.nombre)}\n\n${respuesta}`;
       await enviarRespuestaBot(tenant, entrante.clienteWa, salida, interactivo);
-      if (primerContacto) await repo.marcarOptIn(conv.id);
-      await repo.guardarMensaje(conv.id, { rol: "assistant", contenido: respuesta, creadoEn: new Date().toISOString() });
+      if (primerContacto) await repo.marcarOptIn(tenant.id, conv.id);
+      await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: respuesta, creadoEn: new Date().toISOString() });
       console.log(`[audio→saliente] → ${entrante.clienteWa}: "${respuesta.slice(0, 80)}"`);
       await repo.registrarCalidad({
         tenantId: tenant.id,
@@ -420,7 +420,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
         ? "¡Gracias por confirmar tu cita! ✅ Te esperamos. 🚗"
         : "¡Gracias! Si necesitás algo más, escribinos por acá. 🙂";
       await enviarTexto(tenant, entrante.clienteWa, ack);
-      await repo.guardarMensaje(conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
+      await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
       console.log(`[confirmacion] cita ${citaAConfirmar} ${confirmada ? "confirmada" : "no encontrada"} (${entrante.clienteWa})`);
     } catch (e) {
       console.error(`[confirmacion] no se pudo confirmar la cita ${citaAConfirmar}:`, e);
@@ -444,16 +444,16 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
           ? `¡Qué alegría! 🙌 Si tenés un minuto, nos ayudaría muchísimo que dejaras una reseña en Google: ${tenant.linkResenas}`
           : "¡Qué alegría! 🙌 Gracias por la confianza.";
         await enviarTexto(tenant, entrante.clienteWa, ack);
-        await repo.guardarMensaje(conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
+        await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
       } else if (sentimiento === "neutral") {
         const ack = "¡Qué bueno! 🙌 Gracias por la confianza.";
         await enviarTexto(tenant, entrante.clienteWa, ack);
-        await repo.guardarMensaje(conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
+        await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
       } else {
         await repo.setModoConversacion(tenant.id, conv.id, "humano");
         const ack = "Lamentamos escuchar eso 🙏 Ya le avisamos a una persona del equipo para que te contacte.";
         await enviarTexto(tenant, entrante.clienteWa, ack);
-        await repo.guardarMensaje(conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
+        await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
         await notificarOperador(
           repo,
           tenant,
@@ -461,7 +461,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
           `⚠️ Cliente insatisfecho tras el servicio (cita ${citaId}) — contactalo antes de que quede una reseña negativa.`,
         );
       }
-      await repo.registrarRespuestaSeguimiento(citaId, sentimiento, sentimiento === "positivo", entrante.texto);
+      await repo.registrarRespuestaSeguimiento(tenant.id, citaId, sentimiento, sentimiento === "positivo", entrante.texto);
       console.log(`[post-servicio] cita ${citaId} → ${sentimiento} (${entrante.clienteWa})`);
     } catch (e) {
       console.error(`[post-servicio] no se pudo procesar la respuesta de la cita ${citaId}:`, e);
@@ -477,10 +477,10 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
   // marketing, ligados a una cita que el cliente ya agendó).
   if (entrante.texto.trim().toLowerCase() === "baja") {
     try {
-      await repo.marcarOptOut(conv.id);
+      await repo.marcarOptOut(tenant.id, conv.id);
       const ack = "Listo, no vas a recibir más promociones de nuestra parte. Si necesitás algo más, escribinos por acá 🙂";
       await enviarTexto(tenant, entrante.clienteWa, ack);
-      await repo.guardarMensaje(conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
+      await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
       console.log(`[opt-out] ${entrante.clienteWa} pidió baja de campañas`);
     } catch (e) {
       console.error(`[opt-out] no se pudo procesar la baja de ${entrante.clienteWa}:`, e);
@@ -552,8 +552,8 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
       let salida = MENSAJE_ESCALADA;
       if (primerContacto) salida = `${AVISO_BOT.replace("%NOMBRE%", tenant.nombre)}\n\n${salida}`;
       await enviarTexto(tenant, entrante.clienteWa, salida);
-      if (primerContacto) await repo.marcarOptIn(conv.id);
-      await repo.guardarMensaje(conv.id, {
+      if (primerContacto) await repo.marcarOptIn(tenant.id, conv.id);
+      await repo.guardarMensaje(tenant.id, conv.id, {
         rol: "assistant",
         contenido: MENSAJE_ESCALADA,
         creadoEn: new Date().toISOString(),
@@ -577,8 +577,8 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
     // "fantasma" en el historial que el cliente nunca recibió (y el opt-in no se
     // marca, así el aviso se reintenta en el próximo mensaje).
     await enviarRespuestaBot(tenant, entrante.clienteWa, salida, interactivo);
-    if (primerContacto) await repo.marcarOptIn(conv.id);
-    await repo.guardarMensaje(conv.id, {
+    if (primerContacto) await repo.marcarOptIn(tenant.id, conv.id);
+    await repo.guardarMensaje(tenant.id, conv.id, {
       rol: "assistant",
       contenido: respuesta,
       creadoEn: new Date().toISOString(),

@@ -51,7 +51,7 @@ test("registrarRespuestaSeguimiento: actualiza sentimiento/resenaSolicitada/resp
     const cita = await sembrarCita(repo, TENANT_A);
     await repo.crearSeguimiento(TENANT_A, cita.id);
 
-    await repo.registrarRespuestaSeguimiento(cita.id, "positivo", true, "Excelente el servicio 😃");
+    await repo.registrarRespuestaSeguimiento(TENANT_A, cita.id, "positivo", true, "Excelente el servicio 😃");
 
     const [fila] = await db.select().from(waSeguimientos).where(eq(waSeguimientos.citaId, cita.id));
     assert.equal(fila.sentimiento, "positivo");
@@ -67,7 +67,7 @@ test("registrarRespuestaSeguimiento: no-op si no existe fila (tenant Básico, si
   try {
     const repo = new RepositorioDrizzle(db);
     // Nunca se llamó crearSeguimiento (simula el flujo legacy de 2 botones).
-    await repo.registrarRespuestaSeguimiento("cita-inexistente", "positivo", true, "Todo bien 👍");
+    await repo.registrarRespuestaSeguimiento(TENANT_A, "cita-inexistente", "positivo", true, "Todo bien 👍");
     // No lanza. Confirmamos que no se creó nada.
     const filas = await db.select().from(waSeguimientos);
     assert.equal(filas.length, 0);

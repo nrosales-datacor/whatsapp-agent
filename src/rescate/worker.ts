@@ -11,6 +11,7 @@ import {
   enModoHumano,
   marcarOptOut,
   nombreClienteAprox,
+  purgarCotizacionesFinalizadas,
   reclamarToque1,
   reclamarToque2,
   revertirToque1,
@@ -37,6 +38,11 @@ const TOQUE2_HORAS_DESPUES = Number(process.env.RESCATE_TOQUE2_HORAS_DESPUES ?? 
 // Cuántos días adelante se busca un hueco libre para ofrecer en el toque1.
 const DIAS_BUSQUEDA_HORARIO = 14;
 const MAX_FILAS_LISTA = 10;
+// Retención y purga (ROADMAP F11): mismos nombres de env que src/queue/worker.ts
+// y src/campaigns/worker.ts (un solo dial de retención para el operador), leídos
+// y aplicados de forma independiente acá, mismo patrón que el resto de esta cola.
+const JOBS_RETENCION_DIAS = Number(process.env.JOBS_RETENCION_DIAS ?? 7);
+const PURGA_INTERVAL_MS = Number(process.env.JOBS_PURGA_INTERVALO_MIN ?? 60) * 60_000;
 
 const dormir = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -178,9 +184,29 @@ export function iniciarRescate(): void {
       await dormir(POLL_MS);
     }
   };
+
+  // Loop de purga (ROADMAP F11), intervalo propio y espaciado, igual criterio
+  // que src/queue/worker.ts: un fallo se loguea y va a Sentry, nunca tumba el loop.
+  const loopPurga = async () => {
+    while (true) {
+      await dormir(PURGA_INTERVAL_MS);
+      try {
+        const n = await purgarCotizacionesFinalizadas(obtenerDb(), JOBS_RETENCION_DIAS);
+        if (n > 0) console.log(`[rescate] purga: ${n} cotización(es) finalizada(s) borrada(s)`);
+      } catch (e) {
+        console.error("[rescate] purga error:", e);
+        capturarError(e, { loop: "purga-rescate" });
+      }
+    }
+  };
+
   loop().catch((e) => {
     console.error("[rescate] el loop murió inesperadamente:", e);
     capturarError(e, { loop: "rescate", fatal: true });
+  });
+  loopPurga().catch((e) => {
+    console.error("[rescate] loop de purga terminó inesperadamente:", e);
+    capturarError(e, { loop: "purga-rescate", fatal: true });
   });
   console.log(`Worker de rescate de cotizaciones iniciado (poll cada ${POLL_MS}ms · throttle ${INTERVALO_ENVIO_MS}ms entre envíos).`);
 }
