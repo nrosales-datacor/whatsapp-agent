@@ -14,6 +14,8 @@ general. Si le piden algo fuera de alcance, redirige con amabilidad.
 - **`DEPLOY.md`** — cómo desplegar/operar el droplet. **`TESTING.md`** — estrategia y estado de pruebas.
 - **`GUIA-META.md`** — trámites pendientes con Meta (plantillas, Embedded Signup).
 - **`PLAN-FEATURES-FALTANTES.md`** — plan comercial vigente (Carril D: planes Básico/Pro).
+- **`PLAN-ESCALA-MULTITENANT.md`** — plan de escala vigente (Carril F: aislamiento, capacidad y costo para llegar a 50 negocios).
+- **`AUDIT.md`** — auditoría de sale-readiness (2026-07-27); origen del Carril E y de varios ítems del F.
 - **`PLAN-PREVENTA.md`** — checklist de preparación pre-venta (parcialmente desactualizado, ver nota al inicio del archivo).
 - **`PROCESO-COBRO-MANUAL.md`** — proceso operativo de cobro mientras no hay Stripe.
 - **`docs/FUNCIONALIDADES.md`** — resumen de funcionalidades con capturas (cara comercial del producto).
