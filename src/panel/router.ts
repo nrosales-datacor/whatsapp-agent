@@ -22,6 +22,7 @@ import {
   limpiarTexto,
   validarBloqueos,
   validarColorHex,
+  validarEmpleados,
   validarFaq,
   validarGoogleCalendarId,
   validarGooglePlaceId,
@@ -58,7 +59,8 @@ import {
   obtenerCampania,
 } from "../campaigns/campanias";
 import { previsualizarSegmento } from "../campaigns/segmentos";
-import { espaciosDisponibles } from "../booking/availability";
+import { empleadoOcupado, espaciosPorEmpleado } from "../booking/availability";
+import { esChoqueDeEmpleado } from "../booking/errores";
 import {
   hoyEnTz,
   sincronizarCancelacionGcal,
@@ -352,6 +354,9 @@ function validarAltaTenant(body: any): ResultadoAlta {
     servicios,
     kb,
     bloqueos: [],
+    // El equipo se carga después, desde "Mi negocio": un alta sin empleados arranca en
+    // modo recurso único, que es lo correcto para el negocio de una sola persona.
+    empleados: [],
     // C4.3: los negocios nuevos arrancan en Básico — Pro se desbloquea pagando desde la
     // pestaña "Facturación" del panel (el piloto ya existente quedó en "pro" gratis por
     // la migración aditiva, esto NO afecta tenants ya creados).
@@ -763,6 +768,10 @@ export async function manejarPanel(
       debeCambiarClave: obtenerUsuarioPorId(usuarioId)?.debeCambiarClave ?? false,
       vapidPublica: clavePublicaVapid(),
       servicios: tenant.servicios.filter((s) => s.agendable),
+      // Equipo para los carriles y el selector de la Agenda (ALTO-07). Se mandan también
+      // los inactivos: una cita vieja puede estar asignada a alguien que ya no atiende y
+      // la Agenda igual tiene que poder mostrar su nombre.
+      empleados: tenant.empleados ?? [],
       // White-label (C4.1): el panel se pinta con esto al cargar (ver web/src/lib/marca.ts).
       marca: {
         colorAcento: tenant.colorAcento ?? null,
@@ -998,6 +1007,7 @@ export async function manejarPanel(
       servicios: tenant.servicios, // catálogo completo, sin filtrar por agendable (a diferencia de "me")
       kb: tenant.kb,
       bloqueos: tenant.bloqueos,
+      empleados: tenant.empleados ?? [],
       linkResenas: tenant.linkResenas ?? "",
       plantillaMarketing: tenant.plantillaMarketing ?? "",
       plantillaReapertura: tenant.plantillaReapertura ?? "",
@@ -1051,6 +1061,38 @@ export async function manejarPanel(
 
     const bloqueos = validarBloqueos(body?.bloqueos ?? []);
     if (!bloqueos) return json(res, 400, { ok: false, error: "Hay un bloqueo inválido (fechas YYYY-MM-DD, desde ≤ hasta)" }), true;
+
+    // Equipo que atiende (ALTO-07). Se valida contra los servicios de ESTE mismo POST,
+    // no contra los guardados: el dueño puede renombrar un servicio y reasignarlo en la
+    // misma pantalla, y ahí el catálogo viejo ya no es la referencia correcta.
+    const resEmpleados = validarEmpleados(body?.empleados, new Set(servicios.map((s) => s.id)));
+    if (!resEmpleados.ok) return json(res, 400, { ok: false, error: resEmpleados.error }), true;
+    const empleados = resEmpleados.empleados;
+
+    // Guard de borrado: un empleado con citas NO se puede eliminar de la lista, porque
+    // wa_citas.empleado_id lo referencia y el histórico quedaría apuntando a la nada.
+    // Desactivarlo (activo:false) sí se permite siempre — es la vía normal para alguien
+    // que se fue. Solo se mira el futuro: las citas pasadas conservan el nombre igual.
+    const idsNuevos = new Set(empleados.map((e) => e.id));
+    const eliminados = (tenant.empleados ?? []).filter((e) => !idsNuevos.has(e.id));
+    if (eliminados.length > 0) {
+      const hoy = hoyEnTz(tenant.timezone);
+      const futuras = await repo.citasEnRango(tenant.id, hoy, "9999-12-31");
+      const conCitas = eliminados.filter((e) =>
+        futuras.some((c) => c.empleadoId === e.id && c.estado === "agendada"),
+      );
+      if (conCitas.length > 0) {
+        return (
+          json(res, 409, {
+            ok: false,
+            error: `No se puede eliminar a ${conCitas
+              .map((e) => e.nombre)
+              .join(", ")}: tiene citas agendadas. Desactivalo en vez de borrarlo, o reasigná sus citas primero.`,
+          }),
+          true
+        );
+      }
+    }
 
     const linkResenas = validarLinkResenas(body?.linkResenas);
     if (linkResenas === null) return json(res, 400, { ok: false, error: "Link de reseñas inválido (debe ser una URL http o https)" }), true;
@@ -1135,6 +1177,7 @@ export async function manejarPanel(
         servicios,
         kb,
         bloqueos,
+        empleados,
         linkResenas: linkResenas || null,
         plantillaMarketing: plantillaMarketing || null,
         plantillaReapertura: plantillaReapertura || null,
@@ -1235,11 +1278,14 @@ export async function manejarPanel(
     const servicio = tenant.servicios.find((s) => s.id === servicioId && s.agendable);
     if (!servicio) return json(res, 400, { ok: false, error: "Servicio inválido" }), true;
     const citasDia = await repo.citasPorFecha(tenant.id, fecha);
-    const libres = espaciosDisponibles(tenant, fecha, servicioId, citasDia);
+    // `espacios` trae, por cada hora, QUIÉNES la tienen libre (ALTO-07). `libres` se
+    // mantiene por compatibilidad: con equipo cargado es la unión de todo el equipo.
+    const espacios = espaciosPorEmpleado(tenant, fecha, servicioId, citasDia);
+    const libres = espacios.map((e) => e.hora);
     const ocupadas = citasDia
       .filter((c) => c.estado === "agendada")
-      .map((c) => ({ hora: c.hora, citaId: c.id, clienteNombre: c.clienteNombre }));
-    return json(res, 200, { ok: true, libres, ocupadas }), true;
+      .map((c) => ({ hora: c.hora, citaId: c.id, clienteNombre: c.clienteNombre, empleadoId: c.empleadoId }));
+    return json(res, 200, { ok: true, libres, espacios, ocupadas }), true;
   }
 
   if (ruta === "citas" && metodo === "POST") {
@@ -1269,17 +1315,41 @@ export async function manejarPanel(
       return json(res, 400, { ok: false, error: "No se puede agendar una fecha pasada" }), true;
     }
 
-    const cita: Cita = await repo.crearCita({
-      tenantId: tenant.id,
-      clienteWa,
-      clienteNombre,
-      servicioId,
-      fecha,
-      hora,
-      placa,
-      precio,
-      origen: "manual",
-    });
+    // Quién atiende (ALTO-07). Opcional: dejarlo vacío registra la cita sin asignar,
+    // que es lo correcto para un negocio sin equipo cargado o para un walk-in que el
+    // dueño todavía no repartió.
+    const empleadoId = String(body.empleadoId ?? "").trim() || undefined;
+    if (empleadoId) {
+      const emp = (tenant.empleados ?? []).find((e) => e.id === empleadoId);
+      if (!emp) return json(res, 400, { ok: false, error: "Esa persona no existe en el negocio" }), true;
+      // A diferencia del choque de horario del negocio (que el panel permite a propósito
+      // para walk-ins), duplicarle el horario a UNA persona no se permite nunca.
+      const citasDia = await repo.citasPorFecha(tenant.id, fecha);
+      if (empleadoOcupado(tenant, empleadoId, fecha, hora, servicioId, citasDia)) {
+        return json(res, 409, { ok: false, error: `${emp.nombre} ya tiene una cita a esa hora` }), true;
+      }
+    }
+
+    let cita: Cita;
+    try {
+      cita = await repo.crearCita({
+        tenantId: tenant.id,
+        clienteWa,
+        clienteNombre,
+        servicioId,
+        empleadoId,
+        fecha,
+        hora,
+        placa,
+        precio,
+        origen: "manual",
+      });
+    } catch (e) {
+      if (esChoqueDeEmpleado(e)) {
+        return json(res, 409, { ok: false, error: "Esa persona ya tiene una cita a esa hora" }), true;
+      }
+      throw e;
+    }
     await sincronizarCreacionGcal(tenant, repo, cita);
     // Rescate de cotizaciones (Carril D, 1.1): una cita creada a mano en la Agenda
     // también cierra una cotización activa del cliente para ese servicio.
@@ -1333,9 +1403,60 @@ export async function manejarPanel(
       if (fecha < hoyEnTz(tenant.timezone)) {
         return json(res, 400, { ok: false, error: "No se puede reprogramar a una fecha pasada" }), true;
       }
-      const cita = await repo.reprogramarCita(tenant.id, citaId, fecha, hora);
+      // La cita se mueve CON su persona (ALTO-07): si a esa persona el nuevo horario le
+      // choca con otra cita suya, se rechaza. El choque a nivel de NEGOCIO se sigue
+      // permitiendo, igual que en el alta manual.
+      const laCita = await repo.obtenerCitaPorId(tenant.id, citaId);
+      if (!laCita) return json(res, 404, { ok: false, error: "No existe" }), true;
+      if (laCita.empleadoId) {
+        const citasDia = await repo.citasPorFecha(tenant.id, fecha);
+        const emp = (tenant.empleados ?? []).find((e) => e.id === laCita.empleadoId);
+        if (empleadoOcupado(tenant, laCita.empleadoId, fecha, hora, laCita.servicioId, citasDia, citaId)) {
+          return json(res, 409, { ok: false, error: `${emp?.nombre ?? "Esa persona"} ya tiene una cita a esa hora` }), true;
+        }
+      }
+      let cita: Cita | null;
+      try {
+        cita = await repo.reprogramarCita(tenant.id, citaId, fecha, hora);
+      } catch (e) {
+        if (esChoqueDeEmpleado(e)) {
+          return json(res, 409, { ok: false, error: "Esa persona ya tiene una cita a esa hora" }), true;
+        }
+        throw e;
+      }
       if (!cita) return json(res, 404, { ok: false, error: "No existe" }), true;
       await sincronizarReprogramacionGcal(tenant, cita);
+      return json(res, 200, { ok: true, cita }), true;
+    }
+
+    // Reasignar a otra persona (ALTO-07), desde el detalle de la cita en la Agenda.
+    // `empleadoId` vacío la deja sin asignar.
+    if (accion === "asignar" && metodo === "POST") {
+      const body = await leerBody(req);
+      if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
+      const nuevo = String(body.empleadoId ?? "").trim();
+      if (nuevo && !(tenant.empleados ?? []).some((e) => e.id === nuevo)) {
+        return json(res, 400, { ok: false, error: "Esa persona no existe en el negocio" }), true;
+      }
+      const actual = await repo.obtenerCitaPorId(tenant.id, citaId);
+      if (!actual) return json(res, 404, { ok: false, error: "No existe" }), true;
+      if (nuevo) {
+        const citasDia = await repo.citasPorFecha(tenant.id, actual.fecha);
+        if (empleadoOcupado(tenant, nuevo, actual.fecha, actual.hora, actual.servicioId, citasDia, citaId)) {
+          const emp = (tenant.empleados ?? []).find((e) => e.id === nuevo);
+          return json(res, 409, { ok: false, error: `${emp?.nombre ?? "Esa persona"} ya tiene una cita a esa hora` }), true;
+        }
+      }
+      let cita: Cita | null;
+      try {
+        cita = await repo.reasignarCita(tenant.id, citaId, nuevo || null);
+      } catch (e) {
+        if (esChoqueDeEmpleado(e)) {
+          return json(res, 409, { ok: false, error: "Esa persona ya tiene una cita a esa hora" }), true;
+        }
+        throw e;
+      }
+      if (!cita) return json(res, 404, { ok: false, error: "No existe" }), true;
       return json(res, 200, { ok: true, cita }), true;
     }
   }

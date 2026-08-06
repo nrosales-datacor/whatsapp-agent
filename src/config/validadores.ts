@@ -1,4 +1,4 @@
-import type { Bloqueo, HorarioDia, KnowledgeBase, SeccionConocimiento, Service } from "../types";
+import type { Bloqueo, Empleado, HorarioDia, KnowledgeBase, SeccionConocimiento, Service } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Validación server-side de la config de un negocio (horario/servicios/faq/
@@ -268,6 +268,91 @@ export function validarBloqueos(v: unknown): Bloqueo[] | null {
     out.push(bloqueo);
   }
   return out;
+}
+
+export type ResultadoEmpleados = { ok: true; empleados: Empleado[] } | { ok: false; error: string };
+
+/**
+ * Valida el equipo que atiende (ALTO-07): personas, bahías, sillones. Mismo estilo de
+ * errores puntuales que `validarServicios` — el dueño edita esto desde "Mi negocio" y
+ * necesita saber CUÁL fila corregir.
+ *
+ * `idsServicios` son los ids de servicios ya validados, para rechazar un `serviciosIds`
+ * que apunte a un servicio inexistente (el mismo criterio que la segunda pasada de
+ * `validarServicios` con los add-ons).
+ *
+ * ⚠️ REGLA CRÍTICA: si la fila trae un `id` válido se RESPETA tal cual. Las citas ya
+ * guardadas lo referencian por `wa_citas.empleado_id`; regenerarlo desde el nombre
+ * dejaría huérfano todo el histórico apenas alguien corrija una tilde. El slug solo se
+ * deriva del nombre cuando la fila es nueva y no trae id.
+ */
+export function validarEmpleados(v: unknown, idsServicios: Set<string>): ResultadoEmpleados {
+  if (v === undefined || v === null) return { ok: true, empleados: [] };
+  if (!Array.isArray(v)) return { ok: false, error: "La lista de quiénes atienden debe ser un arreglo" };
+  if (v.length > 50) return { ok: false, error: "Máximo 50 personas o puestos de atención" };
+
+  const out: Empleado[] = [];
+  const vistos = new Set<string>();
+  for (let i = 0; i < v.length; i++) {
+    const e = v[i];
+    if (!e || typeof e !== "object") return { ok: false, error: `La fila #${i + 1} de quiénes atienden tiene datos inválidos` };
+    const r = e as Record<string, unknown>;
+    const nombre = String(r.nombre ?? "").trim();
+    const etiqueta = nombre || `#${i + 1}`;
+    if (!nombre || nombre.length > 120) {
+      return { ok: false, error: `La fila "${etiqueta}" necesita un nombre (1 a 120 caracteres)` };
+    }
+
+    // Id inmutable si ya venía; derivado del nombre solo para filas nuevas.
+    const idCrudo = String(r.id ?? "").trim();
+    let id: string;
+    if (idCrudo) {
+      if (!RE_SLUG.test(idCrudo) || idCrudo.length > 50) {
+        return { ok: false, error: `El id de "${etiqueta}" debe usar solo minúsculas, números y guiones` };
+      }
+      id = idCrudo;
+    } else {
+      const base = aSlug(nombre) || "empleado";
+      id = base;
+      let n = 2;
+      while (vistos.has(id)) id = `${base}-${n++}`;
+    }
+    if (vistos.has(id)) return { ok: false, error: `El id "${id}" está repetido en más de una fila` };
+    vistos.add(id);
+
+    const emp: Empleado = { id, nombre, activo: r.activo !== false };
+
+    // Vacío/ausente = hace todos los servicios agendables. Solo se persiste si el dueño
+    // restringió de verdad, para que el default siga siendo "hace de todo".
+    if (r.serviciosIds !== undefined && r.serviciosIds !== null) {
+      if (!Array.isArray(r.serviciosIds)) {
+        return { ok: false, error: `Los servicios de "${etiqueta}" deben ser un arreglo` };
+      }
+      const ids: string[] = [];
+      for (const s of r.serviciosIds) {
+        const sid = String(s ?? "").trim();
+        if (!sid) continue;
+        if (!idsServicios.has(sid)) {
+          return { ok: false, error: `"${etiqueta}" tiene asignado un servicio que no existe ("${sid}")` };
+        }
+        if (!ids.includes(sid)) ids.push(sid);
+      }
+      if (ids.length > 0) emp.serviciosIds = ids;
+    }
+
+    const bloqueos = validarBloqueos(r.bloqueos ?? []);
+    if (bloqueos === null) return { ok: false, error: `Los días libres de "${etiqueta}" tienen un rango de fechas inválido` };
+    if (bloqueos.length > 0) emp.bloqueos = bloqueos;
+
+    const color = String(r.color ?? "").trim();
+    if (color) {
+      if (!RE_COLOR_HEX.test(color)) return { ok: false, error: `El color de "${etiqueta}" debe ser un hex tipo #3366ff` };
+      emp.color = color.toLowerCase();
+    }
+
+    out.push(emp);
+  }
+  return { ok: true, empleados: out };
 }
 
 /**

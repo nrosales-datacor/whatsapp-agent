@@ -91,6 +91,41 @@ export interface Bloqueo {
   motivo?: string;
 }
 
+/**
+ * Quién atiende una cita: un empleado, una bahía, un sillón, un consultorio. La agenda
+ * nació con UN solo recurso implícito (cualquier solape bloqueaba el horario), así que
+ * un negocio con 2+ personas atendiendo perdía la mitad de su capacidad — hallazgo
+ * ALTO-07 de `AUDIT.md`.
+ *
+ * Vive como arreglo JSONB en `wa_tenants` y se referencia por slug desde
+ * `wa_citas.empleado_id`, exactamente igual que `servicios`/`servicio_id`: son la misma
+ * clase de cosa (lista chica, read-mostly, sin FK). Así llega gratis al agente por el
+ * caché del tenantStore, sin una query extra por turno.
+ *
+ * ⚠️ El id es INMUTABLE una vez que hay citas apuntándole. Por eso el panel desactiva
+ * en vez de borrar (`activo: false` conserva el histórico y su nombre); el borrado duro
+ * solo se permite cuando el empleado no tiene ninguna cita.
+ */
+export interface Empleado {
+  /** Slug estable derivado del nombre. Inmutable: `wa_citas.empleado_id` lo referencia. */
+  id: string;
+  nombre: string;
+  /** false = no recibe citas nuevas ni se le ofrece al cliente, pero su histórico se conserva. */
+  activo: boolean;
+  /**
+   * Servicios que sabe hacer. undefined o vacío = hace TODOS los agendables (default
+   * amable: el dueño que solo escribe nombres no tiene que configurar nada más).
+   */
+  serviciosIds?: string[];
+  /**
+   * Días libres puntuales de ESTA persona (vacaciones, incapacidad), aparte de los
+   * bloqueos del negocio. El horario semanal sigue siendo el del tenant.
+   */
+  bloqueos?: Bloqueo[];
+  /** Color hex "#rrggbb" del carril en la Agenda. undefined = se asigna uno por posición. */
+  color?: string;
+}
+
 /** Un negocio conectado al agente. */
 export interface Tenant {
   id: string;
@@ -116,6 +151,12 @@ export interface Tenant {
   kb: KnowledgeBase;
   /** Fechas puntuales cerradas (feriados/vacaciones), fuera del horario semanal recurrente. */
   bloqueos: Bloqueo[];
+  /**
+   * Quiénes atienden (personas, bahías, sillones). Vacío = el negocio se comporta como
+   * UN solo recurso, que es exactamente el comportamiento anterior a ALTO-07: así los
+   * tenants que ya existen no cambian en nada hasta que el dueño cargue su equipo.
+   */
+  empleados: Empleado[];
   /**
    * Link para pedir reseña de Google (Maps / "Escribir reseña"), usado en el
    * seguimiento post-servicio (C3.1). undefined = sin configurar (no se pide reseña).
@@ -225,6 +266,12 @@ export interface Cita {
   clienteWa: string;
   clienteNombre: string;
   servicioId: string;
+  /**
+   * Quién atiende (`Empleado.id`). undefined = sin asignar: son las citas anteriores a
+   * ALTO-07 y las de negocios que no cargaron equipo. Una cita sin asignar NO bloquea a
+   * ningún empleado en particular — ver src/booking/availability.ts.
+   */
+  empleadoId?: string;
   fecha: string; // "YYYY-MM-DD"
   hora: string; // "HH:mm"
   placa?: string;
@@ -664,6 +711,22 @@ export interface Repositorio {
    * profundidad). Devuelve la cita actualizada, o null si no existe / no es del tenant.
    */
   reprogramarCita(tenantId: string, citaId: string, fecha: string, hora: string): Promise<Cita | null>;
+  /**
+   * Una cita por id, scopeada por tenantId. null si no existe o no es de ese negocio.
+   * La necesitan reprogramar/reasignar para saber a quién está asignada ANTES de mover
+   * nada (ALTO-07) — sin esto habría que escanear el rango completo de citas.
+   */
+  obtenerCitaPorId(tenantId: string, citaId: string): Promise<Cita | null>;
+  /**
+   * Cambia quién atiende una cita ya creada (ALTO-07), desde la Agenda del panel.
+   * `null` la deja sin asignar. Scopeada por tenantId. Devuelve la cita actualizada,
+   * o null si no existe / no es del tenant.
+   *
+   * Con DB, el índice único `wa_citas_empleado_slot_uq` rechaza (23505) el intento de
+   * dejar a la misma persona con dos citas "agendada" en el mismo horario: el caller
+   * debe traducir ese error a un 409, no dejarlo escapar como 500.
+   */
+  reasignarCita(tenantId: string, citaId: string, empleadoId: string | null): Promise<Cita | null>;
   /**
    * Cancela una cita (estado "cancelada"). Scopeada por tenantId. Devuelve la cita
    * (con su gcalEventId, para borrar el evento del Calendar), o null si no existe.

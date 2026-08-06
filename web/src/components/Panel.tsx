@@ -169,7 +169,7 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
             </div>
           )}
           {vista === "panel" && <Dashboard nombre={sesion.nombre} />}
-          {vista === "agenda" && <Agenda servicios={sesion.servicios} />}
+          {vista === "agenda" && <Agenda servicios={sesion.servicios} empleados={sesion.empleados ?? []} />}
           {vista === "config" && sesion.rol === "dueno" && <MiNegocio features={sesion.features} />}
           {vista === "usuarios" && sesion.rol === "dueno" && sesion.features.multiUsuario && (
             <Usuarios usuarioActualId={sesion.usuarioId} />

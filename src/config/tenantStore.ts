@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import type { Bloqueo, EstadoFacturacion, HorarioDia, KnowledgeBase, Plan, Rol, Service, Tenant } from "../types";
+import type { Bloqueo, Empleado, EstadoFacturacion, HorarioDia, KnowledgeBase, Plan, Rol, Service, Tenant } from "../types";
 import { crearDb } from "../db/client";
 import { waTenants, waUsuarios } from "../db/schema";
 import { TENANT_FALLBACK_SELYON } from "./tenants";
@@ -109,6 +109,9 @@ function filaATenant(f: typeof waTenants.$inferSelect): Tenant {
     // prompt (systemPrompt ya no lee tarifas/parabrisas). Ver [[deploy-migracion-obligatoria]].
     kb: normalizarKb(f.kb),
     bloqueos: f.bloqueos,
+    // `?? []` y no solo `f.empleados`: una fila escrita antes de la columna puede venir
+    // sin el campo, y ahí el negocio debe seguir corriendo en modo recurso único.
+    empleados: f.empleados ?? [],
     linkResenas: f.linkResenas ?? undefined,
     plantillaMarketing: f.plantillaMarketing ?? undefined,
     plantillaReapertura: f.plantillaReapertura ?? undefined,
@@ -310,6 +313,7 @@ export async function actualizarConfigTenant(
     servicios: Service[];
     kb: KnowledgeBase;
     bloqueos: Bloqueo[];
+    empleados: Empleado[];
     linkResenas: string | null;
     plantillaMarketing: string | null;
     plantillaReapertura: string | null;
@@ -340,6 +344,7 @@ export async function actualizarConfigTenant(
       servicios: patch.servicios,
       kb: patch.kb,
       bloqueos: patch.bloqueos,
+      empleados: patch.empleados,
       linkResenas: patch.linkResenas,
       plantillaMarketing: patch.plantillaMarketing,
       plantillaReapertura: patch.plantillaReapertura,

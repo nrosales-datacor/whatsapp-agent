@@ -121,9 +121,34 @@ function horaAmigable(hhmm: string): string {
   return `${h12}:${String(m).padStart(2, "0")} ${sufijo}`;
 }
 
-/** Construye una opción de lista para un horario de cita. */
-export function opcionHorario(fecha: string, hora: string): OpcionInteractiva {
-  return { id: `slot|${fecha}|${hora}`, titulo: horaAmigable(hora) };
+/**
+ * Construye una opción de lista para un horario de cita.
+ *
+ * Con equipo cargado (ALTO-07) el id lleva un cuarto campo con quién lo va a atender,
+ * para que el tap no pierda esa elección. `empleadoNombre` va en la descripción de la
+ * fila (≤72 chars), no en el título, que solo tiene 24.
+ */
+export function opcionHorario(
+  fecha: string,
+  hora: string,
+  empleadoId?: string,
+  empleadoNombre?: string,
+): OpcionInteractiva {
+  const opcion: OpcionInteractiva = {
+    id: empleadoId ? `slot|${fecha}|${hora}|${empleadoId}` : `slot|${fecha}|${hora}`,
+    titulo: horaAmigable(hora),
+  };
+  if (empleadoNombre) opcion.descripcion = `Con ${empleadoNombre}`.slice(0, 72);
+  return opcion;
+}
+
+/**
+ * Construye una opción de lista para elegir con QUIÉN se agenda (ALTO-07). El id
+ * `empleado|<servicioId>|<empleadoId>` lleva el servicio para que el agente no dependa
+ * de recordarlo del turno anterior; `empleadoId` vacío = "cualquiera".
+ */
+export function opcionEmpleado(servicioId: string, empleadoId: string, nombre: string): OpcionInteractiva {
+  return { id: `empleado|${servicioId}|${empleadoId}`, titulo: nombre.slice(0, 24) };
 }
 
 /** Botones del recordatorio de cita (C1.3): confirmar o pedir reprogramación. */
@@ -190,9 +215,20 @@ export function respuestaPostServicio(interactiveId: string | undefined): { cita
  */
 function decodificarRespuestaInteractiva(id: string, titulo: string): string {
   const [tipo, ...resto] = id.split("|");
-  if (tipo === "slot" && resto.length === 2) {
-    const [fecha, hora] = resto;
-    return `Quiero agendar para el ${fecha} a las ${hora}.`;
+  // `slot|fecha|hora` (sin equipo) y `slot|fecha|hora|empleadoId` (con equipo, ALTO-07).
+  // Se aceptan los dos largos a propósito: cuando se agregó el 4º campo podía haber
+  // listas ya enviadas al cliente esperando respuesta, y esas siguen decodificando bien.
+  if (tipo === "slot" && (resto.length === 2 || resto.length === 3)) {
+    const [fecha, hora, empleadoId] = resto;
+    const con = empleadoId ? ` con el id de empleado ${empleadoId}` : "";
+    return `Quiero agendar para el ${fecha} a las ${hora}${con}.`;
+  }
+  // Elección de con quién atenderse (ALTO-07). `empleadoId` vacío = le da igual.
+  if (tipo === "empleado" && resto.length === 2) {
+    const [servicioId, empleadoId] = resto;
+    return empleadoId
+      ? `Quiero agendar ${servicioId} con el id de empleado ${empleadoId}.`
+      : `Quiero agendar ${servicioId} con cualquiera que esté disponible.`;
   }
   // Confirmación de cita: se maneja como acción directa en handleWebhook (no llega
   // al agente), pero igual dejamos un texto legible para el historial del panel.

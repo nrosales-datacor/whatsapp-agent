@@ -5,6 +5,7 @@ import {
   guardarConfig,
   type Bloqueo,
   type ConfigNegocio,
+  type Empleado,
   type Features,
   type HorarioDia,
   type KnowledgeBase,
@@ -33,6 +34,7 @@ const SUBNAV: { id: string; label: string; icono: IconoId }[] = [
   { id: "mnPerfil", label: "Perfil del negocio", icono: "bot" },
   { id: "mnMarca", label: "Marca", icono: "palette" },
   { id: "mnServicios", label: "Servicios", icono: "wrench" },
+  { id: "mnEquipo", label: "Quiénes atienden", icono: "user" },
   { id: "mnHorario", label: "Horario", icono: "clock" },
   { id: "mnFeriados", label: "Feriados y bloqueos", icono: "calendarx" },
   { id: "mnCalendario", label: "Google Calendar", icono: "calcheck" },
@@ -71,6 +73,17 @@ interface BloqueoForm {
   desde: string;
   hasta: string;
   motivo: string;
+}
+/**
+ * Quiénes atienden (ALTO-07). `serviciosIds` vacío = hace todos los servicios, que es el
+ * default amable: el dueño que solo escribe nombres no tiene que tocar nada más.
+ */
+interface EmpleadoForm {
+  /** "" en una fila recién agregada: el id lo deriva el backend del nombre y ya no cambia. */
+  id: string;
+  nombre: string;
+  activo: boolean;
+  serviciosIds: string[];
 }
 
 const DIAS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
@@ -126,6 +139,15 @@ function horarioAForm(horario: Record<number, HorarioDia>): DiaForm[] {
   });
 }
 
+function empleadosAForm(empleados: Empleado[]): EmpleadoForm[] {
+  return empleados.map((e) => ({
+    id: e.id,
+    nombre: e.nombre,
+    activo: e.activo,
+    serviciosIds: [...(e.serviciosIds ?? [])],
+  }));
+}
+
 function bloqueosAForm(bloqueos: Bloqueo[]): BloqueoForm[] {
   return bloqueos.map((b) => ({ desde: b.desde, hasta: b.hasta, motivo: b.motivo ?? "" }));
 }
@@ -139,6 +161,7 @@ export default function MiNegocio({ features }: { features: Features }) {
   const [servicios, setServicios] = useState<ServicioForm[]>([]);
   const [arrastrando, setArrastrando] = useState<number | null>(null);
   const [horario, setHorario] = useState<DiaForm[]>([]);
+  const [empleados, setEmpleados] = useState<EmpleadoForm[]>([]);
   const [bloqueos, setBloqueos] = useState<BloqueoForm[]>([]);
   const [faqs, setFaqs] = useState<FaqForm[]>([]);
   const [datos, setDatos] = useState<string[]>([]);
@@ -179,7 +202,7 @@ export default function MiNegocio({ features }: { features: Features }) {
 
   function construirSnapshotActual() {
     return JSON.stringify({
-      servicios, horario, bloqueos, faqs, datos, politicas, secciones,
+      servicios, horario, empleados, bloqueos, faqs, datos, politicas, secciones,
       linkResenas, plantillaMarketing, plantillaReapertura, colorAcento, colorHeader, logoUrl,
       rescateActivo, rescateHorasEspera, rescateToque1Texto, rescateToque2Texto, rescatePlantilla,
       googlePlaceId, googleCalendarId, tipoNegocio, pais, formasPago, registro, tono, instrucciones,
@@ -189,6 +212,7 @@ export default function MiNegocio({ features }: { features: Features }) {
   function poblar(data: ConfigNegocio) {
     const servF = serviciosAForm(data.servicios);
     const horF = horarioAForm(data.horario);
+    const empF = empleadosAForm(data.empleados ?? []);
     const bloqF = bloqueosAForm(data.bloqueos);
     const faqF = data.kb.faq.map((f) => ({ ...f }));
     const datosF = data.kb.datos ?? [];
@@ -215,6 +239,7 @@ export default function MiNegocio({ features }: { features: Features }) {
 
     setServicios(servF);
     setHorario(horF);
+    setEmpleados(empF);
     setBloqueos(bloqF);
     setFaqs(faqF);
     setDatos(datosF);
@@ -242,7 +267,7 @@ export default function MiNegocio({ features }: { features: Features }) {
 
     setSnapshotInicial(
       JSON.stringify({
-        servicios: servF, horario: horF, bloqueos: bloqF, faqs: faqF,
+        servicios: servF, horario: horF, empleados: empF, bloqueos: bloqF, faqs: faqF,
         datos: datosF, politicas: politicasF, secciones: seccionesF,
         linkResenas: linkResenasF, plantillaMarketing: plantillaMarketingF,
         plantillaReapertura: plantillaReaperturaF, colorAcento: colorAcentoF,
@@ -409,6 +434,23 @@ export default function MiNegocio({ features }: { features: Features }) {
       });
   }
 
+  /**
+   * Equipo listo para enviar (ALTO-07). Descarta filas sin nombre y NO toca el `id` de
+   * las que ya existían: `wa_citas.empleado_id` las referencia, así que regenerarlo desde
+   * el nombre dejaría el histórico apuntando a la nada. El backend deriva el slug solo
+   * para las filas nuevas (id vacío).
+   */
+  function construirEmpleados(): Empleado[] {
+    return empleados
+      .filter((e) => e.nombre.trim())
+      .map((e) => {
+        const emp: Empleado = { id: e.id, nombre: e.nombre.trim(), activo: e.activo };
+        // Vacío = hace todos los servicios; se omite para que el default siga siendo ese.
+        if (e.serviciosIds.length > 0) emp.serviciosIds = e.serviciosIds;
+        return emp;
+      });
+  }
+
   function alGuardar() {
     const kb: KnowledgeBase = {
       faq: faqs
@@ -425,6 +467,7 @@ export default function MiNegocio({ features }: { features: Features }) {
       servicios: construirServicios(),
       kb,
       bloqueos: construirBloqueos(),
+      empleados: construirEmpleados(),
       linkResenas: linkResenas.trim(),
       plantillaMarketing: plantillaMarketing.trim(),
       plantillaReapertura: plantillaReapertura.trim(),
@@ -869,6 +912,99 @@ export default function MiNegocio({ features }: { features: Features }) {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* Quiénes atienden (ALTO-07): sin nadie cargado el negocio agenda de a una
+                cita por vez, que es lo correcto para el negocio de una sola persona. */}
+            <div className="card" id="mnEquipo">
+              <h3>Quiénes atienden</h3>
+              <p className="mn-section-sub">
+                Cargá a las personas (o puestos: bahías, sillas, consultorios) que atienden al mismo tiempo. El bot
+                deja que el cliente elija con quién y nunca le agenda dos citas encimadas a la misma persona.
+                <b> Si lo dejás vacío, el negocio agenda una cita por vez</b>, como hasta ahora.
+              </p>
+
+              {empleados.length === 0 && (
+                <EstadoVacio
+                  icono="user"
+                  titulo="Todavía no cargaste a nadie"
+                  ayuda="Agregá a cada persona o puesto que puede atender en paralelo para aprovechar toda tu capacidad."
+                  accion={{
+                    texto: "Agregar al primero",
+                    icono: "plus",
+                    onClick: () => setEmpleados([{ id: "", nombre: "", activo: true, serviciosIds: [] }]),
+                  }}
+                />
+              )}
+
+              {empleados.length > 0 && (
+                <div className="equipo-lista">
+                  {empleados.map((e, i) => {
+                    const setEmp = (patch: Partial<EmpleadoForm>) =>
+                      setEmpleados((prev) => prev.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+                    const agendables = servicios.filter((s) => s.agendable);
+                    return (
+                      <div className={"equipo-fila" + (e.activo ? "" : " equipo-fila-inactiva")} key={e.id || `nuevo-${i}`}>
+                        <div className="equipo-fila-head">
+                          <input
+                            aria-label={`Nombre de la persona ${i + 1}`}
+                            value={e.nombre}
+                            onChange={(ev) => setEmp({ nombre: ev.target.value })}
+                            placeholder="Ej: Ana, Marco, Bahía 1…"
+                          />
+                          <label className="mn-check" title="Una persona inactiva no recibe citas nuevas, pero su histórico se conserva">
+                            <input type="checkbox" checked={e.activo} onChange={(ev) => setEmp({ activo: ev.target.checked })} />
+                            Activo
+                          </label>
+                          <button
+                            type="button"
+                            className="btn-ghost"
+                            title={
+                              e.id
+                                ? "Eliminar. Si tiene citas agendadas el guardado lo va a rechazar: en ese caso desactivalo."
+                                : "Quitar esta fila"
+                            }
+                            onClick={() => setEmpleados((prev) => prev.filter((_, j) => j !== i))}
+                          >
+                            <Icono id="x" size={14} />
+                          </button>
+                        </div>
+                        {agendables.length > 0 && (
+                          <div className="equipo-servicios">
+                            <span className="equipo-servicios-label">
+                              Qué hace {e.serviciosIds.length === 0 && <b>(todo)</b>}
+                            </span>
+                            {agendables.map((s) => (
+                              <label className="mn-check" key={s.id}>
+                                <input
+                                  type="checkbox"
+                                  checked={e.serviciosIds.includes(s.id)}
+                                  onChange={(ev) =>
+                                    setEmp({
+                                      serviciosIds: ev.target.checked
+                                        ? [...e.serviciosIds, s.id]
+                                        : e.serviciosIds.filter((x) => x !== s.id),
+                                    })
+                                  }
+                                />
+                                {s.nombre || s.id}
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    className="accion accion-outline"
+                    onClick={() => setEmpleados((prev) => [...prev, { id: "", nombre: "", activo: true, serviciosIds: [] }])}
+                  >
+                    <Icono id="plus" size={14} />
+                    Agregar persona
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="card" id="mnHorario">

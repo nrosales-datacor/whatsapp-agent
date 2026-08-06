@@ -1,4 +1,4 @@
-import type { Bloqueo, Cita, HorarioDia, Service, Tenant } from "../../src/types";
+import type { Bloqueo, Cita, Empleado, HorarioDia, Service, Tenant } from "../../src/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fabricadores para tests: un Tenant "de lavacar" razonable por defecto, con
@@ -33,6 +33,9 @@ export function crearTenant(overrides: Partial<Tenant> = {}): Tenant {
     servicios: SERVICIOS_DEFAULT,
     kb: { faq: [], datos: [], politicas: [] },
     bloqueos: [] as Bloqueo[],
+    // Sin equipo cargado = modo recurso único (comportamiento previo a ALTO-07). Los
+    // tests que prueban capacidad simultánea pasan sus propios empleados por override.
+    empleados: [] as Empleado[],
     plan: "basico",
     ...overrides,
   };

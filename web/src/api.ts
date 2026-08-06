@@ -14,6 +14,7 @@ import type {
   Cita,
   ClienteSegmento,
   Conversacion,
+  Empleado,
   EstadoConversacion,
   FichaCliente,
   HorarioDia,
@@ -35,6 +36,7 @@ export type {
   Cita,
   ClienteSegmento,
   Conversacion,
+  Empleado,
   EstadoConversacion,
   FichaCliente,
   HorarioDia,
@@ -129,6 +131,12 @@ export interface Sesion {
   vapidPublica: string | null;
   /** Catálogo de servicios agendables del negocio (para la Agenda, C2.1). */
   servicios: Service[];
+  /**
+   * Quiénes atienden (ALTO-07), para los carriles y el selector de la Agenda. Incluye
+   * los inactivos: una cita vieja puede estar asignada a alguien que ya no atiende y
+   * hay que poder mostrar su nombre igual. Vacío = negocio de un solo recurso.
+   */
+  empleados: Empleado[];
   /** White-label (C4.1): color de acento/encabezado y logo del negocio. */
   marca: Marca;
   /** Plan de suscripción del negocio (Carril D): "basico" | "pro". */
@@ -229,8 +237,11 @@ export interface CitaAgenda extends Cita {
 }
 
 export interface Disponibilidad {
+  /** Horas con al menos alguien libre (con equipo, la unión de todo el equipo). */
   libres: string[];
-  ocupadas: { hora: string; citaId: string; clienteNombre: string }[];
+  /** Por cada hora libre, quiénes la pueden tomar (ALTO-07). `empleados` vacío = sin equipo cargado. */
+  espacios: { hora: string; empleados: string[] }[];
+  ocupadas: { hora: string; citaId: string; clienteNombre: string; empleadoId?: string }[];
 }
 
 export interface DatosCitaManual {
@@ -239,6 +250,8 @@ export interface DatosCitaManual {
   servicioId: string;
   fecha: string;
   hora: string;
+  /** Quién atiende (ALTO-07). Omitir para dejarla sin asignar. */
+  empleadoId?: string;
   placa?: string;
   precio?: number;
 }
@@ -280,12 +293,22 @@ export async function reprogramarCitaPanel(id: string, fecha: string, hora: stri
   });
 }
 
+/** Reasigna la cita a otra persona (ALTO-07). `empleadoId` vacío la deja sin asignar. */
+export async function asignarCitaPanel(id: string, empleadoId: string): Promise<void> {
+  await pedir(`/citas/${encodeURIComponent(id)}/asignar`, {
+    method: "POST",
+    body: JSON.stringify({ empleadoId }),
+  });
+}
+
 // ── Config del negocio (C2.2) ──
 export interface ConfigNegocio {
   horario: Record<number, HorarioDia>;
   servicios: Service[];
   kb: KnowledgeBase;
   bloqueos: Bloqueo[];
+  /** Quiénes atienden (ALTO-07). Vacío = el negocio atiende como un solo recurso. */
+  empleados: Empleado[];
   /** Link para pedir reseña de Google (Maps / "Escribir reseña"). "" = sin configurar. */
   linkResenas: string;
   /** Nombre de la plantilla MARKETING aprobada en Meta (C3.2). "" = sin configurar. */

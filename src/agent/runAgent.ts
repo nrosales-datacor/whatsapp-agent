@@ -3,8 +3,9 @@ import type { ChatCompletionContentPart, ChatCompletionMessageParam } from "open
 import type { Cita, MensajeConversacion, MensajeInteractivo, Repositorio, Tenant } from "../types";
 import { construirSystemPrompt } from "./systemPrompt";
 import { TOOLS } from "./tools";
-import { opcionHorario } from "../whatsapp/client";
-import { espaciosDisponibles } from "../booking/availability";
+import { opcionEmpleado, opcionHorario } from "../whatsapp/client";
+import { empleadosElegibles, espaciosDisponibles, espaciosPorEmpleado } from "../booking/availability";
+import { esChoqueDeEmpleado } from "../booking/errores";
 import {
   hoyEnTz,
   sincronizarCancelacionGcal,
@@ -45,8 +46,12 @@ const MAX_FILAS_LISTA = 10;
  * `capturas` es un canal de salida lateral: algunas herramientas (p. ej.
  * `ofrecer_horarios`) no solo informan al modelo, sino que dejan un efecto para
  * handleWebhook (mandar un mensaje interactivo). Se rellena, no se devuelve al modelo.
+ *
+ * Exportada SOLO para los tests (auditoría ALTO-18: no había ninguna prueba del corazón
+ * del producto). Invocarla directo con args hostiles verifica los guards sin gastar una
+ * llamada al LLM y sin depender de que el modelo se porte bien.
  */
-async function ejecutarTool(
+export async function ejecutarTool(
   nombre: string,
   args: Record<string, unknown>,
   ctx: ContextoAgente,
@@ -58,10 +63,68 @@ async function ejecutarTool(
   const servicioEsAgendable = (servicioId: string) =>
     tenant.servicios.some((s) => s.id === servicioId && s.agendable);
 
+  // Equipo que atiende (ALTO-07). Vacío = el negocio corre como un solo recurso y toda
+  // la rama de "con quién" queda apagada sola, sin ramas nuevas en el flujo.
+  const hayEquipo = (tenant.empleados ?? []).length > 0;
+  const nombreEmpleado = (id: string | undefined) =>
+    (id && tenant.empleados?.find((e) => e.id === id)?.nombre) || undefined;
+  /** Normaliza el empleadoId que mandó el modelo: string vacío / "cualquiera" = sin preferencia. */
+  const empleadoPedido = (v: unknown): string | undefined => {
+    const s = String(v ?? "").trim();
+    if (!s || s.toLowerCase() === "cualquiera") return undefined;
+    return s;
+  };
+
+  if (nombre === "ofrecer_empleados") {
+    const servicioId = String(args.servicioId);
+    if (!servicioEsAgendable(servicioId)) {
+      return JSON.stringify({
+        ok: false,
+        motivo: "ese servicio no se agenda (no requiere cita). Solo se agendan los servicios marcados como agendables.",
+      });
+    }
+    if (!hayEquipo) {
+      return JSON.stringify({
+        ok: false,
+        motivo: "este negocio no tiene equipo cargado: no hay con quién elegir. Pasá directo a ofrecer_horarios.",
+      });
+    }
+    // Se mira "hoy" solo para no listar a quien está de vacaciones justo ahora. La
+    // disponibilidad real por fecha la resuelve después ofrecer_horarios.
+    const elegibles = empleadosElegibles(tenant, hoyEnTz(tenant.timezone), servicioId);
+    if (elegibles.length === 0) {
+      return JSON.stringify({ ok: false, motivo: "no hay nadie disponible para ese servicio; ofrecé otro servicio o escalá." });
+    }
+    if (elegibles.length === 1) {
+      return JSON.stringify({
+        ok: false,
+        motivo: `solo atiende ${elegibles[0].nombre}, no hay nada que elegir. Pasá directo a ofrecer_horarios.`,
+        empleadoId: elegibles[0].id,
+      });
+    }
+    const mostrados = elegibles.slice(0, MAX_FILAS_LISTA - 1); // deja lugar a "Cualquiera"
+    capturas.interactivo = {
+      tipo: "lista",
+      cuerpo: "", // handleWebhook lo rellena con la frase que redacte el agente.
+      textoBoton: "Ver equipo",
+      opciones: [
+        ...mostrados.map((e) => opcionEmpleado(servicioId, e.id, e.nombre)),
+        opcionEmpleado(servicioId, "", "Cualquiera"),
+      ],
+    };
+    return JSON.stringify({
+      ok: true,
+      empleados: mostrados.map((e) => ({ id: e.id, nombre: e.nombre })),
+      mensaje:
+        "Le mostré al cliente la lista tocable de con quién atenderse (más la opción 'Cualquiera'). Preguntale con UNA frase corta con quién prefiere. No repitas los nombres en texto.",
+    });
+  }
+
   if (nombre === "ofrecer_horarios") {
     const fecha = String(args.fecha);
     const servicioId = String(args.servicioId);
     const franja = args.franja ? String(args.franja) : "todos";
+    const empleadoId = empleadoPedido(args.empleadoId);
     if (!servicioEsAgendable(servicioId)) {
       return JSON.stringify({
         ok: false,
@@ -71,30 +134,43 @@ async function ejecutarTool(
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
       return JSON.stringify({ ok: false, motivo: "formato de fecha inválido: usá YYYY-MM-DD." });
     }
+    if (empleadoId && !nombreEmpleado(empleadoId)) {
+      return JSON.stringify({ ok: false, motivo: `no existe nadie con el id "${empleadoId}" en este negocio.` });
+    }
     const citas = await repo.citasPorFecha(tenant.id, fecha);
-    let libres = espaciosDisponibles(tenant, fecha, servicioId, citas);
-    if (franja === "mañana") libres = libres.filter((h) => Number(h.slice(0, 2)) < 12);
-    else if (franja === "tarde") libres = libres.filter((h) => Number(h.slice(0, 2)) >= 12);
-    if (libres.length === 0) {
+    let espacios = espaciosPorEmpleado(tenant, fecha, servicioId, citas);
+    // Si el cliente eligió persona, solo sus horarios; si no, la unión del equipo.
+    if (empleadoId) espacios = espacios.filter((e) => e.empleados.includes(empleadoId));
+    if (franja === "mañana") espacios = espacios.filter((e) => Number(e.hora.slice(0, 2)) < 12);
+    else if (franja === "tarde") espacios = espacios.filter((e) => Number(e.hora.slice(0, 2)) >= 12);
+    if (espacios.length === 0) {
       return JSON.stringify({
         ok: false,
-        motivo: "no hay horarios disponibles para esa fecha/franja; ofrecé otra fecha o franja.",
+        motivo: empleadoId
+          ? `no hay horarios de ${nombreEmpleado(empleadoId)} para esa fecha/franja; ofrecé otra fecha, otra franja, u otra persona.`
+          : "no hay horarios disponibles para esa fecha/franja; ofrecé otra fecha o franja.",
         disponibles: [],
       });
     }
-    const mostrados = libres.slice(0, MAX_FILAS_LISTA);
-    const truncado = libres.length > MAX_FILAS_LISTA;
+    const mostrados = espacios.slice(0, MAX_FILAS_LISTA);
+    const truncado = espacios.length > MAX_FILAS_LISTA;
     capturas.interactivo = {
       tipo: "lista",
       cuerpo: "", // handleWebhook lo rellena con la frase que redacte el agente.
       textoBoton: "Ver horarios",
-      opciones: mostrados.map((h) => opcionHorario(fecha, h)),
+      opciones: mostrados.map((e) => {
+        // Con persona elegida el id la fija; sin elegir, se preasigna el primer libre de
+        // cada horario para que el tap ya traiga a alguien y no haya un turno extra.
+        const asignado = empleadoId ?? e.empleados[0];
+        return opcionHorario(fecha, e.hora, asignado, hayEquipo ? nombreEmpleado(asignado) : undefined);
+      }),
     };
     return JSON.stringify({
       ok: true,
       mostrados: mostrados.length,
-      total: libres.length,
+      total: espacios.length,
       truncado,
+      con: empleadoId ? nombreEmpleado(empleadoId) : undefined,
       mensaje: truncado
         ? "Le mostré al cliente los primeros horarios como lista tocable. Invitalo con UNA frase corta a elegir uno, y aclarale que si prefiere otra hora te la escriba. No repitas los horarios en texto."
         : "Le mostré al cliente los horarios como lista tocable. Invitalo con UNA frase corta a elegir uno. No repitas los horarios en texto.",
@@ -150,20 +226,68 @@ async function ejecutarTool(
     // Validar que el espacio siga libre antes de crear (evita doble reserva). Con el
     // arreglo de BLOQ-09, esta lista además ya no incluye horas pasadas de hoy.
     const citas = await repo.citasPorFecha(tenant.id, fecha);
-    const libres = espaciosDisponibles(tenant, fecha, servicioId, citas);
-    if (!libres.includes(hora)) {
-      return JSON.stringify({ ok: false, motivo: "ese horario ya no está disponible", disponibles: libres });
+    const espacios = espaciosPorEmpleado(tenant, fecha, servicioId, citas);
+    const espacio = espacios.find((e) => e.hora === hora);
+    if (!espacio) {
+      return JSON.stringify({
+        ok: false,
+        motivo: "ese horario ya no está disponible",
+        disponibles: espacios.map((e) => e.hora),
+      });
     }
-    const cita = await repo.crearCita({
-      tenantId: tenant.id,
-      clienteWa,
-      clienteNombre: String(args.nombre),
-      servicioId,
-      fecha,
-      hora,
-      placa: args.placa ? String(args.placa) : undefined,
-      precio: args.precio != null && !Number.isNaN(Number(args.precio)) ? Number(args.precio) : undefined,
-    });
+
+    // Con quién se atiende (ALTO-07). Si el cliente pidió a alguien, se respeta pero se
+    // verifica que esa persona tenga LIBRE ese horario — el modelo puede arrastrar un id
+    // de un turno anterior, o el horario pudo ocuparse mientras conversaban. Si no pidió
+    // a nadie, se asigna al primero libre. Sin equipo cargado queda undefined y todo se
+    // comporta como antes.
+    const pedido = empleadoPedido(args.empleadoId);
+    let empleadoId: string | undefined;
+    if (hayEquipo) {
+      if (pedido) {
+        if (!nombreEmpleado(pedido)) {
+          return JSON.stringify({ ok: false, motivo: `no existe nadie con el id "${pedido}" en este negocio.` });
+        }
+        if (!espacio.empleados.includes(pedido)) {
+          const otrosHorarios = espacios.filter((e) => e.empleados.includes(pedido)).map((e) => e.hora);
+          return JSON.stringify({
+            ok: false,
+            motivo: `${nombreEmpleado(pedido)} no tiene libre ese horario. Ofrecele otro horario de esa persona, o la misma hora con alguien más.`,
+            disponiblesDeEsaPersona: otrosHorarios,
+            disponiblesDeOtros: espacio.empleados.map((id) => ({ empleadoId: id, nombre: nombreEmpleado(id) })),
+          });
+        }
+        empleadoId = pedido;
+      } else {
+        empleadoId = espacio.empleados[0];
+      }
+    }
+
+    let cita: Cita;
+    try {
+      cita = await repo.crearCita({
+        tenantId: tenant.id,
+        clienteWa,
+        clienteNombre: String(args.nombre),
+        servicioId,
+        empleadoId,
+        fecha,
+        hora,
+        placa: args.placa ? String(args.placa) : undefined,
+        precio: args.precio != null && !Number.isNaN(Number(args.precio)) ? Number(args.precio) : undefined,
+      });
+    } catch (e) {
+      // Perdió la carrera contra otro cliente que reservó a la misma persona en el mismo
+      // instante: el índice único la frenó. Es un "no está disponible", no un error.
+      if (esChoqueDeEmpleado(e)) {
+        return JSON.stringify({
+          ok: false,
+          motivo: "justo se acaba de ocupar ese horario. Pedile disculpas y ofrecele otro.",
+          disponibles: espacios.filter((x) => x.hora !== hora).map((x) => x.hora),
+        });
+      }
+      throw e;
+    }
 
     // Reflejar la cita en el Google Calendar del negocio (si está configurado).
     // Si Google falla, la cita YA quedó guardada: no se bloquea la respuesta.
@@ -260,11 +384,36 @@ async function ejecutarTool(
     // Verificar que el nuevo espacio esté libre, EXCLUYENDO la propia cita (para que
     // no se bloquee a sí misma si se mueve dentro del mismo día).
     const citasFecha = (await repo.citasPorFecha(tenant.id, fecha)).filter((c) => c.id !== objetivo!.id);
-    const libres = espaciosDisponibles(tenant, fecha, objetivo.servicioId, citasFecha);
-    if (!libres.includes(hora)) {
-      return JSON.stringify({ ok: false, motivo: "ese horario no está disponible", disponibles: libres });
+    const espaciosRe = espaciosPorEmpleado(tenant, fecha, objetivo.servicioId, citasFecha);
+    // La cita se mueve CON su persona: reprogramar no es cambiar de profesional. Si esa
+    // persona no tiene libre el nuevo horario, se rechaza aunque el negocio sí lo tenga
+    // (otro compañero libre no sirve: el cliente ya tiene con quién).
+    const espacioRe = espaciosRe.find(
+      (e) => e.hora === hora && (!objetivo!.empleadoId || e.empleados.includes(objetivo!.empleadoId)),
+    );
+    if (!espacioRe) {
+      const propios = objetivo.empleadoId
+        ? espaciosRe.filter((e) => e.empleados.includes(objetivo!.empleadoId!)).map((e) => e.hora)
+        : espaciosRe.map((e) => e.hora);
+      return JSON.stringify({
+        ok: false,
+        motivo: objetivo.empleadoId
+          ? `${nombreEmpleado(objetivo.empleadoId) ?? "esa persona"} no tiene libre ese horario.`
+          : "ese horario no está disponible",
+        disponibles: propios,
+      });
     }
-    const actualizada = await repo.reprogramarCita(tenant.id, objetivo.id, fecha, hora);
+    let actualizada: Cita | null;
+    try {
+      actualizada = await repo.reprogramarCita(tenant.id, objetivo.id, fecha, hora);
+    } catch (e) {
+      // Mismo caso de carrera que en agendar_cita: alguien tomó ese horario de esa
+      // persona entre el chequeo y el UPDATE, y el índice único lo frenó.
+      if (esChoqueDeEmpleado(e)) {
+        return JSON.stringify({ ok: false, motivo: "justo se acaba de ocupar ese horario. Ofrecele otro." });
+      }
+      throw e;
+    }
     if (!actualizada) return JSON.stringify({ ok: false, motivo: "no se pudo reprogramar la cita." });
     // Reflejar el cambio en Google Calendar (si está configurado y la cita tiene evento).
     await sincronizarReprogramacionGcal(tenant, actualizada);
