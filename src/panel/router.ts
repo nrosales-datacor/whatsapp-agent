@@ -38,6 +38,7 @@ import {
   validarRescateHoras,
   validarSecciones,
   validarServicios,
+  validarTamanoKb,
   validarTextoRescate,
 } from "../config/validadores";
 import { enviarPlantilla, enviarTexto } from "../whatsapp/client";
@@ -336,6 +337,10 @@ function validarAltaTenant(body: any): ResultadoAlta {
     politicas: limpiarLineas(t.kb?.politicas),
     secciones: validarSecciones(t.kb?.secciones),
   };
+  // Tope de tamaño de la KB (ALTO-16 / F13): mismo criterio en el alta que en la config
+  // self-service de abajo, para que un negocio no pueda arrancar ya por encima del límite.
+  const errorTamanoKb = validarTamanoKb(kb);
+  if (errorTamanoKb) return { ok: false, error: errorTamanoKb };
 
   const usuario = String(body.usuario ?? "").trim();
   if (!RE_USUARIO.test(usuario)) return { ok: false, error: "Usuario inválido (3 a 40 caracteres: letras, números, . _ -)" };
@@ -597,16 +602,26 @@ export async function manejarPanel(
       // Uso mensual (Carril D, 0.2): una sola consulta para todos los negocios, en vez
       // de N — "medir sin bloquear" (sin DB o sin actividad todavía, queda en 0).
       const uso = await listarUsoMensualActual();
-      const tenants = listarTenants().map((t) => ({
-        id: t.id,
-        nombre: t.nombre,
-        phoneNumberId: t.phoneNumberId,
-        moneda: t.moneda,
-        timezone: t.timezone,
-        servicios: t.servicios.length,
-        plan: t.plan,
-        conversacionesEsteMes: uso.get(t.id)?.conversacionesIniciadas ?? 0,
-      }));
+      const tenants = listarTenants().map((t) => {
+        const u = uso.get(t.id);
+        return {
+          id: t.id,
+          nombre: t.nombre,
+          phoneNumberId: t.phoneNumberId,
+          moneda: t.moneda,
+          timezone: t.timezone,
+          servicios: t.servicios.length,
+          plan: t.plan,
+          conversacionesEsteMes: u?.conversacionesIniciadas ?? 0,
+          // Costo de LLM por tenant (F13): tokens totales (entrada+salida) y costo estimado
+          // en USD del mes, para responder "¿este cliente deja margen?" sin ir a la DB a mano.
+          // El acumulador guarda millonésimos de dólar (ver schema.ts); acá se divide para
+          // mostrar USD directo — la división es solo de PRESENTACIÓN, el contador de la DB
+          // sigue siendo el entero exacto.
+          tokensEsteMes: (u?.tokensEntrada ?? 0) + (u?.tokensSalida ?? 0),
+          costoUsdEsteMes: (u?.costoEstimadoMillonesimos ?? 0) / 1_000_000,
+        };
+      });
       json(res, 200, { ok: true, tenants });
       return true;
     }
@@ -1177,6 +1192,12 @@ export async function manejarPanel(
       politicas: limpiarLineas(body?.kb?.politicas),
       secciones: validarSecciones(body?.kb?.secciones),
     };
+    // Tope de tamaño de la KB (ALTO-16 / F13 — PLAN-ESCALA-MULTITENANT.md): un catálogo
+    // gigante encarece CADA llamada al LLM (hasta ~70.000 tokens/mensaje con los 4 pasos
+    // de tool-calling, ver AUDIT.md § ALTO-16). Mensaje con el tamaño real y el límite,
+    // para que el dueño sepa qué recortar en vez de un 400 genérico.
+    const errorTamanoKb = validarTamanoKb(kb);
+    if (errorTamanoKb) return json(res, 400, { ok: false, error: errorTamanoKb }), true;
 
     // Perfil del negocio (B7, motor multi-mercado): textos libres acotados + registro validado.
     const tipoNegocio = limpiarTexto(body?.tipoNegocio, 120);

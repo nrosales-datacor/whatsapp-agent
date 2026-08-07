@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { crearDbEfimera } from "../helpers/pgliteDb";
 import { waCotizaciones } from "../../src/db/schema";
 import { purgarCotizacionesFinalizadas, reclamarToque1, reclamarToque2 } from "../../src/rescate/cola";
+import { procesarConTope } from "../../src/rescate/worker";
 import { RepositorioDrizzle } from "../../src/booking/drizzleRepository";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -88,6 +89,55 @@ test("reclamarToque2: solo reclama 'toque1' cuyo primer toque ya pasó el corte"
   } finally {
     await cerrar();
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tope por tick (ROADMAP F8): `procesarTenant` ya no drena TODOS los toques
+// listos de un tenant en un `while` sin límite — se para en RESCATE_MAX_POR_TICK
+// para que el `for` sobre listarTenants() siempre le dé un turno al siguiente.
+// `procesarConTope` es la función pura que implementa ese tope; se prueba acá
+// con un mock de `intentar`/`esperar`, sin DB ni WhatsApp real.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("procesarConTope: procesa como mucho maxPorTick candidatos y deja el resto para la próxima vuelta (F8)", async () => {
+  let disponibles = 12; // ej.: un tenant con 12 cotizaciones listas para el toque1
+  const intentar = async (): Promise<boolean> => {
+    if (disponibles <= 0) return false;
+    disponibles--;
+    return true;
+  };
+  const esperas: number[] = [];
+  const esperar = async (ms: number): Promise<void> => {
+    esperas.push(ms);
+  };
+
+  const procesados = await procesarConTope(intentar, 5, esperar, 1200);
+
+  assert.equal(procesados, 5, "se procesan como mucho 5 por vuelta (RESCATE_MAX_POR_TICK)");
+  assert.equal(disponibles, 7, "los 7 restantes quedan para la próxima vuelta del `for` sobre tenants");
+  assert.equal(esperas.length, 5, "espera el throttle entre cada candidato procesado");
+  assert.ok(esperas.every((ms) => ms === 1200), "respeta el intervalo de envío en cada espera");
+});
+
+test("procesarConTope: con menos candidatos que el tope, corta apenas se acaban (no espera de más)", async () => {
+  let disponibles = 2;
+  const intentar = async (): Promise<boolean> => {
+    if (disponibles <= 0) return false;
+    disponibles--;
+    return true;
+  };
+  let llamadasEspera = 0;
+  const procesados = await procesarConTope(
+    intentar,
+    5,
+    async () => {
+      llamadasEspera++;
+    },
+    1200,
+  );
+
+  assert.equal(procesados, 2, "solo había 2 candidatos: no llega al tope de 5");
+  assert.equal(llamadasEspera, 2, "una espera por cada candidato realmente procesado");
 });
 
 test("Repositorio.registrarCotizacion: no permite dos rescates activos al mismo teléfono", async () => {

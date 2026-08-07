@@ -411,6 +411,10 @@ export interface TenantResumen {
   plan: Plan;
   /** Conversaciones iniciadas este mes (Carril D, 0.2) — mide sin bloquear, sin tope todavía. */
   conversacionesEsteMes: number;
+  /** Tokens de OpenAI (entrada + salida) consumidos este mes (F13). */
+  tokensEsteMes: number;
+  /** Costo estimado de OpenAI este mes, en USD (F13) — ver AUDIT.md § 7 para las tarifas usadas. */
+  costoUsdEsteMes: number;
 }
 
 /** Cuerpo del alta de negocio (lo valida y normaliza el backend igual). */

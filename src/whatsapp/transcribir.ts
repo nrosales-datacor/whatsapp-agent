@@ -2,6 +2,8 @@ import OpenAI from "openai";
 import type { Tenant } from "../types";
 import { descargarMedia } from "./client";
 import { OPENAI_MAX_REINTENTOS, TIMEOUT_OPENAI_AUDIO_MS } from "../red/timeouts";
+import { registrarUsoLlm } from "../observabilidad/uso";
+import { calcularCostoWhisperMillonesimos } from "../observabilidad/costoLlm";
 
 // Inicialización PEREZOSA, igual que en runAgent.ts: el `new OpenAI()` a nivel de
 // módulo tiraba TODO el proceso al arrancar si faltaba OPENAI_API_KEY (el SDK lanza en
@@ -42,10 +44,19 @@ export async function transcribirAudio(tenant: Tenant, mediaId: string): Promise
   const { buffer, mimeType } = await descargarMedia(tenant, mediaId);
   const ext = extDeAudio(mimeType);
   const archivo = new File([new Uint8Array(buffer)], `audio.${ext}`, { type: mimeType.split(";")[0] });
+  // response_format "verbose_json" (F13 — PLAN-ESCALA-MULTITENANT.md): whisper-1 NO
+  // devuelve `usage`/tokens en su respuesta (a diferencia de los modelos gpt-4o-*-
+  // transcribe, que este bot no usa), así que no hay tokens que sumar. "verbose_json" es
+  // el único response_format que trae `duration` (segundos), y es lo único que permite
+  // ESTIMAR el costo real: Whisper cobra por minuto, no por token (ver costoLlm.ts).
   const resultado = await getOpenAI().audio.transcriptions.create({
     file: archivo,
     model: "whisper-1",
     language: "es",
+    response_format: "verbose_json",
   });
+  // Fire-and-forget, mismo criterio que el resto de observabilidad/uso.ts: nunca debe
+  // agregar latencia a la transcripción ni tumbarla si la base falla.
+  registrarUsoLlm(tenant.id, 0, 0, calcularCostoWhisperMillonesimos(resultado.duration ?? 0));
   return resultado.text.trim();
 }
