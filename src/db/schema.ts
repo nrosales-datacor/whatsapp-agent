@@ -212,6 +212,17 @@ export const waTenants = pgTable(
     // Plantilla de UTILIDAD aprobada en Meta para reabrir conversaciones fuera de la
     // ventana de 24h (Carril D, 0.3). null = sin configurar (no se puede reabrir).
     plantillaReapertura: text("plantilla_reapertura"),
+    // Plantilla de recordatorio de cita, aprobada en Meta PARA ESTE NEGOCIO (E8/BLOQ-06:
+    // antes era la env global WHATSAPP_TEMPLATE_RECORDATORIO, y las plantillas se aprueban
+    // por WABA — con dos clientes, el nombre de uno no existe en el WABA del otro y los
+    // recordatorios fallan en silencio para todos menos uno). null = sin configurar → el
+    // recordatorio cae a texto libre con botones (ver src/reminders/scheduler.ts).
+    plantillaRecordatorio: text("plantilla_recordatorio"),
+    // Idioma con el que se aprobó la plantilla de recordatorio en Meta ("es", "es_MX",
+    // "en_US"…). null = usa WHATSAPP_TEMPLATE_IDIOMA (.env) o "es" (E8/BLOQ-06). A
+    // diferencia del nombre de la plantilla, esto NO es fail-closed: el idioma no es un
+    // secreto ni causa fuga entre negocios, así que un default global razonable está bien.
+    plantillaIdioma: text("plantilla_idioma"),
     // White-label (C4.1): color de acento/encabezado (hex "#rrggbb") y logo (URL). null =
     // sin configurar → el panel usa la paleta verde default de global.css.
     colorAcento: text("color_acento"),

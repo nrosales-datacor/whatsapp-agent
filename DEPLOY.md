@@ -515,8 +515,18 @@ con la nueva — no hay atajo porque el algoritmo es simétrico:
    - guarde el resultado.
 3. Recién ahí actualizá `TOKENS_ENCRYPTION_KEY` en el `.env` del droplet con la clave nueva y
    hacé `pm2 restart whatsapp-bot`.
-4. Si el paso 2 se corta a la mitad, es seguro repetirlo: cada fila se recifra de forma
-   independiente y el formato `v1:...` no cambia, solo el contenido.
+4. ⚠️ **Si el paso 2 se corta a la mitad, NO alcanza con repetirlo tal cual.** Quedarían filas
+   cifradas con la clave nueva y otras con la vieja; al reintentar, las que ya están con la
+   nueva **fallan la verificación GCM** al intentar descifrarlas con la vieja, y el script
+   revienta. El script de rotación tiene que **intentar con las dos claves** por fila (probar
+   la vieja, y si la autenticación falla, probar la nueva y dejarla como está). Escribilo así
+   desde el principio: es una línea más y convierte la rotación en reintentable.
+
+> 🔑 **Guardá la clave donde no se pueda perder.** No hay recuperación: si se pierde
+> `TOKENS_ENCRYPTION_KEY`, los `access_token` cifrados quedan **irrecuperables** y hay que
+> reconectar el WhatsApp de **cada negocio** a mano (Embedded Signup o token nuevo desde Meta).
+> Guardala en el gestor de secretos, no solo en el `.env` del droplet — si se pierde el droplet
+> y el backup de la base no trae el `.env`, se pierden los tokens de todos los clientes.
 
 ## Mantenimiento rápido
 

@@ -31,7 +31,9 @@ import {
   validarLogoUrl,
   validarNombrePlantillaMarketing,
   validarNombrePlantillaReapertura,
+  validarNombrePlantillaRecordatorio,
   validarNombrePlantillaRescate,
+  validarPlantillaIdioma,
   validarRegistro,
   validarRescateHoras,
   validarSecciones,
@@ -1011,6 +1013,8 @@ export async function manejarPanel(
       linkResenas: tenant.linkResenas ?? "",
       plantillaMarketing: tenant.plantillaMarketing ?? "",
       plantillaReapertura: tenant.plantillaReapertura ?? "",
+      plantillaRecordatorio: tenant.plantillaRecordatorio ?? "",
+      plantillaIdioma: tenant.plantillaIdioma ?? "",
       colorAcento: tenant.colorAcento ?? "",
       colorHeader: tenant.colorHeader ?? "",
       logoUrl: tenant.logoUrl ?? "",
@@ -1107,6 +1111,17 @@ export async function manejarPanel(
       return json(res, 400, { ok: false, error: "Nombre de plantilla inválido (minúsculas, números y guiones bajos)" }), true;
     }
 
+    // Plantilla de recordatorio de cita por tenant (E8/BLOQ-06): antes era la env global
+    // WHATSAPP_TEMPLATE_RECORDATORIO, que solo alcanza para un cliente a la vez.
+    const plantillaRecordatorio = validarNombrePlantillaRecordatorio(body?.plantillaRecordatorio);
+    if (plantillaRecordatorio === null) {
+      return json(res, 400, { ok: false, error: "Nombre de plantilla inválido (minúsculas, números y guiones bajos)" }), true;
+    }
+    const plantillaIdioma = validarPlantillaIdioma(body?.plantillaIdioma);
+    if (plantillaIdioma === null) {
+      return json(res, 400, { ok: false, error: "Idioma de plantilla inválido (ej: es, es_MX, en_US)" }), true;
+    }
+
     const colorAcento = validarColorHex(body?.colorAcento);
     if (colorAcento === null) return json(res, 400, { ok: false, error: "Color de acento inválido (formato #rrggbb)" }), true;
 
@@ -1181,6 +1196,8 @@ export async function manejarPanel(
         linkResenas: linkResenas || null,
         plantillaMarketing: plantillaMarketing || null,
         plantillaReapertura: plantillaReapertura || null,
+        plantillaRecordatorio: plantillaRecordatorio || null,
+        plantillaIdioma: plantillaIdioma || null,
         colorAcento: colorAcento || null,
         colorHeader: colorHeader || null,
         logoUrl: logoUrl || null,

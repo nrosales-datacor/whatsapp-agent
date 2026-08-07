@@ -151,7 +151,10 @@ async function procesarToque2(tenant: Tenant): Promise<boolean> {
     const servicio = nombreServicio(tenant, cand.servicioId);
     const monto = `${tenant.moneda}${cand.monto.toLocaleString("es-CR")}`;
     const variable = tenant.rescateToque2Texto || servicio;
-    const idioma = process.env.WHATSAPP_TEMPLATE_IDIOMA ?? "es";
+    // Idioma por tenant (E8/BLOQ-06): un cliente puede aprobar sus plantillas en
+    // "es_MX" y otro en "es" — no es fail-closed (no es un secreto), solo un
+    // default en cascada: tenant → env global → "es".
+    const idioma = tenant.plantillaIdioma ?? process.env.WHATSAPP_TEMPLATE_IDIOMA ?? "es";
     await enviarPlantilla(tenant, cand.clienteWa, tenant.rescatePlantilla, idioma, [nombre, variable, monto], "marketing");
     console.log(`[rescate] toque2 → ${cand.clienteWa} (tenant ${tenant.id}, cotización ${cand.id})`);
   } catch (e) {

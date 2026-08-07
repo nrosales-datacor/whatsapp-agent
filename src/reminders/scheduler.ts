@@ -26,13 +26,23 @@ import { iniciarCicloSinSolape } from "../red/programador";
 // ⚠️ VENTANA DE 24 H DE META: WhatsApp solo permite texto libre dentro de las
 // 24 h posteriores al último mensaje DEL CLIENTE. Como el recordatorio del día
 // antes casi siempre cae fuera de esa ventana, lo correcto es usar una PLANTILLA
-// aprobada en el WhatsApp Manager:
-//   WHATSAPP_TEMPLATE_RECORDATORIO=nombre_de_la_plantilla  (con 3 variables:
-//     {{1}} nombre del cliente · {{2}} servicio · {{3}} "mañana/hoy a las HH:mm")
-//   WHATSAPP_TEMPLATE_IDIOMA=es  (o es_MX, etc. — el idioma con que se aprobó)
-// Si NO se configura plantilla, se intenta texto libre (funciona con el número
-// de prueba de Meta y dentro de la ventana de 24 h; fuera de ella, Meta lo
-// rechaza y se reintenta en el siguiente ciclo).
+// aprobada en el WhatsApp Manager, configurada POR NEGOCIO en "Mi negocio"
+// (tenant.plantillaRecordatorio, con 3 variables: {{1}} nombre del cliente ·
+// {{2}} servicio · {{3}} "mañana/hoy a las HH:mm") y con el idioma con que se
+// aprobó (tenant.plantillaIdioma, ej: "es", "es_MX"). Si NO se configura plantilla,
+// se intenta texto libre (funciona con el número de prueba de Meta y dentro de la
+// ventana de 24 h; fuera de ella, Meta lo rechaza y se reintenta en el siguiente ciclo).
+//
+// ⚠️ AUDITORÍA E8/BLOQ-06 (2026-08-06): `plantilla`/`idioma` ERAN envs GLOBALES
+// (WHATSAPP_TEMPLATE_RECORDATORIO / WHATSAPP_TEMPLATE_IDIOMA). Las plantillas de
+// WhatsApp se aprueban POR WABA (por cliente): con dos negocios, el nombre de
+// plantilla de uno no existe en el WABA del otro y el envío fallaba en silencio
+// para todos menos uno. Mismo criterio fail-closed que `calendarioDeTenant`
+// (src/calendar/googleCalendar.ts, E4/BLOQ-05) y `tokenDeTenant`
+// (src/whatsapp/client.ts, F5): la env global solo cubre al tenant nombrado
+// explícitamente en WHATSAPP_TEMPLATE_TENANT_ID (compatibilidad con el piloto);
+// cualquier otro tenant sin su propia columna simplemente cae a texto libre, nunca
+// hereda la plantilla de otro negocio.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const INTERVALO_MIN = Number(process.env.RECORDATORIOS_INTERVALO_MIN ?? 5);
@@ -82,6 +92,24 @@ function fechaBonita(fecha: string, timezone: string): string {
   });
 }
 
+/**
+ * Nombre de la plantilla de recordatorio de ESTE negocio, o null si no tiene (cae a
+ * texto libre con botones). Mismo criterio fail-closed que `calendarioDeTenant`
+ * (src/calendar/googleCalendar.ts, E4/BLOQ-05) y `tokenDeTenant`
+ * (src/whatsapp/client.ts, F5): la env global WHATSAPP_TEMPLATE_RECORDATORIO solo
+ * aplica al tenant nombrado en WHATSAPP_TEMPLATE_TENANT_ID (compatibilidad con el
+ * piloto, que ya tenía su plantilla en el .env). Cualquier otro tenant sin su propia
+ * columna queda sin plantilla — nunca hereda la de otro negocio.
+ */
+export function plantillaRecordatorioDeTenant(tenant: Tenant): string | null {
+  if (tenant.plantillaRecordatorio) return tenant.plantillaRecordatorio;
+  const legadoTenantId = process.env.WHATSAPP_TEMPLATE_TENANT_ID;
+  if (legadoTenantId && legadoTenantId === tenant.id && process.env.WHATSAPP_TEMPLATE_RECORDATORIO) {
+    return process.env.WHATSAPP_TEMPLATE_RECORDATORIO;
+  }
+  return null;
+}
+
 /** Envía el recordatorio (plantilla si está configurada; si no, texto libre). */
 async function enviarRecordatorio(tenant: Tenant, cita: Cita, tipo: TipoRecordatorio): Promise<void> {
   const servicio = tenant.servicios.find((s) => s.id === cita.servicioId);
@@ -91,14 +119,16 @@ async function enviarRecordatorio(tenant: Tenant, cita: Cita, tipo: TipoRecordat
       ? `mañana ${fechaBonita(cita.fecha, tenant.timezone)} a las ${cita.hora}`
       : `hoy a las ${cita.hora}`;
 
-  const plantilla = process.env.WHATSAPP_TEMPLATE_RECORDATORIO;
+  const plantilla = plantillaRecordatorioDeTenant(tenant);
   if (plantilla) {
     // Plantilla aprobada (para fuera de la ventana de 24 h). NOTA: para que traiga
     // botones "Confirmo/Reprogramar", la plantilla debe declararse en el WhatsApp
     // Manager con componentes de tipo quick-reply y sus payloads; eso queda pendiente
     // de la aprobación de la plantilla. Mientras tanto, el texto libre (abajo) sí los
     // lleva (funciona con el número de prueba y dentro de la ventana de 24 h).
-    const idioma = process.env.WHATSAPP_TEMPLATE_IDIOMA ?? "es";
+    // El idioma sí tiene un fallback simple (no fail-closed): no es un secreto ni
+    // causa fuga entre negocios (E8/BLOQ-06).
+    const idioma = tenant.plantillaIdioma ?? process.env.WHATSAPP_TEMPLATE_IDIOMA ?? "es";
     await enviarPlantilla(
       tenant,
       cita.clienteWa,

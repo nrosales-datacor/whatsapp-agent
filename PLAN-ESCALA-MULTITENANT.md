@@ -108,7 +108,19 @@ tener excepciones y la env de compatibilidad se puede eliminar del código.
 
 **Aceptación:** un test de fiabilidad (PGlite) que abre una conexión con `app.tenant_id = 'A'` y verifica que un `SELECT * FROM wa_citas` **sin `WHERE`** devuelve solo filas de A; y que un `UPDATE` sobre una fila de B afecta 0 filas. Suite completa en verde. `npm run db:check` sin drift.
 
-**Estimado: 4–5 días.** Sin dependencias nuevas. **Depende de:** confirmar D-1.
+**Estimado: 4–5 días.** Sin dependencias nuevas. **Depende de:** ~~confirmar D-1~~ (✅ resuelta) y de **E14** (backups verificados), por el backfill sobre `wa_mensajes`.
+
+> 📄 **El paso 1 ya está escrito y listo para revisar: [`scripts/rls/01-rol-aplicacion.sql`](scripts/rls/01-rol-aplicacion.sql).**
+> Se corre **a mano** desde el SQL Editor de Supabase, no como migración de drizzle: crea un
+> rol y cambia credenciales de conexión (infraestructura, no esquema), y meterlo en `migrar.ts`
+> haría que el deploy automático toque la seguridad de la base sin que nadie lo mire.
+> Incluye los permisos mínimos tabla por tabla, la consulta de verificación (`rolbypassrls`
+> tiene que dar `false`), el esquema de dos URLs y el rollback.
+>
+> ⚠️ Punto a verificar antes de confiar: el pooler de Supabase usa el formato
+> `<rol>.<project-ref>` como usuario. Hay que **probar la conexión del rol nuevo** antes de
+> repuntar el `.env` de producción; si el pooler rechaza roles custom, la salida es usar la
+> conexión directa, que tiene menos conexiones disponibles y obliga a revisar `DB_POOL_MAX` (F7).
 
 ---
 

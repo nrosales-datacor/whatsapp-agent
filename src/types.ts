@@ -173,6 +173,21 @@ export interface Tenant {
    * no puede reabrir; solo queda esperar a que el cliente escriba de nuevo).
    */
   plantillaReapertura?: string;
+  /**
+   * Nombre de la plantilla de recordatorio de cita aprobada en Meta para ESTE negocio
+   * (E8/BLOQ-06). undefined = sin configurar → el recordatorio cae a texto libre con
+   * botones (ver src/reminders/scheduler.ts). Antes era la env global
+   * WHATSAPP_TEMPLATE_RECORDATORIO: como las plantillas se aprueban por WABA (por
+   * cliente), con dos negocios el nombre de uno no existe en el WABA del otro.
+   */
+  plantillaRecordatorio?: string;
+  /**
+   * Idioma con el que se aprobó la plantilla (recordatorio/marketing/rescate) en Meta
+   * ("es", "es_MX", "en_US"…), E8/BLOQ-06. undefined = usa WHATSAPP_TEMPLATE_IDIOMA
+   * (.env) o "es". No es fail-closed como el nombre de la plantilla: el idioma no es un
+   * secreto ni causa fuga entre negocios.
+   */
+  plantillaIdioma?: string;
   /** Color de acento del panel (hex "#rrggbb"), white-label C4.1. undefined = paleta default. */
   colorAcento?: string;
   /** Color del encabezado del panel (hex "#rrggbb"), white-label C4.1. undefined = paleta default. */
