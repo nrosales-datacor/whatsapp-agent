@@ -5,6 +5,7 @@ import { obtenerTenantPorPhoneNumberId } from "../config/tenantStore";
 import { responderEntrante } from "../handleWebhook";
 import { capturarError } from "../observabilidad/sentry";
 import { marcarFalloOReintentar, marcarHecho, purgarJobsHechos, reencolarVencidos, reclamarUno } from "./cola";
+import { purgarWebhooksCrudos } from "../db/webhooksCrudos";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Worker de la cola durable (ROADMAP B1).
@@ -112,9 +113,11 @@ export function iniciarWorker(repo: Repositorio, db: DB): void {
     }
   };
 
-  // Loop de purga (ROADMAP F11): intervalo propio, mucho más espaciado que el
+  // Loop de purga (ROADMAP F11 + F3): intervalo propio, mucho más espaciado que el
   // reaper (higiene, no recuperación de trabajo en curso). Mismo tratamiento de
-  // errores: un fallo se loguea y va a Sentry, nunca tumba el loop.
+  // errores: un fallo se loguea y va a Sentry, nunca tumba el loop. Reusa el
+  // mismo intervalo/retención que wa_jobs para wa_webhooks_crudos (mismo patrón
+  // de F11, no uno nuevo): ambas tablas son "cola procesada", misma higiene.
   const loopPurga = async () => {
     while (true) {
       await dormir(PURGA_INTERVAL_MS);
@@ -124,6 +127,13 @@ export function iniciarWorker(repo: Repositorio, db: DB): void {
       } catch (e) {
         console.error("[worker] purga error:", e);
         capturarError(e, { loop: "purga" });
+      }
+      try {
+        const n = await purgarWebhooksCrudos(db, JOBS_RETENCION_DIAS);
+        if (n > 0) console.log(`[worker] purga: ${n} fila(s) "procesado/descartado" de wa_webhooks_crudos borrada(s) (retención ${JOBS_RETENCION_DIAS}d)`);
+      } catch (e) {
+        console.error("[worker] purga de wa_webhooks_crudos error:", e);
+        capturarError(e, { loop: "purga", tabla: "wa_webhooks_crudos" });
       }
     }
   };

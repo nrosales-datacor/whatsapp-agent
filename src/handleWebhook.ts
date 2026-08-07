@@ -1,7 +1,8 @@
+import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { Conversacion, MensajeConversacion, PendienteSerializado, Repositorio, Tenant } from "./types";
 import { obtenerTenantPorPhoneNumberId, refrescarSiFaltaPhoneNumberId } from "./config/tenantStore";
 import {
-  parsearEntrante,
+  clasificarEntrante,
   enviarTexto,
   enviarInteractivo,
   esConfirmacionCita,
@@ -15,6 +16,10 @@ import { correrAgente } from "./agent/runAgent";
 import { notificarOperador } from "./panel/notificaciones";
 import { registrarMensaje } from "./observabilidad/metricas";
 import { registrarMensajeEntrante } from "./observabilidad/uso";
+import { guardarCrudo } from "./db/webhooksCrudos";
+import type { schema } from "./db/schema";
+
+type DB = PostgresJsDatabase<typeof schema>;
 
 // "Conversación iniciada" ≈ primer mensaje tras 24 h de silencio (aproxima el modelo
 // de cobro de Meta: una conversación = una ventana de 24 h), para los contadores de
@@ -85,11 +90,30 @@ export type Pendiente =
  * Valida el evento, persiste el mensaje entrante y deduplica reintentos. Si esto
  * lanza, el server NO responde 200 y Meta reintrega; como guardamos por waMessageId,
  * el reintento no genera duplicados. Devuelve null si no hay nada que responder
- * (evento ignorado, número sin tenant, o mensaje duplicado).
+ * (evento ignorado, número sin tenant, mensaje duplicado, o payload no parseable).
+ *
+ * `db`, si viene, es donde se guarda el crudo (ROADMAP F3) cuando el mensaje se
+ * descarta por tenant desconocido o payload no parseable — los DOS casos que
+ * antes de F3 tiraban el mensaje sin dejar rastro (a diferencia del camino feliz,
+ * que ya persiste todo en `guardarEntranteYEncolar`). Sin `db` (dev/tests sin
+ * DATABASE_URL) se preserva el comportamiento previo: se descarta sin persistir,
+ * porque no hay dónde hacerlo.
  */
-export async function ingerirEntrante(body: unknown, repo: Repositorio): Promise<Pendiente | null> {
-  const entrante = parsearEntrante(body);
-  if (!entrante) return null; // status u otro evento que no nos interesa
+export async function ingerirEntrante(body: unknown, repo: Repositorio, db?: DB): Promise<Pendiente | null> {
+  const clasif = clasificarEntrante(body);
+
+  if (clasif.tipo === "ignorable") return null; // status u otro evento sin mensaje: alto volumen, no interesa
+
+  if (clasif.tipo === "no-parseable") {
+    // Forma de payload que no sabemos leer (E9/E12: tipos de mensaje aún no
+    // soportados). Antes se evaporaba con un `parsearEntrante` que devolvía null
+    // igual que un status; ahora queda un rastro forense para diagnosticar.
+    console.warn("[webhook] payload con una forma que no sabemos leer (se guarda en wa_webhooks_crudos si hay DB)");
+    if (db) await guardarCrudo(db, { payload: body, phoneNumberId: null, waMessageId: null, motivo: "no_parseable" });
+    return null;
+  }
+
+  const entrante = clasif.mensaje;
 
   const tenant = obtenerTenantPorPhoneNumberId(entrante.phoneNumberId);
   if (!tenant) {
@@ -97,6 +121,14 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio): Promise
     // Quizás es un negocio recién dado de alta que el caché aún no tiene: gatilla un
     // refresh (fire-and-forget, con cooldown) para tomarlo en el próximo mensaje.
     refrescarSiFaltaPhoneNumberId(entrante.phoneNumberId);
+    if (db) {
+      await guardarCrudo(db, {
+        payload: body,
+        phoneNumberId: entrante.phoneNumberId,
+        waMessageId: entrante.messageId ?? null,
+        motivo: "tenant_desconocido",
+      });
+    }
     return null;
   }
 
@@ -619,7 +651,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
  * Orquesta las dos fases en una sola llamada (cómodo para tests). El server las
  * llama por separado para responder 200 recién después de persistir el entrante.
  */
-export async function manejarWebhook(body: unknown, repo: Repositorio): Promise<void> {
-  const pendiente = await ingerirEntrante(body, repo);
+export async function manejarWebhook(body: unknown, repo: Repositorio, db?: DB): Promise<void> {
+  const pendiente = await ingerirEntrante(body, repo, db);
   if (pendiente) await responderEntrante(pendiente, repo);
 }

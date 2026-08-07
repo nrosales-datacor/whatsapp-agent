@@ -5,6 +5,7 @@ import {
   botonesPostServicio,
   botonesPostServicioPro,
   botonesRecordatorio,
+  clasificarEntrante,
   esConfirmacionCita,
   firmaValida,
   opcionHorario,
@@ -118,6 +119,31 @@ test("parsearEntrante: payload corrupto devuelve null en vez de lanzar", () => {
   assert.equal(parsearEntrante(null), null);
   assert.equal(parsearEntrante({}), null);
   assert.equal(parsearEntrante({ entry: "no es un arreglo" }), null);
+});
+
+// ─── clasificarEntrante (ROADMAP F3): distingue "ignorable" (status, alto volumen,
+// no se guarda) de "no-parseable" (forma rara, SÍ se guarda para diagnóstico) ────
+
+test("clasificarEntrante: un mensaje de texto válido clasifica 'ok'", () => {
+  const r = clasificarEntrante(payloadTexto("hola"));
+  assert.equal(r.tipo, "ok");
+  if (r.tipo === "ok") assert.equal(r.mensaje.texto, "hola");
+});
+
+test("clasificarEntrante: un status (sin messages) clasifica 'ignorable', no 'no-parseable'", () => {
+  const body = { entry: [{ changes: [{ value: { metadata: { phone_number_id: "1" }, statuses: [{ id: "s1" }] } }] }] };
+  assert.deepEqual(clasificarEntrante(body), { tipo: "ignorable" });
+});
+
+test("clasificarEntrante: payloads sin la forma de un webhook de WhatsApp clasifican 'no-parseable'", () => {
+  assert.deepEqual(clasificarEntrante(null), { tipo: "no-parseable" });
+  assert.deepEqual(clasificarEntrante({}), { tipo: "no-parseable" });
+  assert.deepEqual(clasificarEntrante({ entry: "no es un arreglo" }), { tipo: "no-parseable" });
+});
+
+test("clasificarEntrante: un mensaje sin phone_number_id ni remitente clasifica 'no-parseable' (no es un status)", () => {
+  const body = { entry: [{ changes: [{ value: { messages: [{ id: "w1", type: "text", text: { body: "hola" } }] } }] }] };
+  assert.deepEqual(clasificarEntrante(body), { tipo: "no-parseable" });
 });
 
 // ─── Protocolo de botones/listas (round-trip) ──────────────────────────────

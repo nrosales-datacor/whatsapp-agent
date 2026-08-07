@@ -132,11 +132,34 @@ export interface MensajeEntrante {
   interactiveId?: string;
 }
 
-export function parsearEntrante(body: any): MensajeEntrante | null {
+// ─────────────────────────────────────────────────────────────────────────────
+// Resultado discriminado del parseo (ROADMAP F3). `parsearEntrante` históricamente
+// colapsaba dos motivos MUY distintos en un solo `null`:
+//   1) el evento es un "status" (entregado/leído) u otro campo de `value` que no
+//      trae `messages`: altísimo volumen, no nos interesa, NO hay que guardarlo.
+//   2) el payload tiene una forma que no sabemos leer (o le faltan campos que
+//      esperamos siempre presentes): es RARO y vale la pena guardarlo para
+//      diagnóstico — si no, el mensaje se evapora sin dejar rastro.
+// `handleWebhook.ts` necesita distinguirlos para decidir si persiste el crudo en
+// `wa_webhooks_crudos`. `clasificarEntrante` expone esa distinción; `parsearEntrante`
+// se mantiene intacto (mismo tipo de retorno) para no romper a sus callers/tests.
+// ─────────────────────────────────────────────────────────────────────────────
+export type ResultadoEntrante =
+  | { tipo: "ok"; mensaje: MensajeEntrante }
+  | { tipo: "ignorable" } // status u otro evento sin mensaje: no se guarda
+  | { tipo: "no-parseable" }; // forma inesperada: SÍ se guarda (red de seguridad F3)
+
+export function clasificarEntrante(body: any): ResultadoEntrante {
   try {
     const value = body?.entry?.[0]?.changes?.[0]?.value;
+    // Sin `value` no reconocemos ni siquiera la forma general de un webhook de
+    // WhatsApp (entry→changes→value): a diferencia de un status, esto es un
+    // payload que NO sabemos leer y amerita quedar guardado.
+    if (value == null) return { tipo: "no-parseable" };
+
     const msg = value?.messages?.[0];
-    if (!msg) return null; // puede ser un status (entregado/leído), lo ignoramos
+    if (!msg) return { tipo: "ignorable" }; // puede ser un status (entregado/leído), lo ignoramos
+
     const phoneNumberId = value?.metadata?.phone_number_id;
     // Saneamos el "from" a solo dígitos: nunca confiamos en el payload crudo. Así un
     // número con caracteres raros no se cuela a la UI del panel (defensa en
@@ -161,21 +184,32 @@ export function parsearEntrante(body: any): MensajeEntrante | null {
       esTexto = !!texto; // si no se pudo decodificar, cae al flujo no-texto
     }
 
-    if (!phoneNumberId || !clienteWa) return null;
+    // Hay un mensaje, pero faltan campos que esperamos SIEMPRE presentes (el id
+    // del número o el remitente): la forma del payload es rara, no un status.
+    if (!phoneNumberId || !clienteWa) return { tipo: "no-parseable" };
+
     return {
-      phoneNumberId,
-      clienteWa,
-      texto,
-      esTexto,
-      messageId: msg.id ? String(msg.id) : undefined,
-      audioId,
-      imagenId,
-      imagenCaption,
-      interactiveId,
+      tipo: "ok",
+      mensaje: {
+        phoneNumberId,
+        clienteWa,
+        texto,
+        esTexto,
+        messageId: msg.id ? String(msg.id) : undefined,
+        audioId,
+        imagenId,
+        imagenCaption,
+        interactiveId,
+      },
     };
   } catch {
-    return null;
+    return { tipo: "no-parseable" };
   }
+}
+
+export function parsearEntrante(body: any): MensajeEntrante | null {
+  const r = clasificarEntrante(body);
+  return r.tipo === "ok" ? r.mensaje : null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

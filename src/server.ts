@@ -7,7 +7,8 @@ import { RepositorioDrizzle } from "./booking/drizzleRepository";
 import { obtenerDb } from "./db/client";
 import { iniciarRecordatorios } from "./reminders/scheduler";
 import { iniciarReputacion, placesConfigurado } from "./reputacion/places";
-import { cargarTenants } from "./config/tenantStore";
+import { cargarTenants, alRecargar } from "./config/tenantStore";
+import { reprocesarPendientes } from "./reprocesoWebhooks";
 import { credencialesCalendarioConfiguradas } from "./calendar/googleCalendar";
 import { manejarPanel } from "./panel/router";
 import { manejarLanding } from "./landing/servirLanding";
@@ -36,6 +37,22 @@ const RUTA_WEBHOOK = "/webhook";
 // (tenantStore, uso, campaigns, rescate) comparten esta misma instancia.
 const db = process.env.DATABASE_URL ? obtenerDb() : null;
 const repo: Repositorio = db ? new RepositorioDrizzle(db) : new RepositorioEnMemoria();
+
+// Reproceso de wa_webhooks_crudos (ROADMAP F3): tenantStore no puede importar
+// handleWebhook (ciclo de imports — ver el comentario en reprocesoWebhooks.ts),
+// así que acá, que ya conoce ambas puntas (db + repo), se conecta el callback
+// genérico que expone tenantStore con el reproceso real. Se dispara después de
+// CUALQUIER recarga exitosa del caché: alta de negocio (router.ts), refresco
+// periódico y recarga on-demand ante un phone_number_id nuevo — son justo los
+// momentos en que un mensaje que quedó "pendiente" puede volverse resoluble.
+if (db) {
+  alRecargar(() => {
+    reprocesarPendientes(db, repo).catch((e) => {
+      console.error("[server] reprocesarPendientes falló:", e);
+      capturarError(e, { modulo: "reprocesoWebhooks" });
+    });
+  });
+}
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
@@ -98,7 +115,7 @@ const server = http.createServer(async (req, res) => {
     // y Meta reintenta — la deduplicación por waMessageId evita procesarlo dos veces.
     let pendiente;
     try {
-      pendiente = await ingerirEntrante(body, repo);
+      pendiente = await ingerirEntrante(body, repo, db ?? undefined);
     } catch (e) {
       console.error("[server] no se pudo persistir el mensaje entrante (Meta reintentará):", e);
       capturarError(e, { ruta: "webhook", fase: 1 });

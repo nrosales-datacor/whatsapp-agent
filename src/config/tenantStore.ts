@@ -146,6 +146,33 @@ function filaATenant(f: typeof waTenants.$inferSelect): Tenant {
   };
 }
 
+// ── Callbacks tras una recarga exitosa (ROADMAP F3) ──
+// Este módulo NO conoce handleWebhook ni el reproceso de wa_webhooks_crudos: solo
+// expone un registro de callbacks GENÉRICO. Es server.ts quien, al arrancar,
+// conecta acá el reproceso real (ver el comentario largo en reprocesoWebhooks.ts
+// sobre por qué esto evita un ciclo de imports). Cualquier otro módulo futuro que
+// necesite reaccionar a "el caché de tenants cambió" puede colgarse del mismo hook.
+type CallbackRecarga = () => void;
+const callbacksRecarga: CallbackRecarga[] = [];
+
+/** Registra un callback que se dispara después de cada recarga EXITOSA del caché
+ * (trae al menos un tenant real, no el fallback). Pensado para el reproceso de
+ * F3: un negocio recién dado de alta puede recuperar acá los mensajes que
+ * llegaron antes de existir. */
+export function alRecargar(cb: CallbackRecarga): void {
+  callbacksRecarga.push(cb);
+}
+
+function notificarRecarga(): void {
+  for (const cb of callbacksRecarga) {
+    try {
+      cb();
+    } catch (e) {
+      console.error("[tenantStore] un callback de alRecargar lanzó:", e);
+    }
+  }
+}
+
 async function recargarDesdeDb(): Promise<void> {
   try {
     const d = obtenerDb();
@@ -167,6 +194,7 @@ async function recargarDesdeDb(): Promise<void> {
         claveTemporalExpira: u.claveTemporalExpira,
       })),
     );
+    notificarRecarga();
   } catch (e) {
     activarFallback(`no se pudo leer la base (${e instanceof Error ? e.message : String(e)})`);
   }
@@ -531,4 +559,17 @@ export function refrescarSiFaltaPhoneNumberId(pnid: string): void {
   if (ahora - ultimoRefrescoMiss < COOLDOWN_MISS_MS) return;
   ultimoRefrescoMiss = ahora;
   void recargarDesdeDb();
+}
+
+/**
+ * Solo para tests: registra un tenant directo en el caché en memoria, sin pasar
+ * por la base, para simular un "alta" (p. ej. el reproceso de F3, que necesita
+ * que un phone_number_id pase de no resolver a resolver de un momento a otro sin
+ * levantar una base real). Muta el caché vivo en vez de reemplazarlo por
+ * completo — aceptable SOLO en tests (en producción el caché siempre se
+ * reemplaza atómico, ver `construirCache`).
+ */
+export function _registrarTenantParaTests(tenant: Tenant): void {
+  cache.porId.set(tenant.id, tenant);
+  cache.porPnid.set(tenant.phoneNumberId, tenant);
 }
