@@ -84,7 +84,10 @@ async function procesarUno(): Promise<boolean> {
       if (!tenant?.plantillaMarketing) {
         throw new Error("El tenant no tiene (o ya no tiene) una plantilla de marketing configurada");
       }
-      const idioma = process.env.WHATSAPP_TEMPLATE_IDIOMA ?? "es";
+      // Idioma por tenant (E8/BLOQ-06): un cliente puede aprobar sus plantillas en
+      // "es_MX" y otro en "es" — no es fail-closed (no es un secreto), solo un
+      // default en cascada: tenant → env global → "es".
+      const idioma = tenant.plantillaIdioma ?? process.env.WHATSAPP_TEMPLATE_IDIOMA ?? "es";
       await enviarPlantilla(
         tenant,
         envio.clienteWa,

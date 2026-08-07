@@ -315,6 +315,16 @@ export interface ConfigNegocio {
   plantillaMarketing: string;
   /** Nombre de la plantilla de UTILIDAD para reabrir conversaciones fuera de ventana (0.3). "" = sin configurar. */
   plantillaReapertura: string;
+  /**
+   * Nombre de la plantilla de recordatorio de cita aprobada en Meta (E8/BLOQ-06). "" =
+   * sin configurar → el recordatorio cae a texto libre con botones.
+   */
+  plantillaRecordatorio: string;
+  /**
+   * Idioma (locale de Meta) con el que se aprobaron las plantillas de este negocio
+   * (E8/BLOQ-06), ej: "es", "es_MX", "en_US". "" = usa el default del servidor.
+   */
+  plantillaIdioma: string;
   /** Color de acento del panel (hex "#rrggbb", C4.1). "" = paleta default. */
   colorAcento: string;
   /** Color del encabezado del panel (hex "#rrggbb", C4.1). "" = paleta default. */

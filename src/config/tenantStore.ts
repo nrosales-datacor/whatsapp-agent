@@ -120,6 +120,8 @@ function filaATenant(f: typeof waTenants.$inferSelect): Tenant {
     linkResenas: f.linkResenas ?? undefined,
     plantillaMarketing: f.plantillaMarketing ?? undefined,
     plantillaReapertura: f.plantillaReapertura ?? undefined,
+    plantillaRecordatorio: f.plantillaRecordatorio ?? undefined,
+    plantillaIdioma: f.plantillaIdioma ?? undefined,
     colorAcento: f.colorAcento ?? undefined,
     colorHeader: f.colorHeader ?? undefined,
     logoUrl: f.logoUrl ?? undefined,
@@ -280,6 +282,8 @@ export async function crearTenant(tenant: Tenant, u: NuevoUsuario): Promise<void
       linkResenas: tenant.linkResenas ?? null,
       plantillaMarketing: tenant.plantillaMarketing ?? null,
       plantillaReapertura: tenant.plantillaReapertura ?? null,
+      plantillaRecordatorio: tenant.plantillaRecordatorio ?? null,
+      plantillaIdioma: tenant.plantillaIdioma ?? null,
       colorAcento: tenant.colorAcento ?? null,
       colorHeader: tenant.colorHeader ?? null,
       logoUrl: tenant.logoUrl ?? null,
@@ -318,6 +322,8 @@ export async function actualizarConfigTenant(
     linkResenas: string | null;
     plantillaMarketing: string | null;
     plantillaReapertura: string | null;
+    plantillaRecordatorio: string | null;
+    plantillaIdioma: string | null;
     colorAcento: string | null;
     colorHeader: string | null;
     logoUrl: string | null;
@@ -349,6 +355,8 @@ export async function actualizarConfigTenant(
       linkResenas: patch.linkResenas,
       plantillaMarketing: patch.plantillaMarketing,
       plantillaReapertura: patch.plantillaReapertura,
+      plantillaRecordatorio: patch.plantillaRecordatorio,
+      plantillaIdioma: patch.plantillaIdioma,
       colorAcento: patch.colorAcento,
       colorHeader: patch.colorHeader,
       logoUrl: patch.logoUrl,

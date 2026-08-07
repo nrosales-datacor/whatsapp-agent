@@ -12,6 +12,9 @@ export const RE_HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
 export const RE_FECHA = /^\d{4}-\d{2}-\d{2}$/;
 export const RE_URL_HTTP = /^https?:\/\/.+/i;
 export const RE_NOMBRE_PLANTILLA = /^[a-z0-9_]+$/;
+// Locale de Meta para el idioma de una plantilla: "es", "es_MX", "en_US"… (código de
+// idioma ISO 639-1 en minúsculas + opcionalmente "_" y país ISO 3166-1 en mayúsculas).
+export const RE_PLANTILLA_IDIOMA = /^[a-z]{2}(_[A-Z]{2})?$/;
 export const RE_COLOR_HEX = /^#[0-9a-f]{6}$/i;
 // Los Place ID de Google son alfanuméricos con "_"/"-" (ej: "ChIJN1t_tDeuEmsRUsoyG83frY4").
 export const RE_GOOGLE_PLACE_ID = /^[A-Za-z0-9_-]{10,300}$/;
@@ -369,13 +372,13 @@ export function validarLinkResenas(v: unknown): string | null {
 }
 
 /**
- * Valida el nombre de la plantilla MARKETING aprobada en Meta para campañas
- * segmentadas (ROADMAP C3.2). Vacío = sin configurar (el dueño no puede enviar
- * campañas todavía). Devuelve null si viene algo no vacío pero inválido (mismo
- * formato de nombre de plantilla que exige WhatsApp Manager: minúsculas, números
- * y guiones bajos — ver GUIA-META.md).
+ * Validación COMPARTIDA del nombre de cualquier plantilla de Meta (marketing,
+ * reapertura, rescate, recordatorio — E8/BLOQ-06: todas se aprueban por WABA, por
+ * negocio, con el mismo formato). Vacío = sin configurar. Devuelve null si viene algo
+ * no vacío pero con un formato distinto al que exige WhatsApp Manager: minúsculas,
+ * números y guiones bajos (ver GUIA-META.md).
  */
-export function validarNombrePlantillaMarketing(v: unknown): string | null {
+function validarNombrePlantilla(v: unknown): string | null {
   const s = String(v ?? "").trim().toLowerCase();
   if (!s) return "";
   if (s.length > 80 || !RE_NOMBRE_PLANTILLA.test(s)) return null;
@@ -383,14 +386,43 @@ export function validarNombrePlantillaMarketing(v: unknown): string | null {
 }
 
 /**
+ * Valida el nombre de la plantilla MARKETING aprobada en Meta para campañas
+ * segmentadas (ROADMAP C3.2). Vacío = sin configurar (el dueño no puede enviar
+ * campañas todavía).
+ */
+export function validarNombrePlantillaMarketing(v: unknown): string | null {
+  return validarNombrePlantilla(v);
+}
+
+/**
  * Valida el nombre de la plantilla de UTILIDAD aprobada en Meta para reabrir
  * conversaciones fuera de la ventana de 24h (ROADMAP Carril D, 0.3). Vacío = sin
- * configurar (el panel no puede reabrir). Mismo formato que la de marketing.
+ * configurar (el panel no puede reabrir).
  */
 export function validarNombrePlantillaReapertura(v: unknown): string | null {
-  const s = String(v ?? "").trim().toLowerCase();
+  return validarNombrePlantilla(v);
+}
+
+/**
+ * Valida el nombre de la plantilla de recordatorio de cita aprobada en Meta para ESTE
+ * negocio (E8/BLOQ-06). Vacío = sin configurar (el recordatorio cae a texto libre con
+ * botones, ver src/reminders/scheduler.ts).
+ */
+export function validarNombrePlantillaRecordatorio(v: unknown): string | null {
+  return validarNombrePlantilla(v);
+}
+
+/**
+ * Valida el idioma (locale de Meta) con el que se aprobó una plantilla — recordatorio,
+ * marketing, rescate — (E8/BLOQ-06). Vacío = sin configurar (se usa el default global
+ * WHATSAPP_TEMPLATE_IDIOMA/.env o "es"). Formato: "es", "es_MX", "en_US"… A diferencia
+ * del nombre de la plantilla, esto NO es un secreto que deba fallar cerrado por tenant:
+ * ver la nota en el schema (plantillaIdioma).
+ */
+export function validarPlantillaIdioma(v: unknown): string | null {
+  const s = String(v ?? "").trim();
   if (!s) return "";
-  if (s.length > 80 || !RE_NOMBRE_PLANTILLA.test(s)) return null;
+  if (!RE_PLANTILLA_IDIOMA.test(s)) return null;
   return s;
 }
 
@@ -442,10 +474,7 @@ export function validarTextoRescate(v: unknown): string | null {
  * primer toque). Mismo formato que las demás plantillas (validarNombrePlantillaMarketing).
  */
 export function validarNombrePlantillaRescate(v: unknown): string | null {
-  const s = String(v ?? "").trim().toLowerCase();
-  if (!s) return "";
-  if (s.length > 80 || !RE_NOMBRE_PLANTILLA.test(s)) return null;
-  return s;
+  return validarNombrePlantilla(v);
 }
 
 /**
