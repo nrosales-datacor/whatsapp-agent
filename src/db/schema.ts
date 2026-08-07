@@ -336,6 +336,50 @@ export const waJobs = pgTable(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Red de seguridad de ingesta cruda (ROADMAP F3). El webhook responde 200 a Meta
+// en dos casos que ANTES tiraban el mensaje sin dejar rastro: el phone_number_id
+// no resuelve a ningún tenant (caché en fallback tras una caída de la base, o un
+// negocio recién dado de alta que el caché aún no cargó) o el payload tiene una
+// forma que `clasificarEntrante` (whatsapp/client.ts) no sabe leer. En AMBOS
+// casos guardamos acá el payload ya verificado por firma, ANTES de intentar
+// resolver el tenant — a diferencia de wa_mensajes/wa_jobs (que solo se llenan en
+// el camino feliz), esta tabla es la ÚNICA copia que sobrevive de esos mensajes.
+//
+// A propósito NO se guarda nada para eventos "status" (entregado/leído) ni otros
+// eventos de `value` sin mensaje: son altísimo volumen y no hay nada que
+// reprocesar (ver el discriminador en whatsapp/client.ts).
+// ─────────────────────────────────────────────────────────────────────────────
+export const waWebhooksCrudos = pgTable(
+  "wa_webhooks_crudos",
+  {
+    id: id(),
+    payload: jsonb("payload").notNull(),
+    // Puede no venir: si el payload es tan raro que ni pudimos leer
+    // value.metadata.phone_number_id, queda null (motivo "no_parseable").
+    phoneNumberId: text("phone_number_id"),
+    // Igual que wa_mensajes.wa_message_id/wa_jobs.wa_message_id: índice único
+    // NORMAL (no parcial). Postgres permite múltiples NULL en un índice único
+    // (cada NULL se trata como distinto de cualquier otro), así que ya se
+    // comporta como "único solo entre los que sí traen id" sin necesidad de un
+    // WHERE — mismo idioma que el resto del esquema, para no introducir un
+    // segundo patrón de idempotencia.
+    waMessageId: text("wa_message_id"),
+    recibidoEn: timestamp("recibido_en", { withTimezone: true }).notNull().defaultNow(),
+    // "pendiente" (a la espera de reproceso o de agotar los intentos) |
+    // "procesado" (se reinyectó con éxito por el mismo camino de ingesta) |
+    // "descartado" (agotó WEBHOOKS_CRUDOS_MAX_INTENTOS sin resolver).
+    estado: text("estado").notNull().default("pendiente"),
+    motivo: text("motivo").notNull(), // "tenant_desconocido" | "no_parseable"
+    intentos: integer("intentos").notNull().default(0),
+  },
+  (t) => ({
+    uqWaId: uniqueIndex("wa_webhooks_crudos_waid_uq").on(t.waMessageId),
+    // Índice que usa el reproceso y el barrido de alertas: pendientes, más viejos primero.
+    idxPendiente: index("wa_webhooks_crudos_pendiente_idx").on(t.estado, t.recibidoEn),
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Campañas segmentadas (ROADMAP C3.2). Envío masivo de plantilla MARKETING a un
 // segmento del CRM. Cola INDEPENDIENTE de wa_jobs: wa_jobs.payload está tipado
 // hard a PendienteSerializado y su worker asume siempre "responder_entrante" —
@@ -505,6 +549,7 @@ export const schema = {
   waTenants,
   waUsuarios,
   waJobs,
+  waWebhooksCrudos,
   waCampanias,
   waCampaniaEnvios,
   waUsoMensual,
