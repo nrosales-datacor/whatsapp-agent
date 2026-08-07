@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, integer, boolean, jsonb, index, uniqueIndex, numeric } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer, boolean, jsonb, index, uniqueIndex, numeric, bigint } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { AddonCita, Bloqueo, Empleado, HorarioDia, KnowledgeBase, PendienteSerializado, RechazoAddon, SegmentoFiltro, Service } from "../types";
@@ -457,6 +457,19 @@ export const waUsoMensual = pgTable(
     mensajesSalientes: integer("mensajes_salientes").notNull().default(0),
     plantillasMarketing: integer("plantillas_marketing").notNull().default(0),
     plantillasUtilidad: integer("plantillas_utilidad").notNull().default(0),
+    // Costo de LLM por tenant (F13 — PLAN-ESCALA-MULTITENANT.md): tokens de entrada/salida
+    // de OpenAI (chat completions, sumados de TODOS los pasos de tool-calling de cada
+    // turno, ver src/agent/runAgent.ts) y de Whisper (transcripción de audio, estimado por
+    // duración — Whisper no cobra por token, ver src/observabilidad/costoLlm.ts).
+    tokensEntrada: integer("tokens_entrada").notNull().default(0),
+    tokensSalida: integer("tokens_salida").notNull().default(0),
+    // Costo estimado acumulado del mes, en MILLONÉSIMOS DE DÓLAR (1 unidad = USD 0,000001),
+    // NUNCA en float: es un contador que se incrementa miles de veces (INSERT ... ON
+    // CONFLICT DO UPDATE SET x = x + n) y un float acumularía error de redondeo turno a
+    // turno. bigint porque, aunque hoy el volumen es chico, es un acumulado mensual sin
+    // tope natural bajo (a diferencia de los contadores de mensajes) — más barato dejarlo
+    // con margen que migrar la columna después. Dividir entre 1_000_000 para mostrar USD.
+    costoEstimadoMillonesimos: bigint("costo_estimado_millonesimos", { mode: "number" }).notNull().default(0),
   },
   (t) => ({
     uqTenantMes: uniqueIndex("wa_uso_mensual_tenant_mes_uq").on(t.tenantId, t.anioMes),

@@ -182,6 +182,48 @@ export function validarSecciones(v: unknown): SeccionConocimiento[] {
 }
 
 /**
+ * Tope de tamaño TOTAL de la base de conocimiento, en caracteres (ALTO-16 / F13 —
+ * PLAN-ESCALA-MULTITENANT.md). Sin este freno, un dueño entusiasta puede pegar hasta
+ * MAX_BODY (64 KB, el límite del POST del panel, ver router.ts) de texto ≈ 17.000 tokens
+ * en CADA llamada al LLM, y con los MAX_PASOS=4 pasos de tool-calling del agente
+ * (runAgent.ts) eso son ~70.000 tokens por mensaje del cliente — más de 10× lo normal, y
+ * sin que nadie se entere porque no hay enforcement de uso (AUDIT.md § ALTO-16).
+ *
+ * 12.000 caracteres (~3.200 tokens, con la aproximación de 3,7 caracteres/token de
+ * AUDIT.md § 7) es el número que esa misma auditoría propone: generoso para cualquier
+ * rubro real, pero ya no alcanza para "pegar el catálogo completo".
+ */
+export const MAX_KB_CARACTERES = 12_000;
+
+/** Tamaño total (en caracteres) de una KB ya normalizada — la métrica que se compara
+ * contra MAX_KB_CARACTERES y la que se le muestra al dueño en el mensaje de error. */
+export function tamanoKb(kb: KnowledgeBase): number {
+  let total = 0;
+  for (const f of kb.faq) total += f.pregunta.length + f.respuesta.length;
+  for (const linea of kb.datos) total += linea.length;
+  for (const linea of kb.politicas) total += linea.length;
+  for (const s of kb.secciones ?? []) {
+    total += s.titulo.length;
+    for (const item of s.items) total += item.length;
+  }
+  return total;
+}
+
+/**
+ * Valida que la KB no supere MAX_KB_CARACTERES. Devuelve null si está OK, o un mensaje
+ * de error con cuánto ocupa y cuál es el límite (para que el dueño sepa qué recortar en
+ * "Mi negocio" — el pedido explícito de F13, no un 400 genérico).
+ */
+export function validarTamanoKb(kb: KnowledgeBase): string | null {
+  const total = tamanoKb(kb);
+  if (total <= MAX_KB_CARACTERES) return null;
+  return (
+    `La base de conocimiento ocupa ${total.toLocaleString("es-CR")} caracteres; el máximo es ` +
+    `${MAX_KB_CARACTERES.toLocaleString("es-CR")}. Recortá textos o secciones y volvé a guardar.`
+  );
+}
+
+/**
  * Normaliza un kb crudo (venga de la DB o de un cliente) a la forma vigente. Su
  * trabajo CRÍTICO es la migración perezosa: los tenants guardados antes de las
  * "secciones libres" tienen `tarifas`/`parabrisas` (lavacar) y ningún `secciones`;

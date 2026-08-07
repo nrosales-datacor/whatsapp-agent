@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { crearDbEfimera } from "../helpers/pgliteDb";
 import { waCampanias, waCampaniaEnvios } from "../../src/db/schema";
 import { marcarEnviado, purgarEnviosFinalizados, quedanPendientes, reclamarEnvio } from "../../src/campaigns/cola";
-import { elegirEsperaMs } from "../../src/campaigns/worker";
+import { elegirEsperaMs, esperaThrottleTenant, registrarEnvioTenant } from "../../src/campaigns/worker";
 import type { EstadoCampania } from "../../src/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -16,11 +16,11 @@ import type { EstadoCampania } from "../../src/types";
 const TENANT = "tenant-camp";
 type Db = Awaited<ReturnType<typeof crearDbEfimera>>["db"];
 
-async function crearCampania(db: Db, estado: EstadoCampania): Promise<string> {
+async function crearCampania(db: Db, estado: EstadoCampania, tenantId: string = TENANT): Promise<string> {
   const [c] = await db
     .insert(waCampanias)
     .values({
-      tenantId: TENANT,
+      tenantId,
       nombre: "Promo lluvia",
       mensaje: "20% en pulido este mes",
       segmentoTipo: "todos",
@@ -31,12 +31,12 @@ async function crearCampania(db: Db, estado: EstadoCampania): Promise<string> {
   return c.id;
 }
 
-async function sembrarEnvios(db: Db, campaniaId: string, n: number): Promise<void> {
+async function sembrarEnvios(db: Db, campaniaId: string, n: number, tenantId: string = TENANT): Promise<void> {
   await db.insert(waCampaniaEnvios).values(
     Array.from({ length: n }, (_, i) => ({
       campaniaId,
-      tenantId: TENANT,
-      clienteWa: `5067000000${i}`,
+      tenantId,
+      clienteWa: `${tenantId}-${i}`,
       clienteNombre: `Cliente ${i}`,
     })),
   );
@@ -80,6 +80,80 @@ test("intentos concurrentes de claim reparten los envíos sin repetir", async ()
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Reparto por tenant en el claim (ROADMAP F8, PLAN-ESCALA-MULTITENANT): antes
+// `reclamarEnvio` tomaba el envío pendiente más viejo SIN mirar el tenant, así
+// que una campaña grande monopolizaba el worker mientras las de los demás
+// esperaban. Ahora se prioriza el tenant que hace más tiempo no recibe turno.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("reclamarEnvio: un tenant con 1 envío no espera a que otro con 100 termine de drenar (F8)", async () => {
+  const { db, cerrar } = await crearDbEfimera();
+  try {
+    const TENANT_GRANDE = "tenant-grande";
+    const TENANT_CHICO = "tenant-chico";
+
+    const campaniaGrande = await crearCampania(db, "enviando", TENANT_GRANDE);
+    await sembrarEnvios(db, campaniaGrande, 100, TENANT_GRANDE);
+
+    const campaniaChica = await crearCampania(db, "enviando", TENANT_CHICO);
+    await sembrarEnvios(db, campaniaChica, 1, TENANT_CHICO);
+
+    // Simula al worker: reclama y marca "enviado" (así el próximo claim ve el
+    // último envío real del tenant y le puede tocar el turno a otro).
+    const ordenTenants: string[] = [];
+    for (let i = 0; i < 10; i++) {
+      const envio = await reclamarEnvio(db);
+      if (!envio) break;
+      ordenTenants.push(envio.tenantId);
+      await marcarEnviado(db, envio.id);
+    }
+
+    const posicion = ordenTenants.indexOf(TENANT_CHICO);
+    assert.notEqual(posicion, -1, "el tenant chico recibió turno dentro de las primeras 10 vueltas");
+    assert.ok(
+      posicion < 5,
+      `el tenant chico entró en la vuelta ${posicion + 1} de 10 — se esperaba bien al principio, no cerca del final`,
+    );
+  } finally {
+    await cerrar();
+  }
+});
+
+test("reclamarEnvio: reparto por tenant alterna en vez de agotar siempre al mismo (F8)", async () => {
+  const { db, cerrar } = await crearDbEfimera();
+  try {
+    const TENANT_A = "tenant-a";
+    const TENANT_B = "tenant-b";
+
+    const campaniaA = await crearCampania(db, "enviando", TENANT_A);
+    await sembrarEnvios(db, campaniaA, 5, TENANT_A);
+    const campaniaB = await crearCampania(db, "enviando", TENANT_B);
+    await sembrarEnvios(db, campaniaB, 5, TENANT_B);
+
+    const ordenTenants: string[] = [];
+    for (let i = 0; i < 10; i++) {
+      const envio = await reclamarEnvio(db);
+      if (!envio) break;
+      ordenTenants.push(envio.tenantId);
+      await marcarEnviado(db, envio.id);
+    }
+
+    assert.equal(ordenTenants.length, 10, "se reclaman los 10 envíos entre ambos tenants");
+    // Con reparto por tenant, ningún tenant debería aparecer 3+ veces seguidas:
+    // apenas envía uno, el otro (que hace más tiempo no envía) pasa a tener prioridad.
+    let rachaMax = 1;
+    let rachaActual = 1;
+    for (let i = 1; i < ordenTenants.length; i++) {
+      rachaActual = ordenTenants[i] === ordenTenants[i - 1] ? rachaActual + 1 : 1;
+      rachaMax = Math.max(rachaMax, rachaActual);
+    }
+    assert.ok(rachaMax <= 2, `racha más larga del mismo tenant seguido: ${rachaMax} (se esperaba <= 2)`);
+  } finally {
+    await cerrar();
+  }
+});
+
 test("no se reclama si la campaña NO está 'enviando' (cancelada a mitad)", async () => {
   const { db, cerrar } = await crearDbEfimera();
   try {
@@ -96,11 +170,38 @@ test("no se reclama si la campaña NO está 'enviando' (cancelada a mitad)", asy
   }
 });
 
-test("throttle: espera el intervalo de envío tras procesar, y el poll cuando no hubo nada", () => {
-  const intervalo = 1200;
+test("elegirEsperaMs: reintenta ya mismo tras un envío (el throttle real es por tenant, no acá); usa el poll si no había nada", () => {
   const poll = 2000;
-  assert.equal(elegirEsperaMs(true, intervalo, poll), intervalo, "tras un envío respeta CAMPANIA_ENVIO_INTERVALO_MS");
-  assert.equal(elegirEsperaMs(false, intervalo, poll), poll, "sin envíos usa el poll normal");
+  assert.equal(elegirEsperaMs(true, poll), 0, "tras un envío no fuerza espera global: otro tenant puede estar listo");
+  assert.equal(elegirEsperaMs(false, poll), poll, "sin envíos usa el poll normal");
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Throttle POR TENANT (ROADMAP F8): el límite de Meta es por número de
+// WhatsApp (= por tenant), así que el mapa tenantId → próximo envío permitido
+// debe dejar avanzar a un tenant que no envió hace rato aunque otro tenant
+// acabe de consumir su propio turno.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("esperaThrottleTenant/registrarEnvioTenant: dos tenants no se esperan entre sí", () => {
+  const mapa = new Map<string, number>();
+  const intervalo = 1200;
+  const ahora = 1_000_000;
+
+  // Tenant A envía: queda "ocupado" hasta ahora + intervalo.
+  assert.equal(esperaThrottleTenant(mapa, "tenant-a", ahora), 0, "A nunca envió: no espera nada");
+  registrarEnvioTenant(mapa, "tenant-a", ahora, intervalo);
+
+  // Tenant B, en el MISMO instante, no tiene por qué esperar el turno de A.
+  assert.equal(esperaThrottleTenant(mapa, "tenant-b", ahora), 0, "B no depende del throttle de A");
+  registrarEnvioTenant(mapa, "tenant-b", ahora, intervalo);
+
+  // A, en cambio, si intenta de nuevo enseguida, sí debe esperar lo que falta.
+  const esperaA = esperaThrottleTenant(mapa, "tenant-a", ahora + 100);
+  assert.equal(esperaA, intervalo - 100, "A debe esperar lo que resta de SU propio intervalo");
+
+  // Pasado el intervalo completo, A vuelve a estar libre.
+  assert.equal(esperaThrottleTenant(mapa, "tenant-a", ahora + intervalo), 0, "tras el intervalo, A ya puede enviar de nuevo");
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
