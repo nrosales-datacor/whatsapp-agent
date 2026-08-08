@@ -216,7 +216,7 @@ test("cotiza una FOTO (visión, C1.5): descarga la imagen, la adjunta al LLM y l
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant);
   // Simula la persistencia que hace la fase 1 para el mensaje de foto entrante.
-  await repo.guardarMensaje(conv.id, {
+  await repo.guardarMensaje(tenant.id, conv.id, {
     rol: "user",
     contenido: "[foto] ¿cuánto por pulir esto?",
     creadoEn: new Date().toISOString(),
@@ -369,14 +369,14 @@ test("E5-a: aunque el payload traiga un historialPrevio VIEJO (snapshot desactua
 
   // Simula lo que hace la fase 1 (ingesta) para los 3 mensajes de una ráfaga: los 3
   // quedan persistidos en el repo (eso SIEMPRE pasa, sea cual sea el estado del job).
-  await repo.guardarMensaje(conv.id, { rol: "user", contenido: "Hola", creadoEn: new Date().toISOString(), waMessageId: "wamid.1" });
-  await repo.guardarMensaje(conv.id, {
+  await repo.guardarMensaje(tenant.id, conv.id, { rol: "user", contenido: "Hola", creadoEn: new Date().toISOString(), waMessageId: "wamid.1" });
+  await repo.guardarMensaje(tenant.id, conv.id, {
     rol: "user",
     contenido: "quiero una cita",
     creadoEn: new Date().toISOString(),
     waMessageId: "wamid.2",
   });
-  await repo.guardarMensaje(conv.id, {
+  await repo.guardarMensaje(tenant.id, conv.id, {
     rol: "user",
     contenido: "para el viernes",
     creadoEn: new Date().toISOString(),

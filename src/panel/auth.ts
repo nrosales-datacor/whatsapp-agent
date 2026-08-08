@@ -1,5 +1,17 @@
 import crypto from "node:crypto";
+import { promisify } from "node:util";
 import type { Rol } from "../types";
+
+// scrypt en su variante async (E6/BLOQUEANTE-10): la versión Sync bloquea el event loop
+// ~50-150ms por invocación con los parámetros default. Este mismo proceso Node atiende
+// también el webhook de WhatsApp de TODOS los tenants — bloquear el loop en el login
+// congela el webhook de todo el mundo. `scrypt` con promisify libera el loop mientras
+// la libuv thread-pool hace el trabajo pesado.
+const scryptAsync = promisify(crypto.scrypt) as (
+  password: string,
+  salt: string,
+  keylen: number,
+) => Promise<Buffer>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Autenticación del panel: contraseña por negocio (hash scrypt) + sesión firmada
@@ -33,15 +45,18 @@ const SESSION_VERSION = process.env.PANEL_SESSION_VERSION ?? "1";
 const DURACION_MS = 7 * 24 * 60 * 60 * 1000; // 7 días (antes 30: menor ventana si se filtra un token)
 
 /** Genera "salt:hash" para guardar la contraseña del panel de un negocio. */
-export function hashearPassword(password: string): string {
+export async function hashearPassword(password: string): Promise<string> {
   const salt = crypto.randomBytes(16).toString("hex");
-  const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+  const hash = (await scryptAsync(password, salt, 64)).toString("hex");
   return `${salt}:${hash}`;
 }
 
 // Hash de una contraseña al azar: se usa para gastar el MISMO tiempo de scrypt
 // cuando el usuario no existe, y así no filtrar qué tenants son válidos por timing.
-export const HASH_DUMMY = hashearPassword(crypto.randomBytes(16).toString("hex"));
+// Top-level await: el paquete es "type": "module" (ESM), así que esto se resuelve
+// antes de que termine de evaluarse este módulo — cualquier import de HASH_DUMMY
+// (p. ej. desde router.ts) ya lo recibe resuelto, nunca una Promise pendiente.
+export const HASH_DUMMY = await hashearPassword(crypto.randomBytes(16).toString("hex"));
 
 // Alfabeto sin caracteres ambiguos (0/O, 1/l/I) — la clave temporal (0.5) la lee/tipea
 // un humano para comunicarla al dueño del negocio.
@@ -56,11 +71,11 @@ export function generarClaveTemporal(): string {
 }
 
 /** Compara una contraseña con el "salt:hash" guardado (tiempo constante). */
-export function verificarPassword(password: string, guardado: string | undefined): boolean {
+export async function verificarPassword(password: string, guardado: string | undefined): Promise<boolean> {
   if (!guardado) return false;
   const [salt, hash] = guardado.split(":");
   if (!salt || !hash) return false;
-  const calc = crypto.scryptSync(password, salt, 64).toString("hex");
+  const calc = (await scryptAsync(password, salt, 64)).toString("hex");
   const a = Buffer.from(calc);
   const b = Buffer.from(hash);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
@@ -71,39 +86,48 @@ export interface SesionOperador {
   tenantId: string;
   usuarioId: string;
   rol: Rol;
+  // Epoch del usuario en el momento en que se firmó este token (E13/ALTO-06). El caller
+  // (sesionDeOperador, router.ts) lo compara contra el epoch VIGENTE de la cuenta: si no
+  // coinciden, el token es de una sesión ya revocada (cambio de clave/rol/estado desde el
+  // login) aunque la firma y la expiración sigan siendo válidas.
+  epoch: number;
 }
 
 /**
  * Crea un token de sesión firmado para un operador (va en una cookie). Lleva tenantId +
  * usuarioId + rol (C2.3): el rol gatea qué puede ver/hacer en el panel (p. ej. "Mi
- * negocio" y la gestión de usuarios son solo para "dueno").
+ * negocio" y la gestión de usuarios son solo para "dueno"). `epoch` es el sessionEpoch
+ * vigente de la cuenta al momento del login (E13/ALTO-06): lo trae el token para que
+ * sesionDeOperador pueda detectar sesiones revocadas sin volver a la base en cada request.
  */
-export function crearSesion(tenantId: string, usuarioId: string, rol: Rol): string {
-  const payload = `${tenantId}.${usuarioId}.${rol}.${Date.now() + DURACION_MS}.${SESSION_VERSION}`;
+export function crearSesion(tenantId: string, usuarioId: string, rol: Rol, epoch: number): string {
+  const payload = `${tenantId}.${usuarioId}.${rol}.${epoch}.${Date.now() + DURACION_MS}.${SESSION_VERSION}`;
   const firma = crypto.createHmac("sha256", SECRET).update(payload).digest("hex");
   return Buffer.from(`${payload}.${firma}`).toString("base64url");
 }
 
 /**
- * Verifica el token de sesión y devuelve tenantId/usuarioId/rol, o null si es
- * inválido/venció. Cambiar el formato del payload (como acá, al agregar usuarioId/rol)
+ * Verifica el token de sesión y devuelve tenantId/usuarioId/rol/epoch, o null si es
+ * inválido/venció. Cambiar el formato del payload (como acá, al agregar usuarioId/rol/epoch)
  * invalida sola cualquier sesión previa: los tokens viejos no calzan con el split nuevo.
  */
 export function verificarSesion(token: string | undefined): SesionOperador | null {
   if (!token) return null;
   try {
-    const [tenantId, usuarioId, rol, exp, ver, firma] = Buffer.from(token, "base64url").toString().split(".");
-    if (!tenantId || !usuarioId || !rol || !exp || !ver || !firma) return null;
+    const [tenantId, usuarioId, rol, epoch, exp, ver, firma] = Buffer.from(token, "base64url").toString().split(".");
+    if (!tenantId || !usuarioId || !rol || !epoch || !exp || !ver || !firma) return null;
     if (ver !== SESSION_VERSION) return null; // sesión de una versión anterior → fuera
     const esperada = crypto
       .createHmac("sha256", SECRET)
-      .update(`${tenantId}.${usuarioId}.${rol}.${exp}.${ver}`)
+      .update(`${tenantId}.${usuarioId}.${rol}.${epoch}.${exp}.${ver}`)
       .digest("hex");
     const a = Buffer.from(firma);
     const b = Buffer.from(esperada);
     if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
     if (Date.now() > Number(exp)) return null;
-    return { tenantId, usuarioId, rol: rol as Rol };
+    const epochNum = Number(epoch);
+    if (!Number.isInteger(epochNum) || epochNum < 0) return null; // epoch corrupto/no numérico
+    return { tenantId, usuarioId, rol: rol as Rol, epoch: epochNum };
   } catch {
     return null;
   }
