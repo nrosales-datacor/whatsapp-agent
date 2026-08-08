@@ -285,6 +285,11 @@ export const waUsuarios = pgTable(
     debeCambiarClave: boolean("debe_cambiar_clave").notNull().default(false),
     // Vencimiento de la clave temporal (24h desde el reset). Null = clave normal, sin vencer.
     claveTemporalExpira: timestamp("clave_temporal_expira", { withTimezone: true }),
+    // Revocación de sesiones (E13/ALTO-06): el token firmado lleva el epoch con el que se
+    // firmó (ver src/panel/auth.ts). Cambiar clave/rol/estado incrementa esto — cualquier
+    // token viejo (epoch distinto) queda inválido en la próxima request, sin esperar a que
+    // expire (hasta 7 días). Empieza en 0 para todas las cuentas existentes.
+    sessionEpoch: integer("session_epoch").notNull().default(0),
   },
   (t) => ({
     uqUsuario: uniqueIndex("wa_usuarios_usuario_uq").on(t.usuario),

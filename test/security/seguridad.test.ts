@@ -35,9 +35,14 @@ const { firmaValida } = await import("../../src/whatsapp/client");
 
 // ─── Sesión firmada del operador (cookie HMAC, stateless) ───────────────────
 
-test("sesión operador: round-trip devuelve tenantId/usuarioId/rol", () => {
-  const token = crearSesion("tenant-x", "usr-1", "dueno");
-  assert.deepEqual(verificarSesion(token), { tenantId: "tenant-x", usuarioId: "usr-1", rol: "dueno" });
+test("sesión operador: round-trip devuelve tenantId/usuarioId/rol/epoch", () => {
+  const token = crearSesion("tenant-x", "usr-1", "dueno", 0);
+  assert.deepEqual(verificarSesion(token), { tenantId: "tenant-x", usuarioId: "usr-1", rol: "dueno", epoch: 0 });
+});
+
+test("sesión operador: el epoch viaja tal cual (E13/ALTO-06) — no solo 0", () => {
+  const token = crearSesion("tenant-x", "usr-1", "operador", 7);
+  assert.deepEqual(verificarSesion(token), { tenantId: "tenant-x", usuarioId: "usr-1", rol: "operador", epoch: 7 });
 });
 
 test("sesión operador: token nulo/ausente/basura → null (no lanza)", () => {
@@ -48,7 +53,7 @@ test("sesión operador: token nulo/ausente/basura → null (no lanza)", () => {
 });
 
 test("sesión operador: firma alterada → null (no se puede forjar)", () => {
-  const token = crearSesion("tenant-x", "usr-1", "operador");
+  const token = crearSesion("tenant-x", "usr-1", "operador", 0);
   const crudo = Buffer.from(token, "base64url").toString();
   const partes = crudo.split(".");
   partes[partes.length - 1] = "0".repeat(64); // firma falsa del mismo largo
@@ -57,42 +62,67 @@ test("sesión operador: firma alterada → null (no se puede forjar)", () => {
 });
 
 test("sesión operador: escalar rol operador→dueno sin re-firmar → null", () => {
-  const token = crearSesion("tenant-x", "usr-1", "operador");
-  const [tenantId, usuarioId, , exp, ver, firma] = Buffer.from(token, "base64url").toString().split(".");
+  const token = crearSesion("tenant-x", "usr-1", "operador", 0);
+  const [tenantId, usuarioId, , epoch, exp, ver, firma] = Buffer.from(token, "base64url").toString().split(".");
   // Cambiamos el rol pero conservamos la firma original (firmada sobre "operador").
-  const manipulado = Buffer.from(`${tenantId}.${usuarioId}.dueno.${exp}.${ver}.${firma}`).toString("base64url");
+  const manipulado = Buffer.from(`${tenantId}.${usuarioId}.dueno.${epoch}.${exp}.${ver}.${firma}`).toString("base64url");
   assert.equal(verificarSesion(manipulado), null);
 });
 
 test("sesión operador: cambiar tenantId sin re-firmar → null (no cruza tenants)", () => {
-  const token = crearSesion("tenant-a", "usr-1", "dueno");
-  const [, usuarioId, rol, exp, ver, firma] = Buffer.from(token, "base64url").toString().split(".");
-  const manipulado = Buffer.from(`tenant-b.${usuarioId}.${rol}.${exp}.${ver}.${firma}`).toString("base64url");
+  const token = crearSesion("tenant-a", "usr-1", "dueno", 0);
+  const [, usuarioId, rol, epoch, exp, ver, firma] = Buffer.from(token, "base64url").toString().split(".");
+  const manipulado = Buffer.from(`tenant-b.${usuarioId}.${rol}.${epoch}.${exp}.${ver}.${firma}`).toString("base64url");
   assert.equal(verificarSesion(manipulado), null);
 });
 
 test("sesión operador: extender el vencimiento sin re-firmar → null", () => {
-  const token = crearSesion("tenant-x", "usr-1", "dueno");
-  const [tenantId, usuarioId, rol, , ver, firma] = Buffer.from(token, "base64url").toString().split(".");
+  const token = crearSesion("tenant-x", "usr-1", "dueno", 0);
+  const [tenantId, usuarioId, rol, epoch, , ver, firma] = Buffer.from(token, "base64url").toString().split(".");
   const futuro = Date.now() + 999 * 24 * 60 * 60 * 1000;
-  const manipulado = Buffer.from(`${tenantId}.${usuarioId}.${rol}.${futuro}.${ver}.${firma}`).toString("base64url");
+  const manipulado = Buffer.from(`${tenantId}.${usuarioId}.${rol}.${epoch}.${futuro}.${ver}.${firma}`).toString("base64url");
   assert.equal(verificarSesion(manipulado), null);
 });
 
 test("sesión operador: token vencido → null (aunque la firma sea válida)", () => {
   // Firmamos un payload ya vencido con el MISMO secreto (firma legítima, exp en el pasado).
   const exp = Date.now() - 1000;
-  const payload = `tenant-x.usr-1.dueno.${exp}.1`;
+  const payload = `tenant-x.usr-1.dueno.0.${exp}.1`;
   const firma = crypto.createHmac("sha256", process.env.PANEL_SESSION_SECRET!).update(payload).digest("hex");
   const token = Buffer.from(`${payload}.${firma}`).toString("base64url");
   assert.equal(verificarSesion(token), null);
 });
 
 test("sesión operador: versión distinta invalida (re-login global) → null", () => {
-  const token = crearSesion("tenant-x", "usr-1", "dueno");
-  const [tenantId, usuarioId, rol, exp, , firma] = Buffer.from(token, "base64url").toString().split(".");
-  const otraVer = Buffer.from(`${tenantId}.${usuarioId}.${rol}.${exp}.99.${firma}`).toString("base64url");
+  const token = crearSesion("tenant-x", "usr-1", "dueno", 0);
+  const [tenantId, usuarioId, rol, epoch, exp, , firma] = Buffer.from(token, "base64url").toString().split(".");
+  const otraVer = Buffer.from(`${tenantId}.${usuarioId}.${rol}.${epoch}.${exp}.99.${firma}`).toString("base64url");
   assert.equal(verificarSesion(otraVer), null);
+});
+
+// ─── Epoch de sesión (E13/ALTO-06) — revocación de sesiones puntuales ───────
+// `verificarSesion` en sí NO conoce el epoch "vigente" de la cuenta (eso lo compara
+// `sesionDeOperador`, ver test/security/sesionEpoch.test.ts) — lo que se prueba acá es
+// que el epoch viaja protegido por la firma, igual que rol/tenantId/exp: no se puede
+// "revivir" un token viejo subiéndole el epoch a mano sin re-firmar.
+
+test("sesión operador: subir el epoch sin re-firmar → null (no se puede forjar la revocación)", () => {
+  const token = crearSesion("tenant-x", "usr-1", "dueno", 0);
+  const [tenantId, usuarioId, rol, , exp, ver, firma] = Buffer.from(token, "base64url").toString().split(".");
+  // Alguien con el token viejo (epoch 0) intenta pasar por el epoch nuevo (1) sin la firma.
+  const manipulado = Buffer.from(`${tenantId}.${usuarioId}.${rol}.1.${exp}.${ver}.${firma}`).toString("base64url");
+  assert.equal(verificarSesion(manipulado), null);
+});
+
+test("sesión operador: epoch no numérico o negativo → null (corrupto, no lanza)", () => {
+  const token = crearSesion("tenant-x", "usr-1", "dueno", 0);
+  const [tenantId, usuarioId, rol, , exp, ver] = Buffer.from(token, "base64url").toString().split(".");
+  for (const epochCorrupto of ["abc", "-1", "1.5", ""]) {
+    const payload = `${tenantId}.${usuarioId}.${rol}.${epochCorrupto}.${exp}.${ver}`;
+    const firma = crypto.createHmac("sha256", process.env.PANEL_SESSION_SECRET!).update(payload).digest("hex");
+    const t = Buffer.from(`${payload}.${firma}`).toString("base64url");
+    assert.equal(verificarSesion(t), null, `epoch "${epochCorrupto}" debería rechazarse`);
+  }
 });
 
 // ─── Sesión del superadmin (onboarding) — cookie y marca aparte ─────────────
@@ -100,7 +130,7 @@ test("sesión operador: versión distinta invalida (re-login global) → null", 
 test("sesión admin: round-trip válido → true; token de operador NO cuela como admin", () => {
   assert.equal(verificarSesionAdmin(crearSesionAdmin()), true);
   // Una sesión de operador (aunque bien firmada) no debe pasar el guard de admin.
-  assert.equal(verificarSesionAdmin(crearSesion("tenant-x", "usr-1", "dueno")), false);
+  assert.equal(verificarSesionAdmin(crearSesion("tenant-x", "usr-1", "dueno", 0)), false);
   assert.equal(verificarSesionAdmin(undefined), false);
 });
 
