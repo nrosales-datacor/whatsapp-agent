@@ -606,6 +606,74 @@ con la nueva — no hay atajo porque el algoritmo es simétrico:
 > Guardala en el gestor de secretos, no solo en el `.env` del droplet — si se pierde el droplet
 > y el backup de la base no trae el `.env`, se pierden los tokens de todos los clientes.
 
+## 21. Separar procesos web/worker (ROADMAP F6, OPCIONAL — escalar más allá de 1 negocio)
+
+Todo lo de arriba deja **un solo proceso PM2** (`whatsapp-bot`) haciendo webhook + panel +
+landing + los 3 workers de cola (mensajes, campañas, rescate) + los 3 schedulers
+(recordatorios, reputación, reporte de métricas). Es lo que corre hoy en producción y **no
+hace falta cambiar nada** para seguir así: es el modo `ROL=todo` (default si no se toca el
+`.env`).
+
+**Por qué separarlo eventualmente:** con un solo proceso, un pico de tráfico del panel (varios
+operadores mirando la Agenda a la vez) comparte el mismo event loop y el mismo pool de
+Postgres que el webhook — puede degradarlo. Y un `pm2 restart` corta las conexiones de **todos**
+los negocios a la vez, aunque el cambio no los afecte. Separar en dos procesos aísla esas dos
+superficies: un pico del panel ya no compite con el webhook, y se puede reiniciar uno sin tocar
+el otro.
+
+**Cuándo hacerlo:** no antes de que un cliente real lo justifique. Con 1-3 negocios el proceso
+único sobra. Es una palanca para cuando el número de negocios (o el tráfico del panel) empiece a
+importar.
+
+### Cómo queda
+
+- **`ROL=web`**: sirve webhook + panel + landing + `/salud` completo. NO arranca ningún worker
+  de cola ni scheduler.
+- **`ROL=worker`**: arranca los 3 workers de cola y los 3 schedulers. Sirve un HTTP **mínimo**
+  que solo responde `/salud` (health check del proceso; sin webhook, sin panel, sin landing —
+  eso lo atiende la réplica `web`).
+- Los workers de cola (mensajes, campañas, rescate) ya eran seguros ante N réplicas por su
+  claim atómico (`FOR UPDATE SKIP LOCKED`); se puede correr **más de una** réplica `worker` sin
+  duplicar trabajo. Los 3 schedulers usan un **lease de liderazgo** nuevo (tabla `wa_lideres`,
+  `src/red/liderazgo.ts`) para que, con N réplicas `worker`, solo UNA haga el trabajo real de
+  cada tick — las demás lo ven en los logs como "en espera: otro proceso tiene el liderazgo
+  este tick" (no es un error).
+
+No hay `ecosystem.config.js` en este repo — dos apps de PM2 arrancadas a mano, mismo estilo que
+el paso 6:
+
+```bash
+cd ~/lavacar-whatsapp-bot
+
+# App "web": webhook + panel + landing. Usa el puerto público (el que ya tenías).
+PORT=3001 ROL=web pm2 start npm --name whatsapp-bot-web -- start
+
+# App "worker": workers de cola + schedulers. Puerto DISTINTO (solo para su /salud
+# interno; no necesita quedar expuesto públicamente detrás de Caddy/nginx).
+PORT=3011 ROL=worker pm2 start npm --name whatsapp-bot-worker -- start
+
+pm2 save
+```
+
+> ⚠️ Cada app de PM2 necesita su propio `PORT` — las dos leen el mismo `.env`, pero si las dos
+> intentan escuchar en el mismo puerto, la segunda que arranque falla con `EADDRINUSE`.
+
+Migrá **antes** de arrancar la app `worker` (crea `wa_lideres`, la tabla del lease):
+
+```bash
+npx tsx scripts/migrar.ts
+```
+
+Con esto, el resto del deploy (CI/CD, paso 15) sigue igual: `pm2 restart whatsapp-bot-web` y
+`pm2 restart whatsapp-bot-worker` reemplazan al único `pm2 restart whatsapp-bot` donde
+corresponda (el workflow de este repo sigue apuntando al nombre `whatsapp-bot` — si migrás a
+las dos apps, actualizá el nombre hardcodeado en `.github/workflows/ci-cd.yml`).
+
+**Revertir a un solo proceso:** borrá las dos apps (`pm2 delete whatsapp-bot-web
+whatsapp-bot-worker`) y volvé al `pm2 start npm --name whatsapp-bot -- start` del paso 6 sin
+`ROL` en el `.env` (o con `ROL=todo` explícito) — es exactamente el comportamiento de siempre,
+la tabla `wa_lideres` queda simplemente sin usar.
+
 ## Mantenimiento rápido
 
 | Acción | Comando |

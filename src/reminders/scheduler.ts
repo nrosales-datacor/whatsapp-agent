@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import type { schema } from "../db/schema";
 import type { Cita, Repositorio, Tenant, TipoRecordatorio } from "../types";
 import { listarTenants } from "../config/tenantStore";
 import { botonesPostServicio, botonesPostServicioPro, botonesRecordatorio, enviarBotones, enviarPlantilla } from "../whatsapp/client";
@@ -5,6 +8,9 @@ import { tenantPuede } from "../billing/planes";
 import { capturarError } from "../observabilidad/sentry";
 import { mapConLimite } from "../red/concurrencia";
 import { iniciarCicloSinSolape } from "../red/programador";
+import { intentarLiderazgo } from "../red/liderazgo";
+
+type DB = PostgresJsDatabase<typeof schema>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RECORDATORIOS DE CITA por WhatsApp.
@@ -53,6 +59,14 @@ const DIA_ANTES_HORA = process.env.RECORDATORIO_DIA_ANTES_HORA ?? "17:00";
 const HORAS_ANTES = Number(process.env.RECORDATORIO_HORAS_ANTES ?? 2);
 const NO_ANTES_DE_MIN = 6 * 60; // nunca despertar al cliente antes de las 6:00 am
 const POST_SERVICIO_HORAS_DESPUES = Number(process.env.POST_SERVICIO_HORAS_DESPUES ?? 3);
+
+// Líder del ciclo (ROADMAP F6): con ROL=worker y N réplicas, solo UNA corre el
+// trabajo real de cada tick; las demás renuevan el intento y se lo saltan en
+// silencio (ver src/red/liderazgo.ts). `TITULAR_LIDERAZGO` es fijo por proceso
+// (una sola vez al cargar el módulo); el lease dura 3 ticks para tolerar un tick
+// lento sin perder el liderazgo de mitad de camino.
+const NOMBRE_LIDERAZGO = "recordatorios";
+const TITULAR_LIDERAZGO = randomUUID();
 
 function aMin(hhmm: string): number {
   const [h, m] = hhmm.split(":").map(Number);
@@ -252,14 +266,25 @@ async function procesarTenant(tenant: Tenant, repo: Repositorio): Promise<void> 
  * Corre un primer chequeo de inmediato y luego cada INTERVALO_MIN minutos, sin
  * solaparse nunca (`iniciarCicloSinSolape`, F12) y con los tenants procesados
  * con concurrencia acotada (`mapConLimite`) en vez de en serie.
+ *
+ * `db` es para el lease de liderazgo (F6): con `ROL=worker` y N réplicas, cada
+ * tick primero intenta renovar el liderazgo y SOLO si lo tiene procesa tenants;
+ * si no, se lo salta en silencio (log informativo, no error — es el camino
+ * esperado para las réplicas que no ganaron esta vuelta). `null` (modo memoria,
+ * o `ROL=todo` de un solo proceso) siempre gana: ver `intentarLiderazgo`.
  */
-export function iniciarRecordatorios(repo: Repositorio): void {
+export function iniciarRecordatorios(repo: Repositorio, db: DB | null): void {
+  const intervaloMs = INTERVALO_MIN * 60 * 1000;
   iniciarCicloSinSolape({
     etiqueta: "recordatorios",
-    intervaloMs: INTERVALO_MIN * 60 * 1000,
+    intervaloMs,
     sugerenciaEscalado: "Con más tenants esto va a seguir empeorando: subir RECORDATORIOS_CONCURRENCIA o RECORDATORIOS_INTERVALO_MIN.",
-    tick: () =>
-      mapConLimite(listarTenants(), CONCURRENCIA, async (tenant) => {
+    tick: async () => {
+      if (!(await intentarLiderazgo(db, NOMBRE_LIDERAZGO, TITULAR_LIDERAZGO, intervaloMs * 3))) {
+        console.log("[recordatorios] en espera: otro proceso tiene el liderazgo este tick.");
+        return;
+      }
+      await mapConLimite(listarTenants(), CONCURRENCIA, async (tenant) => {
         try {
           await procesarTenant(tenant, repo);
         } catch (e) {
@@ -267,7 +292,8 @@ export function iniciarRecordatorios(repo: Repositorio): void {
           console.error(`[recordatorios] error procesando tenant ${tenant.id}:`, e);
           capturarError(e, { loop: "recordatorios", tenantId: tenant.id });
         }
-      }).then(() => undefined),
+      });
+    },
     onError: (e, momento) => {
       console.error(`[recordatorios] ${momento}:`, e);
       capturarError(e, { loop: "recordatorios", momento });

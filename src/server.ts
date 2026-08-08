@@ -32,6 +32,31 @@ iniciarSentry(); // antes de aceptar tráfico: registra los handlers globales de
 const PORT = Number(process.env.PORT ?? 3000);
 const RUTA_WEBHOOK = "/webhook";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Separación de procesos web/worker (ROADMAP F6). Hoy TODO corre en un único
+// proceso bajo una sola instancia de PM2: sin aislamiento de fallos (un pico
+// del panel degrada el webhook, comparten event loop y pool de Postgres) y un
+// `pm2 restart` corta las conexiones de los 50 negocios a la vez.
+//
+// `ROL=todo` (default, NO rompe el piloto ni dev local si no se toca el .env)
+// preserva el comportamiento de siempre: un solo proceso con servidor HTTP +
+// los 3 workers de cola + los 3 schedulers. `ROL=web` sirve el webhook/panel/
+// landing pero NO arranca ningún worker ni scheduler. `ROL=worker` arranca los
+// workers/schedulers y sirve un HTTP mínimo (solo `/salud`, para el health
+// check del propio proceso) — el webhook/panel los sirve la réplica `web`.
+//
+// Los 3 workers de cola (mensajes, campañas, rescate) ya son seguros ante N
+// réplicas por su claim atómico (`FOR UPDATE SKIP LOCKED`, `src/queue/cola.ts`).
+// Los 3 schedulers (recordatorios, reputación, reporte de métricas) no tienen
+// ese claim por unidad de trabajo — usan el lease de liderazgo de
+// `src/red/liderazgo.ts` para que, con N réplicas `worker`, solo UNA haga el
+// trabajo real por tick.
+// ─────────────────────────────────────────────────────────────────────────────
+type Rol = "web" | "worker" | "todo";
+const ROL: Rol = process.env.ROL === "web" || process.env.ROL === "worker" ? process.env.ROL : "todo";
+const SIRVE_WEB = ROL === "web" || ROL === "todo";
+const SIRVE_TRABAJO_DE_FONDO = ROL === "worker" || ROL === "todo";
+
 // `db` se expone por separado para pasárselo al worker (que opera directamente
 // sobre wa_jobs sin pasar por la interfaz Repositorio). `obtenerDb()` es el
 // pool único del proceso (ROADMAP F7): el resto de los módulos DB-directos
@@ -55,31 +80,41 @@ if (db) {
   });
 }
 
-const server = http.createServer(async (req, res) => {
+// Health check (antes vivía en `/`; el root ahora es la landing pública, C4.4).
+// ROADMAP E10 / AUDIT.md BLOQUEANTE-11: antes esto devolvía 200 con el proceso
+// vivo, sin mirar nada más. Ahora corre chequeos reales (src/salud.ts) y solo
+// devuelve 200 si nada crítico falló. El contrato de texto plano en 200 se
+// preserva EXACTO ("Agente de WhatsApp corriendo ✅") porque el smoke del CI
+// (ci-cd.yml) hace `curl -sf` esperando un 2xx — cambiar el código rompería el
+// deploy, no solo el formato.
+//
+// `?detalle=1` (o el content-negotiation vía Accept, evitado a propósito: un
+// uptime monitor manda `Accept: */*` y terminaría recibiendo JSON igual) es el
+// modo humano: JSON con cada chequeo, para debugging, nunca lo mira el monitor
+// automático (que solo hace un GET plano a /salud).
+//
+// Factorizado en un helper (ROADMAP F6) porque ahora lo sirven DOS handlers de
+// servidor distintos: el completo (`ROL=web`/`todo`) y el mínimo (`ROL=worker`,
+// que no expone webhook/panel/landing — ver más abajo).
+async function responderSalud(res: http.ServerResponse, url: URL): Promise<void> {
+  const detalle = await chequearSalud(db);
+  const codigo = codigoHttpSalud(detalle);
+  if (url.searchParams.get("detalle") === "1") {
+    res.writeHead(codigo, { "content-type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify(detalle));
+  } else {
+    res.writeHead(codigo, { "content-type": "text/plain; charset=utf-8" });
+    res.end(codigo === 200 ? "Agente de WhatsApp corriendo ✅" : "Agente de WhatsApp degradado ⚠️");
+  }
+}
+
+// Servidor HTTP completo: webhook + panel + landing + /salud. Lo usan `ROL=web`
+// y `ROL=todo` (default, comportamiento idéntico al de siempre).
+const servidorCompleto = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
-  // Health check (antes vivía en `/`; el root ahora es la landing pública, C4.4).
-  // ROADMAP E10 / AUDIT.md BLOQUEANTE-11: antes esto devolvía 200 con el proceso
-  // vivo, sin mirar nada más. Ahora corre chequeos reales (src/salud.ts) y solo
-  // devuelve 200 si nada crítico falló. El contrato de texto plano en 200 se
-  // preserva EXACTO ("Agente de WhatsApp corriendo ✅") porque el smoke del CI
-  // (ci-cd.yml) hace `curl -sf` esperando un 2xx — cambiar el código rompería el
-  // deploy, no solo el formato.
-  //
-  // `?detalle=1` (o el content-negotiation vía Accept, evitado a propósito: un
-  // uptime monitor manda `Accept: */*` y terminaría recibiendo JSON igual) es el
-  // modo humano: JSON con cada chequeo, para debugging, nunca lo mira el monitor
-  // automático (que solo hace un GET plano a /salud).
   if (url.pathname === "/salud") {
-    const detalle = await chequearSalud(db);
-    const codigo = codigoHttpSalud(detalle);
-    if (url.searchParams.get("detalle") === "1") {
-      res.writeHead(codigo, { "content-type": "application/json; charset=utf-8" });
-      res.end(JSON.stringify(detalle));
-    } else {
-      res.writeHead(codigo, { "content-type": "text/plain; charset=utf-8" });
-      res.end(codigo === 200 ? "Agente de WhatsApp corriendo ✅" : "Agente de WhatsApp degradado ⚠️");
-    }
+    await responderSalud(res, url);
     return;
   }
 
@@ -161,6 +196,24 @@ const server = http.createServer(async (req, res) => {
   res.end("Method not allowed");
 });
 
+// Servidor HTTP mínimo para `ROL=worker`: SOLO `/salud` (health check del
+// propio proceso, para el monitor de uptime/orquestador). Sin webhook, sin
+// panel, sin landing — esta réplica no acepta tráfico de negocio, solo
+// consume wa_jobs y corre los schedulers (ver el `if (SIRVE_TRABAJO_DE_FONDO)`
+// más abajo). Reusa `chequearSalud`/`codigoHttpSalud` (src/salud.ts) igual que
+// el servidor completo: mismo criterio de "algo crítico falló → 503".
+const servidorMinimo = http.createServer(async (req, res) => {
+  const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+  if (url.pathname === "/salud") {
+    await responderSalud(res, url);
+    return;
+  }
+  res.writeHead(404);
+  res.end("Not found");
+});
+
+const server = SIRVE_WEB ? servidorCompleto : servidorMinimo;
+
 // Carga el registro de tenants (de la base, o fallback en memoria) ANTES de aceptar
 // tráfico: ningún webhook ni login debe entrar con el caché vacío. (ROADMAP B2)
 await cargarTenants();
@@ -176,8 +229,12 @@ if (process.env.SEED_DEMO && !process.env.DATABASE_URL) {
 
 server.listen(PORT, () => {
   const modo = db ? "PostgreSQL (Drizzle)" : "memoria (no persiste)";
-  console.log(`Agente escuchando en http://localhost:${PORT}`);
-  console.log(`Webhook: http://localhost:${PORT}${RUTA_WEBHOOK}  ·  Almacenamiento: ${modo}`);
+  console.log(`Agente escuchando en http://localhost:${PORT}  ·  Rol: ${ROL}`);
+  if (SIRVE_WEB) {
+    console.log(`Webhook: http://localhost:${PORT}${RUTA_WEBHOOK}  ·  Almacenamiento: ${modo}`);
+  } else {
+    console.log(`Rol "worker": sin webhook/panel/landing en este proceso (solo /salud) · Almacenamiento: ${modo}`);
+  }
   // El calendario es POR NEGOCIO (auditoría BLOQ-05): acá solo se puede reportar si
   // están las credenciales globales de la service account. Que un tenant tenga su
   // calendario conectado se ve en su "Mi negocio", no al arrancar el proceso.
@@ -188,24 +245,30 @@ server.listen(PORT, () => {
   console.log(`Sentry: ${sentryConfigurado() ? "activo ✅" : "no configurado (opcional, falta SENTRY_DSN)"}`);
   console.log(`Reputación (Places API): ${placesConfigurado() ? "configurada ✅" : "no configurada (opcional, falta GOOGLE_PLACES_API_KEY)"}`);
 
-  // Cola durable: el worker consume los jobs de wa_jobs. Solo cuando hay DB.
-  if (db) iniciarWorker(repo, db);
+  // Workers de cola + schedulers (ROADMAP F6): con `ROL=web` este proceso NO los
+  // arranca — los atiende la(s) réplica(s) `worker` (o el mismo proceso si
+  // `ROL=todo`, el default, idéntico al comportamiento de siempre).
+  if (SIRVE_TRABAJO_DE_FONDO) {
+    // Cola durable: el worker consume los jobs de wa_jobs. Solo cuando hay DB.
+    if (db) iniciarWorker(repo, db);
 
-  // Envío de campañas segmentadas (C3.2): cola independiente, solo cuando hay DB
-  // (no tiene sentido en modo demo/memoria — ver src/campaigns/db.ts).
-  if (db) iniciarCampanias();
+    // Envío de campañas segmentadas (C3.2): cola independiente, solo cuando hay DB
+    // (no tiene sentido en modo demo/memoria — ver src/campaigns/db.ts).
+    if (db) iniciarCampanias();
 
-  // Rescate de cotizaciones abandonadas (Carril D, 1.1): cola independiente, solo
-  // cuando hay DB (el registro/dashboard sí funciona en memoria, ver src/rescate/db.ts).
-  if (db) iniciarRescate();
+    // Rescate de cotizaciones abandonadas (Carril D, 1.1): cola independiente, solo
+    // cuando hay DB (el registro/dashboard sí funciona en memoria, ver src/rescate/db.ts).
+    if (db) iniciarRescate();
 
-  // Recordatorios de cita por WhatsApp (día antes + mismo día).
-  iniciarRecordatorios(repo);
+    // Recordatorios de cita por WhatsApp (día antes + mismo día). Coordinados por
+    // lease de liderazgo entre réplicas `worker` (F6, ver src/red/liderazgo.ts).
+    iniciarRecordatorios(repo, db);
 
-  // Reputación en Google (Carril D, 1.3-c): job diario de Places API, solo para
-  // tenants Pro con googlePlaceId configurado. No-op sin GOOGLE_PLACES_API_KEY.
-  iniciarReputacion(repo);
+    // Reputación en Google (Carril D, 1.3-c): job diario de Places API, solo para
+    // tenants Pro con googlePlaceId configurado. No-op sin GOOGLE_PLACES_API_KEY.
+    iniciarReputacion(repo, db);
 
-  // Métricas internas: msg/min, latencia del turno del agente, profundidad de cola.
-  iniciarReporteMetricas(db);
+    // Métricas internas: msg/min, latencia del turno del agente, profundidad de cola.
+    iniciarReporteMetricas(db);
+  }
 });
