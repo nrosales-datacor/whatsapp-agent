@@ -358,6 +358,159 @@ test("respeta la ventana humana: si un humano toma la conversación mientras el 
   assert.equal(mock.enviados.length, 0, "pero la respuesta se descarta: no se pisa al humano");
 });
 
+// ── E12: ubicación / documento / contacto / reacción ──
+
+test("ubicación compartida: el texto sintético con las coordenadas llega al prompt del agente", async () => {
+  const mock = instalarMockWebhook();
+  mock.programarLLM({ texto: "Gracias, ya tengo tu ubicación. Te esperamos por ahí." });
+  const repo = new RepositorioEnMemoria();
+  const tenant = tenantDemo();
+  const conv = await nuevaConv(repo, tenant);
+  const textoUbicacion = "[ubicación compartida] lat: 9.9333, lon: -84.0833, nombre: Casa";
+
+  await responderEntrante(pendienteTexto(tenant, conv, { texto: textoUbicacion }), repo);
+
+  assert.equal(mock.llamadasLLM(), 1, "la ubicación debe fluir al agente como texto normal");
+  const contenidoUser = mock.solicitudesLLM[0].messages.at(-1).content;
+  const textoEnviado = typeof contenidoUser === "string" ? contenidoUser : JSON.stringify(contenidoUser);
+  assert.match(textoEnviado, /lat: 9\.9333/);
+  assert.match(textoEnviado, /lon: -84\.0833/);
+  assert.equal(mock.enviados[0].texto, "Gracias, ya tengo tu ubicación. Te esperamos por ahí.");
+});
+
+test("documento recibido: mensaje específico al cliente (no el genérico) + push con el nombre del archivo", async () => {
+  const mock = instalarMockWebhook();
+  const repo = new RepositorioEnMemoria();
+  const tenant = tenantDemo();
+  const conv = await nuevaConv(repo, tenant);
+  const logs: string[] = [];
+  const logOriginal = console.log;
+  console.log = (...args: unknown[]) => logs.push(args.map(String).join(" "));
+
+  try {
+    await responderEntrante(
+      {
+        clase: "documento",
+        tenant,
+        conv,
+        entrante: {
+          phoneNumberId: tenant.phoneNumberId,
+          clienteWa: CLIENTE,
+          texto: "",
+          esTexto: false,
+          messageId: "wamid.doc.1",
+          documentoId: "doc-1",
+          documentoNombre: "cedula.pdf",
+        },
+      },
+      repo,
+    );
+  } finally {
+    console.log = logOriginal;
+  }
+
+  assert.equal(mock.llamadasLLM(), 0, "un documento no debe invocar al agente");
+  assert.equal(mock.enviados.length, 1);
+  assert.match(mock.enviados[0].texto ?? "", /documento/i);
+  assert.ok(!/stickers/i.test(mock.enviados[0].texto ?? ""), "no debe ser el mensaje genérico de stickers/video");
+  assert.ok(logs.some((l) => l.includes("cedula.pdf")), "el push al operador debe mencionar el nombre del archivo");
+});
+
+test("contacto compartido: mensaje específico al cliente (no el genérico) + push con el nombre del contacto", async () => {
+  const mock = instalarMockWebhook();
+  const repo = new RepositorioEnMemoria();
+  const tenant = tenantDemo();
+  const conv = await nuevaConv(repo, tenant);
+  const logs: string[] = [];
+  const logOriginal = console.log;
+  console.log = (...args: unknown[]) => logs.push(args.map(String).join(" "));
+
+  try {
+    await responderEntrante(
+      {
+        clase: "contacto",
+        tenant,
+        conv,
+        entrante: {
+          phoneNumberId: tenant.phoneNumberId,
+          clienteWa: CLIENTE,
+          texto: "",
+          esTexto: false,
+          messageId: "wamid.contact.1",
+          contactoNombre: "María Pérez",
+        },
+      },
+      repo,
+    );
+  } finally {
+    console.log = logOriginal;
+  }
+
+  assert.equal(mock.llamadasLLM(), 0, "un contacto no debe invocar al agente");
+  assert.equal(mock.enviados.length, 1);
+  assert.match(mock.enviados[0].texto ?? "", /contacto/i);
+  assert.ok(!/stickers/i.test(mock.enviados[0].texto ?? ""), "no debe ser el mensaje genérico de stickers/video");
+  assert.ok(logs.some((l) => l.includes("María Pérez")), "el push al operador debe mencionar el nombre del contacto");
+});
+
+test("video/sticker (sin tipar): sigue cayendo en el genérico de 'no puedo ver stickers ni videos'", async () => {
+  const mock = instalarMockWebhook();
+  const repo = new RepositorioEnMemoria();
+  const tenant = tenantDemo();
+  const conv = await nuevaConv(repo, tenant);
+
+  await responderEntrante(
+    {
+      clase: "no-texto",
+      tenant,
+      conv,
+      entrante: {
+        phoneNumberId: tenant.phoneNumberId,
+        clienteWa: CLIENTE,
+        texto: "",
+        esTexto: false,
+        messageId: "wamid.video.1",
+      },
+    },
+    repo,
+  );
+
+  assert.equal(mock.llamadasLLM(), 0);
+  assert.equal(mock.enviados.length, 1);
+  assert.match(mock.enviados[0].texto ?? "", /stickers ni videos/i);
+});
+
+test("reacción (👍) se ignora por completo: no produce Pendiente (ni job, ni push, ni respuesta)", async () => {
+  delete process.env.DATABASE_URL; // fuerza el fallback en memoria del tenantStore
+  await cargarTenants();
+  const pnid = TENANT_FALLBACK_SELYON.phoneNumberId;
+  const repo = new RepositorioEnMemoria();
+  const body = {
+    entry: [
+      {
+        changes: [
+          {
+            value: {
+              metadata: { phone_number_id: pnid },
+              messages: [
+                {
+                  id: "wamid.reaction.1",
+                  from: "50611110000",
+                  type: "reaction",
+                  reaction: { message_id: "wamid.out.1", emoji: "👍" },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  const pendiente = await ingerirEntrante(body, repo);
+  assert.equal(pendiente, null, "una reacción no debe producir ningún Pendiente (se ignora igual que un status)");
+});
+
 // ── Fase de ingesta: dedup por wamid ──
 
 test("dedup por wamid: reenviar el mismo mensaje no re-procesa (ingerirEntrante)", async () => {

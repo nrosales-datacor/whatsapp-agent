@@ -110,6 +110,107 @@ test("parsearEntrante: status (sin messages) devuelve null, no revienta", () => 
   assert.equal(parsearEntrante(body), null);
 });
 
+// ─── E12: ubicación / documento / contacto / reacción ──────────────────────
+
+test("parsearEntrante: una reacción (👍) se ignora por completo (devuelve null)", () => {
+  const body = payloadTexto("");
+  body.entry[0].changes[0].value.messages[0] = {
+    id: "w5",
+    from: "50688887777",
+    type: "reaction",
+    reaction: { message_id: "wamid.out.1", emoji: "👍" },
+  } as any;
+  assert.equal(parsearEntrante(body), null);
+});
+
+test("parsearEntrante: ubicación entra como TEXTO sintético con las coordenadas", () => {
+  const body = payloadTexto("");
+  body.entry[0].changes[0].value.messages[0] = {
+    id: "w6",
+    from: "50688887777",
+    type: "location",
+    location: { latitude: 9.9333, longitude: -84.0833, name: "Lavacar Rosales", address: "San José" },
+  } as any;
+  const r = parsearEntrante(body);
+  assert.equal(r?.esTexto, true);
+  assert.match(r!.texto, /lat: 9\.9333/);
+  assert.match(r!.texto, /lon: -84\.0833/);
+  assert.match(r!.texto, /Lavacar Rosales/);
+  assert.match(r!.texto, /San José/);
+});
+
+test("parsearEntrante: ubicación sin nombre/dirección igual entra como texto (solo coordenadas)", () => {
+  const body = payloadTexto("");
+  body.entry[0].changes[0].value.messages[0] = {
+    id: "w7",
+    from: "50688887777",
+    type: "location",
+    location: { latitude: 9.9, longitude: -84.1 },
+  } as any;
+  const r = parsearEntrante(body);
+  assert.equal(r?.esTexto, true);
+  assert.match(r!.texto, /lat: 9\.9, lon: -84\.1/);
+});
+
+test("parsearEntrante: documento expone documentoId y documentoNombre, sin ser texto", () => {
+  const body = payloadTexto("");
+  body.entry[0].changes[0].value.messages[0] = {
+    id: "w8",
+    from: "50688887777",
+    type: "document",
+    document: { id: "doc-1", filename: "cedula.pdf", mime_type: "application/pdf" },
+  } as any;
+  const r = parsearEntrante(body);
+  assert.equal(r?.esTexto, false);
+  assert.equal(r?.documentoId, "doc-1");
+  assert.equal(r?.documentoNombre, "cedula.pdf");
+});
+
+test("parsearEntrante: contacto compartido expone contactoNombre (un solo contacto)", () => {
+  const body = payloadTexto("");
+  body.entry[0].changes[0].value.messages[0] = {
+    id: "w9",
+    from: "50688887777",
+    type: "contacts",
+    contacts: [{ name: { formatted_name: "María Pérez" }, phones: [{ phone: "50688881111" }] }],
+  } as any;
+  const r = parsearEntrante(body);
+  assert.equal(r?.esTexto, false);
+  assert.equal(r?.contactoNombre, "María Pérez");
+});
+
+test("parsearEntrante: varios contactos compartidos indican cuántos más ('+N más')", () => {
+  const body = payloadTexto("");
+  body.entry[0].changes[0].value.messages[0] = {
+    id: "w10",
+    from: "50688887777",
+    type: "contacts",
+    contacts: [
+      { name: { formatted_name: "María Pérez" }, phones: [] },
+      { name: { formatted_name: "Juan Gómez" }, phones: [] },
+    ],
+  } as any;
+  const r = parsearEntrante(body);
+  assert.equal(r?.contactoNombre, "María Pérez (+1 más)");
+});
+
+test("parsearEntrante: video/sticker no traen ningún campo propio (caen al genérico)", () => {
+  const body = payloadTexto("");
+  body.entry[0].changes[0].value.messages[0] = {
+    id: "w11",
+    from: "50688887777",
+    type: "video",
+    video: { id: "vid-1" },
+  } as any;
+  const r = parsearEntrante(body);
+  assert.equal(r?.esTexto, false);
+  assert.equal(r?.texto, "");
+  assert.equal(r?.audioId, undefined);
+  assert.equal(r?.imagenId, undefined);
+  assert.equal(r?.documentoId, undefined);
+  assert.equal(r?.contactoNombre, undefined);
+});
+
 test("parsearEntrante: payload corrupto devuelve null en vez de lanzar", () => {
   assert.equal(parsearEntrante(null), null);
   assert.equal(parsearEntrante({}), null);

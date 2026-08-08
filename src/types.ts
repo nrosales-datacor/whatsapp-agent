@@ -359,7 +359,7 @@ export type EstadoFacturacion = "trial" | "activo" | "atrasado" | "cancelado";
  * whatsapp/client.ts (que importa Tenant desde este mismo módulo).
  */
 export interface PendienteSerializado {
-  clase: "texto" | "no-texto" | "audio" | "imagen";
+  clase: "texto" | "no-texto" | "audio" | "imagen" | "documento" | "contacto";
   tenantId: string;
   entrante: {
     phoneNumberId: string;
@@ -375,6 +375,12 @@ export interface PendienteSerializado {
     imagenCaption?: string;
     /** id crudo de la respuesta interactiva (botón/lista); habilita acciones directas (C1.3). */
     interactiveId?: string;
+    /** id del media de documento (solo cuando clase === "documento"). No se descarga aún (E12). */
+    documentoId?: string;
+    /** nombre de archivo del documento (solo cuando clase === "documento"), para el push al operador. */
+    documentoNombre?: string;
+    /** nombre del contacto compartido (solo cuando clase === "contacto"), para el push al operador. */
+    contactoNombre?: string;
   };
   conv: Conversacion;
   primerContacto?: boolean;
