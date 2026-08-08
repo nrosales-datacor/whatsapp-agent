@@ -44,6 +44,8 @@ import {
   validarTextoRescate,
 } from "../config/validadores";
 import { enviarPlantilla, enviarTexto } from "../whatsapp/client";
+import { listarJobsEnError, reencolarJobError } from "../queue/cola";
+import { obtenerDb } from "../db/client";
 import {
   configPublica as esConfigPublica,
   embeddedSignupConfigurado,
@@ -763,6 +765,74 @@ export async function manejarPanel(
       }
       await recargar(); // el negocio queda vivo en el caché sin reiniciar el proceso
       return json(res, 201, { ok: true, tenantId: v.tenant.id }), true;
+    }
+
+    // ── DLQ visible (ROADMAP F11): jobs de wa_jobs que agotaron reintentos ──
+    // (estado='error'), agrupados por tenant. Antes de esto no había forma de
+    // ver cuántos mensajes de qué negocio quedaron sin responder.
+    if (ruta === "admin/dlq" && metodo === "GET") {
+      if (!hayBaseDeDatos()) return json(res, 503, { ok: false, error: "El DLQ requiere base de datos (no configurada)." }), true;
+      let jobs;
+      try {
+        jobs = await listarJobsEnError(obtenerDb());
+      } catch (e) {
+        console.error("[admin] listarJobsEnError:", e);
+        return json(res, 500, { ok: false, error: "No se pudo leer el DLQ." }), true;
+      }
+      // Agrupado por tenant (listarJobsEnError ya ordena por tenantId, así que alcanza
+      // con ir acumulando en orden): el nombre del negocio viene del caché de tenants
+      // (tenantStore), no de un JOIN — evita depender de que el tenant siga existiendo.
+      const porTenant = new Map<string, { tenantId: string; nombre: string; jobs: typeof jobs }>();
+      for (const j of jobs) {
+        let grupo = porTenant.get(j.tenantId);
+        if (!grupo) {
+          grupo = { tenantId: j.tenantId, nombre: obtenerTenantPorId(j.tenantId)?.nombre ?? "(negocio dado de baja)", jobs: [] };
+          porTenant.set(j.tenantId, grupo);
+        }
+        grupo.jobs.push(j);
+      }
+      const tenants = [...porTenant.values()].map((g) => ({
+        tenantId: g.tenantId,
+        nombre: g.nombre,
+        cantidad: g.jobs.length,
+        jobs: g.jobs.map((j) => ({
+          id: j.id,
+          intentos: j.intentos,
+          maxIntentos: j.maxIntentos,
+          ultimoError: j.ultimoError,
+          creadoEn: j.creadoEn.toISOString(),
+          finalizadoEn: j.finalizadoEn ? j.finalizadoEn.toISOString() : null,
+          extractoMensaje: j.extractoMensaje,
+        })),
+      }));
+      return json(res, 200, { ok: true, tenants }), true;
+    }
+
+    // Reencolar un job del DLQ (ROADMAP F11): lo vuelve "pendiente" para que el
+    // worker lo tome de nuevo. Protegido en la propia query (reencolarJobError
+    // solo toca estado='error'): reencolar algo que no está en error es un
+    // no-op que devuelve false, no un 500.
+    const partesDlqReencolar = ruta.split("/");
+    if (
+      partesDlqReencolar[0] === "admin" &&
+      partesDlqReencolar[1] === "dlq" &&
+      partesDlqReencolar[2] &&
+      partesDlqReencolar[3] === "reencolar" &&
+      metodo === "POST"
+    ) {
+      if (!hayBaseDeDatos()) return json(res, 503, { ok: false, error: "El DLQ requiere base de datos (no configurada)." }), true;
+      const jobId = decodeURIComponent(partesDlqReencolar[2]);
+      let reencolado: boolean;
+      try {
+        reencolado = await reencolarJobError(obtenerDb(), jobId);
+      } catch (e) {
+        console.error("[admin] reencolarJobError:", e);
+        return json(res, 500, { ok: false, error: "No se pudo reencolar el job." }), true;
+      }
+      if (!reencolado) {
+        return json(res, 409, { ok: false, error: "El job no existe o no está en estado 'error'." }), true;
+      }
+      return json(res, 200, { ok: true }), true;
     }
 
     // Equipo de un negocio, visto desde el admin (Carril D, 0.5): para elegir a quién

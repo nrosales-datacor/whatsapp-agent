@@ -84,13 +84,14 @@ export function iniciarWorker(repo: Repositorio, db: DB): void {
           await responderEntrante(pendiente, repo, db);
           await marcarHecho(db, job.id);
         } catch (e) {
-          await marcarFalloOReintentar(db, job.id, String(e), job.intentos, job.maxIntentos);
+          // La alerta ante error definitivo (agotó reintentos) vive DENTRO de
+          // marcarFalloOReintentar (src/queue/cola.ts, ROADMAP F11): umbral por
+          // TENANT con ventana y cooldown, no un capturarError por cada job — ver
+          // el comentario de esa función para el porqué (con 50 tenants, un
+          // evento de Sentry por job agotado sería ruido; el job individual ya
+          // queda visible en el DLQ, `GET admin/dlq`).
+          await marcarFalloOReintentar(db, job.id, String(e), job.intentos, job.maxIntentos, job.tenantId);
           console.error(`[worker] job ${job.id} falló (intento ${job.intentos}/${job.maxIntentos}):`, e);
-          // Solo alertar cuando se agotaron los reintentos: los intermedios son
-          // esperados (backoff) y alertar en cada uno sería ruido.
-          if (job.intentos >= job.maxIntentos) {
-            capturarError(e, { jobId: job.id, tenantId: job.tenantId, intentos: job.intentos });
-          }
         }
       } catch (e) {
         console.error("[worker] error en loop de trabajo:", e);

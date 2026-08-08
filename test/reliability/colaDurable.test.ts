@@ -3,7 +3,18 @@ import assert from "node:assert/strict";
 import { and, eq } from "drizzle-orm";
 import { crearDbEfimera } from "../helpers/pgliteDb";
 import { waJobs } from "../../src/db/schema";
-import { marcarFalloOReintentar, marcarHecho, purgarJobsHechos, reclamarUno, reencolarVencidos } from "../../src/queue/cola";
+import {
+  _contarAlertasDlqParaTests,
+  _resetAlertaDlqParaTests,
+  _umbralAlertaDlqParaTests,
+  listarJobsEnError,
+  marcarFalloOReintentar,
+  marcarHecho,
+  purgarJobsHechos,
+  reclamarUno,
+  reencolarJobError,
+  reencolarVencidos,
+} from "../../src/queue/cola";
 import { RepositorioDrizzle } from "../../src/booking/drizzleRepository";
 import { ingerirEntrante, responderEntrante } from "../../src/handleWebhook";
 import { cargarTenants, obtenerTenantPorPhoneNumberId } from "../../src/config/tenantStore";
@@ -118,14 +129,14 @@ test("al fallar, reencola con backoff (no reclamable de inmediato); al agotar in
     assert.equal(job?.intentos, 1);
 
     // Falla con intentos restantes → vuelve a 'pendiente' pero con ejecutar_despues_de futuro.
-    await marcarFalloOReintentar(db, id, "boom", job!.intentos, job!.maxIntentos);
+    await marcarFalloOReintentar(db, id, "boom", job!.intentos, job!.maxIntentos, job!.tenantId);
     const [trasFallo] = await db.select().from(waJobs).where(eq(waJobs.id, id));
     assert.equal(trasFallo.estado, "pendiente");
     assert.equal(trasFallo.ultimoError, "boom");
     assert.equal(await reclamarUno(db), null, "el backoff impide reclamarlo antes de ejecutar_despues_de");
 
     // Falla habiendo agotado los intentos → 'error' definitivo.
-    await marcarFalloOReintentar(db, id, "fatal", job!.maxIntentos, job!.maxIntentos);
+    await marcarFalloOReintentar(db, id, "fatal", job!.maxIntentos, job!.maxIntentos, job!.tenantId);
     const [trasAgotar] = await db.select().from(waJobs).where(eq(waJobs.id, id));
     assert.equal(trasAgotar.estado, "error");
     assert.equal(trasAgotar.ultimoError, "fatal");
@@ -302,5 +313,139 @@ test("purgarJobsHechos: borra por lotes y termina (no loop infinito) aunque haya
     assert.equal(ids.length, 5); // sanity: se sembraron las 5 esperadas
   } finally {
     await cerrar();
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DLQ visible + alerta por tenant (ROADMAP F11, parte pendiente hasta este cambio):
+// listarJobsEnError/reencolarJobError (consumidos por GET/POST admin/dlq en
+// panel/router.ts) y la alerta por volumen de errores POR TENANT dentro de
+// marcarFalloOReintentar.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("listarJobsEnError: solo trae jobs en 'error', con extracto del mensaje y sin el payload completo", async () => {
+  const { db, cerrar } = await crearDbEfimera();
+  try {
+    const enError = await encolarDirecto(db, convVacia(), {
+      estado: "error",
+      ultimoError: "boom",
+      intentos: 5,
+      maxIntentos: 5,
+      finalizadoEn: new Date(),
+    });
+    await encolarDirecto(db, convVacia(), { estado: "pendiente" });
+    await encolarDirecto(db, convVacia(), { estado: "hecho", finalizadoEn: new Date() });
+
+    const filas = await listarJobsEnError(db);
+    assert.equal(filas.length, 1, "solo el job en 'error' aparece en el DLQ");
+    assert.equal(filas[0].id, enError);
+    assert.equal(filas[0].ultimoError, "boom");
+    assert.equal(filas[0].tenantId, TENANT);
+    assert.equal(filas[0].extractoMensaje, "hola", "trae un extracto corto del texto entrante, no el payload completo");
+  } finally {
+    await cerrar();
+  }
+});
+
+test("reencolarJobError: vuelve 'pendiente' un job en error, resetea intentos y lo hace reclamable de inmediato", async () => {
+  const { db, cerrar } = await crearDbEfimera();
+  try {
+    const id = await encolarDirecto(db, convVacia(), {
+      estado: "error",
+      ultimoError: "boom",
+      intentos: 5,
+      maxIntentos: 5,
+      finalizadoEn: new Date(),
+    });
+
+    const ok = await reencolarJobError(db, id);
+    assert.equal(ok, true);
+
+    const [fila] = await db.select().from(waJobs).where(eq(waJobs.id, id));
+    assert.equal(fila.estado, "pendiente");
+    assert.equal(fila.intentos, 0, "resetea intentos: un job reencolado a mano merece el mismo margen que uno nuevo");
+    assert.equal(fila.ultimoError, null);
+    assert.equal(fila.finalizadoEn, null);
+
+    const reclamado = await reclamarUno(db);
+    assert.equal(reclamado?.id, id, "queda reclamable de inmediato, sin esperar ningún backoff");
+  } finally {
+    await cerrar();
+  }
+});
+
+test("reencolarJobError: un job que NO está en 'error' no se toca (no-op, no lanza)", async () => {
+  const { db, cerrar } = await crearDbEfimera();
+  try {
+    const id = await encolarDirecto(db, convVacia(), { estado: "pendiente" });
+
+    const ok = await reencolarJobError(db, id);
+    assert.equal(ok, false, "un job pendiente no es del DLQ: reencolar no hace nada");
+
+    const [fila] = await db.select().from(waJobs).where(eq(waJobs.id, id));
+    assert.equal(fila.estado, "pendiente", "queda intacto");
+  } finally {
+    await cerrar();
+  }
+});
+
+test("reencolarJobError: un id inexistente devuelve false sin lanzar", async () => {
+  const { db, cerrar } = await crearDbEfimera();
+  try {
+    const ok = await reencolarJobError(db, "00000000-0000-0000-0000-000000000000");
+    assert.equal(ok, false);
+  } finally {
+    await cerrar();
+  }
+});
+
+test("alerta DLQ por tenant: se dispara al cruzar el umbral y respeta el cooldown (no re-alerta de inmediato)", async () => {
+  const { db, cerrar } = await crearDbEfimera();
+  _resetAlertaDlqParaTests();
+  try {
+    const umbral = _umbralAlertaDlqParaTests();
+    const id = await encolarDirecto(db, convVacia());
+    const job = await reclamarUno(db);
+
+    // Agota reintentos `umbral` veces seguidas para EL MISMO tenant: cada una
+    // marca un job distinto como error definitivo (simulamos con el mismo id,
+    // lo único que importa es que cada llamada agote intentos para ese tenant).
+    for (let i = 0; i < umbral - 1; i++) {
+      await marcarFalloOReintentar(db, id, `fatal-${i}`, job!.maxIntentos, job!.maxIntentos, job!.tenantId);
+    }
+    assert.equal(_contarAlertasDlqParaTests(), 0, "todavía no cruzó el umbral");
+
+    await marcarFalloOReintentar(db, id, "fatal-final", job!.maxIntentos, job!.maxIntentos, job!.tenantId);
+    assert.equal(_contarAlertasDlqParaTests(), 1, "al cruzar el umbral, dispara UNA alerta");
+
+    // Un error más, inmediatamente después: sigue en cooldown, no vuelve a alertar.
+    await marcarFalloOReintentar(db, id, "fatal-extra", job!.maxIntentos, job!.maxIntentos, job!.tenantId);
+    assert.equal(_contarAlertasDlqParaTests(), 1, "el cooldown evita floodear Sentry con la misma condición");
+  } finally {
+    await cerrar();
+    _resetAlertaDlqParaTests();
+  }
+});
+
+test("alerta DLQ por tenant: un tenant con pocos errores no dispara nada, aunque otro tenant sí cruce el umbral", async () => {
+  const { db, cerrar } = await crearDbEfimera();
+  _resetAlertaDlqParaTests();
+  try {
+    const umbral = _umbralAlertaDlqParaTests();
+    const idA = await encolarDirecto(db, convVacia(), { tenantId: "tenant-a" });
+    const idB = await encolarDirecto(db, convVacia(), { tenantId: "tenant-b" });
+
+    // tenant-a: un solo error, muy por debajo del umbral.
+    await marcarFalloOReintentar(db, idA, "boom", 5, 5, "tenant-a");
+    assert.equal(_contarAlertasDlqParaTests(), 0);
+
+    // tenant-b: cruza el umbral.
+    for (let i = 0; i < umbral; i++) {
+      await marcarFalloOReintentar(db, idB, `boom-${i}`, 5, 5, "tenant-b");
+    }
+    assert.equal(_contarAlertasDlqParaTests(), 1, "solo tenant-b generó la alerta; el conteo de tenant-a no se mezcló");
+  } finally {
+    await cerrar();
+    _resetAlertaDlqParaTests();
   }
 });
