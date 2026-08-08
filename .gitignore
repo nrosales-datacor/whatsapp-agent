@@ -30,3 +30,6 @@ blob-report/
 
 # Capturas de referencia de diseño/UX (pesadas, no hace falta versionarlas)
 docs/ux-review/**/*.png
+
+# Worktrees temporales de agentes en paralelo (Agent tool, isolation: "worktree")
+.claude/worktrees/
