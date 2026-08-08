@@ -141,6 +141,13 @@ export class RepositorioDrizzle implements Repositorio {
       contenido: m.contenido,
       creadoEn: m.creadoEn.toISOString(),
       porHumano: m.porHumano,
+      // waMessageId (hallazgo de F4): faltaba en esta proyección — RepositorioEnMemoria
+      // SÍ lo expone (guarda el objeto completo), así que un consumidor que necesite
+      // ubicar un mensaje por su id de WhatsApp tras una lectura vería un
+      // comportamiento distinto según la implementación. Nada en producción lo lee
+      // hoy (el dedup usa el índice único al escribir, no una relectura), pero es la
+      // clase de divergencia que este ítem pide no esconder.
+      waMessageId: m.waMessageId ?? undefined,
       mediaUrl: m.mediaUrl ?? undefined,
       mediaTipo: (m.mediaTipo as "imagen" | undefined) ?? undefined,
     }));
@@ -158,7 +165,19 @@ export class RepositorioDrizzle implements Repositorio {
     };
   }
 
-  async guardarMensaje(conversacionId: string, msg: MensajeConversacion): Promise<boolean> {
+  async guardarMensaje(tenantId: string, conversacionId: string, msg: MensajeConversacion): Promise<boolean> {
+    // wa_mensajes NO tiene columna tenant_id (esa es F1, no F4): se valida el
+    // tenant vía la conversación ANTES de insertar, para que un conversacionId
+    // de otro negocio nunca pueda colgar un mensaje acá (defensa en profundidad;
+    // hoy el id siempre llega de una lectura ya scopeada, pero el día que no,
+    // esto lo corta en seco en vez de dejarlo pasar).
+    const [conv] = await this.db
+      .select({ id: waConversaciones.id })
+      .from(waConversaciones)
+      .where(and(eq(waConversaciones.id, conversacionId), eq(waConversaciones.tenantId, tenantId)))
+      .limit(1);
+    if (!conv) return false;
+
     // onConflictDoNothing sobre el índice único de wa_message_id: si Meta reintrega
     // el mismo mensaje, no se inserta de nuevo y devolvemos false (idempotencia).
     // Los salientes no traen waMessageId (NULL) → nunca chocan → siempre se insertan.
@@ -179,29 +198,39 @@ export class RepositorioDrizzle implements Repositorio {
   }
 
   async actualizarMediaMensaje(
+    tenantId: string,
     conversacionId: string,
     waMessageId: string,
     mediaUrl: string,
     mediaTipo: "imagen",
   ): Promise<void> {
+    // Mismo motivo que guardarMensaje: wa_mensajes no tiene tenant_id, se valida
+    // vía la conversación antes de tocar la fila.
+    const [conv] = await this.db
+      .select({ id: waConversaciones.id })
+      .from(waConversaciones)
+      .where(and(eq(waConversaciones.id, conversacionId), eq(waConversaciones.tenantId, tenantId)))
+      .limit(1);
+    if (!conv) return;
+
     await this.db
       .update(waMensajes)
       .set({ mediaUrl, mediaTipo })
       .where(and(eq(waMensajes.conversacionId, conversacionId), eq(waMensajes.waMessageId, waMessageId)));
   }
 
-  async marcarOptIn(conversacionId: string): Promise<void> {
+  async marcarOptIn(tenantId: string, conversacionId: string): Promise<void> {
     await this.db
       .update(waConversaciones)
       .set({ optInEn: new Date() })
-      .where(eq(waConversaciones.id, conversacionId));
+      .where(and(eq(waConversaciones.id, conversacionId), eq(waConversaciones.tenantId, tenantId)));
   }
 
-  async marcarOptOut(conversacionId: string): Promise<void> {
+  async marcarOptOut(tenantId: string, conversacionId: string): Promise<void> {
     await this.db
       .update(waConversaciones)
       .set({ optOutEn: new Date() })
-      .where(eq(waConversaciones.id, conversacionId));
+      .where(and(eq(waConversaciones.id, conversacionId), eq(waConversaciones.tenantId, tenantId)));
   }
 
   async citasPorFecha(tenantId: string, fecha: string): Promise<Cita[]> {
@@ -243,8 +272,11 @@ export class RepositorioDrizzle implements Repositorio {
     return filaACita(r);
   }
 
-  async guardarGcalEventId(citaId: string, eventId: string): Promise<void> {
-    await this.db.update(waCitas).set({ gcalEventId: eventId }).where(eq(waCitas.id, citaId));
+  async guardarGcalEventId(tenantId: string, citaId: string, eventId: string): Promise<void> {
+    await this.db
+      .update(waCitas)
+      .set({ gcalEventId: eventId })
+      .where(and(eq(waCitas.id, citaId), eq(waCitas.tenantId, tenantId)));
   }
 
   async citasActivasCliente(tenantId: string, clienteWa: string, desdeFecha: string): Promise<Cita[]> {
@@ -391,7 +423,9 @@ export class RepositorioDrizzle implements Repositorio {
     const [actualizada] = await this.db
       .update(waCitas)
       .set({ addons: [...fila.addons, addon] })
-      .where(eq(waCitas.id, citaId))
+      // Defensa en profundidad (F4): el SELECT de arriba ya validó el tenant, pero
+      // el UPDATE debe scopear igual — no depender solo del filtro previo.
+      .where(and(eq(waCitas.id, citaId), eq(waCitas.tenantId, tenantId)))
       .returning();
     return filaACita(actualizada);
   }
@@ -421,17 +455,20 @@ export class RepositorioDrizzle implements Repositorio {
     return conv.upsellsRechazados.some((r) => r.addonId === addonId && r.fecha >= corte);
   }
 
-  async marcarRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<void> {
+  async marcarRecordatorio(tenantId: string, citaId: string, tipo: TipoRecordatorio): Promise<void> {
     const cambio =
       tipo === "dia_antes"
         ? { recordatorioDiaAntesEn: new Date() }
         : tipo === "mismo_dia"
           ? { recordatorioMismoDiaEn: new Date() }
           : { postServicioEn: new Date() };
-    await this.db.update(waCitas).set(cambio).where(eq(waCitas.id, citaId));
+    await this.db
+      .update(waCitas)
+      .set(cambio)
+      .where(and(eq(waCitas.id, citaId), eq(waCitas.tenantId, tenantId)));
   }
 
-  async reclamarRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<boolean> {
+  async reclamarRecordatorio(tenantId: string, citaId: string, tipo: TipoRecordatorio): Promise<boolean> {
     // UPDATE ... WHERE col IS NULL RETURNING id — atómico: solo una instancia pasa
     // de NULL a timestamp; las demás obtienen 0 filas → claim perdido → continue.
     const col =
@@ -449,19 +486,22 @@ export class RepositorioDrizzle implements Repositorio {
     const filas = await this.db
       .update(waCitas)
       .set(cambio)
-      .where(and(eq(waCitas.id, citaId), isNull(col)))
+      .where(and(eq(waCitas.id, citaId), eq(waCitas.tenantId, tenantId), isNull(col)))
       .returning({ id: waCitas.id });
     return filas.length > 0;
   }
 
-  async revertirRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<void> {
+  async revertirRecordatorio(tenantId: string, citaId: string, tipo: TipoRecordatorio): Promise<void> {
     const cambio =
       tipo === "dia_antes"
         ? { recordatorioDiaAntesEn: null }
         : tipo === "mismo_dia"
           ? { recordatorioMismoDiaEn: null }
           : { postServicioEn: null };
-    await this.db.update(waCitas).set(cambio).where(eq(waCitas.id, citaId));
+    await this.db
+      .update(waCitas)
+      .set(cambio)
+      .where(and(eq(waCitas.id, citaId), eq(waCitas.tenantId, tenantId)));
   }
 
   // ── Motor de reseñas de Google completo (Carril D, Fase 1 - 1.3) ──
@@ -470,6 +510,7 @@ export class RepositorioDrizzle implements Repositorio {
   }
 
   async registrarRespuestaSeguimiento(
+    tenantId: string,
     citaId: string,
     sentimiento: Sentimiento,
     resenaSolicitada: boolean,
@@ -478,7 +519,7 @@ export class RepositorioDrizzle implements Repositorio {
     await this.db
       .update(waSeguimientos)
       .set({ sentimiento, resenaSolicitada, respuestaTexto })
-      .where(eq(waSeguimientos.citaId, citaId));
+      .where(and(eq(waSeguimientos.citaId, citaId), eq(waSeguimientos.tenantId, tenantId)));
   }
 
   async seguimientosDeTenant(tenantId: string): Promise<Seguimiento[]> {
@@ -580,7 +621,28 @@ export class RepositorioDrizzle implements Repositorio {
     // cliente posteriores a leido_hasta, y SOLO cuando la conversación está en modo
     // humano (en modo bot no requiere atención, así el badge significa algo).
     // También trae datos para el lead score (último rol, cita activa, histórico de citas).
-    const filas = (await this.db.execute(sql`
+    // filasDe (F4): db.execute(sql`…`) devuelve formas distintas según el driver
+    // (postgres.js en producción → arreglo directo; PGlite en tests → `{ rows }`).
+    // Antes de F4 esta consulta nunca se había ejercido contra PGlite (el ángulo 5
+    // de fiabilidad no cubre listarConversaciones) y el cast a Array asumía siempre
+    // postgres.js — se cae en seco contra PGlite. Mismo gotcha que ya resuelve
+    // `metricas()` más abajo.
+    const filas = filasDe<{
+      id: string;
+      cliente_wa: string;
+      modo: string;
+      estado: string;
+      sin_leer: number | string;
+      ultimo_mensaje: string | null;
+      ultimo_rol: string | null;
+      ultima_actividad: Date | string;
+      servicio_id: string | null;
+      tiene_cita: boolean;
+      cita_confirmada: boolean;
+      tuvo_cita: boolean;
+      cliente_nombre: string | null;
+    }>(
+      await this.db.execute(sql`
       SELECT
         c.id,
         c.cliente_wa,
@@ -628,21 +690,8 @@ export class RepositorioDrizzle implements Repositorio {
       ) ultima_cita ON true
       WHERE c.tenant_id = ${tenantId}
       ORDER BY ultima_actividad DESC
-    `)) as unknown as Array<{
-      id: string;
-      cliente_wa: string;
-      modo: string;
-      estado: string;
-      sin_leer: number | string;
-      ultimo_mensaje: string | null;
-      ultimo_rol: string | null;
-      ultima_actividad: Date | string;
-      servicio_id: string | null;
-      tiene_cita: boolean;
-      cita_confirmada: boolean;
-      tuvo_cita: boolean;
-      cliente_nombre: string | null;
-    }>;
+    `),
+    );
 
     const hace24h = Date.now() - 24 * 60 * 60 * 1000;
 
@@ -719,6 +768,13 @@ export class RepositorioDrizzle implements Repositorio {
       contenido: m.contenido,
       creadoEn: m.creadoEn.toISOString(),
       porHumano: m.porHumano,
+      // waMessageId (hallazgo de F4): faltaba en esta proyección — RepositorioEnMemoria
+      // SÍ lo expone (guarda el objeto completo), así que un consumidor que necesite
+      // ubicar un mensaje por su id de WhatsApp tras una lectura vería un
+      // comportamiento distinto según la implementación. Nada en producción lo lee
+      // hoy (el dedup usa el índice único al escribir, no una relectura), pero es la
+      // clase de divergencia que este ítem pide no esconder.
+      waMessageId: m.waMessageId ?? undefined,
       mediaUrl: m.mediaUrl ?? undefined,
       mediaTipo: (m.mediaTipo as "imagen" | undefined) ?? undefined,
     }));
@@ -902,7 +958,9 @@ export class RepositorioDrizzle implements Repositorio {
     return rows.map((r) => ({ endpoint: r.endpoint, p256dh: r.p256dh, auth: r.auth }));
   }
 
-  async borrarPushSub(endpoint: string): Promise<void> {
-    await this.db.delete(waPushSubs).where(eq(waPushSubs.endpoint, endpoint));
+  async borrarPushSub(tenantId: string, endpoint: string): Promise<void> {
+    await this.db
+      .delete(waPushSubs)
+      .where(and(eq(waPushSubs.endpoint, endpoint), eq(waPushSubs.tenantId, tenantId)));
   }
 }

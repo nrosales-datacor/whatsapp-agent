@@ -33,6 +33,27 @@ export interface EnvioReclamado {
 /**
  * Reclama un envío pendiente cuya campaña siga "enviando" (FOR UPDATE SKIP
  * LOCKED) y lo pone en "procesando". Devuelve null si no hay ninguno listo.
+ *
+ * Reparto por tenant (F8, PLAN-ESCALA-MULTITENANT): antes se tomaba el envío
+ * pendiente más viejo SIN mirar el tenant — una campaña de 5.000 destinatarios
+ * de un negocio monopolizaba el worker mientras las campañas de los otros 49
+ * esperaban en fila. Ahora se prioriza primero el TENANT que hace más tiempo
+ * no recibe un turno (su último envío 'enviado' más antiguo, o nunca envió
+ * = va primero), y recién dentro de ese tenant el envío más viejo.
+ *
+ * Se implementa con un LEFT JOIN a una subconsulta agregada (no una subconsulta
+ * CORRELACIONADA en el ORDER BY): así el `max(enviado_en) GROUP BY tenant_id`
+ * se calcula UNA sola vez y se hace hash join contra los candidatos, en vez de
+ * ejecutarse una vez POR CADA fila pendiente. La subconsulta escanea
+ * wa_campania_envios con estado='enviado' (usa el índice de `estado`,
+ * wa_campania_envios_claim_idx); ese subconjunto lo mantiene chico la purga
+ * por retención (F11, purgarEnviosFinalizados), así que el costo queda acotado
+ * en la práctica aunque no exista un índice compuesto (tenant_id, estado) —
+ * agregarlo requeriría tocar schema.ts/una migración, fuera de alcance de F8.
+ *
+ * Sigue siendo UNA sola consulta con `FOR UPDATE OF e SKIP LOCKED`: el join a
+ * la subconsulta no cambia qué fila de `e` se bloquea, solo el ORDEN en que se
+ * ofrecen las filas candidatas.
  */
 export async function reclamarEnvio(db: DB): Promise<EnvioReclamado | null> {
   return db.transaction(async (tx) => {
@@ -49,8 +70,14 @@ export async function reclamarEnvio(db: DB): Promise<EnvioReclamado | null> {
       SELECT e.id, e.campania_id, e.tenant_id, e.cliente_wa, e.cliente_nombre, e.intentos, c.mensaje
         FROM wa_campania_envios e
         JOIN wa_campanias c ON c.id = e.campania_id
+        LEFT JOIN (
+          SELECT tenant_id, max(enviado_en) AS ultimo_envio
+            FROM wa_campania_envios
+           WHERE estado = 'enviado'
+           GROUP BY tenant_id
+        ) u ON u.tenant_id = e.tenant_id
        WHERE e.estado = 'pendiente' AND c.estado = 'enviando'
-       ORDER BY e.creado_en ASC
+       ORDER BY u.ultimo_envio ASC NULLS FIRST, e.creado_en ASC
        FOR UPDATE OF e SKIP LOCKED
        LIMIT 1
     `),
@@ -114,4 +141,42 @@ export async function quedanPendientes(db: DB, campaniaId: string): Promise<bool
   `),
   );
   return rows.length > 0;
+}
+
+/**
+ * Purga por retención (ROADMAP F11, mismo criterio que src/queue/cola.ts): borra
+ * envíos cuya campaña PADRE ya terminó ('completada' o 'cancelada') y terminó
+ * hace más de retencionDias. wa_campania_envios no tiene su propia columna de
+ * "finalizado en" por fila (una campaña cancelada deja sus envíos "pendiente"
+ * en 'error' sin timestamp propio, ver cancelarCampania), así que se usa la del
+ * PADRE: completada_en si la campaña llegó a completarse, o creada_en si se
+ * canceló antes (aproximación razonable: una campaña cancelada no sigue viva
+ * después de cancelarse).
+ *
+ * Borra en LOTES por la misma razón que la cola principal: evitar un lock largo
+ * sobre la tabla mientras el worker de campañas reclama con FOR UPDATE SKIP LOCKED.
+ * Devuelve el total de filas borradas (para loguear).
+ */
+export async function purgarEnviosFinalizados(db: DB, retencionDias = 7, tamanoLote = 500): Promise<number> {
+  let total = 0;
+  for (;;) {
+    const rows = filasDe<{ id: string }>(
+      await db.execute(sql`
+      DELETE FROM wa_campania_envios
+       WHERE id IN (
+         SELECT e.id
+           FROM wa_campania_envios e
+           JOIN wa_campanias c ON c.id = e.campania_id
+          WHERE c.estado IN ('completada', 'cancelada')
+            AND COALESCE(c.completada_en, c.creada_en) < now() - ${retencionDias} * interval '1 day'
+          ORDER BY e.creado_en ASC
+          LIMIT ${tamanoLote}
+       )
+      RETURNING id
+    `),
+    );
+    total += rows.length;
+    if (rows.length < tamanoLote) break;
+  }
+  return total;
 }

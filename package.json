@@ -15,6 +15,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "seed:tenants": "tsx scripts/seedTenants.ts",
+    "cifrar:tokens": "tsx scripts/cifrarTokens.ts",
     "web:dev": "npm --prefix web run dev",
     "web:build": "npm --prefix web install --include=dev && npm --prefix web run build"
   },

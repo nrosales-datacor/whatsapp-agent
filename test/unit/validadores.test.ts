@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   limpiarLineas,
+  MAX_KB_CARACTERES,
   validarBloqueos,
   validarColorHex,
   validarFaq,
@@ -15,8 +16,10 @@ import {
   validarNombrePlantillaRescate,
   validarRescateHoras,
   validarServicios,
+  validarTamanoKb,
   validarTextoRescate,
 } from "../../src/config/validadores";
+import type { KnowledgeBase } from "../../src/types";
 
 test("limpiarLineas: descarta vacíos y recorta espacios", () => {
   assert.deepEqual(limpiarLineas([" hola ", "", "  ", "mundo"]), ["hola", "mundo"]);
@@ -191,4 +194,52 @@ test("validarGoogleCalendarId: vacío es válido; exige forma de correo y rechaz
   assert.equal(validarGoogleCalendarId("primary"), null);
   assert.equal(validarGoogleCalendarId("no-es-un-correo"), null);
   assert.equal(validarGoogleCalendarId("a@b"), null); // sin TLD
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tope de tamaño de la KB (ALTO-16 / F13 — PLAN-ESCALA-MULTITENANT.md): sin este freno,
+// un catálogo pegado entero puede meter ~17.000 tokens en CADA llamada al LLM (ver
+// AUDIT.md § ALTO-16). Se prueba que una KB normal pasa y una gigante rebota con un
+// mensaje que le diga al dueño cuánto ocupa y cuál es el límite.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const kbVacia: KnowledgeBase = { faq: [], datos: [], politicas: [], secciones: [] };
+
+test("validarTamanoKb: una KB normal (chica) pasa sin error", () => {
+  const kb: KnowledgeBase = {
+    faq: [{ pregunta: "¿Hacen lavado de motor?", respuesta: "Sí, tenemos ese servicio." }],
+    datos: ["Abrimos de lunes a sábado", "Aceptamos SINPE y tarjeta"],
+    politicas: ["No se devuelve el dinero tras iniciado el servicio"],
+    secciones: [{ id: "precios", titulo: "Precios", items: ["Sedán ₡4.000", "SUV ₡6.000"] }],
+  };
+  assert.equal(validarTamanoKb(kb), null);
+});
+
+test("validarTamanoKb: una KB vacía pasa sin error", () => {
+  assert.equal(validarTamanoKb(kbVacia), null);
+});
+
+test("validarTamanoKb: una KB gigante rebota con un mensaje que diga cuánto ocupa y el límite", () => {
+  // Una sola sección con un ítem enorme, bien por encima de MAX_KB_CARACTERES.
+  const itemGigante = "x".repeat(MAX_KB_CARACTERES + 500);
+  const kb: KnowledgeBase = {
+    ...kbVacia,
+    secciones: [{ id: "catalogo", titulo: "Catálogo completo", items: [itemGigante] }],
+  };
+  const error = validarTamanoKb(kb);
+  assert.notEqual(error, null);
+  // El mensaje usa toLocaleString("es-CR") para ser legible al dueño del negocio —
+  // en ese locale el separador de miles es un espacio ("12 000", no "12000"), así
+  // que comparamos contra el MISMO formato que usa el código, no contra el número
+  // plano (buscar "12000" nunca matchearía "12 000").
+  assert.match(error!, new RegExp(MAX_KB_CARACTERES.toLocaleString("es-CR")));
+  assert.match(error!, /caracteres/i);
+});
+
+test("validarTamanoKb: justo en el límite pasa; uno más allá del límite rebota", () => {
+  const kbJusto: KnowledgeBase = { ...kbVacia, datos: ["x".repeat(MAX_KB_CARACTERES)] };
+  assert.equal(validarTamanoKb(kbJusto), null);
+
+  const kbUnoMas: KnowledgeBase = { ...kbVacia, datos: ["x".repeat(MAX_KB_CARACTERES + 1)] };
+  assert.notEqual(validarTamanoKb(kbUnoMas), null);
 });

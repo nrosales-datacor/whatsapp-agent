@@ -1,7 +1,8 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { Bloqueo, Empleado, EstadoFacturacion, HorarioDia, KnowledgeBase, Plan, Rol, Service, Tenant } from "../types";
-import { crearDb } from "../db/client";
+import { obtenerDb } from "../db/client";
 import { waTenants, waUsuarios } from "../db/schema";
+import { cifrar, descifrar } from "./secretos";
 import { TENANT_FALLBACK_SELYON } from "./tenants";
 import { normalizarKb } from "./validadores";
 
@@ -16,7 +17,7 @@ import { normalizarKb } from "./validadores";
 // El caché se recarga al arrancar, periódicamente, y on-demand ante un número nuevo.
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface CuentaUsuario {
+export interface CuentaUsuario {
   id: string;
   tenantId: string;
   passwordHash: string;
@@ -26,6 +27,16 @@ interface CuentaUsuario {
   debeCambiarClave: boolean;
   /** Vencimiento de la clave temporal (0.5). Null = clave normal. */
   claveTemporalExpira: Date | null;
+  /** true si la cuenta está activa. Ver también activo en waUsuarios; solo las cuentas
+   * activas entran al caché de login (recargarDesdeDb filtra por activo=true), pero
+   * sesionDeOperador necesita distinguir "no existe" de "existe pero inactiva" para las
+   * cuentas registradas vía _registrarUsuarioParaTests. En producción, una cuenta
+   * desactivada simplemente desaparece del caché en la próxima recarga. */
+  activo: boolean;
+  /** Epoch de sesión (E13/ALTO-06): sube en cada cambio de clave/rol/estado de la cuenta.
+   * `sesionDeOperador` compara esto contra el epoch firmado en el token — si no coinciden,
+   * la sesión es de ANTES del cambio y se trata como inválida (igual que un token vencido). */
+  sessionEpoch: number;
 }
 
 interface Cache {
@@ -39,6 +50,14 @@ interface Cache {
 let cache: Cache = construirCache([], []);
 let hayDb = false;
 
+// Fuente del caché VIGENTE (ROADMAP E10, health check): se actualiza junto con `cache`
+// en los mismos tres puntos donde hoy se reasigna (cacheFallback en activarFallback,
+// cacheFallback en cargarTenants sin DB, y construirCache en recargarDesdeDb exitoso).
+// No toca la lógica de recarga/fallback existente: solo deja constancia de CUÁL de los
+// dos caminos se tomó, para que /salud pueda distinguir "caché real" de "caché de
+// emergencia" sin adivinar a partir de otro estado.
+let fuenteActual: "db" | "fallback" = "fallback";
+
 function construirCache(
   tenants: Tenant[],
   usuarios: {
@@ -49,6 +68,7 @@ function construirCache(
     rol: Rol;
     debeCambiarClave: boolean;
     claveTemporalExpira: Date | null;
+    sessionEpoch: number;
   }[],
 ): Cache {
   const porPnid = new Map<string, Tenant>();
@@ -66,6 +86,11 @@ function construirCache(
       rol: u.rol,
       debeCambiarClave: u.debeCambiarClave,
       claveTemporalExpira: u.claveTemporalExpira,
+      // Todo lo que llega hasta acá viene de recargarDesdeDb, que ya filtra por
+      // activo=true (o de cacheFallback/_registrarUsuarioParaTests, siempre activos por
+      // construcción) — una cuenta desactivada simplemente desaparece del caché.
+      activo: true,
+      sessionEpoch: u.sessionEpoch,
     });
   }
   return { porPnid, porId, usuarios: us };
@@ -87,6 +112,7 @@ function cacheFallback(): Cache {
       rol: "dueno" as Rol,
       debeCambiarClave: false,
       claveTemporalExpira: null,
+      sessionEpoch: 0,
     });
   }
   return construirCache([t], usuarios);
@@ -97,7 +123,11 @@ function filaATenant(f: typeof waTenants.$inferSelect): Tenant {
     id: f.id,
     nombre: f.nombre,
     phoneNumberId: f.phoneNumberId,
-    accessToken: f.accessToken ?? undefined,
+    // Descifrado ÚNICO punto de entrada al construir el caché (ROADMAP F2): a partir de
+    // acá, todo el código (incluido whatsapp/client.ts) sigue viendo el token en claro,
+    // sin enterarse de que en la base está cifrado. `descifrar` tolera valores heredados
+    // en texto plano (ver comentario en secretos.ts) — no hace falta migrar antes de desplegar.
+    accessToken: f.accessToken ? descifrar(f.accessToken) : undefined,
     timezone: f.timezone,
     moneda: f.moneda,
     ubicacion: f.ubicacion,
@@ -115,6 +145,8 @@ function filaATenant(f: typeof waTenants.$inferSelect): Tenant {
     linkResenas: f.linkResenas ?? undefined,
     plantillaMarketing: f.plantillaMarketing ?? undefined,
     plantillaReapertura: f.plantillaReapertura ?? undefined,
+    plantillaRecordatorio: f.plantillaRecordatorio ?? undefined,
+    plantillaIdioma: f.plantillaIdioma ?? undefined,
     colorAcento: f.colorAcento ?? undefined,
     colorHeader: f.colorHeader ?? undefined,
     logoUrl: f.logoUrl ?? undefined,
@@ -139,10 +171,31 @@ function filaATenant(f: typeof waTenants.$inferSelect): Tenant {
   };
 }
 
-let db: ReturnType<typeof crearDb> | null = null;
-function obtenerDb() {
-  if (!db) db = crearDb();
-  return db;
+// ── Callbacks tras una recarga exitosa (ROADMAP F3) ──
+// Este módulo NO conoce handleWebhook ni el reproceso de wa_webhooks_crudos: solo
+// expone un registro de callbacks GENÉRICO. Es server.ts quien, al arrancar,
+// conecta acá el reproceso real (ver el comentario largo en reprocesoWebhooks.ts
+// sobre por qué esto evita un ciclo de imports). Cualquier otro módulo futuro que
+// necesite reaccionar a "el caché de tenants cambió" puede colgarse del mismo hook.
+type CallbackRecarga = () => void;
+const callbacksRecarga: CallbackRecarga[] = [];
+
+/** Registra un callback que se dispara después de cada recarga EXITOSA del caché
+ * (trae al menos un tenant real, no el fallback). Pensado para el reproceso de
+ * F3: un negocio recién dado de alta puede recuperar acá los mensajes que
+ * llegaron antes de existir. */
+export function alRecargar(cb: CallbackRecarga): void {
+  callbacksRecarga.push(cb);
+}
+
+function notificarRecarga(): void {
+  for (const cb of callbacksRecarga) {
+    try {
+      cb();
+    } catch (e) {
+      console.error("[tenantStore] un callback de alRecargar lanzó:", e);
+    }
+  }
 }
 
 async function recargarDesdeDb(): Promise<void> {
@@ -164,8 +217,11 @@ async function recargarDesdeDb(): Promise<void> {
         rol: u.rol as Rol,
         debeCambiarClave: u.debeCambiarClave,
         claveTemporalExpira: u.claveTemporalExpira,
+        sessionEpoch: u.sessionEpoch,
       })),
     );
+    fuenteActual = "db";
+    notificarRecarga();
   } catch (e) {
     activarFallback(`no se pudo leer la base (${e instanceof Error ? e.message : String(e)})`);
   }
@@ -180,6 +236,7 @@ function activarFallback(motivo: string): void {
     return;
   }
   cache = cacheFallback();
+  fuenteActual = "fallback";
   console.error(
     `[tenantStore] ⚠️ ${motivo} — usando fallback hardcodeado 'rosales'. ` +
       "EL ALTA DE NEGOCIOS NO ESTÁ DISPONIBLE hasta sembrar la base (npx tsx scripts/seedTenants.ts).",
@@ -200,6 +257,7 @@ export async function cargarTenants(): Promise<void> {
   hayDb = !!process.env.DATABASE_URL;
   if (!hayDb) {
     cache = cacheFallback();
+    fuenteActual = "fallback";
     console.log(`[tenantStore] sin DATABASE_URL: ${cache.porId.size} tenant(s) en memoria (fallback).`);
     return;
   }
@@ -242,6 +300,20 @@ export function hayBaseDeDatos(): boolean {
   return !!process.env.DATABASE_URL;
 }
 
+/**
+ * Fuente del caché de tenants VIGENTE ahora mismo (ROADMAP E10, health check):
+ * "db" tras una recarga exitosa contra la base; "fallback" si se está sirviendo el
+ * tenant hardcodeado (sin DATABASE_URL, o porque la base no respondió/estaba vacía
+ * en el último intento de recarga). Ojo: NO es lo mismo que `hayBaseDeDatos()` —
+ * esa dice si HAY una DATABASE_URL configurada; esta dice de dónde viene el caché
+ * que el bot está usando en este momento. La combinación de ambas es justo el
+ * escenario silencioso de BLOQUEANTE-11: DB configurada + caché en fallback = el
+ * bot está atendiendo con la config equivocada mientras el resto luce normal.
+ */
+export function fuenteCacheTenants(): "db" | "fallback" {
+  return fuenteActual;
+}
+
 /** Recarga inmediata del caché desde la base (tras un alta). No-op sin DATABASE_URL. */
 export async function recargar(): Promise<void> {
   if (!hayDb) return;
@@ -267,7 +339,9 @@ export async function crearTenant(tenant: Tenant, u: NuevoUsuario): Promise<void
       id: tenant.id,
       nombre: tenant.nombre,
       phoneNumberId: tenant.phoneNumberId,
-      accessToken: tenant.accessToken ?? null,
+      // Cifrado ÚNICO punto de escritura del token (ROADMAP F2): nunca se persiste en
+      // claro. `null` se guarda tal cual (nada que cifrar) — ver nota en secretos.ts.
+      accessToken: tenant.accessToken ? cifrar(tenant.accessToken) : null,
       timezone: tenant.timezone,
       moneda: tenant.moneda,
       ubicacion: tenant.ubicacion,
@@ -279,6 +353,8 @@ export async function crearTenant(tenant: Tenant, u: NuevoUsuario): Promise<void
       linkResenas: tenant.linkResenas ?? null,
       plantillaMarketing: tenant.plantillaMarketing ?? null,
       plantillaReapertura: tenant.plantillaReapertura ?? null,
+      plantillaRecordatorio: tenant.plantillaRecordatorio ?? null,
+      plantillaIdioma: tenant.plantillaIdioma ?? null,
       colorAcento: tenant.colorAcento ?? null,
       colorHeader: tenant.colorHeader ?? null,
       logoUrl: tenant.logoUrl ?? null,
@@ -317,6 +393,8 @@ export async function actualizarConfigTenant(
     linkResenas: string | null;
     plantillaMarketing: string | null;
     plantillaReapertura: string | null;
+    plantillaRecordatorio: string | null;
+    plantillaIdioma: string | null;
     colorAcento: string | null;
     colorHeader: string | null;
     logoUrl: string | null;
@@ -348,6 +426,8 @@ export async function actualizarConfigTenant(
       linkResenas: patch.linkResenas,
       plantillaMarketing: patch.plantillaMarketing,
       plantillaReapertura: patch.plantillaReapertura,
+      plantillaRecordatorio: patch.plantillaRecordatorio,
+      plantillaIdioma: patch.plantillaIdioma,
       colorAcento: patch.colorAcento,
       colorHeader: patch.colorHeader,
       logoUrl: patch.logoUrl,
@@ -421,6 +501,13 @@ export async function crearUsuarioTenant(tenantId: string, u: NuevoUsuarioTenant
  * conozca el id). El guard de "al menos un dueño activo" lo valida el router ANTES de
  * llamar acá (necesita leer el resto del equipo para decidir). Lanza Error("SIN_DB") si
  * no hay base.
+ *
+ * Revocación de sesiones (E13/ALTO-06): cambiar el rol o desactivar la cuenta sube
+ * `sessionEpoch` (atómico, `x = x + 1`, mismo patrón que `incrementarUso`) — cualquier
+ * token firmado ANTES de este cambio deja de calzar con el epoch vigente y
+ * `sesionDeOperador` lo trata como inválido en la próxima request, sin esperar a que
+ * expire. Reactivar (activo: true) NO sube el epoch: no hay ninguna sesión vieja que
+ * revocar (la cuenta desactivada ya no tenía epoch vigente que nadie pudiera usar).
  */
 export async function actualizarUsuarioTenant(
   tenantId: string,
@@ -428,10 +515,11 @@ export async function actualizarUsuarioTenant(
   patch: { rol?: Rol; activo?: boolean },
 ): Promise<void> {
   if (!hayDb) throw new Error("SIN_DB");
+  const subeEpoch = patch.rol !== undefined || patch.activo === false;
   const d = obtenerDb();
   await d
     .update(waUsuarios)
-    .set(patch)
+    .set({ ...patch, ...(subeEpoch ? { sessionEpoch: sql`${waUsuarios.sessionEpoch} + 1` } : {}) })
     .where(and(eq(waUsuarios.id, usuarioId), eq(waUsuarios.tenantId, tenantId)));
 }
 
@@ -444,13 +532,18 @@ export async function actualizarUsuarioTenant(
  * temporal, marca debeCambiarClave y fija su vencimiento (24h). Devuelve el usuario
  * afectado (para mostrar en qué negocio se hizo el reset), o null si no existe.
  * Lanza Error("SIN_DB") si no hay base.
+ *
+ * Revocación de sesiones (E13/ALTO-06): un reset de clave sube `sessionEpoch` — cualquier
+ * sesión abierta con la clave vieja queda inválida de inmediato (no solo la próxima vez
+ * que alguien intente loguearse con la clave vieja, sino la SESIÓN YA ABIERTA en el
+ * navegador de quien sea que la tenía).
  */
 export async function resetearClaveUsuario(usuarioId: string, passwordHash: string, expiraEn: Date): Promise<UsuarioTenant | null> {
   if (!hayDb) throw new Error("SIN_DB");
   const d = obtenerDb();
   const filas = await d
     .update(waUsuarios)
-    .set({ passwordHash, debeCambiarClave: true, claveTemporalExpira: expiraEn })
+    .set({ passwordHash, debeCambiarClave: true, claveTemporalExpira: expiraEn, sessionEpoch: sql`${waUsuarios.sessionEpoch} + 1` })
     .where(eq(waUsuarios.id, usuarioId))
     .returning();
   const f = filas[0];
@@ -462,13 +555,24 @@ export async function resetearClaveUsuario(usuarioId: string, passwordHash: stri
  * Cambio de clave propio (el usuario ya logueado, forzado o voluntario): reemplaza el
  * hash y limpia el flag de clave temporal. Scopeada por tenantId (defensa en profundidad,
  * mismo patrón que actualizarUsuarioTenant). Lanza Error("SIN_DB") si no hay base.
+ *
+ * Revocación de sesiones (E13/ALTO-06): sube `sessionEpoch`, igual que resetearClaveUsuario.
+ * Esto invalida TAMBIÉN la sesión actual del que está cambiando su propia clave (el token
+ * que trae en la cookie quedó firmado con el epoch anterior) — a propósito: es el mismo
+ * criterio de seguridad que un reset ajeno, y el router no reemite cookie tras este
+ * endpoint, así que el próximo request re-loguea con la clave nueva.
  */
 export async function cambiarClavePropia(tenantId: string, usuarioId: string, nuevoHash: string): Promise<void> {
   if (!hayDb) throw new Error("SIN_DB");
   const d = obtenerDb();
   await d
     .update(waUsuarios)
-    .set({ passwordHash: nuevoHash, debeCambiarClave: false, claveTemporalExpira: null })
+    .set({
+      passwordHash: nuevoHash,
+      debeCambiarClave: false,
+      claveTemporalExpira: null,
+      sessionEpoch: sql`${waUsuarios.sessionEpoch} + 1`,
+    })
     .where(and(eq(waUsuarios.id, usuarioId), eq(waUsuarios.tenantId, tenantId)));
 }
 
@@ -522,4 +626,39 @@ export function refrescarSiFaltaPhoneNumberId(pnid: string): void {
   if (ahora - ultimoRefrescoMiss < COOLDOWN_MISS_MS) return;
   ultimoRefrescoMiss = ahora;
   void recargarDesdeDb();
+}
+
+/**
+ * Solo para tests: registra/reemplaza una cuenta directo en el caché en memoria, sin
+ * pasar por la base (E13/ALTO-06: probar `sesionDeOperador` — epoch, rol, desactivación —
+ * sin levantar Postgres). Muta el caché vivo en vez de reemplazarlo por completo —
+ * aceptable SOLO en tests, igual que el resto de los accesores síncronos de este módulo
+ * asumen un caché ya construido (acá, típicamente vía `cargarTenants()` sin
+ * DATABASE_URL, que deja el tenant fallback listo en `cache.porId`).
+ */
+export function _registrarUsuarioParaTests(usuario: string, cuenta: CuentaUsuario): void {
+  cache.usuarios.set(usuario, cuenta);
+}
+
+/**
+ * Solo para tests: registra un tenant directo en el caché en memoria, sin pasar
+ * por la base, para simular un "alta" (p. ej. el reproceso de F3, que necesita
+ * que un phone_number_id pase de no resolver a resolver de un momento a otro sin
+ * levantar una base real). Muta el caché vivo en vez de reemplazarlo por
+ * completo — aceptable SOLO en tests (en producción el caché siempre se
+ * reemplaza atómico, ver `construirCache`).
+ */
+export function _registrarTenantParaTests(tenant: Tenant): void {
+  cache.porId.set(tenant.id, tenant);
+  cache.porPnid.set(tenant.phoneNumberId, tenant);
+}
+
+/**
+ * Solo para tests: fuerza la "fuente" reportada del caché (ver `fuenteCacheTenants`)
+ * sin pasar por una base real. Existe para poder probar el health check de E10 en
+ * el escenario "DATABASE_URL configurada pero el caché quedó en fallback" sin
+ * levantar un pool de Postgres de verdad — mismo espíritu que `_registrarTenantParaTests`.
+ */
+export function _forzarFuenteParaTests(fuente: "db" | "fallback"): void {
+  fuenteActual = fuente;
 }
