@@ -86,39 +86,48 @@ export interface SesionOperador {
   tenantId: string;
   usuarioId: string;
   rol: Rol;
+  // Epoch del usuario en el momento en que se firmó este token (E13/ALTO-06). El caller
+  // (sesionDeOperador, router.ts) lo compara contra el epoch VIGENTE de la cuenta: si no
+  // coinciden, el token es de una sesión ya revocada (cambio de clave/rol/estado desde el
+  // login) aunque la firma y la expiración sigan siendo válidas.
+  epoch: number;
 }
 
 /**
  * Crea un token de sesión firmado para un operador (va en una cookie). Lleva tenantId +
  * usuarioId + rol (C2.3): el rol gatea qué puede ver/hacer en el panel (p. ej. "Mi
- * negocio" y la gestión de usuarios son solo para "dueno").
+ * negocio" y la gestión de usuarios son solo para "dueno"). `epoch` es el sessionEpoch
+ * vigente de la cuenta al momento del login (E13/ALTO-06): lo trae el token para que
+ * sesionDeOperador pueda detectar sesiones revocadas sin volver a la base en cada request.
  */
-export function crearSesion(tenantId: string, usuarioId: string, rol: Rol): string {
-  const payload = `${tenantId}.${usuarioId}.${rol}.${Date.now() + DURACION_MS}.${SESSION_VERSION}`;
+export function crearSesion(tenantId: string, usuarioId: string, rol: Rol, epoch: number): string {
+  const payload = `${tenantId}.${usuarioId}.${rol}.${epoch}.${Date.now() + DURACION_MS}.${SESSION_VERSION}`;
   const firma = crypto.createHmac("sha256", SECRET).update(payload).digest("hex");
   return Buffer.from(`${payload}.${firma}`).toString("base64url");
 }
 
 /**
- * Verifica el token de sesión y devuelve tenantId/usuarioId/rol, o null si es
- * inválido/venció. Cambiar el formato del payload (como acá, al agregar usuarioId/rol)
+ * Verifica el token de sesión y devuelve tenantId/usuarioId/rol/epoch, o null si es
+ * inválido/venció. Cambiar el formato del payload (como acá, al agregar usuarioId/rol/epoch)
  * invalida sola cualquier sesión previa: los tokens viejos no calzan con el split nuevo.
  */
 export function verificarSesion(token: string | undefined): SesionOperador | null {
   if (!token) return null;
   try {
-    const [tenantId, usuarioId, rol, exp, ver, firma] = Buffer.from(token, "base64url").toString().split(".");
-    if (!tenantId || !usuarioId || !rol || !exp || !ver || !firma) return null;
+    const [tenantId, usuarioId, rol, epoch, exp, ver, firma] = Buffer.from(token, "base64url").toString().split(".");
+    if (!tenantId || !usuarioId || !rol || !epoch || !exp || !ver || !firma) return null;
     if (ver !== SESSION_VERSION) return null; // sesión de una versión anterior → fuera
     const esperada = crypto
       .createHmac("sha256", SECRET)
-      .update(`${tenantId}.${usuarioId}.${rol}.${exp}.${ver}`)
+      .update(`${tenantId}.${usuarioId}.${rol}.${epoch}.${exp}.${ver}`)
       .digest("hex");
     const a = Buffer.from(firma);
     const b = Buffer.from(esperada);
     if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
     if (Date.now() > Number(exp)) return null;
-    return { tenantId, usuarioId, rol: rol as Rol };
+    const epochNum = Number(epoch);
+    if (!Number.isInteger(epochNum) || epochNum < 0) return null; // epoch corrupto/no numérico
+    return { tenantId, usuarioId, rol: rol as Rol, epoch: epochNum };
   } catch {
     return null;
   }

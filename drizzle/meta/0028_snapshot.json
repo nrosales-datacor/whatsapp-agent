@@ -1,5 +1,5 @@
 {
-  "id": "05bccbbc-5d1b-4090-834d-3970aef9cc12",
+  "id": "a284fb04-3efd-44b8-bc2f-98791b35b1e4",
   "prevId": "39a17819-8307-4a5b-b3fc-968717b29f80",
   "version": "7",
   "dialect": "postgresql",
@@ -897,37 +897,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.wa_lideres": {
-      "name": "wa_lideres",
-      "schema": "",
-      "columns": {
-        "nombre": {
-          "name": "nombre",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "titular": {
-          "name": "titular",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "vence_en": {
-          "name": "vence_en",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.wa_mensajes": {
       "name": "wa_mensajes",
       "schema": "",
@@ -1772,6 +1741,13 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "session_epoch": {
+          "name": "session_epoch",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         }
       },
       "indexes": {
