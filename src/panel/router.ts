@@ -10,6 +10,7 @@ import {
   crearTenant,
   crearUsuarioTenant,
   hayBaseDeDatos,
+  listarHistorialConfigTenant,
   listarTenants,
   listarUsuariosDeTenant,
   obtenerTenantPorId,
@@ -17,6 +18,7 @@ import {
   obtenerUsuarioPorId,
   recargar,
   resetearClaveUsuario,
+  restaurarVersionConfigTenant,
 } from "../config/tenantStore";
 import {
   limpiarLineas,
@@ -1425,13 +1427,69 @@ export async function manejarPanel(
         tono: tono || null,
         instrucciones: instrucciones || null,
         mensajeTopeExcedido: mensajeTopeExcedido || null,
-      });
+      // F15: quién hizo el cambio, para el historial versionado (misma transacción
+      // que el UPDATE, ver actualizarConfigTenant).
+      }, usuarioId);
     } catch (e) {
       if (e instanceof Error && e.message === "SIN_DB") {
         return json(res, 503, { ok: false, error: "La configuración requiere base de datos." }), true;
       }
       console.error("[config] actualizarConfigTenant:", e);
       return json(res, 500, { ok: false, error: "No se pudo guardar la configuración." }), true;
+    }
+    await recargar(); // el cambio queda visible sin esperar el refresco periódico
+    return json(res, 200, { ok: true }), true;
+  }
+
+  // ── Historial versionado de "Mi negocio" (ROADMAP F15) ──
+  // Mismo gate que "config": solo el dueño ve/restaura el historial de SU negocio. El
+  // cálculo de diff legible entre versiones es trabajo de frontend, pendiente: acá
+  // alcanza con devolver los snapshots crudos en orden.
+  if (ruta === "config/historial" && metodo === "GET") {
+    if (rol !== "dueno") {
+      return json(res, 403, { ok: false, error: "Solo el dueño del negocio puede ver el historial de configuración" }), true;
+    }
+    if (!hayBaseDeDatos()) {
+      return json(res, 503, { ok: false, error: "El historial requiere base de datos (no configurada)." }), true;
+    }
+    try {
+      // Más reciente primero: es el orden natural para mostrar "última versión" arriba.
+      const historial = await listarHistorialConfigTenant(tenant.id);
+      return json(res, 200, { ok: true, historial }), true;
+    } catch (e) {
+      if (e instanceof Error && e.message === "SIN_DB") {
+        return json(res, 503, { ok: false, error: "El historial requiere base de datos." }), true;
+      }
+      console.error("[config/historial] listarHistorialConfigTenant:", e);
+      return json(res, 500, { ok: false, error: "No se pudo obtener el historial." }), true;
+    }
+  }
+
+  if (ruta === "config/restaurar" && metodo === "POST") {
+    if (rol !== "dueno") {
+      return json(res, 403, { ok: false, error: "Solo el dueño del negocio puede restaurar una versión anterior" }), true;
+    }
+    if (!hayBaseDeDatos()) {
+      return json(res, 503, { ok: false, error: "Restaurar requiere base de datos (no configurada)." }), true;
+    }
+    const body = await leerBody(req);
+    if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
+    const historialId = typeof body?.historialId === "string" ? body.historialId : "";
+    if (!historialId) return json(res, 400, { ok: false, error: "Falta historialId" }), true;
+
+    try {
+      // Restaurar ES un cambio nuevo (mismo criterio que un revert en git): aplica el
+      // snapshot viejo Y crea una versión nueva, sin borrar ni reescribir el historial.
+      const restaurado = await restaurarVersionConfigTenant(tenant.id, historialId, usuarioId);
+      if (!restaurado) {
+        return json(res, 404, { ok: false, error: "Esa versión no existe o no pertenece a este negocio" }), true;
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message === "SIN_DB") {
+        return json(res, 503, { ok: false, error: "Restaurar requiere base de datos." }), true;
+      }
+      console.error("[config/restaurar] restaurarVersionConfigTenant:", e);
+      return json(res, 500, { ok: false, error: "No se pudo restaurar la versión." }), true;
     }
     await recargar(); // el cambio queda visible sin esperar el refresco periódico
     return json(res, 200, { ok: true }), true;

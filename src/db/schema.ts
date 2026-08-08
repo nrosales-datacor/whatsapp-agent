@@ -325,6 +325,37 @@ export const waUsuarios = pgTable(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Historial de config del tenant (ROADMAP F15). `actualizarConfigTenant`
+// (src/config/tenantStore.ts) escribe acá, en la MISMA transacción que el
+// `UPDATE` de wa_tenants: cada cambio de "Mi negocio" queda versionado, con
+// quién lo hizo y cuándo. `snapshot` guarda el PATCH COMPLETO tal como quedó
+// tras el cambio (mismo blob que recibió actualizarConfigTenant), no un diff —
+// el diff legible para mostrarlo en el panel es trabajo de frontend, pendiente.
+// Restaurar una versión vieja NO borra ni reescribe el historial: crea una fila
+// NUEVA idéntica a la vieja (mismo criterio que un revert en git). Sin FK a
+// wa_tenants/wa_usuarios a propósito, mismo criterio que el resto de las tablas
+// de auditoría/log de este esquema (wa_jobs, wa_webhooks_crudos): tenant_id NO
+// es FK en ningún lado salvo wa_usuarios.tenant_id (ver ROADMAP F16).
+// ─────────────────────────────────────────────────────────────────────────────
+export const waTenantsHistorial = pgTable(
+  "wa_tenants_historial",
+  {
+    id: id(),
+    tenantId: text("tenant_id").notNull(),
+    snapshot: jsonb("snapshot").notNull(),
+    // Quién hizo el cambio. Siempre presente: solo el dueño puede escribir acá
+    // (ver el check rol === "dueno" en panel/router.ts), nunca un proceso del sistema.
+    usuarioId: text("usuario_id").notNull(),
+    creadoEn: timestamp("creado_en", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    // Listado del historial de un tenant + poda por retención (src/config/tenantsHistorial.ts):
+    // ambos filtran por tenant_id y ordenan por creado_en, así que este índice cubre los dos.
+    idxTenant: index("wa_tenants_historial_tenant_idx").on(t.tenantId, t.creadoEn),
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Cola durable de jobs (B1). Cada mensaje entrante genera un job aquí ANTES de
 // responder 200 a Meta. El worker lo consume con FOR UPDATE SKIP LOCKED: N
 // instancias comparten la cola sin doble-procesar. Sin esta tabla, un crash a
