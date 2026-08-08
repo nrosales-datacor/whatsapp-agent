@@ -18,6 +18,7 @@ import { iniciarCampanias } from "./campaigns/worker";
 import { iniciarRescate } from "./rescate/worker";
 import { iniciarSentry, sentryConfigurado, capturarError } from "./observabilidad/sentry";
 import { iniciarReporteMetricas } from "./observabilidad/metricas";
+import { chequearSalud, codigoHttpSalud } from "./salud";
 import type { Repositorio } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -58,9 +59,27 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
   // Health check (antes vivía en `/`; el root ahora es la landing pública, C4.4).
+  // ROADMAP E10 / AUDIT.md BLOQUEANTE-11: antes esto devolvía 200 con el proceso
+  // vivo, sin mirar nada más. Ahora corre chequeos reales (src/salud.ts) y solo
+  // devuelve 200 si nada crítico falló. El contrato de texto plano en 200 se
+  // preserva EXACTO ("Agente de WhatsApp corriendo ✅") porque el smoke del CI
+  // (ci-cd.yml) hace `curl -sf` esperando un 2xx — cambiar el código rompería el
+  // deploy, no solo el formato.
+  //
+  // `?detalle=1` (o el content-negotiation vía Accept, evitado a propósito: un
+  // uptime monitor manda `Accept: */*` y terminaría recibiendo JSON igual) es el
+  // modo humano: JSON con cada chequeo, para debugging, nunca lo mira el monitor
+  // automático (que solo hace un GET plano a /salud).
   if (url.pathname === "/salud") {
-    res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
-    res.end("Agente de WhatsApp corriendo ✅");
+    const detalle = await chequearSalud(db);
+    const codigo = codigoHttpSalud(detalle);
+    if (url.searchParams.get("detalle") === "1") {
+      res.writeHead(codigo, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify(detalle));
+    } else {
+      res.writeHead(codigo, { "content-type": "text/plain; charset=utf-8" });
+      res.end(codigo === 200 ? "Agente de WhatsApp corriendo ✅" : "Agente de WhatsApp degradado ⚠️");
+    }
     return;
   }
 

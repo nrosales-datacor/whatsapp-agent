@@ -349,10 +349,88 @@ cambia de IP o de carpeta, hay que actualizar `.github/workflows/ci-cd.yml`.
 
 ### Si el pipeline falla
 
-`pm2 restart` solo corre si `git pull`/`npm install`/`migrar.ts`/`seedTenants.ts`/`web:build` salieron
-bien (`set -e` en el script remoto) — el bot sigue corriendo con el código viejo hasta que un
-deploy completo tenga éxito. Mirá la pestaña **Actions** del repo para ver en qué paso falló.
-Como red de seguridad, el redeploy manual de la tabla de abajo sigue funcionando igual que siempre.
+`pm2 restart` solo corre si `git pull`/`npm ci`/`migrar.ts`/`seedTenants.ts`/el build del panel
+salieron bien (`set -e` en el script remoto) — el bot sigue corriendo con el código viejo hasta que
+un deploy completo tenga éxito. Mirá la pestaña **Actions** del repo para ver en qué paso falló. El
+propio job de deploy imprime, en su último paso (`if: failure()`), el SHA al que revertir si hace
+falta (ver **Rollback** más abajo). Como red de seguridad adicional, el redeploy manual de la tabla
+de abajo sigue funcionando igual que siempre.
+
+> 🔒 **`npm ci`, no `npm install` (ROADMAP F17).** El paso "Actualizar código y reiniciar el bot"
+> usa `npm ci` (backend y panel) en vez de `npm install`: instala **exactamente** lo que dice el
+> `package-lock.json`/`web/package-lock.json` — mismas versiones que ya pasaron `npm run db:check`
+> y los 189 tests en CI, sin que un rango de versión (`^`/`~`) resuelva distinto en el droplet un
+> día después. Como contrapartida, `npm ci` **exige que el lockfile exista y esté sincronizado con
+> el `package.json`** (falla si no lo está) — si alguna vez ves el deploy romperse ahí, corré
+> `npm install` local, commiteá el lockfile actualizado, y volvé a pushear.
+
+### Rollback — revertir el CÓDIGO de un deploy fallido (ROADMAP F17)
+
+Cada deploy exitoso (el que pasa el smoke post-deploy) guarda su SHA en un archivo **no versionado**
+en el droplet: `~/.ultimo-deploy-ok`. Si un deploy nuevo falla, el propio job lo imprime en el log
+("para revertir corré el workflow de rollback con SHA=..."); si no, ese archivo es la fuente de
+verdad de "qué era lo último que funcionaba".
+
+**Cómo revertir:**
+
+1. Repo → pestaña **Actions** → workflow **CI/CD** → botón **Run workflow** (arriba a la derecha).
+2. Elegí la rama `main` y, opcionalmente, pegá un **SHA** en el campo `sha`. Si lo dejás vacío, usa
+   el `~/.ultimo-deploy-ok` que ya está guardado en el droplet — no hace falta que nadie se acuerde
+   cuál era.
+3. Correr. El job **`rollback`** hace `git fetch` + `git checkout <sha>` + `npm ci` (backend y
+   panel) + `pm2 restart`, y corre el mismo `/salud` + smoke de 3 superficies que un deploy normal.
+   Si el smoke pasa, ese SHA queda guardado como el nuevo `~/.ultimo-deploy-ok`.
+
+> ⚠️ **Este rollback es SOLO de código — nunca de la base de datos.** El job automático
+> deliberadamente **no** revierte ni corre migraciones. Revertir un esquema (borrar una columna,
+> deshacer un `NOT NULL`, etc.) puede perder datos que el código nuevo ya escribió y necesita
+> **juicio humano**, no un botón. Si la falla del deploy vino de una migración incompatible con el
+> código anterior, el rollback de código **no alcanza**: hay que decidir a mano si conviene
+> arreglar la migración hacia adelante o escribir una migración correctiva — seguí el
+> **Protocolo expand/contract** de abajo para que este escenario, en general, no llegue a pasar.
+>
+> El job deja el droplet en **detached HEAD** sobre el SHA revertido (es intencional: no se toca
+> la rama `main` local). El próximo deploy normal (`push` a `main`) hace `git checkout main` antes
+> del `git pull`, así que vuelve solo a la rama — no hace falta ningún paso manual para "deshacer"
+> el detached HEAD.
+
+### Protocolo expand/contract — migraciones que no son puramente aditivas (ROADMAP F17)
+
+`npx tsx scripts/migrar.ts` corre **antes** del `pm2 restart`, así que hay una ventana (breve, pero
+real) en la que el código **viejo** sigue respondiendo pedidos contra el esquema **ya migrado**. Una
+migración puramente aditiva (agregar una tabla, o una columna **nullable** o con **default**) es
+segura en esa ventana: el código viejo simplemente no la usa. Una migración que **no** es aditiva —
+agregar una columna `NOT NULL` sin default, renombrar una columna/tabla, cambiar el tipo de una
+columna, o borrar algo que el código viejo todavía lee o escribe — puede romper esa ventana (el
+código viejo falla contra el esquema nuevo) y además hace que el rollback de código de arriba sea
+**inseguro** (el código de vuelta no sabría hablar con el esquema que quedó).
+
+La salida es partir el cambio en varios deploys chicos, cada uno reversible por sí solo:
+
+1. **Expand:** migración que solo **agrega** — la columna nueva nace `nullable` (o con `default`),
+   la tabla/índice nuevo no reemplaza nada todavía. El código viejo ni se entera; convive sin
+   problema con el esquema ampliado.
+2. **Deploy del código que lee/escribe lo nuevo**, pero **tolerando que todavía no esté poblado**
+   (la columna puede venir `null` para las filas viejas). Este es un deploy normal, revertible con
+   el rollback de arriba sin drama: si algo sale mal, el código anterior sigue funcionando contra el
+   esquema ampliado sin quejarse (porque el paso 1 lo dejó opcional).
+3. **Backfill:** script aparte (idempotente, en lotes — mismo patrón que `scripts/cifrarTokens.ts`
+   o la purga de `wa_jobs`, nunca un `UPDATE` masivo de una sola vez) que llena la columna/tabla
+   nueva para las filas que ya existían.
+4. **Contract:** recién en un deploy **posterior** (con el backfill ya confirmado 100 % completo)
+   una migración que hace la columna `NOT NULL`, borra la columna vieja que quedó reemplazada, o
+   saca el fallback del código. Este paso es el que ya NO es seguro revertir con un rollback de
+   código simple — por eso va último, cuando ya no queda margen de error.
+
+> Nunca hay que combinar los 4 pasos en un solo deploy: el punto entero de separarlos es que cada
+> uno, individualmente, deja al bot en un estado donde el código viejo **y** el nuevo pueden hablar
+> con la base sin romperse — que es justo la propiedad que hace seguro el rollback de código.
+
+**Quiénes van a necesitar esto:** **F1** (RLS + agregar `tenant_id` a `wa_mensajes`, que hoy no la
+tiene — un backfill real sobre una tabla de negocio existente) y **F9** (mover las fotos de
+`wa_mensajes.media_url` a Storage — la columna cambia de "data URL completa" a "URL firmada",
+así que el código tiene que leer ambos formatos durante la transición). Ambos ítems del ROADMAP
+deberían seguir estos 4 pasos en vez de una migración de un solo tiro.
 
 ## 16. Sentry — alertas de errores (ROADMAP B5, OPCIONAL)
 
@@ -535,7 +613,8 @@ con la nueva — no hay atajo porque el algoritmo es simétrico:
 | Ver estado | `pm2 status` |
 | Ver registros | `pm2 logs whatsapp-bot` |
 | Reiniciar | `pm2 restart whatsapp-bot` |
-| Actualizar el código (manual, red de seguridad — lo normal es el push a `main`) | `cd ~/lavacar-whatsapp-bot && git pull && npm install && npx tsx scripts/migrar.ts && npx tsx scripts/seedTenants.ts && npm run web:build && pm2 restart whatsapp-bot` |
+| Actualizar el código (manual, red de seguridad — lo normal es el push a `main`) | `cd ~/lavacar-whatsapp-bot && git checkout main && git pull && npm ci && npx tsx scripts/migrar.ts && npx tsx scripts/seedTenants.ts && npm ci --prefix web --include=dev && npm run build --prefix web && pm2 restart whatsapp-bot` |
+| Revertir un deploy malo (solo código, ver **Rollback** arriba) | Actions → CI/CD → **Run workflow**, con `sha` vacío o el commit al que volver |
 
 **Landing de venta (ROADMAP C4.4):** vive en `landing/` (HTML/CSS estático, sin build) y la sirve
 el mismo proceso Node en el root del dominio (`GET /`). No agrega pasos al redeploy — el `git pull`

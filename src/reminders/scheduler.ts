@@ -123,9 +123,20 @@ async function enviarRecordatorio(tenant: Tenant, cita: Cita, tipo: TipoRecordat
   if (plantilla) {
     // Plantilla aprobada (para fuera de la ventana de 24 h). NOTA: para que traiga
     // botones "Confirmo/Reprogramar", la plantilla debe declararse en el WhatsApp
-    // Manager con componentes de tipo quick-reply y sus payloads; eso queda pendiente
-    // de la aprobación de la plantilla. Mientras tanto, el texto libre (abajo) sí los
-    // lleva (funciona con el número de prueba y dentro de la ventana de 24 h).
+    // Manager con componentes de tipo quick-reply. `clasificarEntrante`
+    // (src/whatsapp/client.ts, BLOQ-01/E9) YA sabe decodificar el tap de esos
+    // botones (llega como `type: "button"` con la carga en `msg.button.payload`,
+    // una forma distinta a la de nuestros botones nativos `type: "interactive"`)
+    // — pero el código NO puede fijar el payload que Meta va a mandar de vuelta:
+    // eso lo define quien configura la plantilla en el WhatsApp Manager. Para que
+    // "Confirmo ✅"/"Reprogramar" disparen la acción directa (igual que con el
+    // texto libre), sus quick-replies deben configurarse con el payload EXACTO
+    // `confirmar|{{cita_id}}` / `mover|{{cita_id}}` (la misma convención `tipo|arg`
+    // de `botonesRecordatorio` más arriba en client.ts). Si el payload configurado
+    // no sigue esa convención, el tap no revienta: cae al texto visible del botón,
+    // igual que con cualquier id desconocido, pero deja de ser una acción directa
+    // y el cliente tiene que reescribirlo. Mientras tanto, el texto libre (abajo)
+    // ya lleva los botones nativos y funciona sin depender de esta configuración.
     // El idioma sí tiene un fallback simple (no fail-closed): no es un secreto ni
     // causa fuga entre negocios (E8/BLOQ-06).
     const idioma = tenant.plantillaIdioma ?? process.env.WHATSAPP_TEMPLATE_IDIOMA ?? "es";
