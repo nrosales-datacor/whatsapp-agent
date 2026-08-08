@@ -40,6 +40,7 @@ const SUBNAV: { id: string; label: string; icono: IconoId }[] = [
   { id: "mnCalendario", label: "Google Calendar", icono: "calcheck" },
   { id: "mnResenas", label: "Reseñas de Google", icono: "star" },
   { id: "mnVentana24", label: "Ventana de 24 horas", icono: "messagecircle" },
+  { id: "mnRecordatorios", label: "Recordatorios de cita", icono: "bell" },
   { id: "mnCampanias", label: "Campañas", icono: "send" },
   { id: "mnRescate", label: "Rescate de ventas", icono: "lifebuoy" },
   { id: "mnBaseConocimiento", label: "Base de conocimiento", icono: "bookopen" },
@@ -170,6 +171,8 @@ export default function MiNegocio({ features }: { features: Features }) {
   const [linkResenas, setLinkResenas] = useState("");
   const [plantillaMarketing, setPlantillaMarketing] = useState("");
   const [plantillaReapertura, setPlantillaReapertura] = useState("");
+  const [plantillaRecordatorio, setPlantillaRecordatorio] = useState("");
+  const [plantillaIdioma, setPlantillaIdioma] = useState("");
   const [colorAcento, setColorAcento] = useState("");
   const [colorHeader, setColorHeader] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
@@ -203,7 +206,8 @@ export default function MiNegocio({ features }: { features: Features }) {
   function construirSnapshotActual() {
     return JSON.stringify({
       servicios, horario, empleados, bloqueos, faqs, datos, politicas, secciones,
-      linkResenas, plantillaMarketing, plantillaReapertura, colorAcento, colorHeader, logoUrl,
+      linkResenas, plantillaMarketing, plantillaReapertura, plantillaRecordatorio, plantillaIdioma,
+      colorAcento, colorHeader, logoUrl,
       rescateActivo, rescateHorasEspera, rescateToque1Texto, rescateToque2Texto, rescatePlantilla,
       googlePlaceId, googleCalendarId, tipoNegocio, pais, formasPago, registro, tono, instrucciones,
     });
@@ -221,6 +225,8 @@ export default function MiNegocio({ features }: { features: Features }) {
     const linkResenasF = data.linkResenas ?? "";
     const plantillaMarketingF = data.plantillaMarketing ?? "";
     const plantillaReaperturaF = data.plantillaReapertura ?? "";
+    const plantillaRecordatorioF = data.plantillaRecordatorio ?? "";
+    const plantillaIdiomaF = data.plantillaIdioma ?? "";
     const colorAcentoF = data.colorAcento ?? "";
     const colorHeaderF = data.colorHeader ?? "";
     const logoUrlF = data.logoUrl ?? "";
@@ -248,6 +254,8 @@ export default function MiNegocio({ features }: { features: Features }) {
     setLinkResenas(linkResenasF);
     setPlantillaMarketing(plantillaMarketingF);
     setPlantillaReapertura(plantillaReaperturaF);
+    setPlantillaRecordatorio(plantillaRecordatorioF);
+    setPlantillaIdioma(plantillaIdiomaF);
     setColorAcento(colorAcentoF);
     setColorHeader(colorHeaderF);
     setLogoUrl(logoUrlF);
@@ -270,7 +278,8 @@ export default function MiNegocio({ features }: { features: Features }) {
         servicios: servF, horario: horF, empleados: empF, bloqueos: bloqF, faqs: faqF,
         datos: datosF, politicas: politicasF, secciones: seccionesF,
         linkResenas: linkResenasF, plantillaMarketing: plantillaMarketingF,
-        plantillaReapertura: plantillaReaperturaF, colorAcento: colorAcentoF,
+        plantillaReapertura: plantillaReaperturaF, plantillaRecordatorio: plantillaRecordatorioF,
+        plantillaIdioma: plantillaIdiomaF, colorAcento: colorAcentoF,
         colorHeader: colorHeaderF, logoUrl: logoUrlF,
         rescateActivo: data.rescateActivo, rescateHorasEspera: rescateHorasEsperaF,
         rescateToque1Texto: rescateToque1TextoF, rescateToque2Texto: rescateToque2TextoF,
@@ -471,6 +480,8 @@ export default function MiNegocio({ features }: { features: Features }) {
       linkResenas: linkResenas.trim(),
       plantillaMarketing: plantillaMarketing.trim(),
       plantillaReapertura: plantillaReapertura.trim(),
+      plantillaRecordatorio: plantillaRecordatorio.trim(),
+      plantillaIdioma: plantillaIdioma.trim(),
       // Sin plan Pro los inputs de marca están ocultos (arriba); no reenviar un valor
       // viejo que el backend rechazaría por el gating de whiteLabel (0.1).
       colorAcento: features.whiteLabel ? colorAcento.trim() : "",
@@ -1190,6 +1201,40 @@ export default function MiNegocio({ features }: { features: Features }) {
                   Es una plantilla de UTILIDAD (no marketing) para reabrir una conversación cuando pasaron más de 24h
                   desde el último mensaje del cliente. Sin ella, el botón "Reabrir conversación" del chat no aparece.
                   Ver <code>GUIA-META.md</code> §D.
+                </p>
+              </div>
+            </div>
+
+            <div className="card admin-form" id="mnRecordatorios">
+              <h3>Recordatorios de cita</h3>
+              <div className="campo">
+                <label htmlFor="cPlantillaRecordatorio">Plantilla de recordatorio aprobada (nombre exacto en Meta)</label>
+                <input
+                  id="cPlantillaRecordatorio"
+                  className="mono"
+                  placeholder="recordatorio_cita"
+                  value={plantillaRecordatorio}
+                  onChange={(e) => setPlantillaRecordatorio(e.target.value)}
+                />
+                <p className="campo-ayuda">
+                  Es una plantilla de UTILIDAD con 3 variables ({"{{1}}"} nombre del cliente, {"{{2}}"} servicio,
+                  {" "}{"{{3}}"} "mañana/hoy a las HH:mm") para avisar fuera de la ventana de 24h. Sin ella, el
+                  recordatorio se manda como texto libre con botones (funciona con el número de prueba y dentro de
+                  la ventana de 24h). Ver <code>GUIA-META.md</code>.
+                </p>
+              </div>
+              <div className="campo">
+                <label htmlFor="cPlantillaIdioma">Idioma de las plantillas (el que usaste al aprobarlas en Meta)</label>
+                <input
+                  id="cPlantillaIdioma"
+                  className="mono"
+                  placeholder="es"
+                  value={plantillaIdioma}
+                  onChange={(e) => setPlantillaIdioma(e.target.value)}
+                />
+                <p className="campo-ayuda">
+                  Ej: "es", "es_MX", "en_US". Vacío = usa el default del servidor. Aplica a las plantillas de
+                  recordatorio, campañas y rescate de este negocio.
                 </p>
               </div>
             </div>

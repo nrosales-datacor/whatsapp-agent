@@ -39,6 +39,8 @@ export default function ListaNegocios() {
                 <th>Servicios</th>
                 <th>Plan</th>
                 <th>Conversaciones este mes</th>
+                <th>Tokens este mes</th>
+                <th>Costo LLM este mes</th>
                 <th>Detalle</th>
               </tr>
             </thead>
@@ -61,6 +63,8 @@ export default function ListaNegocios() {
                       </select>
                     </td>
                     <td>{t.conversacionesEsteMes}</td>
+                    <td>{t.tokensEsteMes.toLocaleString("es-CR")}</td>
+                    <td>${t.costoUsdEsteMes.toFixed(2)}</td>
                     <td>
                       <button type="button" className="btn-ghost" onClick={() => setExpandido(expandido === t.id ? null : t.id)}>
                         {expandido === t.id ? "Ocultar" : "Ver equipo"}
@@ -69,7 +73,7 @@ export default function ListaNegocios() {
                   </tr>
                   {expandido === t.id && (
                     <tr>
-                      <td colSpan={7}>
+                      <td colSpan={9}>
                         <EquipoNegocio tenantId={t.id} />
                       </td>
                     </tr>

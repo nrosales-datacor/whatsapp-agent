@@ -1,5 +1,5 @@
 {
-  "id": "392a453e-ba12-44cf-96af-59a87cf4d5eb",
+  "id": "378ea276-1191-4df2-bd38-ba12a9d481f3",
   "prevId": "bc68908f-a8f0-44c6-af30-7cc6b27045a8",
   "version": "7",
   "dialect": "postgresql",
@@ -1369,6 +1369,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "plantilla_recordatorio": {
+          "name": "plantilla_recordatorio",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plantilla_idioma": {
+          "name": "plantilla_idioma",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "color_acento": {
           "name": "color_acento",
           "type": "text",
@@ -1708,13 +1720,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "session_epoch": {
-          "name": "session_epoch",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
         }
       },
       "indexes": {

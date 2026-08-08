@@ -216,7 +216,7 @@ test("cotiza una FOTO (visión, C1.5): descarga la imagen, la adjunta al LLM y l
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant);
   // Simula la persistencia que hace la fase 1 para el mensaje de foto entrante.
-  await repo.guardarMensaje(conv.id, {
+  await repo.guardarMensaje(tenant.id, conv.id, {
     rol: "user",
     contenido: "[foto] ¿cuánto por pulir esto?",
     creadoEn: new Date().toISOString(),

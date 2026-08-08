@@ -1,5 +1,17 @@
 import crypto from "node:crypto";
+import { promisify } from "node:util";
 import type { Rol } from "../types";
+
+// scrypt en su variante async (E6/BLOQUEANTE-10): la versión Sync bloquea el event loop
+// ~50-150ms por invocación con los parámetros default. Este mismo proceso Node atiende
+// también el webhook de WhatsApp de TODOS los tenants — bloquear el loop en el login
+// congela el webhook de todo el mundo. `scrypt` con promisify libera el loop mientras
+// la libuv thread-pool hace el trabajo pesado.
+const scryptAsync = promisify(crypto.scrypt) as (
+  password: string,
+  salt: string,
+  keylen: number,
+) => Promise<Buffer>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Autenticación del panel: contraseña por negocio (hash scrypt) + sesión firmada
@@ -33,15 +45,18 @@ const SESSION_VERSION = process.env.PANEL_SESSION_VERSION ?? "1";
 const DURACION_MS = 7 * 24 * 60 * 60 * 1000; // 7 días (antes 30: menor ventana si se filtra un token)
 
 /** Genera "salt:hash" para guardar la contraseña del panel de un negocio. */
-export function hashearPassword(password: string): string {
+export async function hashearPassword(password: string): Promise<string> {
   const salt = crypto.randomBytes(16).toString("hex");
-  const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+  const hash = (await scryptAsync(password, salt, 64)).toString("hex");
   return `${salt}:${hash}`;
 }
 
 // Hash de una contraseña al azar: se usa para gastar el MISMO tiempo de scrypt
 // cuando el usuario no existe, y así no filtrar qué tenants son válidos por timing.
-export const HASH_DUMMY = hashearPassword(crypto.randomBytes(16).toString("hex"));
+// Top-level await: el paquete es "type": "module" (ESM), así que esto se resuelve
+// antes de que termine de evaluarse este módulo — cualquier import de HASH_DUMMY
+// (p. ej. desde router.ts) ya lo recibe resuelto, nunca una Promise pendiente.
+export const HASH_DUMMY = await hashearPassword(crypto.randomBytes(16).toString("hex"));
 
 // Alfabeto sin caracteres ambiguos (0/O, 1/l/I) — la clave temporal (0.5) la lee/tipea
 // un humano para comunicarla al dueño del negocio.
@@ -56,11 +71,11 @@ export function generarClaveTemporal(): string {
 }
 
 /** Compara una contraseña con el "salt:hash" guardado (tiempo constante). */
-export function verificarPassword(password: string, guardado: string | undefined): boolean {
+export async function verificarPassword(password: string, guardado: string | undefined): Promise<boolean> {
   if (!guardado) return false;
   const [salt, hash] = guardado.split(":");
   if (!salt || !hash) return false;
-  const calc = crypto.scryptSync(password, salt, 64).toString("hex");
+  const calc = (await scryptAsync(password, salt, 64)).toString("hex");
   const a = Buffer.from(calc);
   const b = Buffer.from(hash);
   return a.length === b.length && crypto.timingSafeEqual(a, b);

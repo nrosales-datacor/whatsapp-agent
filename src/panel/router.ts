@@ -31,11 +31,14 @@ import {
   validarLogoUrl,
   validarNombrePlantillaMarketing,
   validarNombrePlantillaReapertura,
+  validarNombrePlantillaRecordatorio,
   validarNombrePlantillaRescate,
+  validarPlantillaIdioma,
   validarRegistro,
   validarRescateHoras,
   validarSecciones,
   validarServicios,
+  validarTamanoKb,
   validarTextoRescate,
 } from "../config/validadores";
 import { enviarPlantilla, enviarTexto } from "../whatsapp/client";
@@ -78,6 +81,13 @@ import {
   verificarSesionAdmin,
 } from "./auth";
 import { clavePublicaVapid, enviarPushATenant } from "./push";
+import {
+  chequearLimiteLogin,
+  ipDelRequest,
+  registrarExitoLogin,
+  registrarFalloLogin,
+  registrarIntentoLogin,
+} from "./rateLimitLogin";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Panel web (bandeja humana). Maneja las rutas /panel, /panel/* y /api/panel/*.
@@ -208,6 +218,17 @@ function json(res: ServerResponse, status: number, obj: unknown) {
   const body = JSON.stringify(obj);
   res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
   res.end(body);
+}
+
+// 429 del rate limit de login (E6/BLOQUEANTE-10). Mismo mensaje/forma sin importar si
+// el límite que se pasó fue el de IP o el de usuario — no hay que darle a quien está
+// mirando la respuesta ninguna pista de CUÁL de los dos disparó el corte.
+function json429RateLimit(res: ServerResponse, retryAfterSeg: number) {
+  res.writeHead(429, {
+    "content-type": "application/json; charset=utf-8",
+    "retry-after": String(retryAfterSeg),
+  });
+  res.end(JSON.stringify({ ok: false, error: "Demasiados intentos. Probá de nuevo en unos minutos." }));
 }
 
 function leerCookies(req: IncomingMessage): Record<string, string> {
@@ -349,6 +370,10 @@ function validarAltaTenant(body: any): ResultadoAlta {
     politicas: limpiarLineas(t.kb?.politicas),
     secciones: validarSecciones(t.kb?.secciones),
   };
+  // Tope de tamaño de la KB (ALTO-16 / F13): mismo criterio en el alta que en la config
+  // self-service de abajo, para que un negocio no pueda arrancar ya por encima del límite.
+  const errorTamanoKb = validarTamanoKb(kb);
+  if (errorTamanoKb) return { ok: false, error: errorTamanoKb };
 
   const usuario = String(body.usuario ?? "").trim();
   if (!RE_USUARIO.test(usuario)) return { ok: false, error: "Usuario inválido (3 a 40 caracteres: letras, números, . _ -)" };
@@ -531,13 +556,22 @@ export async function manejarPanel(
   if (ruta === "admin/login" && metodo === "POST") {
     const body = await leerBody(req);
     if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
+    const usuarioInput = String(body?.usuario ?? "");
+    const ip = ipDelRequest(req);
+    // Rate limit ANTES de scrypt (E6/BLOQUEANTE-10) — ver rateLimitLogin.ts para el
+    // porqué (no gastar CPU en una request que igual se va a rechazar).
+    const limite = chequearLimiteLogin(ip, "admin", usuarioInput);
+    if (!limite.permitido) return json429RateLimit(res, limite.retryAfterSeg), true;
+    registrarIntentoLogin(ip);
     const usuarioOk = !!process.env.PANEL_SUPERADMIN_USUARIO && body?.usuario === process.env.PANEL_SUPERADMIN_USUARIO;
     // scrypt SIEMPRE (HASH_DUMMY si falta config/usuario) → no filtra por timing.
-    const passOk = verificarPassword(String(body?.password ?? ""), process.env.PANEL_SUPERADMIN_HASH ?? HASH_DUMMY);
+    const passOk = await verificarPassword(String(body?.password ?? ""), process.env.PANEL_SUPERADMIN_HASH ?? HASH_DUMMY);
     if (!usuarioOk || !passOk) {
+      registrarFalloLogin("admin", usuarioInput);
       json(res, 401, { ok: false, error: "Usuario o contraseña incorrectos" });
       return true;
     }
+    registrarExitoLogin("admin", usuarioInput);
     const cookie = `${COOKIE_ADMIN}=${crearSesionAdmin()}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${7 * 24 * 60 * 60}`;
     res.writeHead(200, { "content-type": "application/json; charset=utf-8", "set-cookie": cookie });
     res.end(JSON.stringify({ ok: true }));
@@ -610,16 +644,26 @@ export async function manejarPanel(
       // Uso mensual (Carril D, 0.2): una sola consulta para todos los negocios, en vez
       // de N — "medir sin bloquear" (sin DB o sin actividad todavía, queda en 0).
       const uso = await listarUsoMensualActual();
-      const tenants = listarTenants().map((t) => ({
-        id: t.id,
-        nombre: t.nombre,
-        phoneNumberId: t.phoneNumberId,
-        moneda: t.moneda,
-        timezone: t.timezone,
-        servicios: t.servicios.length,
-        plan: t.plan,
-        conversacionesEsteMes: uso.get(t.id)?.conversacionesIniciadas ?? 0,
-      }));
+      const tenants = listarTenants().map((t) => {
+        const u = uso.get(t.id);
+        return {
+          id: t.id,
+          nombre: t.nombre,
+          phoneNumberId: t.phoneNumberId,
+          moneda: t.moneda,
+          timezone: t.timezone,
+          servicios: t.servicios.length,
+          plan: t.plan,
+          conversacionesEsteMes: u?.conversacionesIniciadas ?? 0,
+          // Costo de LLM por tenant (F13): tokens totales (entrada+salida) y costo estimado
+          // en USD del mes, para responder "¿este cliente deja margen?" sin ir a la DB a mano.
+          // El acumulador guarda millonésimos de dólar (ver schema.ts); acá se divide para
+          // mostrar USD directo — la división es solo de PRESENTACIÓN, el contador de la DB
+          // sigue siendo el entero exacto.
+          tokensEsteMes: (u?.tokensEntrada ?? 0) + (u?.tokensSalida ?? 0),
+          costoUsdEsteMes: (u?.costoEstimadoMillonesimos ?? 0) / 1_000_000,
+        };
+      });
       json(res, 200, { ok: true, tenants });
       return true;
     }
@@ -669,7 +713,7 @@ export async function manejarPanel(
       const v = validarAltaTenant(body);
       if (!v.ok) return json(res, 400, { ok: false, error: v.error }), true;
       try {
-        await crearTenant(v.tenant, { usuario: v.usuario, passwordHash: hashearPassword(v.password) });
+        await crearTenant(v.tenant, { usuario: v.usuario, passwordHash: await hashearPassword(v.password) });
       } catch (e) {
         if ((e as { code?: string }).code === "23505") return json(res, 409, { ok: false, error: mensajeConflicto(e) }), true;
         if (e instanceof Error && e.message === "SIN_DB") {
@@ -715,7 +759,7 @@ export async function manejarPanel(
       const expiraEn = new Date(Date.now() + 24 * 60 * 60 * 1000);
       let usuario;
       try {
-        usuario = await resetearClaveUsuario(usuarioId, hashearPassword(claveTemporal), expiraEn);
+        usuario = await resetearClaveUsuario(usuarioId, await hashearPassword(claveTemporal), expiraEn);
       } catch (e) {
         if (e instanceof Error && e.message === "SIN_DB") return json(res, 503, { ok: false, error: "Requiere base de datos." }), true;
         console.error("[admin] resetearClaveUsuario:", e);
@@ -737,21 +781,32 @@ export async function manejarPanel(
     const body = await leerBody(req);
     if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
     const { usuario, password } = body;
+    const usuarioInput = String(usuario ?? "");
+    const ip = ipDelRequest(req);
+    // Rate limit ANTES de scrypt (E6/BLOQUEANTE-10): si ya sabemos que la request se va
+    // a rechazar, no gastamos los ~50-150ms de CPU de scrypt en ella. La clave "por
+    // usuario" es el string crudo (exista o no la cuenta) — ver rateLimitLogin.ts para
+    // el porqué: así el 429 no se convierte en un oráculo de qué usuarios existen.
+    const limite = chequearLimiteLogin(ip, "login", usuarioInput);
+    if (!limite.permitido) return json429RateLimit(res, limite.retryAfterSeg), true;
+    registrarIntentoLogin(ip);
     // Resuelve usuario → cuenta (wa_usuarios) → tenant, vía el caché del tenantStore.
-    const cuenta = obtenerUsuario(String(usuario ?? ""));
+    const cuenta = obtenerUsuario(usuarioInput);
     // Corremos scrypt SIEMPRE (con un hash dummy si el usuario no existe) para no
     // filtrar por timing qué usuarios son válidos. El 401 es idéntico en ambos casos.
-    const ok = verificarPassword(String(password ?? ""), cuenta?.passwordHash ?? HASH_DUMMY);
+    const ok = await verificarPassword(String(password ?? ""), cuenta?.passwordHash ?? HASH_DUMMY);
     const tenant = cuenta ? obtenerTenantPorId(cuenta.tenantId) : undefined;
     // Clave temporal del reset de admin (0.5): vencida a las 24h, hay que pedir un reset nuevo.
     const claveVencida = !!cuenta?.claveTemporalExpira && Date.now() > cuenta.claveTemporalExpira.getTime();
     if (!cuenta || !ok || !tenant || claveVencida) {
+      registrarFalloLogin("login", usuarioInput);
       const error = claveVencida
         ? "La clave temporal venció. Pedile a tu administrador que te la resetee de nuevo."
         : "Usuario o contraseña incorrectos";
       json(res, 401, { ok: false, error });
       return true;
     }
+    registrarExitoLogin("login", usuarioInput);
     // El login NO sube el epoch (E13/ALTO-06): firma con el epoch VIGENTE de la cuenta,
     // así que loguearse desde un dispositivo nuevo no invalida las sesiones ya abiertas
     // en otros dispositivos — solo cambiar clave/rol/estado revoca sesiones.
@@ -820,11 +875,11 @@ export async function manejarPanel(
     const claveNueva = String(body?.claveNueva ?? "");
     if (claveNueva.length < 8) return json(res, 400, { ok: false, error: "La contraseña debe tener al menos 8 caracteres" }), true;
     const cuenta = obtenerUsuarioPorId(usuarioId);
-    if (!cuenta || !verificarPassword(claveActual, cuenta.passwordHash)) {
+    if (!cuenta || !(await verificarPassword(claveActual, cuenta.passwordHash))) {
       return json(res, 401, { ok: false, error: "La contraseña actual no es correcta" }), true;
     }
     try {
-      await cambiarClavePropia(tenant.id, usuarioId, hashearPassword(claveNueva));
+      await cambiarClavePropia(tenant.id, usuarioId, await hashearPassword(claveNueva));
     } catch (e) {
       if (e instanceof Error && e.message === "SIN_DB") return json(res, 503, { ok: false, error: "Requiere base de datos." }), true;
       console.error("[panel] cambiarClavePropia:", e);
@@ -869,7 +924,7 @@ export async function manejarPanel(
       if (password.length < 8) return json(res, 400, { ok: false, error: "La contraseña debe tener al menos 8 caracteres" }), true;
       const nuevoRol: Rol = body?.rol === "dueno" ? "dueno" : "operador";
       try {
-        await crearUsuarioTenant(tenant.id, { usuario, passwordHash: hashearPassword(password), rol: nuevoRol });
+        await crearUsuarioTenant(tenant.id, { usuario, passwordHash: await hashearPassword(password), rol: nuevoRol });
       } catch (e) {
         if ((e as { code?: string }).code === "23505") return json(res, 409, { ok: false, error: "Ese usuario de panel ya existe" }), true;
         if (e instanceof Error && e.message === "SIN_DB") {
@@ -1033,6 +1088,8 @@ export async function manejarPanel(
       linkResenas: tenant.linkResenas ?? "",
       plantillaMarketing: tenant.plantillaMarketing ?? "",
       plantillaReapertura: tenant.plantillaReapertura ?? "",
+      plantillaRecordatorio: tenant.plantillaRecordatorio ?? "",
+      plantillaIdioma: tenant.plantillaIdioma ?? "",
       colorAcento: tenant.colorAcento ?? "",
       colorHeader: tenant.colorHeader ?? "",
       logoUrl: tenant.logoUrl ?? "",
@@ -1129,6 +1186,17 @@ export async function manejarPanel(
       return json(res, 400, { ok: false, error: "Nombre de plantilla inválido (minúsculas, números y guiones bajos)" }), true;
     }
 
+    // Plantilla de recordatorio de cita por tenant (E8/BLOQ-06): antes era la env global
+    // WHATSAPP_TEMPLATE_RECORDATORIO, que solo alcanza para un cliente a la vez.
+    const plantillaRecordatorio = validarNombrePlantillaRecordatorio(body?.plantillaRecordatorio);
+    if (plantillaRecordatorio === null) {
+      return json(res, 400, { ok: false, error: "Nombre de plantilla inválido (minúsculas, números y guiones bajos)" }), true;
+    }
+    const plantillaIdioma = validarPlantillaIdioma(body?.plantillaIdioma);
+    if (plantillaIdioma === null) {
+      return json(res, 400, { ok: false, error: "Idioma de plantilla inválido (ej: es, es_MX, en_US)" }), true;
+    }
+
     const colorAcento = validarColorHex(body?.colorAcento);
     if (colorAcento === null) return json(res, 400, { ok: false, error: "Color de acento inválido (formato #rrggbb)" }), true;
 
@@ -1184,6 +1252,12 @@ export async function manejarPanel(
       politicas: limpiarLineas(body?.kb?.politicas),
       secciones: validarSecciones(body?.kb?.secciones),
     };
+    // Tope de tamaño de la KB (ALTO-16 / F13 — PLAN-ESCALA-MULTITENANT.md): un catálogo
+    // gigante encarece CADA llamada al LLM (hasta ~70.000 tokens/mensaje con los 4 pasos
+    // de tool-calling, ver AUDIT.md § ALTO-16). Mensaje con el tamaño real y el límite,
+    // para que el dueño sepa qué recortar en vez de un 400 genérico.
+    const errorTamanoKb = validarTamanoKb(kb);
+    if (errorTamanoKb) return json(res, 400, { ok: false, error: errorTamanoKb }), true;
 
     // Perfil del negocio (B7, motor multi-mercado): textos libres acotados + registro validado.
     const tipoNegocio = limpiarTexto(body?.tipoNegocio, 120);
@@ -1203,6 +1277,8 @@ export async function manejarPanel(
         linkResenas: linkResenas || null,
         plantillaMarketing: plantillaMarketing || null,
         plantillaReapertura: plantillaReapertura || null,
+        plantillaRecordatorio: plantillaRecordatorio || null,
+        plantillaIdioma: plantillaIdioma || null,
         colorAcento: colorAcento || null,
         colorHeader: colorHeader || null,
         logoUrl: logoUrl || null,
@@ -1246,7 +1322,7 @@ export async function manejarPanel(
   if (ruta === "push/desuscribir" && metodo === "POST") {
     const body = await leerBody(req);
     if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
-    if (body?.endpoint) await repo.borrarPushSub(String(body.endpoint));
+    if (body?.endpoint) await repo.borrarPushSub(tenant.id, String(body.endpoint));
     return json(res, 200, { ok: true }), true;
   }
 
@@ -1525,7 +1601,7 @@ export async function manejarPanel(
       }
       // Al responder un humano, la conversación queda en modo humano.
       if (conv.modo !== "humano") await repo.setModoConversacion(tenant.id, conv.id, "humano");
-      await repo.guardarMensaje(conv.id, {
+      await repo.guardarMensaje(tenant.id, conv.id, {
         rol: "assistant",
         contenido: t,
         creadoEn: new Date().toISOString(),
@@ -1556,7 +1632,7 @@ export async function manejarPanel(
         console.error("[panel] enviarPlantilla (reabrir) falló:", e);
         return json(res, 502, { ok: false, error: "No se pudo enviar la plantilla de reapertura" }), true;
       }
-      await repo.guardarMensaje(conv.id, {
+      await repo.guardarMensaje(tenant.id, conv.id, {
         rol: "assistant",
         contenido: "📩 Plantilla de reapertura enviada (conversación fuera de la ventana de 24h).",
         creadoEn: new Date().toISOString(),
