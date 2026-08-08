@@ -81,7 +81,7 @@ export function iniciarWorker(repo: Repositorio, db: DB): void {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const pendiente = { ...job.payload, tenant } as any;
         try {
-          await responderEntrante(pendiente, repo);
+          await responderEntrante(pendiente, repo, db);
           await marcarHecho(db, job.id);
         } catch (e) {
           await marcarFalloOReintentar(db, job.id, String(e), job.intentos, job.maxIntentos);

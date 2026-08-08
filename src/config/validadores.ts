@@ -511,6 +511,19 @@ export function validarTextoRescate(v: unknown): string | null {
 }
 
 /**
+ * Valida el mensaje que recibe el cliente final al llegar al tope mensual de
+ * conversaciones (F10 — PLAN-ESCALA-MULTITENANT.md). Vacío = usa el default
+ * razonable (MENSAJE_TOPE_EXCEDIDO en handleWebhook.ts). Mismo patrón que
+ * validarTextoRescate.
+ */
+export function validarMensajeTopeExcedido(v: unknown): string | null {
+  const s = String(v ?? "").trim();
+  if (!s) return "";
+  if (s.length > 300) return null;
+  return s;
+}
+
+/**
  * Valida el nombre de la plantilla de Meta del segundo toque del rescate (fuera de
  * la ventana de 24h). Vacío = sin configurar (el rescate se detiene después del
  * primer toque). Mismo formato que las demás plantillas (validarNombrePlantillaMarketing).

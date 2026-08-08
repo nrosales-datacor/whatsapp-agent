@@ -561,6 +561,7 @@ export class RepositorioDrizzle implements Repositorio {
     conversacionId: string,
     msg: MensajeConversacion,
     payload: PendienteSerializado,
+    ejecutarDespuesDe?: Date,
   ): Promise<boolean> {
     // Una sola transacción: "mensaje persistido ⇒ job encolado" es invariante.
     // Si el proceso muere a mitad, Postgres revierte ambas filas → Meta reintenta
@@ -581,7 +582,15 @@ export class RepositorioDrizzle implements Repositorio {
       if (filas.length === 0) return; // mensaje duplicado → no encolar
       await tx
         .insert(waJobs)
-        .values({ tenantId: payload.tenantId, payload, waMessageId: msg.waMessageId ?? null })
+        .values({
+          tenantId: payload.tenantId,
+          payload,
+          waMessageId: msg.waMessageId ?? null,
+          // F10: rate limit de ingesta excedido → el worker no lo reclama hasta
+          // ese momento (ver el WHERE de reclamarUno en queue/cola.ts, que ya
+          // respeta esta columna). undefined deja el default de la columna (now()).
+          ...(ejecutarDespuesDe ? { ejecutarDespuesDe } : {}),
+        })
         .onConflictDoNothing(); // idempotencia extra por waMessageId
       // Cola de trabajo (C2.3): un mensaje nuevo del cliente reabre la conversación,
       // aunque el operador la hubiera marcado "atendida". Misma transacción: atómico

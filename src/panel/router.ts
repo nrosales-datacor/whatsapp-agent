@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import {
   actualizarConfigTenant,
   actualizarFacturacionTenant,
+  actualizarTopeTenant,
   actualizarUsuarioTenant,
   cambiarClavePropia,
   crearTenant,
@@ -29,6 +30,7 @@ import {
   validarHorario,
   validarLinkResenas,
   validarLogoUrl,
+  validarMensajeTopeExcedido,
   validarNombrePlantillaMarketing,
   validarNombrePlantillaReapertura,
   validarNombrePlantillaRecordatorio,
@@ -54,6 +56,7 @@ import {
 import type { Cita, EstadoConversacion, KnowledgeBase, Plan, Repositorio, Rol, SegmentoFiltro, Tenant } from "../types";
 import { featuresDeTenant, tenantPuede } from "../billing/planes";
 import { listarUsoMensualActual } from "../observabilidad/uso";
+import { calcularEstadoCuota, estadoCuotaMensual } from "../observabilidad/cuotas";
 import {
   cancelarCampania,
   confirmarEnvioCampania,
@@ -646,6 +649,9 @@ export async function manejarPanel(
       const uso = await listarUsoMensualActual();
       const tenants = listarTenants().map((t) => {
         const u = uso.get(t.id);
+        // Tope mensual de conversaciones (F10): reusa el mismo `uso` ya consultado arriba
+        // (una sola query para todos los tenants), sin ir de nuevo a la base por tenant.
+        const cuota = calcularEstadoCuota(t, u?.conversacionesIniciadas ?? 0);
         return {
           id: t.id,
           nombre: t.nombre,
@@ -662,10 +668,43 @@ export async function manejarPanel(
           // sigue siendo el entero exacto.
           tokensEsteMes: (u?.tokensEntrada ?? 0) + (u?.tokensSalida ?? 0),
           costoUsdEsteMes: (u?.costoEstimadoMillonesimos ?? 0) / 1_000_000,
+          // Tope mensual (F10): null = sin tope (Pro, o interruptor activado). El
+          // superadmin ve acá mismo si un tenant está por pasarse (80%) o ya se pasó
+          // (100%, el bot dejó de responder con IA para ese negocio).
+          topeConversacionesMes: cuota.tope,
+          cuotaPorcentaje: cuota.porcentaje,
+          cuotaAlcanzo80: cuota.alcanzo80,
+          cuotaExcedida: cuota.excedido,
+          topeConversacionesDesactivado: t.topeConversacionesDesactivado ?? false,
         };
       });
       json(res, 200, { ok: true, tenants });
       return true;
+    }
+
+    // Interruptor del tope mensual (F10): excepción de contrato, la cambia el
+    // superadmin — mismo patrón que el cambio de plan (admin/tenants/:id/plan).
+    const partesTope = ruta.split("/");
+    if (partesTope[0] === "admin" && partesTope[1] === "tenants" && partesTope[2] && partesTope[3] === "tope" && metodo === "POST") {
+      if (!hayBaseDeDatos()) {
+        return json(res, 503, { ok: false, error: "El cambio de tope requiere base de datos (no configurada)." }), true;
+      }
+      const tenantId = decodeURIComponent(partesTope[2]);
+      if (!obtenerTenantPorId(tenantId)) return json(res, 404, { ok: false, error: "Negocio no encontrado" }), true;
+      const body = await leerBody(req);
+      if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
+      const desactivado = !!body?.desactivado;
+      try {
+        await actualizarTopeTenant(tenantId, desactivado);
+      } catch (e) {
+        if (e instanceof Error && e.message === "SIN_DB") {
+          return json(res, 503, { ok: false, error: "El cambio de tope requiere base de datos." }), true;
+        }
+        console.error("[admin] actualizarTopeTenant:", e);
+        return json(res, 500, { ok: false, error: "No se pudo cambiar el tope." }), true;
+      }
+      await recargar();
+      return json(res, 200, { ok: true }), true;
     }
 
     // Cambio de plan Básico↔Pro desde el admin (Carril D, 0.1): sin redeploy, habilita
@@ -834,6 +873,9 @@ export async function manejarPanel(
   const { tenant, rol, usuarioId } = sesion;
 
   if (ruta === "me" && metodo === "GET") {
+    // Tope mensual de conversaciones (F10): el dueño ve acá su propio consumo/tope,
+    // igual que el superadmin lo ve en admin/tenants (misma fuente, calcularEstadoCuota).
+    const cuota = await estadoCuotaMensual(tenant);
     json(res, 200, {
       ok: true,
       nombre: tenant.nombre,
@@ -861,6 +903,17 @@ export async function manejarPanel(
       // Ventana de 24h (Carril D, 0.3): si hay plantilla de reapertura configurada,
       // el chat ofrece el botón "Reabrir conversación" fuera de ventana.
       reaperturaConfigurada: !!tenant.plantillaReapertura,
+      // Tope mensual de conversaciones (F10): null en `tope` = sin tope (Pro, o
+      // interruptor activado) — el panel del dueño usa esto para el aviso al 80%
+      // y el mensaje "el bot está en pausa por límite mensual" al 100%.
+      cuotaMensual: {
+        tope: cuota.tope,
+        usados: cuota.usados,
+        porcentaje: cuota.porcentaje,
+        alcanzo80: cuota.alcanzo80,
+        excedido: cuota.excedido,
+      },
+      mensajeTopeExcedido: tenant.mensajeTopeExcedido ?? "",
     });
     return true;
   }
@@ -1225,6 +1278,12 @@ export async function manejarPanel(
     if (rescatePlantilla === null) {
       return json(res, 400, { ok: false, error: "Nombre de plantilla inválido (minúsculas, números y guiones bajos)" }), true;
     }
+
+    // Mensaje configurable al llegar al tope mensual (F10). Vacío = usa el default.
+    const mensajeTopeExcedido = validarMensajeTopeExcedido(body?.mensajeTopeExcedido);
+    if (mensajeTopeExcedido === null) {
+      return json(res, 400, { ok: false, error: "Mensaje de tope excedido inválido (máx. 300 caracteres)" }), true;
+    }
     // Rescate de cotizaciones (Carril D, 1.1) es Pro, igual que campañas/white-label.
     if (rescateActivo && !tenantPuede(tenant, "rescateCotizaciones")) {
       return json(res, 403, { ok: false, error: "plan_requerido", plan: "pro" }), true;
@@ -1295,6 +1354,7 @@ export async function manejarPanel(
         registro: registro || null,
         tono: tono || null,
         instrucciones: instrucciones || null,
+        mensajeTopeExcedido: mensajeTopeExcedido || null,
       });
     } catch (e) {
       if (e instanceof Error && e.message === "SIN_DB") {

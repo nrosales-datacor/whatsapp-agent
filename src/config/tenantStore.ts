@@ -168,6 +168,8 @@ function filaATenant(f: typeof waTenants.$inferSelect): Tenant {
     registro: (f.registro as Tenant["registro"]) ?? undefined,
     tono: f.tono ?? undefined,
     instrucciones: f.instrucciones ?? undefined,
+    topeConversacionesDesactivado: f.topeConversacionesDesactivado,
+    mensajeTopeExcedido: f.mensajeTopeExcedido ?? undefined,
   };
 }
 
@@ -370,6 +372,8 @@ export async function crearTenant(tenant: Tenant, u: NuevoUsuario): Promise<void
       rescatePlantilla: tenant.rescatePlantilla ?? null,
       googlePlaceId: tenant.googlePlaceId ?? null,
       googleCalendarId: tenant.googleCalendarId ?? null,
+      topeConversacionesDesactivado: tenant.topeConversacionesDesactivado ?? false,
+      mensajeTopeExcedido: tenant.mensajeTopeExcedido ?? null,
     });
     // El usuario del alta es, por definición, el dueño del negocio recién creado.
     await tx.insert(waUsuarios).values({ usuario: u.usuario, passwordHash: u.passwordHash, tenantId: tenant.id, rol: "dueno" });
@@ -411,6 +415,7 @@ export async function actualizarConfigTenant(
     registro: string | null;
     tono: string | null;
     instrucciones: string | null;
+    mensajeTopeExcedido: string | null;
   },
 ): Promise<void> {
   if (!hayDb) throw new Error("SIN_DB");
@@ -444,8 +449,25 @@ export async function actualizarConfigTenant(
       registro: patch.registro,
       tono: patch.tono,
       instrucciones: patch.instrucciones,
+      mensajeTopeExcedido: patch.mensajeTopeExcedido,
       actualizadoEn: new Date(),
     })
+    .where(eq(waTenants.id, tenantId));
+}
+
+/**
+ * Interruptor del tope mensual de conversaciones (F10 — PLAN-ESCALA-MULTITENANT.md):
+ * lo cambia el superadmin, NO es self-service del dueño (a diferencia del resto de
+ * `actualizarConfigTenant`) — es una excepción de contrato, mismo criterio que el
+ * cambio de plan (`admin/tenants/:id/plan`). El caller debe llamar `recargar()`
+ * después, mismo patrón que el resto de las escrituras de este módulo.
+ */
+export async function actualizarTopeTenant(tenantId: string, desactivado: boolean): Promise<void> {
+  if (!hayDb) throw new Error("SIN_DB");
+  const d = obtenerDb();
+  await d
+    .update(waTenants)
+    .set({ topeConversacionesDesactivado: desactivado, actualizadoEn: new Date() })
     .where(eq(waTenants.id, tenantId));
 }
 

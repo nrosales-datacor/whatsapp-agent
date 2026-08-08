@@ -357,8 +357,10 @@ export class RepositorioEnMemoria implements Repositorio {
     conversacionId: string,
     msg: MensajeConversacion,
     payload: PendienteSerializado,
+    _ejecutarDespuesDe?: Date,
   ): Promise<boolean> {
     // Sin base de datos no hay cola: solo guardamos el mensaje (comportamiento de dev).
+    // `_ejecutarDespuesDe` (F10) no aplica acá: no hay wa_jobs en memoria que diferir.
     const guardado = await this.guardarMensaje(payload.tenantId, conversacionId, msg);
     // Cola de trabajo (C2.3): un mensaje nuevo del cliente reabre la conversación,
     // aunque el operador la hubiera marcado "atendida".
