@@ -218,6 +218,13 @@
       "when": 1786218600349,
       "tag": "0030_square_gressill",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1786227626131,
+      "tag": "0031_glossy_kabuki",
+      "breakpoints": true
     }
   ]
 }

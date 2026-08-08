@@ -1,10 +1,19 @@
 import { and, eq, sql } from "drizzle-orm";
+import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { Bloqueo, Empleado, EstadoFacturacion, HorarioDia, KnowledgeBase, Plan, Rol, Service, Tenant } from "../types";
 import { obtenerDb } from "../db/client";
-import { waTenants, waUsuarios } from "../db/schema";
+import { schema, waTenants, waUsuarios } from "../db/schema";
 import { cifrar, descifrar } from "./secretos";
 import { TENANT_FALLBACK_SELYON } from "./tenants";
 import { normalizarKb } from "./validadores";
+import {
+  listarHistorialTenant,
+  obtenerVersionHistorial,
+  registrarVersionConfig,
+  type VersionConfigTenant,
+} from "./tenantsHistorial";
+
+type DB = PostgresJsDatabase<typeof schema>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fuente ÚNICA de tenants para todo el código (ROADMAP B2). La base
@@ -380,79 +389,134 @@ export async function crearTenant(tenant: Tenant, u: NuevoUsuario): Promise<void
   });
 }
 
+/** Forma exacta del blob que edita "Mi negocio" (ROADMAP C2.2) y que ahora también
+ * queda versionado (ROADMAP F15): es el mismo objeto que `actualizarConfigTenant`
+ * escribe en `wa_tenants` Y el que se guarda tal cual en `wa_tenants_historial.snapshot`,
+ * así que restaurar una versión vieja es simplemente volver a llamar a
+ * `actualizarConfigTenant` con el snapshot leído del historial. */
+export interface ConfigTenantPatch {
+  horario: Record<number, HorarioDia>;
+  servicios: Service[];
+  kb: KnowledgeBase;
+  bloqueos: Bloqueo[];
+  empleados: Empleado[];
+  linkResenas: string | null;
+  plantillaMarketing: string | null;
+  plantillaReapertura: string | null;
+  plantillaRecordatorio: string | null;
+  plantillaIdioma: string | null;
+  colorAcento: string | null;
+  colorHeader: string | null;
+  logoUrl: string | null;
+  rescateActivo: boolean;
+  rescateHorasEspera: number;
+  rescateToque1Texto: string | null;
+  rescateToque2Texto: string | null;
+  rescatePlantilla: string | null;
+  googlePlaceId: string | null;
+  googleCalendarId: string | null;
+  tipoNegocio: string | null;
+  pais: string | null;
+  formasPago: string | null;
+  registro: string | null;
+  tono: string | null;
+  instrucciones: string | null;
+  mensajeTopeExcedido: string | null;
+}
+
 /**
  * Actualiza la config self-service de un negocio (ROADMAP C2.2): horario, servicios, kb y
  * bloqueos, como un reemplazo completo (mismo patrón "blob JSONB entero" que crearTenant).
  * El caller debe llamar recargar() después para que el cambio quede visible sin esperar el
  * refresco periódico. Lanza Error("SIN_DB") si no hay base.
+ *
+ * ROADMAP F15: el `UPDATE` y el `INSERT` de la versión en `wa_tenants_historial` corren
+ * en UNA sola transacción — o quedan los dos, o no queda ninguno. `usuarioId` es quién
+ * hizo el cambio (el router ya lo saca de la sesión, ver `sesionDeOperador`). `db` es
+ * opcional y SOLO para tests (inyectar la conexión efímera de PGlite): en producción
+ * siempre se omite y se usa el pool singleton (`obtenerDb()`).
  */
 export async function actualizarConfigTenant(
   tenantId: string,
-  patch: {
-    horario: Record<number, HorarioDia>;
-    servicios: Service[];
-    kb: KnowledgeBase;
-    bloqueos: Bloqueo[];
-    empleados: Empleado[];
-    linkResenas: string | null;
-    plantillaMarketing: string | null;
-    plantillaReapertura: string | null;
-    plantillaRecordatorio: string | null;
-    plantillaIdioma: string | null;
-    colorAcento: string | null;
-    colorHeader: string | null;
-    logoUrl: string | null;
-    rescateActivo: boolean;
-    rescateHorasEspera: number;
-    rescateToque1Texto: string | null;
-    rescateToque2Texto: string | null;
-    rescatePlantilla: string | null;
-    googlePlaceId: string | null;
-    googleCalendarId: string | null;
-    tipoNegocio: string | null;
-    pais: string | null;
-    formasPago: string | null;
-    registro: string | null;
-    tono: string | null;
-    instrucciones: string | null;
-    mensajeTopeExcedido: string | null;
-  },
+  patch: ConfigTenantPatch,
+  usuarioId: string,
+  db?: DB,
 ): Promise<void> {
-  if (!hayDb) throw new Error("SIN_DB");
-  const d = obtenerDb();
-  await d
-    .update(waTenants)
-    .set({
-      horario: patch.horario,
-      servicios: patch.servicios,
-      kb: patch.kb,
-      bloqueos: patch.bloqueos,
-      empleados: patch.empleados,
-      linkResenas: patch.linkResenas,
-      plantillaMarketing: patch.plantillaMarketing,
-      plantillaReapertura: patch.plantillaReapertura,
-      plantillaRecordatorio: patch.plantillaRecordatorio,
-      plantillaIdioma: patch.plantillaIdioma,
-      colorAcento: patch.colorAcento,
-      colorHeader: patch.colorHeader,
-      logoUrl: patch.logoUrl,
-      rescateActivo: patch.rescateActivo,
-      rescateHorasEspera: patch.rescateHorasEspera,
-      rescateToque1Texto: patch.rescateToque1Texto,
-      rescateToque2Texto: patch.rescateToque2Texto,
-      rescatePlantilla: patch.rescatePlantilla,
-      googlePlaceId: patch.googlePlaceId,
-      googleCalendarId: patch.googleCalendarId,
-      tipoNegocio: patch.tipoNegocio,
-      pais: patch.pais,
-      formasPago: patch.formasPago,
-      registro: patch.registro,
-      tono: patch.tono,
-      instrucciones: patch.instrucciones,
-      mensajeTopeExcedido: patch.mensajeTopeExcedido,
-      actualizadoEn: new Date(),
-    })
-    .where(eq(waTenants.id, tenantId));
+  if (!db && !hayDb) throw new Error("SIN_DB");
+  const d = db ?? obtenerDb();
+  await d.transaction(async (tx) => {
+    await tx
+      .update(waTenants)
+      .set({
+        horario: patch.horario,
+        servicios: patch.servicios,
+        kb: patch.kb,
+        bloqueos: patch.bloqueos,
+        empleados: patch.empleados,
+        linkResenas: patch.linkResenas,
+        plantillaMarketing: patch.plantillaMarketing,
+        plantillaReapertura: patch.plantillaReapertura,
+        plantillaRecordatorio: patch.plantillaRecordatorio,
+        plantillaIdioma: patch.plantillaIdioma,
+        colorAcento: patch.colorAcento,
+        colorHeader: patch.colorHeader,
+        logoUrl: patch.logoUrl,
+        rescateActivo: patch.rescateActivo,
+        rescateHorasEspera: patch.rescateHorasEspera,
+        rescateToque1Texto: patch.rescateToque1Texto,
+        rescateToque2Texto: patch.rescateToque2Texto,
+        rescatePlantilla: patch.rescatePlantilla,
+        googlePlaceId: patch.googlePlaceId,
+        googleCalendarId: patch.googleCalendarId,
+        tipoNegocio: patch.tipoNegocio,
+        pais: patch.pais,
+        formasPago: patch.formasPago,
+        registro: patch.registro,
+        tono: patch.tono,
+        instrucciones: patch.instrucciones,
+        mensajeTopeExcedido: patch.mensajeTopeExcedido,
+        actualizadoEn: new Date(),
+      })
+      .where(eq(waTenants.id, tenantId));
+    await registrarVersionConfig(tx, tenantId, patch, usuarioId);
+  });
+}
+
+/**
+ * Historial de versiones de "Mi negocio" para un tenant (ROADMAP F15), MÁS RECIENTE
+ * PRIMERO. Self-service del dueño (el router gatea con rol === "dueno", mismo check que
+ * "config"). `db` opcional solo para tests. Lanza Error("SIN_DB") si no hay base.
+ */
+export async function listarHistorialConfigTenant(
+  tenantId: string,
+  limite?: number,
+  db?: DB,
+): Promise<VersionConfigTenant[]> {
+  if (!db && !hayDb) throw new Error("SIN_DB");
+  return listarHistorialTenant(db ?? obtenerDb(), tenantId, limite);
+}
+
+/**
+ * Restaura una versión vieja del historial (ROADMAP F15): un "restaurar" es un cambio
+ * NUEVO, no un rollback destructivo — aplica el snapshot de esa versión vía el mismo
+ * camino transaccional de `actualizarConfigTenant`, que a su vez crea una versión NUEVA
+ * (idéntica a la vieja) sin tocar el historial existente, mismo criterio que un revert en
+ * git. `usuarioId` es quién pidió la restauración. Devuelve false si `historialId` no
+ * existe o pertenece a otro tenant (el caller SIEMPRE pasa el tenant de la sesión, nunca
+ * uno arbitrario del body). `db` opcional solo para tests.
+ */
+export async function restaurarVersionConfigTenant(
+  tenantId: string,
+  historialId: string,
+  usuarioId: string,
+  db?: DB,
+): Promise<boolean> {
+  if (!db && !hayDb) throw new Error("SIN_DB");
+  const d = db ?? obtenerDb();
+  const version = await obtenerVersionHistorial(d, tenantId, historialId);
+  if (!version) return false;
+  await actualizarConfigTenant(tenantId, version.snapshot as ConfigTenantPatch, usuarioId, d);
+  return true;
 }
 
 /**
