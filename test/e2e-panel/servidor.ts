@@ -28,6 +28,13 @@ process.env.NODE_ENV = "test";
 process.env.SEED_DEMO = "1";
 process.env.PORT = String(E2E.puerto);
 process.env.PANEL_SESSION_SECRET = E2E.secret; // conocido → las specs pueden mintear cookies
+// E6/BLOQUEANTE-10: el rate limit de login es por IP, y TODO el suite de Playwright
+// pega desde la misma IP (localhost) contra el MISMO proceso servidor (un solo worker,
+// ver constantes.ts). Varios specs hacen login legítimo repetidas veces (uno por test) +
+// algún login fallido a propósito — sin este override, el default de producción (10
+// intentos/5min) se agotaría a mitad del suite y tests correctos empezarían a fallar
+// con 429. Subimos el tope solo acá; el default real de producción no cambia.
+process.env.PANEL_LOGIN_RATE_LIMIT_MAX_IP = "1000";
 // enviarTexto exige un access token; el mock de Graph (paso 3) intercepta el POST, así
 // que este token dummy nunca viaja a la red.
 process.env.WHATSAPP_ACCESS_TOKEN = "e2e-token-dummy";
@@ -47,7 +54,7 @@ if (!existsSync(indexDist)) {
 // login del operador funciona en memoria sin commitear ningún hash. auth.ts lee
 // PANEL_SESSION_SECRET en el load, por eso se setea arriba antes de importarlo.
 const { hashearPassword } = await import("../../src/panel/auth");
-process.env.PANEL_PASSWORD_HASH_SELYON = hashearPassword(E2E.password);
+process.env.PANEL_PASSWORD_HASH_SELYON = await hashearPassword(E2E.password);
 
 // (4) Instala el dispatcher de fetch mockeado (Graph API) ANTES de importar el server:
 // src/server.ts → handleWebhook → whatsapp/transcribir.ts construye `new OpenAI()` en el

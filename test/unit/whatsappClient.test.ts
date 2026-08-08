@@ -110,6 +110,56 @@ test("parsearEntrante: botón interactivo se decodifica a frase legible y trae i
   assert.match(r!.texto, /Confirmo mi cita/);
 });
 
+// ─── Quick-reply de PLANTILLA aprobada (BLOQ-01/E9): Meta manda `type: "button"`
+// con la carga en `msg.button.payload` (no `msg.interactive.button_reply`). Mismos
+// casos que arriba pero por esta vía distinta, para asegurar que `parsearEntrante`
+// la decodifica igual de bien ────────────────────────────────────────────────
+
+test("parsearEntrante: quick-reply de plantilla (type: button) de confirmación de cita se decodifica igual que el interactivo nativo", () => {
+  const body = payloadTexto("");
+  body.entry[0].changes[0].value.messages[0] = {
+    id: "w5",
+    from: "50688887777",
+    type: "button",
+    button: { payload: "confirmar|cita-1", text: "Confirmo ✅" },
+  } as any;
+  const r = parsearEntrante(body);
+  assert.equal(r?.interactiveId, "confirmar|cita-1");
+  assert.equal(r?.esTexto, true);
+  assert.match(r!.texto, /Confirmo mi cita/);
+});
+
+test("parsearEntrante: quick-reply de plantilla (type: button) de seguimiento post-servicio se decodifica igual que el interactivo nativo", () => {
+  const body = payloadTexto("");
+  body.entry[0].changes[0].value.messages[0] = {
+    id: "w6",
+    from: "50688887777",
+    type: "button",
+    button: { payload: "postbien|cita-2", text: "Todo bien 👍" },
+  } as any;
+  const r = parsearEntrante(body);
+  assert.equal(r?.interactiveId, "postbien|cita-2");
+  assert.equal(r?.esTexto, true);
+  assert.match(r!.texto, /Todo bien con el servicio/);
+});
+
+test("parsearEntrante: quick-reply de plantilla con payload que no matchea ninguna convención cae al texto visible del botón", () => {
+  const body = payloadTexto("");
+  body.entry[0].changes[0].value.messages[0] = {
+    id: "w7",
+    from: "50688887777",
+    type: "button",
+    // Payload que el dueño configuró distinto en el WhatsApp Manager (no sigue
+    // la convención `tipo|arg` que definimos nosotros para nuestros botones):
+    // el código no puede inventar qué quiso decir, así que cae al texto visible.
+    button: { payload: "otro-payload-cualquiera", text: "Sí, confirmo mi cita" },
+  } as any;
+  const r = parsearEntrante(body);
+  assert.equal(r?.interactiveId, "otro-payload-cualquiera");
+  assert.equal(r?.esTexto, true);
+  assert.equal(r?.texto, "Sí, confirmo mi cita");
+});
+
 test("parsearEntrante: status (sin messages) devuelve null, no revienta", () => {
   const body = { entry: [{ changes: [{ value: { metadata: { phone_number_id: "1" }, statuses: [{ id: "s1" }] } }] }] };
   assert.equal(parsearEntrante(body), null);

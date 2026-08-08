@@ -40,6 +40,14 @@ interface Cache {
 let cache: Cache = construirCache([], []);
 let hayDb = false;
 
+// Fuente del caché VIGENTE (ROADMAP E10, health check): se actualiza junto con `cache`
+// en los mismos tres puntos donde hoy se reasigna (cacheFallback en activarFallback,
+// cacheFallback en cargarTenants sin DB, y construirCache en recargarDesdeDb exitoso).
+// No toca la lógica de recarga/fallback existente: solo deja constancia de CUÁL de los
+// dos caminos se tomó, para que /salud pueda distinguir "caché real" de "caché de
+// emergencia" sin adivinar a partir de otro estado.
+let fuenteActual: "db" | "fallback" = "fallback";
+
 function construirCache(
   tenants: Tenant[],
   usuarios: {
@@ -194,6 +202,7 @@ async function recargarDesdeDb(): Promise<void> {
         claveTemporalExpira: u.claveTemporalExpira,
       })),
     );
+    fuenteActual = "db";
     notificarRecarga();
   } catch (e) {
     activarFallback(`no se pudo leer la base (${e instanceof Error ? e.message : String(e)})`);
@@ -209,6 +218,7 @@ function activarFallback(motivo: string): void {
     return;
   }
   cache = cacheFallback();
+  fuenteActual = "fallback";
   console.error(
     `[tenantStore] ⚠️ ${motivo} — usando fallback hardcodeado 'rosales'. ` +
       "EL ALTA DE NEGOCIOS NO ESTÁ DISPONIBLE hasta sembrar la base (npx tsx scripts/seedTenants.ts).",
@@ -229,6 +239,7 @@ export async function cargarTenants(): Promise<void> {
   hayDb = !!process.env.DATABASE_URL;
   if (!hayDb) {
     cache = cacheFallback();
+    fuenteActual = "fallback";
     console.log(`[tenantStore] sin DATABASE_URL: ${cache.porId.size} tenant(s) en memoria (fallback).`);
     return;
   }
@@ -269,6 +280,20 @@ export function obtenerUsuarioPorId(usuarioId: string): CuentaUsuario | undefine
 /** true si hay base configurada (el alta de negocios la requiere). */
 export function hayBaseDeDatos(): boolean {
   return !!process.env.DATABASE_URL;
+}
+
+/**
+ * Fuente del caché de tenants VIGENTE ahora mismo (ROADMAP E10, health check):
+ * "db" tras una recarga exitosa contra la base; "fallback" si se está sirviendo el
+ * tenant hardcodeado (sin DATABASE_URL, o porque la base no respondió/estaba vacía
+ * en el último intento de recarga). Ojo: NO es lo mismo que `hayBaseDeDatos()` —
+ * esa dice si HAY una DATABASE_URL configurada; esta dice de dónde viene el caché
+ * que el bot está usando en este momento. La combinación de ambas es justo el
+ * escenario silencioso de BLOQUEANTE-11: DB configurada + caché en fallback = el
+ * bot está atendiendo con la config equivocada mientras el resto luce normal.
+ */
+export function fuenteCacheTenants(): "db" | "fallback" {
+  return fuenteActual;
 }
 
 /** Recarga inmediata del caché desde la base (tras un alta). No-op sin DATABASE_URL. */
@@ -572,4 +597,14 @@ export function refrescarSiFaltaPhoneNumberId(pnid: string): void {
 export function _registrarTenantParaTests(tenant: Tenant): void {
   cache.porId.set(tenant.id, tenant);
   cache.porPnid.set(tenant.phoneNumberId, tenant);
+}
+
+/**
+ * Solo para tests: fuerza la "fuente" reportada del caché (ver `fuenteCacheTenants`)
+ * sin pasar por una base real. Existe para poder probar el health check de E10 en
+ * el escenario "DATABASE_URL configurada pero el caché quedó en fallback" sin
+ * levantar un pool de Postgres de verdad — mismo espíritu que `_registrarTenantParaTests`.
+ */
+export function _forzarFuenteParaTests(fuente: "db" | "fallback"): void {
+  fuenteActual = fuente;
 }

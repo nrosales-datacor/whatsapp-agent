@@ -125,9 +125,10 @@ export interface MensajeEntrante {
   /** leyenda opcional que el cliente escribió junto a la foto. */
   imagenCaption?: string;
   /**
-   * id CRUDO de la respuesta interactiva (el `id` que pusimos en el botón/fila),
-   * cuando el cliente tocó un botón o una fila de lista. Permite acciones directas
-   * (p. ej. confirmar una cita) sin pasar por el agente. `texto` trae su traducción.
+   * id CRUDO de la respuesta interactiva (el `id` que pusimos en el botón/fila,
+   * o el `payload` del quick-reply de una plantilla, BLOQ-01/E9), cuando el
+   * cliente tocó un botón o una fila de lista. Permite acciones directas (p. ej.
+   * confirmar una cita) sin pasar por el agente. `texto` trae su traducción.
    */
   interactiveId?: string;
 }
@@ -172,9 +173,31 @@ export function clasificarEntrante(body: any): ResultadoEntrante {
     const imagenCaption = msg.type === "image" && msg.image?.caption ? String(msg.image.caption) : undefined;
 
     // Respuesta a un mensaje interactivo (el cliente tocó un botón o una fila de
-    // lista). La tratamos como TEXTO: la decodificamos a una frase clara para que
-    // fluya por el mismo pipeline del agente (dedup, cola, historial) sin ramas
-    // nuevas. La convención del `id` la definimos nosotros al enviar (ver abajo).
+    // lista, `type: "interactive"`) O el quick-reply de una PLANTILLA aprobada
+    // (`type: "button"`, BLOQ-01/E9). La tratamos igual: la decodificamos a una
+    // frase clara para que fluya por el mismo pipeline del agente (dedup, cola,
+    // historial) sin ramas nuevas. La convención del `id`/`payload` la definimos
+    // nosotros al enviar (ver `decodificarRespuestaInteractiva` abajo).
+    //
+    // ⚠️ Meta usa DOS formas de payload distintas según el origen del tap:
+    //   • `type: "interactive"` (nuestros botones/listas nativos, enviados con
+    //     `enviarBotones`/`enviarLista`): la carga viaja en
+    //     `msg.interactive.button_reply.id` / `.list_reply.id`.
+    //   • `type: "button"` (quick-reply de una PLANTILLA aprobada, ej. el
+    //     recordatorio con `WHATSAPP_TEMPLATE_RECORDATORIO`/
+    //     `tenant.plantillaRecordatorio` de E8): la carga viaja en
+    //     `msg.button.payload`, con el texto visible del botón en `msg.button.text`.
+    //     Antes de este fix (BLOQ-01/E9) este caso no se reconocía en absoluto y
+    //     el tap caía al flujo "no puedo ver stickers ni videos".
+    //
+    // ⚠️ SUPUESTO que el código NO puede garantizar: `msg.button.payload` sigue
+    // nuestra convención `tipo|arg` (`confirmar|<citaId>`, `mover|<citaId>`,
+    // `postbien|<citaId>`, …) SOLO SI quien armó la plantilla en el WhatsApp
+    // Manager configuró el quick-reply button con ESE payload exacto. Meta no
+    // aplica ninguna convención automáticamente: si el dueño del negocio (o quien
+    // configure la plantilla) pone un payload distinto, `decodificarRespuestaInteractiva`
+    // no lo reconoce y cae al texto visible del botón (`msg.button.text`), igual
+    // que con cualquier id desconocido de `type: "interactive"`.
     let interactiveId: string | undefined;
     if (msg.type === "interactive") {
       const reply = msg.interactive?.button_reply ?? msg.interactive?.list_reply;
@@ -182,6 +205,11 @@ export function clasificarEntrante(body: any): ResultadoEntrante {
       const titulo = reply?.title ? String(reply.title) : "";
       texto = decodificarRespuestaInteractiva(interactiveId ?? "", titulo);
       esTexto = !!texto; // si no se pudo decodificar, cae al flujo no-texto
+    } else if (msg.type === "button") {
+      interactiveId = msg.button?.payload ? String(msg.button.payload) : undefined;
+      const titulo = msg.button?.text ? String(msg.button.text) : "";
+      texto = decodificarRespuestaInteractiva(interactiveId ?? "", titulo);
+      esTexto = !!texto;
     }
 
     // Hay un mensaje, pero faltan campos que esperamos SIEMPRE presentes (el id
