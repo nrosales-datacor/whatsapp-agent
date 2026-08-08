@@ -56,6 +56,19 @@ export interface MensajeEntrante {
    * (p. ej. confirmar una cita) sin pasar por el agente. `texto` trae su traducción.
    */
   interactiveId?: string;
+  /**
+   * id del media del documento (cuando msg.type === "document"). Todavía no lo
+   * descargamos ni lo procesamos (E12); solo sirve para identificarlo si el día de
+   * mañana se agrega esa capacidad.
+   */
+  documentoId?: string;
+  /** nombre de archivo del documento, si vino (para avisarle al operador qué llegó). */
+  documentoNombre?: string;
+  /**
+   * nombre del contacto compartido (cuando msg.type === "contacts"), tomado del
+   * primer contacto del arreglo. Si vino más de uno, incluye cuántos más ("+N más").
+   */
+  contactoNombre?: string;
 }
 
 export function parsearEntrante(body: any): MensajeEntrante | null {
@@ -63,6 +76,11 @@ export function parsearEntrante(body: any): MensajeEntrante | null {
     const value = body?.entry?.[0]?.changes?.[0]?.value;
     const msg = value?.messages?.[0];
     if (!msg) return null; // puede ser un status (entregado/leído), lo ignoramos
+    // Reacción (👍/❤️ a un mensaje del bot): puro gesto de cortesía, sin intención de
+    // que el bot responda. Se ignora COMPLETO —igual que un status— antes de validar
+    // ningún otro campo: así no gasta una conversación de Meta ni dispara un push al
+    // operador por nada (E12, el caso de mayor impacto de este ítem).
+    if (msg.type === "reaction") return null;
     const phoneNumberId = value?.metadata?.phone_number_id;
     // Saneamos el "from" a solo dígitos: nunca confiamos en el payload crudo. Así un
     // número con caracteres raros no se cuela a la UI del panel (defensa en
@@ -73,6 +91,35 @@ export function parsearEntrante(body: any): MensajeEntrante | null {
     const audioId = msg.type === "audio" ? (msg.audio?.id ? String(msg.audio.id) : undefined) : undefined;
     const imagenId = msg.type === "image" ? (msg.image?.id ? String(msg.image.id) : undefined) : undefined;
     const imagenCaption = msg.type === "image" && msg.image?.caption ? String(msg.image.caption) : undefined;
+    const documentoId = msg.type === "document" && msg.document?.id ? String(msg.document.id) : undefined;
+    const documentoNombre =
+      msg.type === "document" && msg.document?.filename ? String(msg.document.filename) : undefined;
+
+    // Contacto compartido: `msg.contacts` es un ARREGLO (se puede compartir más de
+    // una tarjeta a la vez). Nos quedamos con el nombre del primero para el push al
+    // operador; si vinieron más, lo indicamos ("+N más") para que no se pierdan.
+    let contactoNombre: string | undefined;
+    if (msg.type === "contacts" && Array.isArray(msg.contacts) && msg.contacts.length > 0) {
+      const primerNombre = msg.contacts[0]?.name?.formatted_name;
+      if (primerNombre) {
+        contactoNombre =
+          msg.contacts.length > 1 ? `${primerNombre} (+${msg.contacts.length - 1} más)` : String(primerNombre);
+      }
+    }
+
+    // Ubicación compartida: se trata como TEXTO (sintético, legible) para que fluya
+    // por el pipeline normal del agente (cola, historial, prompt) sin ramas nuevas en
+    // handleWebhook — el agente recibe las coordenadas como si el cliente las hubiera
+    // escrito. Solo agrega nombre/dirección si el cliente los compartió (no siempre
+    // vienen: depende de si mandó una ubicación "en vivo" o marcó un lugar con nombre).
+    if (msg.type === "location" && msg.location) {
+      const { latitude, longitude, name, address } = msg.location;
+      const partes = [`[ubicación compartida] lat: ${latitude}, lon: ${longitude}`];
+      if (name) partes.push(`nombre: ${name}`);
+      if (address) partes.push(`dirección: ${address}`);
+      texto = partes.join(", ");
+      esTexto = true;
+    }
 
     // Respuesta a un mensaje interactivo (el cliente tocó un botón o una fila de
     // lista). La tratamos como TEXTO: la decodificamos a una frase clara para que
@@ -98,6 +145,9 @@ export function parsearEntrante(body: any): MensajeEntrante | null {
       imagenId,
       imagenCaption,
       interactiveId,
+      documentoId,
+      documentoNombre,
+      contactoNombre,
     };
   } catch {
     return null;

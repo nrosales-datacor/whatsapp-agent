@@ -55,6 +55,8 @@ async function enviarRespuestaBot(
 // Exportado para que el worker pueda reconstruirlo desde el payload serializado.
 export type Pendiente =
   | { clase: "no-texto"; tenant: Tenant; entrante: MensajeEntrante; conv: Conversacion }
+  | { clase: "documento"; tenant: Tenant; entrante: MensajeEntrante; conv: Conversacion }
+  | { clase: "contacto"; tenant: Tenant; entrante: MensajeEntrante; conv: Conversacion }
   | {
       clase: "audio";
       tenant: Tenant;
@@ -101,12 +103,17 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio): Promise
   }
 
   // Mensajes no-texto: audio (notas de voz) los transcribimos en fase 2, fotos las
-  // cotizamos con visión (C1.5); el resto (stickers, video) se notifica al operador.
-  // Igual guardamos un marcador deduplicado por waMessageId para que el operador
-  // vea que llegó algo.
+  // cotizamos con visión (C1.5); documento y contacto (E12) le avisan al cliente que
+  // no se pueden procesar Y notifican al operador con contexto (nombre de archivo o
+  // del contacto); el resto (stickers, video) cae en el genérico. Igual guardamos un
+  // marcador deduplicado por waMessageId para que el operador vea que llegó algo.
+  // (La reacción se ignora antes, en parsearEntrante; la ubicación entra por la rama
+  // de texto de más abajo porque parsearEntrante ya la convirtió en texto sintético.)
   if (!entrante.esTexto || !entrante.texto.trim()) {
     const esAudio = !!entrante.audioId;
     const esImagen = !!entrante.imagenId;
+    const esDocumento = !!entrante.documentoId;
+    const esContacto = !!entrante.contactoNombre;
     const conv = await repo.obtenerOConversacion(tenant.id, entrante.clienteWa);
     const primerContacto = !conv.optInEn;
     const historialPrevio = conv.mensajes.slice();
@@ -118,12 +125,16 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio): Promise
           ? entrante.imagenCaption
             ? `[foto] ${entrante.imagenCaption}`
             : "[foto]"
-          : "[multimedia]",
+          : esDocumento
+            ? `[documento] ${entrante.documentoNombre ?? "sin nombre"}`
+            : esContacto
+              ? `[contacto] ${entrante.contactoNombre}`
+              : "[multimedia]",
       creadoEn: new Date().toISOString(),
       waMessageId: entrante.messageId,
     };
     const payload: PendienteSerializado = {
-      clase: esAudio ? "audio" : esImagen ? "imagen" : "no-texto",
+      clase: esAudio ? "audio" : esImagen ? "imagen" : esDocumento ? "documento" : esContacto ? "contacto" : "no-texto",
       tenantId: tenant.id,
       entrante,
       conv,
@@ -135,6 +146,8 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio): Promise
     registrarMensajeEntrante(tenant.id, esConversacionIniciada(historialPrevio));
     if (esAudio) return { clase: "audio", tenant, entrante, conv, primerContacto, historialPrevio };
     if (esImagen) return { clase: "imagen", tenant, entrante, conv, primerContacto, historialPrevio };
+    if (esDocumento) return { clase: "documento", tenant, entrante, conv };
+    if (esContacto) return { clase: "contacto", tenant, entrante, conv };
     return { clase: "no-texto", tenant, entrante, conv };
   }
 
@@ -179,9 +192,11 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio): Promise
  */
 export async function responderEntrante(p: Pendiente, repo: Repositorio): Promise<void> {
   if (p.clase === "no-texto") {
-    // El bot no puede leer stickers ni video (las fotos las procesa la rama
-    // "imagen" de abajo, C1.5). Le pedimos al cliente que escriba en qué ayudarle
-    // Y avisamos a un humano: el adjunto puede ser importante y no queremos ignorarlo.
+    // Lo que queda sin tipar tras E12: video y sticker (las fotos las procesa la
+    // rama "imagen" de abajo, C1.5; documento/contacto/reacción/ubicación tienen su
+    // propio manejo — ver las ramas de abajo y parsearEntrante). Le pedimos al
+    // cliente que escriba en qué ayudarle Y avisamos a un humano: el adjunto puede
+    // ser importante y no queremos ignorarlo.
     await enviarTexto(
       p.tenant,
       p.entrante.clienteWa,
@@ -193,6 +208,44 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
       p.conv,
       "📎 Llegó un mensaje multimedia que el bot no puede leer (sticker/video).",
     ).catch((e) => console.error("[no-texto] notificarOperador:", e));
+    return;
+  }
+
+  if (p.clase === "documento") {
+    // El bot no procesa documentos todavía (E12): a diferencia del genérico de
+    // stickers/video, acá SÍ reconocemos que llegó un documento (no un adjunto
+    // ilegible cualquiera) y le pasamos el nombre de archivo al operador para que
+    // sepa qué llegó sin tener que adivinar.
+    const nombreArchivo = p.entrante.documentoNombre ?? "sin nombre";
+    await enviarTexto(
+      p.tenant,
+      p.entrante.clienteWa,
+      "¡Hola! 🙂 Recibí tu documento, pero todavía no puedo abrirlo. Contame por texto en qué te ayudo y si hace falta alguien del equipo lo revisa.",
+    ).catch((e) => console.error("[documento] no se pudo responder al cliente:", e));
+    await notificarOperador(
+      repo,
+      p.tenant,
+      p.conv,
+      `📄 Llegó un documento que el bot no puede leer: "${nombreArchivo}".`,
+    ).catch((e) => console.error("[documento] notificarOperador:", e));
+    return;
+  }
+
+  if (p.clase === "contacto") {
+    // Mismo criterio que "documento": mensaje específico (no el genérico) + push
+    // con el nombre del contacto compartido, para que el operador no tenga que adivinar.
+    const nombreContacto = p.entrante.contactoNombre ?? "sin nombre";
+    await enviarTexto(
+      p.tenant,
+      p.entrante.clienteWa,
+      "¡Hola! 🙂 Recibí el contacto que compartiste, pero todavía no puedo procesarlo. Contame por texto en qué te ayudo.",
+    ).catch((e) => console.error("[contacto] no se pudo responder al cliente:", e));
+    await notificarOperador(
+      repo,
+      p.tenant,
+      p.conv,
+      `👤 El cliente compartió un contacto: "${nombreContacto}".`,
+    ).catch((e) => console.error("[contacto] notificarOperador:", e));
     return;
   }
 
