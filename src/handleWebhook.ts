@@ -173,6 +173,43 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio): Promise
 }
 
 /**
+ * E5-a (ráfaga de mensajes): `historialPrevio` en el payload es un SNAPSHOT tomado
+ * en la ingesta (fase 1). Si entre la ingesta y este momento llegaron más mensajes
+ * de la MISMA conversación (ráfaga: 2-3 mensajes seguidos, patrón normal en
+ * WhatsApp), ese snapshot quedó viejo y el agente respondería sin verlos. Releemos
+ * la conversación fresca de la base justo antes de armar el prompt.
+ *
+ * La relectura incluye el turno actual (ya se persistió en la ingesta, ANTES de
+ * encolar el job) — hay que excluirlo del historial porque `correrAgente` lo recibe
+ * aparte como `textoUsuario` y lo agrega él mismo como último turno; si no lo
+ * excluyéramos, el agente vería el mensaje del cliente duplicado. Se excluye por
+ * `waMessageId` (identifica el mensaje entrante sin ambigüedad); si no hay
+ * `waMessageId` (caso raro), se recorta el último mensaje como mejor esfuerzo.
+ *
+ * Si la relectura falla o la conversación ya no existe (no debería pasar en la
+ * práctica), cae de vuelta al snapshot del payload para no dejar al cliente sin
+ * respuesta.
+ */
+async function historialFresco(
+  repo: Repositorio,
+  tenant: Tenant,
+  conv: Conversacion,
+  waMessageIdActual: string | undefined,
+  snapshot: MensajeConversacion[],
+): Promise<MensajeConversacion[]> {
+  try {
+    const fresca = await repo.obtenerConversacionPorId(tenant.id, conv.id);
+    if (!fresca) return snapshot;
+    return waMessageIdActual
+      ? fresca.mensajes.filter((m) => m.waMessageId !== waMessageIdActual)
+      : fresca.mensajes.slice(0, -1);
+  } catch (e) {
+    console.error("[historialFresco] no se pudo releer la conversación, se usa el snapshot de la ingesta:", e);
+    return snapshot;
+  }
+}
+
+/**
  * FASE 2 — puede tardar (llama al LLM y a la API de WhatsApp). Se ejecuta DESPUÉS
  * de responder 200. El mensaje entrante ya quedó guardado en la fase 1, así que
  * aunque esto falle no se pierde.
@@ -197,7 +234,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
   }
 
   if (p.clase === "imagen") {
-    const { tenant, entrante, conv, primerContacto, historialPrevio } = p;
+    const { tenant, entrante, conv, primerContacto, historialPrevio: historialSnapshot } = p;
 
     // Descargamos la foto YA (antes de mirar el modo): así el operador la ve en el
     // panel tanto si la atiende el bot como si la atiende una persona.
@@ -232,6 +269,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
     }
 
     try {
+      const historialPrevio = await historialFresco(repo, tenant, conv, entrante.messageId, historialSnapshot);
       const { respuesta, fueraDeAlcance, escalar, motivo, interactivo } = await correrAgente(
         { tenant, repo, clienteWa: entrante.clienteWa },
         entrante.imagenCaption?.trim() || "El cliente mandó esta foto sin comentario. Mirala y ayudalo.",
@@ -294,7 +332,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
   }
 
   if (p.clase === "audio") {
-    const { tenant, entrante, conv, primerContacto, historialPrevio } = p;
+    const { tenant, entrante, conv, primerContacto, historialPrevio: historialSnapshot } = p;
 
     if (conv.modo === "humano") {
       await notificarOperador(repo, tenant, conv, "🎤 Nota de voz recibida.").catch((e) =>
@@ -341,6 +379,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
     }
 
     try {
+      const historialPrevio = await historialFresco(repo, tenant, conv, entrante.messageId, historialSnapshot);
       const { respuesta, fueraDeAlcance, escalar, motivo, interactivo } = await correrAgente(
         { tenant, repo, clienteWa: entrante.clienteWa },
         textoTranscrito,
@@ -406,7 +445,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
     return;
   }
 
-  const { tenant, entrante, conv, primerContacto, historialPrevio } = p;
+  const { tenant, entrante, conv, primerContacto, historialPrevio: historialSnapshot } = p;
 
   // CONFIRMACIÓN DE CITA (C1.3): el cliente tocó "Confirmo ✅" en el recordatorio.
   // Es una acción directa (no pasa por el agente ni por la ventana de modo humano):
@@ -531,6 +570,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
   }
 
   try {
+    const historialPrevio = await historialFresco(repo, tenant, conv, entrante.messageId, historialSnapshot);
     const { respuesta, fueraDeAlcance, escalar, motivo, interactivo } = await correrAgente(
       { tenant, repo, clienteWa: entrante.clienteWa },
       entrante.texto,
