@@ -553,6 +553,29 @@ export const waSnapshotReputacion = pgTable(
   }),
 );
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Lease de liderazgo para schedulers tipo cron (ROADMAP F6). Recordatorios,
+// reputación y reporte de métricas son loops periódicos (`iniciarCicloSinSolape`,
+// F12) que recorren TODOS los tenants — a diferencia de los workers de cola
+// (`wa_jobs`), no tienen un claim atómico por unidad de trabajo. Al separar
+// procesos web/worker (F6), N réplicas con ROL=worker correrían el mismo ciclo
+// a la vez sin esta tabla. Una fila por scheduler (`nombre`); el titular vigente
+// se decide con una única sentencia atómica (`INSERT ... ON CONFLICT ... WHERE`,
+// ver `src/red/liderazgo.ts`) — mismo estilo SQL-puro que el resto del repo
+// (FOR UPDATE SKIP LOCKED / UPDATE...WHERE...IS NULL), sin advisory locks de
+// sesión (no confiables contra el pooler de Supabase en modo transacción).
+// ─────────────────────────────────────────────────────────────────────────────
+export const waLideres = pgTable("wa_lideres", {
+  // Clave del scheduler: "recordatorios" | "reputacion" | "metricas".
+  nombre: text("nombre").primaryKey(),
+  // Id random del proceso que tiene el lease ahora mismo (crypto.randomUUID(),
+  // generado una vez por proceso). No es un usuario ni un tenant.
+  titular: text("titular").notNull(),
+  // Hasta cuándo es válido el lease. Vencido → cualquier otro titular puede
+  // tomarlo en su próximo intento; no hace falta heartbeat ni quorum aparte.
+  venceEn: timestamp("vence_en", { withTimezone: true }).notNull(),
+});
+
 export const schema = {
   waConversaciones,
   waMensajes,
@@ -569,4 +592,5 @@ export const schema = {
   waCotizaciones,
   waSeguimientos,
   waSnapshotReputacion,
+  waLideres,
 };
