@@ -16,6 +16,8 @@ import { correrAgente } from "./agent/runAgent";
 import { notificarOperador } from "./panel/notificaciones";
 import { registrarMensaje } from "./observabilidad/metricas";
 import { registrarMensajeEntrante } from "./observabilidad/uso";
+import { estadoCuotaMensual } from "./observabilidad/cuotas";
+import { permitirIngesta, RATE_LIMIT_DIFERIR_SEG } from "./red/limiteIngesta";
 import { guardarCrudo } from "./db/webhooksCrudos";
 import { resolverMediaAPersistir } from "./storage/supabaseStorage";
 import type { schema } from "./db/schema";
@@ -38,6 +40,12 @@ const AVISO_BOT =
 
 // Mensaje al cliente cuando el bot no pudo resolver y pasa el caso a una persona.
 const MENSAJE_ESCALADA = "Dejame consultarlo con una persona del equipo 🙋 En un momento te responden por acá.";
+
+// F10 (PLAN-ESCALA-MULTITENANT.md): mensaje al cliente cuando el negocio alcanzó el
+// 100% del tope mensual de conversaciones de su plan. Default razonable; el dueño
+// puede personalizarlo (tenant.mensajeTopeExcedido, "Mi negocio" → panel).
+const MENSAJE_TOPE_EXCEDIDO =
+  "Por ahora alcanzamos el límite de conversaciones automáticas de este mes 🙏 Dejame pasarte con una persona del equipo para que te siga ayudando.";
 
 /**
  * Envía la respuesta del bot al cliente: como mensaje INTERACTIVO (botones/lista)
@@ -135,6 +143,18 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio, db?: DB)
     return null;
   }
 
+  // F10 (rate limit de ingesta por tenant): token bucket en memoria, techo por plan
+  // (src/red/limiteIngesta.ts). Al excederse el mensaje se persiste y encola IGUAL
+  // (F3: nunca se pierde) pero con `ejecutarDespuesDe` diferido — se degrada la
+  // latencia de esa respuesta puntual, no la entrega. undefined = sin exceder, el
+  // job queda con el default de la columna (now(), el worker lo toma de inmediato).
+  const ejecutarDespuesDe = permitirIngesta(tenant.id, tenant.plan)
+    ? undefined
+    : new Date(Date.now() + RATE_LIMIT_DIFERIR_SEG * 1000);
+  if (ejecutarDespuesDe) {
+    console.warn(`[rate-limit] tenant ${tenant.id} excedió el límite de ingesta: job diferido ${RATE_LIMIT_DIFERIR_SEG}s`);
+  }
+
   // Mensajes no-texto: audio (notas de voz) los transcribimos en fase 2, fotos las
   // cotizamos con visión (C1.5); documento y contacto (E12) le avisan al cliente que
   // no se pueden procesar Y notifican al operador con contexto (nombre de archivo o
@@ -173,7 +193,7 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio, db?: DB)
       conv,
       ...(esAudio || esImagen ? { primerContacto, historialPrevio } : {}),
     };
-    const esNuevo = await repo.guardarEntranteYEncolar(conv.id, msg, payload);
+    const esNuevo = await repo.guardarEntranteYEncolar(conv.id, msg, payload, ejecutarDespuesDe);
     if (!esNuevo) return null;
     registrarMensaje();
     registrarMensajeEntrante(tenant.id, esConversacionIniciada(historialPrevio));
@@ -207,7 +227,7 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio, db?: DB)
     primerContacto,
     historialPrevio,
   };
-  const esNuevo = await repo.guardarEntranteYEncolar(conv.id, msg, payload);
+  const esNuevo = await repo.guardarEntranteYEncolar(conv.id, msg, payload, ejecutarDespuesDe);
   if (!esNuevo) {
     console.log(`[webhook] mensaje duplicado ignorado (${entrante.messageId ?? "sin id"})`);
     return null;
@@ -256,11 +276,55 @@ async function historialFresco(
 }
 
 /**
+ * F10 (PLAN-ESCALA-MULTITENANT.md): al 100% del tope mensual del tenant, el bot deja
+ * de llamar al LLM — responde un mensaje fijo (configurable por tenant) y escala la
+ * conversación a modo humano, mismo mecanismo que usa `escalar` más abajo (nunca
+ * silencio: el cliente final siempre recibe algo). Devuelve `true` si se aplicó el
+ * tope (el caller NO debe invocar a correrAgente); `false` si el tenant tiene
+ * margen (o tiene el interruptor activado, o su plan no tiene tope).
+ *
+ * `db` opcional (ver estadoCuotaMensual): en producción el pool singleton alcanza;
+ * los tests de fiabilidad (PGlite) lo pasan explícito.
+ */
+async function aplicarTopeMensualSiCorresponde(
+  tenant: Tenant,
+  repo: Repositorio,
+  entrante: MensajeEntrante,
+  conv: Conversacion,
+  primerContacto: boolean,
+  db?: DB,
+): Promise<boolean> {
+  const estado = await estadoCuotaMensual(tenant, db);
+  if (!estado.excedido) return false;
+
+  console.warn(`[tope-mensual] tenant ${tenant.id} alcanzó el tope (${estado.usados}/${estado.tope}): escala a humano sin llamar al LLM`);
+  await repo.setModoConversacion(tenant.id, conv.id, "humano");
+  let salida = tenant.mensajeTopeExcedido?.trim() || MENSAJE_TOPE_EXCEDIDO;
+  if (primerContacto) salida = `${AVISO_BOT.replace("%NOMBRE%", tenant.nombre)}\n\n${salida}`;
+  await enviarTexto(tenant, entrante.clienteWa, salida).catch((e) => console.error("[tope-mensual] no se pudo avisar al cliente:", e));
+  if (primerContacto) await repo.marcarOptIn(tenant.id, conv.id).catch(() => {});
+  await repo
+    .guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: salida, creadoEn: new Date().toISOString() })
+    .catch(() => {});
+  await notificarOperador(
+    repo,
+    tenant,
+    conv,
+    "⚠️ Este negocio alcanzó el tope de conversaciones del mes — el bot dejó de responder, atendé manualmente.",
+  ).catch(() => {});
+  return true;
+}
+
+/**
  * FASE 2 — puede tardar (llama al LLM y a la API de WhatsApp). Se ejecuta DESPUÉS
  * de responder 200. El mensaje entrante ya quedó guardado en la fase 1, así que
  * aunque esto falle no se pierde.
+ *
+ * `db` opcional (F10): solo lo necesitan los tests de fiabilidad (PGlite) para el
+ * enforcement del tope mensual (ver estadoCuotaMensual) — en producción no hace
+ * falta pasarlo, el pool singleton ya resuelve solo con DATABASE_URL.
  */
-export async function responderEntrante(p: Pendiente, repo: Repositorio): Promise<void> {
+export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB): Promise<void> {
   if (p.clase === "no-texto") {
     // Lo que queda sin tipar tras E12: video y sticker (las fotos las procesa la
     // rama "imagen" de abajo, C1.5; documento/contacto/reacción/ubicación tienen su
@@ -369,6 +433,8 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
       await notificarOperador(repo, tenant, conv, "📷 Foto recibida — no se pudo procesar.").catch(() => {});
       return;
     }
+
+    if (await aplicarTopeMensualSiCorresponde(tenant, repo, entrante, conv, primerContacto, db)) return;
 
     try {
       const historialPrevio = await historialFresco(repo, tenant, conv, entrante.messageId, historialSnapshot);
@@ -479,6 +545,8 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
       }
       return;
     }
+
+    if (await aplicarTopeMensualSiCorresponde(tenant, repo, entrante, conv, primerContacto, db)) return;
 
     try {
       const historialPrevio = await historialFresco(repo, tenant, conv, entrante.messageId, historialSnapshot);
@@ -670,6 +738,8 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
     }
     return;
   }
+
+  if (await aplicarTopeMensualSiCorresponde(tenant, repo, entrante, conv, primerContacto, db)) return;
 
   try {
     const historialPrevio = await historialFresco(repo, tenant, conv, entrante.messageId, historialSnapshot);

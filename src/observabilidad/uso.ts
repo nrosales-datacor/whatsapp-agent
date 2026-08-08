@@ -23,8 +23,10 @@ function obtenerDb(): ReturnType<typeof obtenerPoolGlobal> | null {
   return obtenerPoolGlobal();
 }
 
-/** "YYYY-MM" en UTC — alcanza para un contador mensual aproximado (no requiere la tz del tenant). */
-function anioMesActual(): string {
+/** "YYYY-MM" en UTC — alcanza para un contador mensual aproximado (no requiere la tz del tenant).
+ * Exportado: F10 (observabilidad/cuotas.ts) lo necesita para leer el mes vigente con un `db`
+ * inyectado (tests PGlite), igual que `obtenerUsoMensualDb` de más abajo. */
+export function anioMesActual(): string {
   const d = new Date();
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
@@ -157,14 +159,19 @@ export interface UsoMensualTenant {
   costoEstimadoMillonesimos: number;
 }
 
-/** Uso del mes actual de UN tenant. null sin DB, o si todavía no tiene actividad este mes. */
-export async function obtenerUsoMensual(tenantId: string): Promise<UsoMensualTenant | null> {
-  const d = obtenerDb();
-  if (!d) return null;
-  const filas = await d
+/**
+ * Núcleo de lectura, testable con `db` inyectado (PGlite) — mismo split que
+ * `incrementarUso`/`incrementar` de más arriba: esto es lo que se prueba contra
+ * Postgres real; `obtenerUsoMensual` es el wrapper de producción sobre el pool
+ * singleton. F10 (observabilidad/cuotas.ts) lo usa para el enforcement del tope
+ * mensual con un `db` de test sin pasar por el singleton (que no puede apuntar
+ * a PGlite).
+ */
+export async function obtenerUsoMensualDb(db: DB, tenantId: string, anioMes: string): Promise<UsoMensualTenant | null> {
+  const filas = await db
     .select()
     .from(waUsoMensual)
-    .where(and(eq(waUsoMensual.tenantId, tenantId), eq(waUsoMensual.anioMes, anioMesActual())))
+    .where(and(eq(waUsoMensual.tenantId, tenantId), eq(waUsoMensual.anioMes, anioMes)))
     .limit(1);
   const f = filas[0];
   if (!f) return null;
@@ -178,6 +185,13 @@ export async function obtenerUsoMensual(tenantId: string): Promise<UsoMensualTen
     tokensSalida: f.tokensSalida,
     costoEstimadoMillonesimos: f.costoEstimadoMillonesimos,
   };
+}
+
+/** Uso del mes actual de UN tenant. null sin DB, o si todavía no tiene actividad este mes. */
+export async function obtenerUsoMensual(tenantId: string): Promise<UsoMensualTenant | null> {
+  const d = obtenerDb();
+  if (!d) return null;
+  return obtenerUsoMensualDb(d, tenantId, anioMesActual());
 }
 
 /**

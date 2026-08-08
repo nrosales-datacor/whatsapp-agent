@@ -274,6 +274,16 @@ export const waTenants = pgTable(
     registro: text("registro"), // "vos" | "tu" | "usted"; null => se infiere del país
     tono: text("tono"), // texto corto; null => default "cordial y breve"
     instrucciones: text("instrucciones"), // texto libre grande: reglas particulares del negocio (híbrido)
+    // Tope mensual de conversaciones (F10 — PLAN-ESCALA-MULTITENANT.md): interruptor
+    // para clientes con contrato especial (ej. Pro con acuerdo custom) que NO deben
+    // verse afectados por el tope del plan aunque lo superen. false = el tope del
+    // plan (ver src/billing/planes.ts) se aplica normalmente. Lo cambia el
+    // superadmin (no es self-service del dueño: es una excepción de contrato).
+    topeConversacionesDesactivado: boolean("tope_conversaciones_desactivado").notNull().default(false),
+    // Mensaje que recibe el cliente final cuando el negocio alcanza el 100% del tope
+    // mensual (F10). null = usa el default razonable de handleWebhook.ts. Self-service
+    // del dueño, mismo patrón que rescateToque1Texto/rescateToque2Texto.
+    mensajeTopeExcedido: text("mensaje_tope_excedido"),
   },
   (t) => ({
     uqPnid: uniqueIndex("wa_tenants_pnid_uq").on(t.phoneNumberId),

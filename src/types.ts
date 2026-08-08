@@ -246,6 +246,18 @@ export interface Tenant {
   tono?: string;
   /** Instrucciones libres del dueño para el bot (reglas particulares del negocio). undefined = ninguna. */
   instrucciones?: string;
+  /**
+   * Interruptor del tope mensual de conversaciones (F10 — PLAN-ESCALA-MULTITENANT.md):
+   * true = este tenant NUNCA se ve afectado por el tope de su plan, aunque lo supere
+   * (clientes con contrato especial). undefined/false = el tope del plan aplica normal.
+   * Lo cambia el superadmin (no es self-service del dueño).
+   */
+  topeConversacionesDesactivado?: boolean;
+  /**
+   * Mensaje que recibe el cliente final al llegar al 100% del tope mensual (F10).
+   * undefined = usa el default razonable (ver MENSAJE_TOPE_EXCEDIDO en handleWebhook.ts).
+   */
+  mensajeTopeExcedido?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -847,11 +859,19 @@ export interface Repositorio {
    * `wa_jobs` en una sola transacción → "mensaje persistido ⇒ job encolado" es
    * invariante. Devuelve `true` si el mensaje era nuevo (se encoló); `false` si era
    * duplicado (mismo waMessageId). Sin DB (repo en memoria), solo guarda el mensaje.
+   *
+   * `ejecutarDespuesDe` (F10 — PLAN-ESCALA-MULTITENANT.md): opcional, para diferir
+   * el job cuando el tenant excedió su rate limit de ingesta (ver
+   * src/red/limiteIngesta.ts) — el mensaje se persiste igual (nunca se pierde,
+   * eso es lo que garantiza F3), solo se degrada la latencia de esa respuesta
+   * puntual. undefined = comportamiento previo (el default de la columna,
+   * `now()`: el worker lo puede tomar de inmediato).
    */
   guardarEntranteYEncolar(
     conversacionId: string,
     msg: MensajeConversacion,
     payload: PendienteSerializado,
+    ejecutarDespuesDe?: Date,
   ): Promise<boolean>;
 
   registrarCalidad(evento: {
