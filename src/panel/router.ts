@@ -280,13 +280,28 @@ interface SesionPanel {
   rol: Rol;
 }
 
-/** Devuelve la sesión del operador (tenant, usuarioId, rol), o null si no está autenticado. */
-function sesionDeOperador(req: IncomingMessage): SesionPanel | null {
+/**
+ * Devuelve la sesión del operador (tenant, usuarioId, rol), o null si no está autenticado.
+ *
+ * Revocación de sesiones (E13/ALTO-06): el token es stateless (HMAC + expiración), así
+ * que por sí solo NO alcanza para saber si la sesión sigue viva — un dueño puede haber
+ * desactivado a este usuario, cambiado su rol o resetéado su clave hace 5 segundos, y el
+ * token seguiría teniendo firma válida hasta los 7 días. Por eso, además de `verificarSesion`,
+ * se revalida contra la CUENTA VIVA (`obtenerUsuarioPorId`, caché en memoria, no pega la
+ * base): si no existe, está inactiva, o su `sessionEpoch` ya no es el que firmó este token,
+ * la sesión se trata como inválida — mismo criterio que un token vencido/corrupto (null, sin
+ * un código de error nuevo). El `rol` que se devuelve sale de la cuenta viva, nunca del
+ * token: así un cambio de rol pega de inmediato, no en el próximo login.
+ */
+export function sesionDeOperador(req: IncomingMessage): SesionPanel | null {
   const s = verificarSesion(leerCookies(req)[COOKIE]);
   if (!s) return null;
   const tenant = obtenerTenantPorId(s.tenantId);
   if (!tenant) return null;
-  return { tenant, usuarioId: s.usuarioId, rol: s.rol };
+  const usuario = obtenerUsuarioPorId(s.usuarioId);
+  if (!usuario || !usuario.activo) return null;
+  if (usuario.sessionEpoch !== s.epoch) return null; // token de una sesión ya revocada
+  return { tenant, usuarioId: s.usuarioId, rol: usuario.rol };
 }
 
 /** true si el request trae una sesión de superadmin válida (onboarding, ROADMAP B3). */
@@ -751,6 +766,10 @@ export async function manejarPanel(
         return json(res, 500, { ok: false, error: "No se pudo resetear la clave." }), true;
       }
       if (!usuario) return json(res, 404, { ok: false, error: "Usuario no encontrado" }), true;
+      // E13/ALTO-06: sin este recargar(), el caché seguiría sirviendo el sessionEpoch
+      // (y el passwordHash) viejos hasta el refresco periódico — la sesión que se está
+      // revocando con este reset seguiría pasando sesionDeOperador mientras tanto.
+      await recargar();
       return json(res, 200, { ok: true, usuario: usuario.usuario, claveTemporal, expiraEn: expiraEn.toISOString() }), true;
     }
 
@@ -788,7 +807,10 @@ export async function manejarPanel(
       return true;
     }
     registrarExitoLogin("login", usuarioInput);
-    const cookie = `${COOKIE}=${crearSesion(tenant.id, cuenta.id, cuenta.rol)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${7 * 24 * 60 * 60}`;
+    // El login NO sube el epoch (E13/ALTO-06): firma con el epoch VIGENTE de la cuenta,
+    // así que loguearse desde un dispositivo nuevo no invalida las sesiones ya abiertas
+    // en otros dispositivos — solo cambiar clave/rol/estado revoca sesiones.
+    const cookie = `${COOKIE}=${crearSesion(tenant.id, cuenta.id, cuenta.rol, cuenta.sessionEpoch)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${7 * 24 * 60 * 60}`;
     res.writeHead(200, { "content-type": "application/json; charset=utf-8", "set-cookie": cookie });
     res.end(JSON.stringify({ ok: true, nombre: tenant.nombre, vapidPublica: clavePublicaVapid() }));
     return true;

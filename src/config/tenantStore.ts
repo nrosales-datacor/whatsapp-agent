@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { Bloqueo, Empleado, EstadoFacturacion, HorarioDia, KnowledgeBase, Plan, Rol, Service, Tenant } from "../types";
 import { obtenerDb } from "../db/client";
 import { waTenants, waUsuarios } from "../db/schema";
@@ -17,7 +17,7 @@ import { normalizarKb } from "./validadores";
 // El caché se recarga al arrancar, periódicamente, y on-demand ante un número nuevo.
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface CuentaUsuario {
+export interface CuentaUsuario {
   id: string;
   tenantId: string;
   passwordHash: string;
@@ -27,6 +27,16 @@ interface CuentaUsuario {
   debeCambiarClave: boolean;
   /** Vencimiento de la clave temporal (0.5). Null = clave normal. */
   claveTemporalExpira: Date | null;
+  /** true si la cuenta está activa. Ver también activo en waUsuarios; solo las cuentas
+   * activas entran al caché de login (recargarDesdeDb filtra por activo=true), pero
+   * sesionDeOperador necesita distinguir "no existe" de "existe pero inactiva" para las
+   * cuentas registradas vía _registrarUsuarioParaTests. En producción, una cuenta
+   * desactivada simplemente desaparece del caché en la próxima recarga. */
+  activo: boolean;
+  /** Epoch de sesión (E13/ALTO-06): sube en cada cambio de clave/rol/estado de la cuenta.
+   * `sesionDeOperador` compara esto contra el epoch firmado en el token — si no coinciden,
+   * la sesión es de ANTES del cambio y se trata como inválida (igual que un token vencido). */
+  sessionEpoch: number;
 }
 
 interface Cache {
@@ -58,6 +68,7 @@ function construirCache(
     rol: Rol;
     debeCambiarClave: boolean;
     claveTemporalExpira: Date | null;
+    sessionEpoch: number;
   }[],
 ): Cache {
   const porPnid = new Map<string, Tenant>();
@@ -75,6 +86,11 @@ function construirCache(
       rol: u.rol,
       debeCambiarClave: u.debeCambiarClave,
       claveTemporalExpira: u.claveTemporalExpira,
+      // Todo lo que llega hasta acá viene de recargarDesdeDb, que ya filtra por
+      // activo=true (o de cacheFallback/_registrarUsuarioParaTests, siempre activos por
+      // construcción) — una cuenta desactivada simplemente desaparece del caché.
+      activo: true,
+      sessionEpoch: u.sessionEpoch,
     });
   }
   return { porPnid, porId, usuarios: us };
@@ -96,6 +112,7 @@ function cacheFallback(): Cache {
       rol: "dueno" as Rol,
       debeCambiarClave: false,
       claveTemporalExpira: null,
+      sessionEpoch: 0,
     });
   }
   return construirCache([t], usuarios);
@@ -200,6 +217,7 @@ async function recargarDesdeDb(): Promise<void> {
         rol: u.rol as Rol,
         debeCambiarClave: u.debeCambiarClave,
         claveTemporalExpira: u.claveTemporalExpira,
+        sessionEpoch: u.sessionEpoch,
       })),
     );
     fuenteActual = "db";
@@ -483,6 +501,13 @@ export async function crearUsuarioTenant(tenantId: string, u: NuevoUsuarioTenant
  * conozca el id). El guard de "al menos un dueño activo" lo valida el router ANTES de
  * llamar acá (necesita leer el resto del equipo para decidir). Lanza Error("SIN_DB") si
  * no hay base.
+ *
+ * Revocación de sesiones (E13/ALTO-06): cambiar el rol o desactivar la cuenta sube
+ * `sessionEpoch` (atómico, `x = x + 1`, mismo patrón que `incrementarUso`) — cualquier
+ * token firmado ANTES de este cambio deja de calzar con el epoch vigente y
+ * `sesionDeOperador` lo trata como inválido en la próxima request, sin esperar a que
+ * expire. Reactivar (activo: true) NO sube el epoch: no hay ninguna sesión vieja que
+ * revocar (la cuenta desactivada ya no tenía epoch vigente que nadie pudiera usar).
  */
 export async function actualizarUsuarioTenant(
   tenantId: string,
@@ -490,10 +515,11 @@ export async function actualizarUsuarioTenant(
   patch: { rol?: Rol; activo?: boolean },
 ): Promise<void> {
   if (!hayDb) throw new Error("SIN_DB");
+  const subeEpoch = patch.rol !== undefined || patch.activo === false;
   const d = obtenerDb();
   await d
     .update(waUsuarios)
-    .set(patch)
+    .set({ ...patch, ...(subeEpoch ? { sessionEpoch: sql`${waUsuarios.sessionEpoch} + 1` } : {}) })
     .where(and(eq(waUsuarios.id, usuarioId), eq(waUsuarios.tenantId, tenantId)));
 }
 
@@ -506,13 +532,18 @@ export async function actualizarUsuarioTenant(
  * temporal, marca debeCambiarClave y fija su vencimiento (24h). Devuelve el usuario
  * afectado (para mostrar en qué negocio se hizo el reset), o null si no existe.
  * Lanza Error("SIN_DB") si no hay base.
+ *
+ * Revocación de sesiones (E13/ALTO-06): un reset de clave sube `sessionEpoch` — cualquier
+ * sesión abierta con la clave vieja queda inválida de inmediato (no solo la próxima vez
+ * que alguien intente loguearse con la clave vieja, sino la SESIÓN YA ABIERTA en el
+ * navegador de quien sea que la tenía).
  */
 export async function resetearClaveUsuario(usuarioId: string, passwordHash: string, expiraEn: Date): Promise<UsuarioTenant | null> {
   if (!hayDb) throw new Error("SIN_DB");
   const d = obtenerDb();
   const filas = await d
     .update(waUsuarios)
-    .set({ passwordHash, debeCambiarClave: true, claveTemporalExpira: expiraEn })
+    .set({ passwordHash, debeCambiarClave: true, claveTemporalExpira: expiraEn, sessionEpoch: sql`${waUsuarios.sessionEpoch} + 1` })
     .where(eq(waUsuarios.id, usuarioId))
     .returning();
   const f = filas[0];
@@ -524,13 +555,24 @@ export async function resetearClaveUsuario(usuarioId: string, passwordHash: stri
  * Cambio de clave propio (el usuario ya logueado, forzado o voluntario): reemplaza el
  * hash y limpia el flag de clave temporal. Scopeada por tenantId (defensa en profundidad,
  * mismo patrón que actualizarUsuarioTenant). Lanza Error("SIN_DB") si no hay base.
+ *
+ * Revocación de sesiones (E13/ALTO-06): sube `sessionEpoch`, igual que resetearClaveUsuario.
+ * Esto invalida TAMBIÉN la sesión actual del que está cambiando su propia clave (el token
+ * que trae en la cookie quedó firmado con el epoch anterior) — a propósito: es el mismo
+ * criterio de seguridad que un reset ajeno, y el router no reemite cookie tras este
+ * endpoint, así que el próximo request re-loguea con la clave nueva.
  */
 export async function cambiarClavePropia(tenantId: string, usuarioId: string, nuevoHash: string): Promise<void> {
   if (!hayDb) throw new Error("SIN_DB");
   const d = obtenerDb();
   await d
     .update(waUsuarios)
-    .set({ passwordHash: nuevoHash, debeCambiarClave: false, claveTemporalExpira: null })
+    .set({
+      passwordHash: nuevoHash,
+      debeCambiarClave: false,
+      claveTemporalExpira: null,
+      sessionEpoch: sql`${waUsuarios.sessionEpoch} + 1`,
+    })
     .where(and(eq(waUsuarios.id, usuarioId), eq(waUsuarios.tenantId, tenantId)));
 }
 
@@ -584,6 +626,18 @@ export function refrescarSiFaltaPhoneNumberId(pnid: string): void {
   if (ahora - ultimoRefrescoMiss < COOLDOWN_MISS_MS) return;
   ultimoRefrescoMiss = ahora;
   void recargarDesdeDb();
+}
+
+/**
+ * Solo para tests: registra/reemplaza una cuenta directo en el caché en memoria, sin
+ * pasar por la base (E13/ALTO-06: probar `sesionDeOperador` — epoch, rol, desactivación —
+ * sin levantar Postgres). Muta el caché vivo en vez de reemplazarlo por completo —
+ * aceptable SOLO en tests, igual que el resto de los accesores síncronos de este módulo
+ * asumen un caché ya construido (acá, típicamente vía `cargarTenants()` sin
+ * DATABASE_URL, que deja el tenant fallback listo en `cache.porId`).
+ */
+export function _registrarUsuarioParaTests(usuario: string, cuenta: CuentaUsuario): void {
+  cache.usuarios.set(usuario, cuenta);
 }
 
 /**
