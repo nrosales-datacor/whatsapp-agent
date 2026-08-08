@@ -1,0 +1,1 @@
+ALTER TABLE "wa_usuarios" ADD COLUMN "session_epoch" integer DEFAULT 0 NOT NULL;
