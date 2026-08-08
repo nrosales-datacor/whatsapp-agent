@@ -111,9 +111,10 @@ export class RepositorioEnMemoria implements Repositorio {
     return this.dto(c, 20);
   }
 
-  async guardarMensaje(conversacionId: string, msg: MensajeConversacion): Promise<boolean> {
+  async guardarMensaje(tenantId: string, conversacionId: string, msg: MensajeConversacion): Promise<boolean> {
     const c = this.conversaciones.get(conversacionId);
-    if (!c) return false;
+    // Mismo criterio que el repo Drizzle: conversación ajena (o inexistente) → no-op.
+    if (!c || c.tenantId !== tenantId) return false;
     // Idempotencia: si ya vimos este waMessageId (reintento de Meta), lo ignoramos.
     if (msg.waMessageId) {
       if (this.waIdsVistos.has(msg.waMessageId)) return false;
@@ -131,13 +132,14 @@ export class RepositorioEnMemoria implements Repositorio {
   }
 
   async actualizarMediaMensaje(
+    tenantId: string,
     conversacionId: string,
     waMessageId: string,
     mediaUrl: string,
     mediaTipo: "imagen",
   ): Promise<void> {
     const c = this.conversaciones.get(conversacionId);
-    if (!c) return;
+    if (!c || c.tenantId !== tenantId) return;
     const msg = c.mensajes.find((m) => m.waMessageId === waMessageId);
     if (msg) {
       msg.mediaUrl = mediaUrl;
@@ -145,14 +147,14 @@ export class RepositorioEnMemoria implements Repositorio {
     }
   }
 
-  async marcarOptIn(conversacionId: string): Promise<void> {
+  async marcarOptIn(tenantId: string, conversacionId: string): Promise<void> {
     const c = this.conversaciones.get(conversacionId);
-    if (c && !c.optInEn) c.optInEn = new Date().toISOString();
+    if (c && c.tenantId === tenantId && !c.optInEn) c.optInEn = new Date().toISOString();
   }
 
-  async marcarOptOut(conversacionId: string): Promise<void> {
+  async marcarOptOut(tenantId: string, conversacionId: string): Promise<void> {
     const c = this.conversaciones.get(conversacionId);
-    if (c && !c.optOutEn) c.optOutEn = new Date().toISOString();
+    if (c && c.tenantId === tenantId && !c.optOutEn) c.optOutEn = new Date().toISOString();
   }
 
   async citasPorFecha(tenantId: string, fecha: string): Promise<Cita[]> {
@@ -173,13 +175,22 @@ export class RepositorioEnMemoria implements Repositorio {
       id: `cita_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       estado: "agendada",
       creadaEn: new Date().toISOString(),
+      // Paridad con Drizzle (hallazgo de F4, al parametrizar el test de aislamiento
+      // sobre las dos implementaciones): las columnas de recordatorio/confirmación
+      // arrancan en NULL en Postgres, nunca "ausentes"; acá quedaban `undefined` por
+      // no inicializarse. Sin este fix, una cita recién creada tiene una forma
+      // distinta según el repo (undefined vs. null) para el mismo campo opcional.
+      recordatorioDiaAntesEn: cita.recordatorioDiaAntesEn ?? null,
+      recordatorioMismoDiaEn: cita.recordatorioMismoDiaEn ?? null,
+      confirmadaEn: cita.confirmadaEn ?? null,
+      postServicioEn: cita.postServicioEn ?? null,
     };
     this.citas.push(nueva);
     return nueva;
   }
 
-  async guardarGcalEventId(citaId: string, eventId: string): Promise<void> {
-    const c = this.citas.find((x) => x.id === citaId);
+  async guardarGcalEventId(tenantId: string, citaId: string, eventId: string): Promise<void> {
+    const c = this.citas.find((x) => x.id === citaId && x.tenantId === tenantId);
     if (c) c.gcalEventId = eventId;
   }
 
@@ -309,8 +320,8 @@ export class RepositorioEnMemoria implements Repositorio {
     return c.upsellsRechazados.some((r) => r.addonId === addonId && r.fecha >= corte);
   }
 
-  async marcarRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<void> {
-    const c = this.citas.find((x) => x.id === citaId);
+  async marcarRecordatorio(tenantId: string, citaId: string, tipo: TipoRecordatorio): Promise<void> {
+    const c = this.citas.find((x) => x.id === citaId && x.tenantId === tenantId);
     if (!c) return;
     const ahora = new Date().toISOString();
     if (tipo === "dia_antes") c.recordatorioDiaAntesEn = ahora;
@@ -318,8 +329,8 @@ export class RepositorioEnMemoria implements Repositorio {
     else c.postServicioEn = ahora;
   }
 
-  async reclamarRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<boolean> {
-    const c = this.citas.find((x) => x.id === citaId);
+  async reclamarRecordatorio(tenantId: string, citaId: string, tipo: TipoRecordatorio): Promise<boolean> {
+    const c = this.citas.find((x) => x.id === citaId && x.tenantId === tenantId);
     if (!c) return false;
     if (tipo === "dia_antes") {
       if (c.recordatorioDiaAntesEn) return false;
@@ -334,8 +345,8 @@ export class RepositorioEnMemoria implements Repositorio {
     return true;
   }
 
-  async revertirRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<void> {
-    const c = this.citas.find((x) => x.id === citaId);
+  async revertirRecordatorio(tenantId: string, citaId: string, tipo: TipoRecordatorio): Promise<void> {
+    const c = this.citas.find((x) => x.id === citaId && x.tenantId === tenantId);
     if (!c) return;
     if (tipo === "dia_antes") c.recordatorioDiaAntesEn = null;
     else if (tipo === "mismo_dia") c.recordatorioMismoDiaEn = null;
@@ -345,10 +356,10 @@ export class RepositorioEnMemoria implements Repositorio {
   async guardarEntranteYEncolar(
     conversacionId: string,
     msg: MensajeConversacion,
-    _payload: PendienteSerializado,
+    payload: PendienteSerializado,
   ): Promise<boolean> {
     // Sin base de datos no hay cola: solo guardamos el mensaje (comportamiento de dev).
-    const guardado = await this.guardarMensaje(conversacionId, msg);
+    const guardado = await this.guardarMensaje(payload.tenantId, conversacionId, msg);
     // Cola de trabajo (C2.3): un mensaje nuevo del cliente reabre la conversación,
     // aunque el operador la hubiera marcado "atendida".
     if (guardado) {
@@ -522,13 +533,14 @@ export class RepositorioEnMemoria implements Repositorio {
   }
 
   async registrarRespuestaSeguimiento(
+    tenantId: string,
     citaId: string,
     sentimiento: Sentimiento,
     resenaSolicitada: boolean,
     respuestaTexto: string,
   ): Promise<void> {
-    const s = this.seguimientos.find((x) => x.citaId === citaId);
-    if (!s) return; // tenant Básico: nunca se creó la fila al enviar
+    const s = this.seguimientos.find((x) => x.citaId === citaId && x.tenantId === tenantId);
+    if (!s) return; // tenant Básico (nunca se creó la fila) o tenant ajeno
     s.sentimiento = sentimiento;
     s.resenaSolicitada = resenaSolicitada;
     s.respuestaTexto = respuestaTexto;
@@ -567,7 +579,8 @@ export class RepositorioEnMemoria implements Repositorio {
       .map(({ endpoint, p256dh, auth }) => ({ endpoint, p256dh, auth }));
   }
 
-  async borrarPushSub(endpoint: string): Promise<void> {
-    this.pushSubs.delete(endpoint);
+  async borrarPushSub(tenantId: string, endpoint: string): Promise<void> {
+    const sub = this.pushSubs.get(endpoint);
+    if (sub && sub.tenantId === tenantId) this.pushSubs.delete(endpoint);
   }
 }

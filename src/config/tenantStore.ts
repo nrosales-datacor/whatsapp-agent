@@ -1,7 +1,8 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { Bloqueo, Empleado, EstadoFacturacion, HorarioDia, KnowledgeBase, Plan, Rol, Service, Tenant } from "../types";
-import { crearDb } from "../db/client";
+import { obtenerDb } from "../db/client";
 import { waTenants, waUsuarios } from "../db/schema";
+import { cifrar, descifrar } from "./secretos";
 import { TENANT_FALLBACK_SELYON } from "./tenants";
 import { normalizarKb } from "./validadores";
 
@@ -48,6 +49,14 @@ interface Cache {
 // in-place, para no servir un caché a medio llenar).
 let cache: Cache = construirCache([], []);
 let hayDb = false;
+
+// Fuente del caché VIGENTE (ROADMAP E10, health check): se actualiza junto con `cache`
+// en los mismos tres puntos donde hoy se reasigna (cacheFallback en activarFallback,
+// cacheFallback en cargarTenants sin DB, y construirCache en recargarDesdeDb exitoso).
+// No toca la lógica de recarga/fallback existente: solo deja constancia de CUÁL de los
+// dos caminos se tomó, para que /salud pueda distinguir "caché real" de "caché de
+// emergencia" sin adivinar a partir de otro estado.
+let fuenteActual: "db" | "fallback" = "fallback";
 
 function construirCache(
   tenants: Tenant[],
@@ -114,7 +123,11 @@ function filaATenant(f: typeof waTenants.$inferSelect): Tenant {
     id: f.id,
     nombre: f.nombre,
     phoneNumberId: f.phoneNumberId,
-    accessToken: f.accessToken ?? undefined,
+    // Descifrado ÚNICO punto de entrada al construir el caché (ROADMAP F2): a partir de
+    // acá, todo el código (incluido whatsapp/client.ts) sigue viendo el token en claro,
+    // sin enterarse de que en la base está cifrado. `descifrar` tolera valores heredados
+    // en texto plano (ver comentario en secretos.ts) — no hace falta migrar antes de desplegar.
+    accessToken: f.accessToken ? descifrar(f.accessToken) : undefined,
     timezone: f.timezone,
     moneda: f.moneda,
     ubicacion: f.ubicacion,
@@ -132,6 +145,8 @@ function filaATenant(f: typeof waTenants.$inferSelect): Tenant {
     linkResenas: f.linkResenas ?? undefined,
     plantillaMarketing: f.plantillaMarketing ?? undefined,
     plantillaReapertura: f.plantillaReapertura ?? undefined,
+    plantillaRecordatorio: f.plantillaRecordatorio ?? undefined,
+    plantillaIdioma: f.plantillaIdioma ?? undefined,
     colorAcento: f.colorAcento ?? undefined,
     colorHeader: f.colorHeader ?? undefined,
     logoUrl: f.logoUrl ?? undefined,
@@ -156,10 +171,31 @@ function filaATenant(f: typeof waTenants.$inferSelect): Tenant {
   };
 }
 
-let db: ReturnType<typeof crearDb> | null = null;
-function obtenerDb() {
-  if (!db) db = crearDb();
-  return db;
+// ── Callbacks tras una recarga exitosa (ROADMAP F3) ──
+// Este módulo NO conoce handleWebhook ni el reproceso de wa_webhooks_crudos: solo
+// expone un registro de callbacks GENÉRICO. Es server.ts quien, al arrancar,
+// conecta acá el reproceso real (ver el comentario largo en reprocesoWebhooks.ts
+// sobre por qué esto evita un ciclo de imports). Cualquier otro módulo futuro que
+// necesite reaccionar a "el caché de tenants cambió" puede colgarse del mismo hook.
+type CallbackRecarga = () => void;
+const callbacksRecarga: CallbackRecarga[] = [];
+
+/** Registra un callback que se dispara después de cada recarga EXITOSA del caché
+ * (trae al menos un tenant real, no el fallback). Pensado para el reproceso de
+ * F3: un negocio recién dado de alta puede recuperar acá los mensajes que
+ * llegaron antes de existir. */
+export function alRecargar(cb: CallbackRecarga): void {
+  callbacksRecarga.push(cb);
+}
+
+function notificarRecarga(): void {
+  for (const cb of callbacksRecarga) {
+    try {
+      cb();
+    } catch (e) {
+      console.error("[tenantStore] un callback de alRecargar lanzó:", e);
+    }
+  }
 }
 
 async function recargarDesdeDb(): Promise<void> {
@@ -184,6 +220,8 @@ async function recargarDesdeDb(): Promise<void> {
         sessionEpoch: u.sessionEpoch,
       })),
     );
+    fuenteActual = "db";
+    notificarRecarga();
   } catch (e) {
     activarFallback(`no se pudo leer la base (${e instanceof Error ? e.message : String(e)})`);
   }
@@ -198,6 +236,7 @@ function activarFallback(motivo: string): void {
     return;
   }
   cache = cacheFallback();
+  fuenteActual = "fallback";
   console.error(
     `[tenantStore] ⚠️ ${motivo} — usando fallback hardcodeado 'rosales'. ` +
       "EL ALTA DE NEGOCIOS NO ESTÁ DISPONIBLE hasta sembrar la base (npx tsx scripts/seedTenants.ts).",
@@ -218,6 +257,7 @@ export async function cargarTenants(): Promise<void> {
   hayDb = !!process.env.DATABASE_URL;
   if (!hayDb) {
     cache = cacheFallback();
+    fuenteActual = "fallback";
     console.log(`[tenantStore] sin DATABASE_URL: ${cache.porId.size} tenant(s) en memoria (fallback).`);
     return;
   }
@@ -260,6 +300,20 @@ export function hayBaseDeDatos(): boolean {
   return !!process.env.DATABASE_URL;
 }
 
+/**
+ * Fuente del caché de tenants VIGENTE ahora mismo (ROADMAP E10, health check):
+ * "db" tras una recarga exitosa contra la base; "fallback" si se está sirviendo el
+ * tenant hardcodeado (sin DATABASE_URL, o porque la base no respondió/estaba vacía
+ * en el último intento de recarga). Ojo: NO es lo mismo que `hayBaseDeDatos()` —
+ * esa dice si HAY una DATABASE_URL configurada; esta dice de dónde viene el caché
+ * que el bot está usando en este momento. La combinación de ambas es justo el
+ * escenario silencioso de BLOQUEANTE-11: DB configurada + caché en fallback = el
+ * bot está atendiendo con la config equivocada mientras el resto luce normal.
+ */
+export function fuenteCacheTenants(): "db" | "fallback" {
+  return fuenteActual;
+}
+
 /** Recarga inmediata del caché desde la base (tras un alta). No-op sin DATABASE_URL. */
 export async function recargar(): Promise<void> {
   if (!hayDb) return;
@@ -285,7 +339,9 @@ export async function crearTenant(tenant: Tenant, u: NuevoUsuario): Promise<void
       id: tenant.id,
       nombre: tenant.nombre,
       phoneNumberId: tenant.phoneNumberId,
-      accessToken: tenant.accessToken ?? null,
+      // Cifrado ÚNICO punto de escritura del token (ROADMAP F2): nunca se persiste en
+      // claro. `null` se guarda tal cual (nada que cifrar) — ver nota en secretos.ts.
+      accessToken: tenant.accessToken ? cifrar(tenant.accessToken) : null,
       timezone: tenant.timezone,
       moneda: tenant.moneda,
       ubicacion: tenant.ubicacion,
@@ -297,6 +353,8 @@ export async function crearTenant(tenant: Tenant, u: NuevoUsuario): Promise<void
       linkResenas: tenant.linkResenas ?? null,
       plantillaMarketing: tenant.plantillaMarketing ?? null,
       plantillaReapertura: tenant.plantillaReapertura ?? null,
+      plantillaRecordatorio: tenant.plantillaRecordatorio ?? null,
+      plantillaIdioma: tenant.plantillaIdioma ?? null,
       colorAcento: tenant.colorAcento ?? null,
       colorHeader: tenant.colorHeader ?? null,
       logoUrl: tenant.logoUrl ?? null,
@@ -335,6 +393,8 @@ export async function actualizarConfigTenant(
     linkResenas: string | null;
     plantillaMarketing: string | null;
     plantillaReapertura: string | null;
+    plantillaRecordatorio: string | null;
+    plantillaIdioma: string | null;
     colorAcento: string | null;
     colorHeader: string | null;
     logoUrl: string | null;
@@ -366,6 +426,8 @@ export async function actualizarConfigTenant(
       linkResenas: patch.linkResenas,
       plantillaMarketing: patch.plantillaMarketing,
       plantillaReapertura: patch.plantillaReapertura,
+      plantillaRecordatorio: patch.plantillaRecordatorio,
+      plantillaIdioma: patch.plantillaIdioma,
       colorAcento: patch.colorAcento,
       colorHeader: patch.colorHeader,
       logoUrl: patch.logoUrl,
@@ -576,4 +638,27 @@ export function refrescarSiFaltaPhoneNumberId(pnid: string): void {
  */
 export function _registrarUsuarioParaTests(usuario: string, cuenta: CuentaUsuario): void {
   cache.usuarios.set(usuario, cuenta);
+}
+
+/**
+ * Solo para tests: registra un tenant directo en el caché en memoria, sin pasar
+ * por la base, para simular un "alta" (p. ej. el reproceso de F3, que necesita
+ * que un phone_number_id pase de no resolver a resolver de un momento a otro sin
+ * levantar una base real). Muta el caché vivo en vez de reemplazarlo por
+ * completo — aceptable SOLO en tests (en producción el caché siempre se
+ * reemplaza atómico, ver `construirCache`).
+ */
+export function _registrarTenantParaTests(tenant: Tenant): void {
+  cache.porId.set(tenant.id, tenant);
+  cache.porPnid.set(tenant.phoneNumberId, tenant);
+}
+
+/**
+ * Solo para tests: fuerza la "fuente" reportada del caché (ver `fuenteCacheTenants`)
+ * sin pasar por una base real. Existe para poder probar el health check de E10 en
+ * el escenario "DATABASE_URL configurada pero el caché quedó en fallback" sin
+ * levantar un pool de Postgres de verdad — mismo espíritu que `_registrarTenantParaTests`.
+ */
+export function _forzarFuenteParaTests(fuente: "db" | "fallback"): void {
+  fuenteActual = fuente;
 }

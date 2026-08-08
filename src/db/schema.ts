@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, integer, boolean, jsonb, index, uniqueIndex, numeric } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer, boolean, jsonb, index, uniqueIndex, numeric, bigint } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { AddonCita, Bloqueo, Empleado, HorarioDia, KnowledgeBase, PendienteSerializado, RechazoAddon, SegmentoFiltro, Service } from "../types";
@@ -212,6 +212,17 @@ export const waTenants = pgTable(
     // Plantilla de UTILIDAD aprobada en Meta para reabrir conversaciones fuera de la
     // ventana de 24h (Carril D, 0.3). null = sin configurar (no se puede reabrir).
     plantillaReapertura: text("plantilla_reapertura"),
+    // Plantilla de recordatorio de cita, aprobada en Meta PARA ESTE NEGOCIO (E8/BLOQ-06:
+    // antes era la env global WHATSAPP_TEMPLATE_RECORDATORIO, y las plantillas se aprueban
+    // por WABA — con dos clientes, el nombre de uno no existe en el WABA del otro y los
+    // recordatorios fallan en silencio para todos menos uno). null = sin configurar → el
+    // recordatorio cae a texto libre con botones (ver src/reminders/scheduler.ts).
+    plantillaRecordatorio: text("plantilla_recordatorio"),
+    // Idioma con el que se aprobó la plantilla de recordatorio en Meta ("es", "es_MX",
+    // "en_US"…). null = usa WHATSAPP_TEMPLATE_IDIOMA (.env) o "es" (E8/BLOQ-06). A
+    // diferencia del nombre de la plantilla, esto NO es fail-closed: el idioma no es un
+    // secreto ni causa fuga entre negocios, así que un default global razonable está bien.
+    plantillaIdioma: text("plantilla_idioma"),
     // White-label (C4.1): color de acento/encabezado (hex "#rrggbb") y logo (URL). null =
     // sin configurar → el panel usa la paleta verde default de global.css.
     colorAcento: text("color_acento"),
@@ -330,6 +341,50 @@ export const waJobs = pgTable(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Red de seguridad de ingesta cruda (ROADMAP F3). El webhook responde 200 a Meta
+// en dos casos que ANTES tiraban el mensaje sin dejar rastro: el phone_number_id
+// no resuelve a ningún tenant (caché en fallback tras una caída de la base, o un
+// negocio recién dado de alta que el caché aún no cargó) o el payload tiene una
+// forma que `clasificarEntrante` (whatsapp/client.ts) no sabe leer. En AMBOS
+// casos guardamos acá el payload ya verificado por firma, ANTES de intentar
+// resolver el tenant — a diferencia de wa_mensajes/wa_jobs (que solo se llenan en
+// el camino feliz), esta tabla es la ÚNICA copia que sobrevive de esos mensajes.
+//
+// A propósito NO se guarda nada para eventos "status" (entregado/leído) ni otros
+// eventos de `value` sin mensaje: son altísimo volumen y no hay nada que
+// reprocesar (ver el discriminador en whatsapp/client.ts).
+// ─────────────────────────────────────────────────────────────────────────────
+export const waWebhooksCrudos = pgTable(
+  "wa_webhooks_crudos",
+  {
+    id: id(),
+    payload: jsonb("payload").notNull(),
+    // Puede no venir: si el payload es tan raro que ni pudimos leer
+    // value.metadata.phone_number_id, queda null (motivo "no_parseable").
+    phoneNumberId: text("phone_number_id"),
+    // Igual que wa_mensajes.wa_message_id/wa_jobs.wa_message_id: índice único
+    // NORMAL (no parcial). Postgres permite múltiples NULL en un índice único
+    // (cada NULL se trata como distinto de cualquier otro), así que ya se
+    // comporta como "único solo entre los que sí traen id" sin necesidad de un
+    // WHERE — mismo idioma que el resto del esquema, para no introducir un
+    // segundo patrón de idempotencia.
+    waMessageId: text("wa_message_id"),
+    recibidoEn: timestamp("recibido_en", { withTimezone: true }).notNull().defaultNow(),
+    // "pendiente" (a la espera de reproceso o de agotar los intentos) |
+    // "procesado" (se reinyectó con éxito por el mismo camino de ingesta) |
+    // "descartado" (agotó WEBHOOKS_CRUDOS_MAX_INTENTOS sin resolver).
+    estado: text("estado").notNull().default("pendiente"),
+    motivo: text("motivo").notNull(), // "tenant_desconocido" | "no_parseable"
+    intentos: integer("intentos").notNull().default(0),
+  },
+  (t) => ({
+    uqWaId: uniqueIndex("wa_webhooks_crudos_waid_uq").on(t.waMessageId),
+    // Índice que usa el reproceso y el barrido de alertas: pendientes, más viejos primero.
+    idxPendiente: index("wa_webhooks_crudos_pendiente_idx").on(t.estado, t.recibidoEn),
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Campañas segmentadas (ROADMAP C3.2). Envío masivo de plantilla MARKETING a un
 // segmento del CRM. Cola INDEPENDIENTE de wa_jobs: wa_jobs.payload está tipado
 // hard a PendienteSerializado y su worker asume siempre "responder_entrante" —
@@ -407,6 +462,19 @@ export const waUsoMensual = pgTable(
     mensajesSalientes: integer("mensajes_salientes").notNull().default(0),
     plantillasMarketing: integer("plantillas_marketing").notNull().default(0),
     plantillasUtilidad: integer("plantillas_utilidad").notNull().default(0),
+    // Costo de LLM por tenant (F13 — PLAN-ESCALA-MULTITENANT.md): tokens de entrada/salida
+    // de OpenAI (chat completions, sumados de TODOS los pasos de tool-calling de cada
+    // turno, ver src/agent/runAgent.ts) y de Whisper (transcripción de audio, estimado por
+    // duración — Whisper no cobra por token, ver src/observabilidad/costoLlm.ts).
+    tokensEntrada: integer("tokens_entrada").notNull().default(0),
+    tokensSalida: integer("tokens_salida").notNull().default(0),
+    // Costo estimado acumulado del mes, en MILLONÉSIMOS DE DÓLAR (1 unidad = USD 0,000001),
+    // NUNCA en float: es un contador que se incrementa miles de veces (INSERT ... ON
+    // CONFLICT DO UPDATE SET x = x + n) y un float acumularía error de redondeo turno a
+    // turno. bigint porque, aunque hoy el volumen es chico, es un acumulado mensual sin
+    // tope natural bajo (a diferencia de los contadores de mensajes) — más barato dejarlo
+    // con margen que migrar la columna después. Dividir entre 1_000_000 para mostrar USD.
+    costoEstimadoMillonesimos: bigint("costo_estimado_millonesimos", { mode: "number" }).notNull().default(0),
   },
   (t) => ({
     uqTenantMes: uniqueIndex("wa_uso_mensual_tenant_mes_uq").on(t.tenantId, t.anioMes),
@@ -499,6 +567,7 @@ export const schema = {
   waTenants,
   waUsuarios,
   waJobs,
+  waWebhooksCrudos,
   waCampanias,
   waCampaniaEnvios,
   waUsoMensual,

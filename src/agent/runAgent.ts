@@ -13,6 +13,8 @@ import {
   sincronizarReprogramacionGcal,
 } from "../booking/gestionCitas";
 import { registrarLatenciaAgente } from "../observabilidad/metricas";
+import { registrarUsoLlm } from "../observabilidad/uso";
+import { calcularCostoMillonesimos } from "../observabilidad/costoLlm";
 import { tenantPuede } from "../billing/planes";
 import { OPENAI_MAX_REINTENTOS, TIMEOUT_OPENAI_MS } from "../red/timeouts";
 
@@ -522,54 +524,73 @@ async function correrAgenteInterno(
   // Canal de salida lateral para efectos de herramientas (mensaje interactivo).
   const capturas: { interactivo?: MensajeInteractivo } = {};
 
-  for (let paso = 0; paso < MAX_PASOS; paso++) {
-    const res = await getOpenAI().chat.completions.create({
-      model: MODELO,
-      messages: mensajes,
-      tools: TOOLS,
-      temperature: 0.3,
-    });
+  // Costo de LLM por tenant (F13 — PLAN-ESCALA-MULTITENANT.md). Un turno puede hacer
+  // hasta MAX_PASOS llamadas al modelo (tool-calling): se suma el `usage` de CADA paso
+  // acá abajo y se registra UNA sola vez al terminar el turno, sea cual sea la salida
+  // (respuesta final, escalada, o el fallback de "se agotaron los pasos") — por eso el
+  // registro vive en el `finally`, que corre para los tres `return` de más abajo.
+  let tokensEntrada = 0;
+  let tokensSalida = 0;
+  try {
+    for (let paso = 0; paso < MAX_PASOS; paso++) {
+      const res = await getOpenAI().chat.completions.create({
+        model: MODELO,
+        messages: mensajes,
+        tools: TOOLS,
+        temperature: 0.3,
+      });
+      // `usage` puede faltar en respuestas raras del SDK (streaming/errores parciales);
+      // no rompemos el turno del cliente por un dato de costeo que falte.
+      if (res.usage) {
+        tokensEntrada += res.usage.prompt_tokens ?? 0;
+        tokensSalida += res.usage.completion_tokens ?? 0;
+      }
 
-    const msg = res.choices[0].message;
-    mensajes.push(msg);
+      const msg = res.choices[0].message;
+      mensajes.push(msg);
 
-    if (!msg.tool_calls?.length) {
-      const respuesta = msg.content ?? "Disculpá, no entendí. ¿Me lo repetís?";
-      const fueraDeAlcance = /solo puedo ayudarte con/i.test(respuesta);
-      return { respuesta, fueraDeAlcance, escalar: false, interactivo: capturas.interactivo };
-    }
+      if (!msg.tool_calls?.length) {
+        const respuesta = msg.content ?? "Disculpá, no entendí. ¿Me lo repetís?";
+        const fueraDeAlcance = /solo puedo ayudarte con/i.test(respuesta);
+        return { respuesta, fueraDeAlcance, escalar: false, interactivo: capturas.interactivo };
+      }
 
-    for (const call of msg.tool_calls) {
-      // En openai 6.x, tool_calls puede incluir herramientas "custom"; solo procesamos las de tipo "function".
-      if (call.type !== "function") continue;
-      // Escalada a humano: el modelo decidió que no puede resolverlo. Cortamos el agente
-      // acá (no mandamos respuesta del bot) y señalamos el traspaso para handleWebhook.
-      if (call.function.name === "escalar_a_humano") {
-        let motivo = "";
-        try {
-          motivo = String(JSON.parse(call.function.arguments || "{}").motivo ?? "");
-        } catch {
-          // sin motivo legible: igual escalamos
+      for (const call of msg.tool_calls) {
+        // En openai 6.x, tool_calls puede incluir herramientas "custom"; solo procesamos las de tipo "function".
+        if (call.type !== "function") continue;
+        // Escalada a humano: el modelo decidió que no puede resolverlo. Cortamos el agente
+        // acá (no mandamos respuesta del bot) y señalamos el traspaso para handleWebhook.
+        if (call.function.name === "escalar_a_humano") {
+          let motivo = "";
+          try {
+            motivo = String(JSON.parse(call.function.arguments || "{}").motivo ?? "");
+          } catch {
+            // sin motivo legible: igual escalamos
+          }
+          return { respuesta: "", fueraDeAlcance: false, escalar: true, motivo };
         }
-        return { respuesta: "", fueraDeAlcance: false, escalar: true, motivo };
+        let resultado: string;
+        try {
+          const args = JSON.parse(call.function.arguments || "{}");
+          resultado = await ejecutarTool(call.function.name, args, ctx, capturas);
+        } catch (e) {
+          resultado = JSON.stringify({ error: String(e) });
+        }
+        mensajes.push({ role: "tool", tool_call_id: call.id, content: resultado });
       }
-      let resultado: string;
-      try {
-        const args = JSON.parse(call.function.arguments || "{}");
-        resultado = await ejecutarTool(call.function.name, args, ctx, capturas);
-      } catch (e) {
-        resultado = JSON.stringify({ error: String(e) });
-      }
-      mensajes.push({ role: "tool", tool_call_id: call.id, content: resultado });
     }
-  }
 
-  // Se agotaron los pasos de tool-calling sin una respuesta final: el bot quedó
-  // trabado → lo pasamos a una persona (en vez de dejar al cliente sin solución).
-  return {
-    respuesta: "",
-    fueraDeAlcance: false,
-    escalar: true,
-    motivo: "el bot no pudo completar la solicitud",
-  };
+    // Se agotaron los pasos de tool-calling sin una respuesta final: el bot quedó
+    // trabado → lo pasamos a una persona (en vez de dejar al cliente sin solución).
+    return {
+      respuesta: "",
+      fueraDeAlcance: false,
+      escalar: true,
+      motivo: "el bot no pudo completar la solicitud",
+    };
+  } finally {
+    // Fire-and-forget (ver observabilidad/uso.ts): nunca debe agregar latencia a la
+    // respuesta ya calculada arriba ni tumbar el turno si la base falla.
+    registrarUsoLlm(ctx.tenant.id, tokensEntrada, tokensSalida, calcularCostoMillonesimos(MODELO, tokensEntrada, tokensSalida));
+  }
 }

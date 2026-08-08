@@ -173,6 +173,21 @@ export interface Tenant {
    * no puede reabrir; solo queda esperar a que el cliente escriba de nuevo).
    */
   plantillaReapertura?: string;
+  /**
+   * Nombre de la plantilla de recordatorio de cita aprobada en Meta para ESTE negocio
+   * (E8/BLOQ-06). undefined = sin configurar → el recordatorio cae a texto libre con
+   * botones (ver src/reminders/scheduler.ts). Antes era la env global
+   * WHATSAPP_TEMPLATE_RECORDATORIO: como las plantillas se aprueban por WABA (por
+   * cliente), con dos negocios el nombre de uno no existe en el WABA del otro.
+   */
+  plantillaRecordatorio?: string;
+  /**
+   * Idioma con el que se aprobó la plantilla (recordatorio/marketing/rescate) en Meta
+   * ("es", "es_MX", "en_US"…), E8/BLOQ-06. undefined = usa WHATSAPP_TEMPLATE_IDIOMA
+   * (.env) o "es". No es fail-closed como el nombre de la plantilla: el idioma no es un
+   * secreto ni causa fuga entre negocios.
+   */
+  plantillaIdioma?: string;
   /** Color de acento del panel (hex "#rrggbb"), white-label C4.1. undefined = paleta default. */
   colorAcento?: string;
   /** Color del encabezado del panel (hex "#rrggbb"), white-label C4.1. undefined = paleta default. */
@@ -669,20 +684,27 @@ export interface Repositorio {
    * ante los reintentos de Meta. Los mensajes salientes (sin waMessageId) siempre
    * devuelven `true`.
    */
-  guardarMensaje(conversacionId: string, msg: MensajeConversacion): Promise<boolean>;
-  marcarOptIn(conversacionId: string): Promise<void>;
+  /**
+   * F4: `tenantId` como primer parámetro (defensa en profundidad) aunque
+   * `wa_mensajes` no tenga columna `tenant_id` propia (eso es F1) — se valida
+   * vía la conversación, que sí la tiene.
+   */
+  guardarMensaje(tenantId: string, conversacionId: string, msg: MensajeConversacion): Promise<boolean>;
+  marcarOptIn(tenantId: string, conversacionId: string): Promise<void>;
   /**
    * Opt-out de CAMPAÑAS de marketing (C3.2): el cliente escribió "BAJA". Marca
    * `optOutEn` en la conversación; el segmento de cualquier campaña futura lo
    * excluye. No afecta recordatorios ni seguimiento post-servicio.
    */
-  marcarOptOut(conversacionId: string): Promise<void>;
+  marcarOptOut(tenantId: string, conversacionId: string): Promise<void>;
   /**
    * Adjunta la URL de una foto a un mensaje YA guardado, identificado por su
    * waMessageId (C1.5). Fase 1 guarda un placeholder de texto rápido; fase 2
    * descarga la imagen de Meta y la completa acá para que se vea en el panel.
+   * `tenantId` (F4): igual que `guardarMensaje`, se valida vía la conversación.
    */
   actualizarMediaMensaje(
+    tenantId: string,
     conversacionId: string,
     waMessageId: string,
     mediaUrl: string,
@@ -696,8 +718,8 @@ export interface Repositorio {
    */
   citasEnRango(tenantId: string, desde: string, hasta: string): Promise<Cita[]>;
   crearCita(cita: Omit<Cita, "id" | "creadaEn" | "estado">): Promise<Cita>;
-  /** Guarda el id del evento de Google Calendar asociado a la cita. */
-  guardarGcalEventId(citaId: string, eventId: string): Promise<void>;
+  /** Guarda el id del evento de Google Calendar asociado a la cita. Scopeada por tenantId (F4). */
+  guardarGcalEventId(tenantId: string, citaId: string, eventId: string): Promise<void>;
   /**
    * Citas ACTIVAS (estado "agendada") futuras de un cliente, de `desdeFecha` en
    * adelante (inclusive), ordenadas por fecha/hora ascendente. `desdeFecha` es
@@ -787,20 +809,21 @@ export interface Repositorio {
    * pruebas deterministas.
    */
   fueRechazadoAddonRecientemente(tenantId: string, clienteWa: string, addonId: string, hoy: string): Promise<boolean>;
-  /** Marca un recordatorio como enviado (para no mandarlo dos veces). */
-  marcarRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<void>;
+  /** Marca un recordatorio como enviado (para no mandarlo dos veces). Scopeada por tenantId (F4). */
+  marcarRecordatorio(tenantId: string, citaId: string, tipo: TipoRecordatorio): Promise<void>;
   /**
    * Intenta marcar el recordatorio como enviado atómicamente (compare-and-swap).
    * Devuelve `true` si esta instancia ganó el claim (la columna estaba NULL y se
    * seteó); `false` si ya fue reclamado por otra instancia.
    * Pooler-safe: es un UPDATE de una sola fila, sin advisory locks de sesión.
+   * Scopeada por tenantId (F4): defensa en profundidad, aunque `citaId` ya sea único.
    */
-  reclamarRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<boolean>;
+  reclamarRecordatorio(tenantId: string, citaId: string, tipo: TipoRecordatorio): Promise<boolean>;
   /**
    * Revierte el claim (columna a NULL) cuando el envío falló, para que el próximo
-   * tick pueda reintentarlo.
+   * tick pueda reintentarlo. Scopeada por tenantId (F4).
    */
-  revertirRecordatorio(citaId: string, tipo: TipoRecordatorio): Promise<void>;
+  revertirRecordatorio(tenantId: string, citaId: string, tipo: TipoRecordatorio): Promise<void>;
   /**
    * Transaccional (con DB): guarda el mensaje entrante Y encola el job de respuesta en
    * `wa_jobs` en una sola transacción → "mensaje persistido ⇒ job encolado" es
@@ -856,6 +879,7 @@ export interface Repositorio {
    * — el caller no necesita saber de antemano si el tenant es Pro.
    */
   registrarRespuestaSeguimiento(
+    tenantId: string,
     citaId: string,
     sentimiento: Sentimiento,
     resenaSolicitada: boolean,
@@ -874,5 +898,6 @@ export interface Repositorio {
   // ── Notificaciones push (Web Push) ──
   guardarPushSub(tenantId: string, sub: PushSub): Promise<void>;
   listarPushSubs(tenantId: string): Promise<PushSub[]>;
-  borrarPushSub(endpoint: string): Promise<void>;
+  /** Scopeada por tenantId (F4): el `endpoint` llega del body del operador (router.ts), no confiable por sí solo. */
+  borrarPushSub(tenantId: string, endpoint: string): Promise<void>;
 }

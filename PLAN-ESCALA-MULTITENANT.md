@@ -1,8 +1,8 @@
 # Plan de Ejecución — Escala multi-tenant (de 1 piloto a 50 negocios)
 
-**Fecha:** 2026-08-05 · **Stack:** TypeScript/`node:http` · Drizzle + Postgres (Supabase) · React + TanStack Query (PWA) · Meta Cloud API · OpenAI · Google Calendar
+**Fecha:** 2026-08-06 · **Stack:** TypeScript/`node:http` · Drizzle + Postgres (Supabase) · React + TanStack Query (PWA) · Meta Cloud API · OpenAI · Google Calendar
 
-**Origen:** auditoría de arquitectura y multitenancy del 2026-08-05 (rama `hardening-multicliente-carril-e`). Cubre los hallazgos de `AUDIT.md` que **no** entraron al bloque A (y por lo tanto no tienen ítem en el Carril E) más 6 hallazgos nuevos que esa auditoría no había registrado. El estado de cada ítem vive en `ROADMAP.md` → **Carril F**; acá va el detalle ejecutable.
+**Origen:** auditoría de arquitectura y multitenancy del 2026-08-06 (rama `hardening-multicliente-carril-e`). Cubre los hallazgos de `AUDIT.md` que **no** entraron al bloque A (y por lo tanto no tienen ítem en el Carril E) más 6 hallazgos nuevos que esa auditoría no había registrado. El estado de cada ítem vive en `ROADMAP.md` → **Carril F**; acá va el detalle ejecutable.
 
 **Objetivo:** que el sistema aguante **50 negocios en paralelo** sin que (a) los datos de uno puedan filtrarse a otro, (b) un cliente ruidoso degrade a los demás, ni (c) sea imposible saber cuánto cuesta y cómo le va a cada uno.
 
@@ -39,6 +39,43 @@ Para que nadie reconstruya lo que ya existe:
 
 ---
 
+## 🚨 Checklist obligatorio ANTES de pushear el Carril F a `main`
+
+Un push a `main` **despliega solo** (`.github/workflows/ci-cd.yml`). Varios ítems de este plan son
+fail-closed a propósito: si falta su variable de entorno, el sistema se niega a arrancar en vez de
+funcionar mal en silencio. Eso es lo correcto, pero significa que el `.env` del droplet tiene que
+estar listo **antes** del merge.
+
+En el droplet (`~/lavacar-whatsapp-bot/.env`):
+
+```bash
+# 1) F2 — clave de cifrado de los access_token. Sin esto el deploy FALLA.
+#    Generala UNA vez y guardala en un lugar seguro: si se pierde, los tokens
+#    cifrados quedan irrecuperables y hay que reconectar cada WABA a mano.
+echo "TOKENS_ENCRYPTION_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")" >> .env
+
+# 2) F5 — compatibilidad del piloto, que hoy NO tiene access_token propio.
+#    Sin esto el bot arranca pero queda MUDO (no puede enviar).
+echo 'WHATSAPP_ACCESS_TOKEN_TENANT_ID=selyon' >> .env
+
+pm2 restart whatsapp-bot
+```
+
+**Modos de falla si se olvida cada una** (verificados, no supuestos):
+
+| Falta | Qué pasa | ¿Se cae producción? |
+|---|---|---|
+| `TOKENS_ENCRYPTION_KEY` | `scripts/seedTenants.ts` aborta el deploy **antes** del `pm2 restart` (importa `secretos.ts`, que lanza al cargar) | **No** — el proceso viejo sigue corriendo. El deploy queda en rojo hasta arreglarlo. Es el mismo patrón de `[[deploy-migracion-obligatoria]]` |
+| `WHATSAPP_ACCESS_TOKEN_TENANT_ID` | El server arranca bien, pero `tokenDeTenant(selyon)` lanza en cada envío → los jobs quedan en `estado='error'` | **Sí, funcionalmente**: el bot recibe y no responde. Peor que el anterior porque es silencioso desde afuera |
+
+Por eso el segundo es el más peligroso de los dos y conviene ponerlos **juntos, antes del push**.
+
+Mejora de fondo (recomendada, fuera del alcance mínimo): cargarle a `selyon` su propio
+`access_token` desde el panel y borrar `WHATSAPP_ACCESS_TOKEN_TENANT_ID`. Ahí el fail-closed deja de
+tener excepciones y la env de compatibilidad se puede eliminar del código.
+
+---
+
 # FASE 0 — Aislamiento real y cero pérdida de mensajes 🔴 BLOQUEANTE
 
 > Nadie puede vender el segundo cliente con confianza mientras el aislamiento dependa de que ningún desarrollador se olvide de un `and()`, el token de WhatsApp de cada negocio esté en texto plano, y un blip de base de datos haga desaparecer mensajes sin dejar rastro.
@@ -56,7 +93,7 @@ Para que nadie reconstruya lo que ya existe:
    - Backfill: `UPDATE wa_mensajes m SET tenant_id = c.tenant_id FROM wa_conversaciones c WHERE m.conversacion_id = c.id;` (por lotes si el volumen lo pide).
    - `SET NOT NULL` + índice `(tenant_id, conversacion_id)`.
    - Escribirla en los 2 `INSERT` de mensajes: `drizzleRepository.ts:165-177` y `:519-529`.
-2. **Migración B — rol de aplicación dedicado.** Hoy probablemente se usa el rol `postgres` de Supabase, que tiene `BYPASSRLS` y **haría las políticas decorativas**. Crear `app_wa` sin `BYPASSRLS`, con permisos `SELECT/INSERT/UPDATE/DELETE` sobre las tablas `wa_*`, y apuntar `DATABASE_URL` a ese rol. ⚠️ **Decisión abierta D-1** (ver §Decisiones).
+2. **Migración B — rol de aplicación dedicado. ⚠️ OBLIGATORIA, no opcional.** Confirmado contra producción (D-1, ver §Decisiones): la app se conecta con el rol **`postgres`, que tiene `rolbypassrls = true`** → sin este paso, las políticas del punto 3 **no harían absolutamente nada**. Crear `app_wa` con `LOGIN`, sin `BYPASSRLS` ni `SUPERUSER`, con `USAGE` en el schema y `SELECT/INSERT/UPDATE/DELETE` solo sobre las tablas `wa_*`. Hacen falta **dos URLs**: `DATABASE_URL` (app, rol `app_wa`) y `DATABASE_URL_MIGRACIONES` (rol `postgres`, con DDL, solo para `migrar.ts`/`seedTenants.ts` en el deploy) — un rol sin DDL no puede migrar, y darle DDL al rol de la app anula media ventaja.
 3. **Migración C — políticas.** En las 13 tablas con `tenant_id` + `wa_mensajes`:
    ```sql
    ALTER TABLE wa_citas ENABLE ROW LEVEL SECURITY;
@@ -71,7 +108,19 @@ Para que nadie reconstruya lo que ya existe:
 
 **Aceptación:** un test de fiabilidad (PGlite) que abre una conexión con `app.tenant_id = 'A'` y verifica que un `SELECT * FROM wa_citas` **sin `WHERE`** devuelve solo filas de A; y que un `UPDATE` sobre una fila de B afecta 0 filas. Suite completa en verde. `npm run db:check` sin drift.
 
-**Estimado: 4–5 días.** Sin dependencias nuevas. **Depende de:** confirmar D-1.
+**Estimado: 4–5 días.** Sin dependencias nuevas. **Depende de:** ~~confirmar D-1~~ (✅ resuelta) y de **E14** (backups verificados), por el backfill sobre `wa_mensajes`.
+
+> 📄 **El paso 1 ya está escrito y listo para revisar: [`scripts/rls/01-rol-aplicacion.sql`](scripts/rls/01-rol-aplicacion.sql).**
+> Se corre **a mano** desde el SQL Editor de Supabase, no como migración de drizzle: crea un
+> rol y cambia credenciales de conexión (infraestructura, no esquema), y meterlo en `migrar.ts`
+> haría que el deploy automático toque la seguridad de la base sin que nadie lo mire.
+> Incluye los permisos mínimos tabla por tabla, la consulta de verificación (`rolbypassrls`
+> tiene que dar `false`), el esquema de dos URLs y el rollback.
+>
+> ⚠️ Punto a verificar antes de confiar: el pooler de Supabase usa el formato
+> `<rol>.<project-ref>` como usuario. Hay que **probar la conexión del rol nuevo** antes de
+> repuntar el `.env` de producción; si el pooler rechaza roles custom, la salida es usar la
+> conexión directa, que tiene menos conexiones disponibles y obliga a revisar `DB_POOL_MAX` (F7).
 
 ---
 
@@ -158,6 +207,25 @@ Ninguna es explotable hoy. Todas se vuelven P0 el día que uno de esos ids llegu
 **Aceptación:** un tenant sin `access_token` y sin ser el nombrado en la env no envía nada y produce un error explícito; el piloto sigue funcionando sin cambios de configuración.
 
 **Estimado: 0,5 días.** Sin dependencias nuevas.
+
+> 🚨 **PRERREQUISITO DE DEPLOY — verificado contra producción el 2026-08-06.**
+> El tenant activo **`selyon` NO tiene `access_token` propio** (`access_token IS NULL`): hoy envía
+> **exclusivamente** con el `WHATSAPP_ACCESS_TOKEN` global. Como el push a `main` despliega solo,
+> mergear F5 sin preparar el entorno **deja el bot mudo en producción**.
+>
+> **Antes de que F5 llegue a `main`, en el droplet:**
+> ```bash
+> echo 'WHATSAPP_ACCESS_TOKEN_TENANT_ID=selyon' >> .env
+> pm2 restart whatsapp-bot
+> ```
+> (o, mejor a mediano plazo, cargarle a `selyon` su propio `access_token` desde el panel y no
+> depender de la env). `seedTenants.ts` **no** lo resuelve solo: siembra `accessToken: undefined`
+> desde `TENANT_FALLBACK_SELYON` (`src/config/tenants.ts:23`), así que la columna sigue en null.
+>
+> Es exactamente el tipo de landmine que E4 evitó a propósito con `GOOGLE_CALENDAR_TENANT_ID`; acá
+> no se puede evitar del todo porque el estado de partida ya depende del token global, así que se
+> mitiga con: (a) esta nota, (b) un warning al arrancar que liste los tenants sin token que no sean
+> el nombrado, y (c) el chequeo en el health check de E10.
 
 ---
 
@@ -446,7 +514,26 @@ B5 ──► F14 (observabilidad por tenant extiende B5, no lo reemplaza)
 
 ## ⚠️ Decisiones abiertas (necesitan respuesta antes de arrancar el ítem)
 
-**D-1 · Rol de base de datos para RLS (bloquea F1).** No pude determinar desde el repo con qué rol se conecta producción. Si es el `postgres` de Supabase, tiene `BYPASSRLS` y **las políticas serían decorativas**. Hay que crear un rol `app_wa` sin `BYPASSRLS` y repuntar `DATABASE_URL`. Requiere confirmar que el pooler y las migraciones sigan funcionando con ese rol.
+**D-1 · Rol de base de datos para RLS (bloquea F1). ✅ RESUELTA — 2026-08-06, verificado contra producción.**
+
+Consulta de solo lectura sobre `pg_roles` con la `DATABASE_URL` real:
+
+```
+usuario efectivo : postgres
+Postgres         : 17.6
+rolsuper         : false
+rolbypassrls     : true   ⚠️  RLS SERÍA DECORATIVO
+```
+
+**La app se conecta con el rol `postgres` de Supabase, que tiene `BYPASSRLS`.** Escribir las políticas sin cambiar esto produciría la peor variante: la apariencia de aislamiento sin el aislamiento — y con ella, la tentación de dejar de revisar los filtros de aplicación. **F1 obliga a crear el rol dedicado**, no es opcional.
+
+Roles con `rolbypassrls = false` que ya existen en el proyecto (o sea: el patrón es viable acá): `authenticator`, `supabase_auth_admin`, `supabase_replication_admin`, `supabase_storage_admin`, más los sin login (`anon`, `authenticated`, `dashboard_user`).
+
+**Plan concreto para F1:**
+1. Crear `app_wa` con `LOGIN`, **sin** `BYPASSRLS` y **sin** `SUPERUSER`, con `GRANT SELECT, INSERT, UPDATE, DELETE` solo sobre las tablas `wa_*` (y `USAGE` en el schema).
+2. **Dos URLs distintas**: `DATABASE_URL` (app, rol `app_wa`) y `DATABASE_URL_MIGRACIONES` (rol `postgres`, solo para `migrar.ts` y `seedTenants.ts` en el deploy). Un rol sin privilegios de DDL no puede correr las migraciones, y darle DDL al rol de la app anularía media ventaja.
+3. Verificado además que hoy las **14 tablas `wa_*` tienen `rls=false` y `force=false`** — se parte de cero, sin políticas previas que reconciliar.
+4. La conexión va por `pooler.supabase.com:5432` (**modo sesión**, no transacción). `SET LOCAL app.tenant_id` dentro de una transacción funciona en ambos modos, así que el enfoque del plan sirve tal cual; pero conviene dimensionar `DB_POOL_MAX` (F7) contra el límite del pooler en modo sesión, que es más chico.
 
 **D-2 · Object storage para las fotos (afecta F9).** Supabase Storage por REST (sin dependencia nueva, misma cuenta ya contratada) vs. S3/R2 (requiere SDK o firmar a mano). Recomiendo Supabase Storage por la política de dependencias.
 
@@ -458,15 +545,37 @@ B5 ──► F14 (observabilidad por tenant extiende B5, no lo reemplaza)
 
 ## ❓ Lo que no se pudo verificar desde el repo
 
-Para no construir sobre supuestos (varios de estos también los lista `AUDIT.md` §«Lo que NO pude determinar»):
+Actualizado 2026-08-06 tras una consulta de solo lectura contra la base de producción.
 
-1. Si producción tiene aplicadas las 25 migraciones (el ROADMAP lo marca como no verificado).
-2. Si el cron de backups corre en el droplet y si el restore se probó alguna vez → es **E14**, y es requisito para tocar el schema en F1/F9.
-3. Cuántos tenants hay hoy en producción (el código soporta N; todo indica que el piloto real es 1).
-4. Qué variables de entorno están efectivamente seteadas en el droplet: de eso depende si Sentry, Calendar, Push y las plantillas están activos o son no-op.
-5. Los límites reales del pooler de Supabase contratado → necesarios para dimensionar `DB_POOL_MAX` en F7.
-6. Throughput y latencia medidos: no hay tests de carga ni histórico (las métricas se pierden en cada restart), así que el techo de «12–30 msg/min» citado en el ROADMAP no está verificado de forma independiente.
-7. Si el panel React (`web/`) tiene alguna suposición de tenant único: se revisó la API que consume, no el árbol de componentes completo.
+1. ~~Si producción tiene aplicadas las 25 migraciones.~~ ✅ **Verificado: 25 aplicadas**, la última el 2026-08-06; las columnas de la `0024` (E15) están presentes. El deploy automático funcionó.
+2. Si el cron de backups corre en el droplet y si el restore se probó alguna vez → sigue abierto, es **E14**, y **es requisito antes de tocar el schema en F1/F9**.
+3. ~~Cuántos tenants hay hoy en producción.~~ ✅ **Verificado: 2 tenants, 1 activo.**
+4. Qué variables de entorno están efectivamente seteadas en el droplet: sigue abierto. De eso depende si Sentry, Calendar, Push y las plantillas están activos o son no-op. **Relevante para F5**: si el tenant activo no tiene `access_token` propio, hay que nombrarlo en `WHATSAPP_ACCESS_TOKEN_TENANT_ID` o deja de enviar.
+5. Límites del pooler: parcial. Se sabe que la conexión va por `pooler.supabase.com:5432` (**modo sesión**), pero no el `max` del plan contratado → necesario para dimensionar `DB_POOL_MAX` en F7.
+6. Throughput y latencia medidos: sigue abierto (no hay tests de carga ni histórico; las métricas se pierden en cada restart).
+7. Si el panel React (`web/`) tiene alguna suposición de tenant único: sigue abierto.
+
+---
+
+## 🆕 Hallazgo de la verificación en producción: `wa_jobs` es la tabla más grande
+
+Tamaños reales al 2026-08-06, con **2 tenants y tráfico de piloto**:
+
+```
+wa_jobs                9432 kB   ~28 filas    → ~336 KB por fila
+wa_mensajes            4416 kB   ~182 filas
+wa_tenants              328 kB   ~2 filas
+wa_conversaciones        96 kB   ~17 filas
+```
+
+**`wa_jobs` es la tabla más grande de la base con 28 filas.** La causa está en la forma del payload: `PendienteSerializado` guarda `conv` (la conversación **entera**, con sus mensajes) y `historialPrevio` (`handleWebhook.ts:125-131` y `:156-163`), y esos mensajes incluyen `mediaUrl`, que es la **foto en base64** (F9). O sea que **cada job duplica las fotos de la conversación**, y con retención cero (F11) eso queda en la base para siempre.
+
+**Consecuencias para el plan:**
+
+- **F11 sube de prioridad** dentro de la Fase 1: no es higiene a futuro, ya es la tabla más grande hoy.
+- **F9 y F11 se potencian**: sacar las fotos de `wa_mensajes` (F9) también adelgaza los payloads de `wa_jobs`, porque el snapshot deja de arrastrar base64.
+- **Sinergia con E5, que ya está en el ROADMAP:** E5 pide que el worker **relea el historial de la base** en vez de usar el snapshot congelado del payload (hoy es la causa de las respuestas incoherentes ante una ráfaga). Ese mismo cambio **elimina la duplicación**: el payload pasa a llevar ids, no una copia de la conversación. Conviene hacer E5 con esto en mente y medir el tamaño de `wa_jobs` antes y después.
+- Sugerencia de secuencia revisada: **E5 → F11 → F9**, en vez de tratarlos como independientes.
 
 ---
 

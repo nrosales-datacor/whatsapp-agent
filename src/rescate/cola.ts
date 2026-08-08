@@ -115,6 +115,52 @@ export async function nombreClienteAprox(db: DB, tenantId: string, clienteWa: st
   return rows[0]?.cliente_nombre ?? "estimado cliente";
 }
 
+/**
+ * Purga por retención (ROADMAP F11, mismo criterio que src/queue/cola.ts): borra
+ * cotizaciones en un estado FINAL ('agendada', 'recuperada', 'descartada' u
+ * 'opt_out') y más viejas que retencionDias. NO toca 'pendiente'/'toque1'/
+ * 'toque2' (el rescate las necesita vivas para seguir tocando).
+ *
+ * La tabla no guarda un timestamp de "cuándo llegó al estado final" (solo
+ * creada_en/toque1_en/toque2_en), así que se usa creada_en como corte: el ciclo
+ * completo de rescate (pendiente → toque1 → toque2) es de días, no de meses, así
+ * que para una retención medida en días/semanas la diferencia contra el momento
+ * real de cierre es despreciable.
+ *
+ * ⚠️ Nota deliberada (no es un fix de este cambio): el dashboard usa TODAS las
+ * filas de wa_cotizaciones del tenant para el "monto recuperado" histórico
+ * (drizzleRepository.ts, metricasCotizaciones) — purgar filas viejas encoge esa
+ * métrica all-time con el tiempo. Aceptado porque el plan (PLAN-ESCALA-
+ * MULTITENANT.md, F11) pide explícitamente esta purga; si se necesita conservar
+ * el histórico exacto del monto recuperado, habría que sumarlo a un contador
+ * agregado antes de purgar (fuera de alcance acá).
+ *
+ * Borra en LOTES, mismo motivo que las otras dos colas: no retener el lock que
+ * el worker de rescate usa para su propio FOR UPDATE SKIP LOCKED.
+ * Devuelve el total de filas borradas (para loguear).
+ */
+export async function purgarCotizacionesFinalizadas(db: DB, retencionDias = 7, tamanoLote = 500): Promise<number> {
+  let total = 0;
+  for (;;) {
+    const rows = filasDe<{ id: string }>(
+      await db.execute(sql`
+      DELETE FROM wa_cotizaciones
+       WHERE id IN (
+         SELECT id FROM wa_cotizaciones
+          WHERE estado IN ('agendada', 'recuperada', 'descartada', 'opt_out')
+            AND creada_en < now() - ${retencionDias} * interval '1 day'
+          ORDER BY creada_en ASC
+          LIMIT ${tamanoLote}
+       )
+      RETURNING id
+    `),
+    );
+    total += rows.length;
+    if (rows.length < tamanoLote) break;
+  }
+  return total;
+}
+
 /** Citas "agendada" del tenant en una fecha, con las columnas mínimas que necesita espaciosDisponibles(). */
 export async function citasDelDia(
   db: DB,

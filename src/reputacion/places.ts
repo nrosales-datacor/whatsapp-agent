@@ -2,6 +2,8 @@ import type { Repositorio, Tenant } from "../types";
 import { listarTenants } from "../config/tenantStore";
 import { tenantPuede } from "../billing/planes";
 import { capturarError } from "../observabilidad/sentry";
+import { mapConLimite } from "../red/concurrencia";
+import { iniciarCicloSinSolape } from "../red/programador";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Reputación en Google vía Places API (Carril D, Fase 1 - 1.3-c, motor de reseñas
@@ -16,6 +18,9 @@ import { capturarError } from "../observabilidad/sentry";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const INTERVALO_MIN = Number(process.env.REPUTACION_INTERVALO_MIN ?? 60);
+// Mismo criterio de F12 que reminders/scheduler.ts: concurrencia acotada en vez
+// de recorrer los tenants en serie.
+const CONCURRENCIA = Number(process.env.REPUTACION_CONCURRENCIA ?? 5);
 
 export function placesConfigurado(): boolean {
   return !!process.env.GOOGLE_PLACES_API_KEY;
@@ -58,32 +63,38 @@ async function procesarTenant(tenant: Tenant, repo: Repositorio, apiKey: string)
   console.log(`[reputacion] ${tenant.id}: rating ${rating} · ${totalResenas} reseñas`);
 }
 
-/** Arranca el job. No-op sin GOOGLE_PLACES_API_KEY. Llamar UNA vez al iniciar el servidor. */
+/**
+ * Arranca el job. No-op sin GOOGLE_PLACES_API_KEY. Llamar UNA vez al iniciar el
+ * servidor.
+ *
+ * F12: mismo tratamiento que `reminders/scheduler.ts` — ciclo sin solapamiento
+ * (`iniciarCicloSinSolape`) y tenants procesados con concurrencia acotada
+ * (`mapConLimite`) en vez de en serie.
+ */
 export function iniciarReputacion(repo: Repositorio): void {
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) return;
 
-  const tick = async () => {
-    for (const tenant of listarTenants()) {
-      try {
-        await procesarTenant(tenant, repo, apiKey);
-      } catch (e) {
-        console.error(`[reputacion] error procesando tenant ${tenant.id}:`, e);
-        capturarError(e, { loop: "reputacion", tenantId: tenant.id });
-      }
-    }
-  };
-  tick().catch((e) => {
-    console.error("[reputacion] primer chequeo:", e);
-    capturarError(e, { loop: "reputacion", momento: "primer-chequeo" });
+  iniciarCicloSinSolape({
+    etiqueta: "reputacion",
+    intervaloMs: INTERVALO_MIN * 60 * 1000,
+    sugerenciaEscalado: "Con más tenants esto va a seguir empeorando: subir REPUTACION_CONCURRENCIA o REPUTACION_INTERVALO_MIN.",
+    tick: () =>
+      mapConLimite(listarTenants(), CONCURRENCIA, async (tenant) => {
+        try {
+          await procesarTenant(tenant, repo, apiKey);
+        } catch (e) {
+          console.error(`[reputacion] error procesando tenant ${tenant.id}:`, e);
+          capturarError(e, { loop: "reputacion", tenantId: tenant.id });
+        }
+      }).then(() => undefined),
+    onError: (e, momento) => {
+      console.error(`[reputacion] ${momento}:`, e);
+      capturarError(e, { loop: "reputacion", momento });
+    },
   });
-  setInterval(
-    () =>
-      tick().catch((e) => {
-        console.error("[reputacion] tick:", e);
-        capturarError(e, { loop: "reputacion", momento: "tick" });
-      }),
-    INTERVALO_MIN * 60 * 1000,
+
+  console.log(
+    `Reputación (Places API) activa: chequeo cada ${INTERVALO_MIN} min, concurrencia ${CONCURRENCIA}, 1 llamada/día/tenant configurado.`,
   );
-  console.log(`Reputación (Places API) activa: chequeo cada ${INTERVALO_MIN} min, 1 llamada/día/tenant configurado.`);
 }

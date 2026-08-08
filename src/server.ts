@@ -4,10 +4,11 @@ import { verificarWebhook, firmaValida } from "./whatsapp/client";
 import { ingerirEntrante, responderEntrante } from "./handleWebhook";
 import { RepositorioEnMemoria } from "./booking/inMemoryRepository";
 import { RepositorioDrizzle } from "./booking/drizzleRepository";
-import { crearDb } from "./db/client";
+import { obtenerDb } from "./db/client";
 import { iniciarRecordatorios } from "./reminders/scheduler";
 import { iniciarReputacion, placesConfigurado } from "./reputacion/places";
-import { cargarTenants } from "./config/tenantStore";
+import { cargarTenants, alRecargar } from "./config/tenantStore";
+import { reprocesarPendientes } from "./reprocesoWebhooks";
 import { credencialesCalendarioConfiguradas } from "./calendar/googleCalendar";
 import { manejarPanel } from "./panel/router";
 import { manejarLanding } from "./landing/servirLanding";
@@ -17,6 +18,7 @@ import { iniciarCampanias } from "./campaigns/worker";
 import { iniciarRescate } from "./rescate/worker";
 import { iniciarSentry, sentryConfigurado, capturarError } from "./observabilidad/sentry";
 import { iniciarReporteMetricas } from "./observabilidad/metricas";
+import { chequearSalud, codigoHttpSalud } from "./salud";
 import type { Repositorio } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -31,17 +33,53 @@ const PORT = Number(process.env.PORT ?? 3000);
 const RUTA_WEBHOOK = "/webhook";
 
 // `db` se expone por separado para pasárselo al worker (que opera directamente
-// sobre wa_jobs sin pasar por la interfaz Repositorio).
-const db = process.env.DATABASE_URL ? crearDb() : null;
+// sobre wa_jobs sin pasar por la interfaz Repositorio). `obtenerDb()` es el
+// pool único del proceso (ROADMAP F7): el resto de los módulos DB-directos
+// (tenantStore, uso, campaigns, rescate) comparten esta misma instancia.
+const db = process.env.DATABASE_URL ? obtenerDb() : null;
 const repo: Repositorio = db ? new RepositorioDrizzle(db) : new RepositorioEnMemoria();
+
+// Reproceso de wa_webhooks_crudos (ROADMAP F3): tenantStore no puede importar
+// handleWebhook (ciclo de imports — ver el comentario en reprocesoWebhooks.ts),
+// así que acá, que ya conoce ambas puntas (db + repo), se conecta el callback
+// genérico que expone tenantStore con el reproceso real. Se dispara después de
+// CUALQUIER recarga exitosa del caché: alta de negocio (router.ts), refresco
+// periódico y recarga on-demand ante un phone_number_id nuevo — son justo los
+// momentos en que un mensaje que quedó "pendiente" puede volverse resoluble.
+if (db) {
+  alRecargar(() => {
+    reprocesarPendientes(db, repo).catch((e) => {
+      console.error("[server] reprocesarPendientes falló:", e);
+      capturarError(e, { modulo: "reprocesoWebhooks" });
+    });
+  });
+}
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
   // Health check (antes vivía en `/`; el root ahora es la landing pública, C4.4).
+  // ROADMAP E10 / AUDIT.md BLOQUEANTE-11: antes esto devolvía 200 con el proceso
+  // vivo, sin mirar nada más. Ahora corre chequeos reales (src/salud.ts) y solo
+  // devuelve 200 si nada crítico falló. El contrato de texto plano en 200 se
+  // preserva EXACTO ("Agente de WhatsApp corriendo ✅") porque el smoke del CI
+  // (ci-cd.yml) hace `curl -sf` esperando un 2xx — cambiar el código rompería el
+  // deploy, no solo el formato.
+  //
+  // `?detalle=1` (o el content-negotiation vía Accept, evitado a propósito: un
+  // uptime monitor manda `Accept: */*` y terminaría recibiendo JSON igual) es el
+  // modo humano: JSON con cada chequeo, para debugging, nunca lo mira el monitor
+  // automático (que solo hace un GET plano a /salud).
   if (url.pathname === "/salud") {
-    res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
-    res.end("Agente de WhatsApp corriendo ✅");
+    const detalle = await chequearSalud(db);
+    const codigo = codigoHttpSalud(detalle);
+    if (url.searchParams.get("detalle") === "1") {
+      res.writeHead(codigo, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify(detalle));
+    } else {
+      res.writeHead(codigo, { "content-type": "text/plain; charset=utf-8" });
+      res.end(codigo === 200 ? "Agente de WhatsApp corriendo ✅" : "Agente de WhatsApp degradado ⚠️");
+    }
     return;
   }
 
@@ -96,7 +134,7 @@ const server = http.createServer(async (req, res) => {
     // y Meta reintenta — la deduplicación por waMessageId evita procesarlo dos veces.
     let pendiente;
     try {
-      pendiente = await ingerirEntrante(body, repo);
+      pendiente = await ingerirEntrante(body, repo, db ?? undefined);
     } catch (e) {
       console.error("[server] no se pudo persistir el mensaje entrante (Meta reintentará):", e);
       capturarError(e, { ruta: "webhook", fase: 1 });
