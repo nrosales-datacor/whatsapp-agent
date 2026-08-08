@@ -9,4 +9,4 @@ if (!pw) {
   console.error('Uso: npx tsx scripts/hashPassword.ts "TU_CONTRASEÑA"');
   process.exit(1);
 }
-console.log(hashearPassword(pw));
+console.log(await hashearPassword(pw));

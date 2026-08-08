@@ -66,7 +66,7 @@ export async function enviarPushATenant(
         const code = e?.statusCode;
         if (code === 404 || code === 410) {
           // Suscripción caducada o cancelada → la borramos.
-          await repo.borrarPushSub(s.endpoint).catch(() => {});
+          await repo.borrarPushSub(tenantId, s.endpoint).catch(() => {});
         } else {
           console.error("[push] error al enviar:", code ?? e?.message ?? e);
         }

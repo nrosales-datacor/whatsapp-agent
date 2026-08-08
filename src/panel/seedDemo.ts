@@ -265,7 +265,7 @@ export async function seedDemo(repo: Repositorio): Promise<void> {
   for (const c of CONVERSACIONES) {
     const conv = await repo.obtenerOConversacion(tid, c.wa);
     for (const m of c.msgs) {
-      await repo.guardarMensaje(conv.id, {
+      await repo.guardarMensaje(tid, conv.id, {
         rol: m.de === "cliente" ? "user" : "assistant",
         contenido: m.t,
         creadoEn: haceMin(m.min),
@@ -298,7 +298,7 @@ export async function seedDemo(repo: Repositorio): Promise<void> {
     const cita = citasCreadas[s.citaIdx];
     if (!cita) continue;
     await repo.crearSeguimiento(tid, cita.id);
-    await repo.registrarRespuestaSeguimiento(cita.id, s.sentimiento, s.sentimiento === "positivo", "(demo)");
+    await repo.registrarRespuestaSeguimiento(tid, cita.id, s.sentimiento, s.sentimiento === "positivo", "(demo)");
   }
   for (const s of REPUTACION_DEMO) {
     await repo.guardarSnapshotReputacion(tid, dia(s.diasAtras), s.rating, s.totalResenas);

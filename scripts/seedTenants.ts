@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import { cifrar } from "../src/config/secretos";
 import { TENANT_FALLBACK_SELYON } from "../src/config/tenants";
 import { waTenants, waUsuarios } from "../src/db/schema";
 
@@ -51,13 +52,17 @@ try {
   const db = drizzle(sql);
   const t = TENANT_FALLBACK_SELYON;
 
+  // Cifrado (ROADMAP F2) ANTES de armar los objetos de insert/update: este script es el
+  // otro punto de escritura de wa_tenants.access_token además de crearTenant (tenantStore.ts).
+  const accessTokenCifrado = t.accessToken ? cifrar(t.accessToken) : null;
+
   // El id del tenant es el slug ("selyon"): debe coincidir con el tenant_id ya guardado
   // en wa_conversaciones/wa_citas. Es inmutable.
   const datos = {
     id: t.id,
     nombre: t.nombre,
     phoneNumberId: t.phoneNumberId,
-    accessToken: t.accessToken ?? null,
+    accessToken: accessTokenCifrado,
     timezone: t.timezone,
     moneda: t.moneda,
     ubicacion: t.ubicacion,
@@ -80,7 +85,7 @@ try {
   // El resto de `datos` solo aplica al INSERT inicial.
   const infraestructura = {
     phoneNumberId: t.phoneNumberId,
-    accessToken: t.accessToken ?? null,
+    accessToken: accessTokenCifrado,
     actualizadoEn: new Date(),
   };
 

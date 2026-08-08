@@ -41,13 +41,13 @@ for (const tipo of TIPOS) {
       const cita = await crearCita(repo, "50611111111");
 
       const resultados = await Promise.all(
-        Array.from({ length: 8 }, () => repo.reclamarRecordatorio(cita.id, tipo)),
+        Array.from({ length: 8 }, () => repo.reclamarRecordatorio(TENANT, cita.id, tipo)),
       );
       const ganadores = resultados.filter(Boolean).length;
       assert.equal(ganadores, 1, `solo un intento debe ganar el claim de '${tipo}'`);
 
       // Un claim posterior tampoco puede ganar (la columna ya no es NULL).
-      assert.equal(await repo.reclamarRecordatorio(cita.id, tipo), false);
+      assert.equal(await repo.reclamarRecordatorio(TENANT, cita.id, tipo), false);
     } finally {
       await cerrar();
     }
@@ -60,11 +60,11 @@ test("revertir el claim (envío falló) permite volver a reclamarlo", async () =
     const repo = new RepositorioDrizzle(db);
     const cita = await crearCita(repo, "50622222222");
 
-    assert.equal(await repo.reclamarRecordatorio(cita.id, "dia_antes"), true, "primer claim gana");
-    assert.equal(await repo.reclamarRecordatorio(cita.id, "dia_antes"), false, "segundo claim pierde");
+    assert.equal(await repo.reclamarRecordatorio(TENANT, cita.id, "dia_antes"), true, "primer claim gana");
+    assert.equal(await repo.reclamarRecordatorio(TENANT, cita.id, "dia_antes"), false, "segundo claim pierde");
 
-    await repo.revertirRecordatorio(cita.id, "dia_antes"); // el envío falló → se libera
-    assert.equal(await repo.reclamarRecordatorio(cita.id, "dia_antes"), true, "tras revertir, se puede reintentar");
+    await repo.revertirRecordatorio(TENANT, cita.id, "dia_antes"); // el envío falló → se libera
+    assert.equal(await repo.reclamarRecordatorio(TENANT, cita.id, "dia_antes"), true, "tras revertir, se puede reintentar");
   } finally {
     await cerrar();
   }
@@ -78,8 +78,8 @@ test("el claim de una cita no bloquea el de otra (keyed por citaId)", async () =
     const citaB = await crearCita(repo, "50644444444");
 
     const [a, b] = await Promise.all([
-      repo.reclamarRecordatorio(citaA.id, "mismo_dia"),
-      repo.reclamarRecordatorio(citaB.id, "mismo_dia"),
+      repo.reclamarRecordatorio(TENANT, citaA.id, "mismo_dia"),
+      repo.reclamarRecordatorio(TENANT, citaB.id, "mismo_dia"),
     ]);
     assert.equal(a, true, "cita A se reclama");
     assert.equal(b, true, "cita B se reclama independientemente");
@@ -94,11 +94,11 @@ test("los tres tipos de recordatorio son independientes en la misma cita", async
     const repo = new RepositorioDrizzle(db);
     const cita = await crearCita(repo, "50655555555");
     for (const tipo of TIPOS) {
-      assert.equal(await repo.reclamarRecordatorio(cita.id, tipo), true, `${tipo} se puede reclamar`);
+      assert.equal(await repo.reclamarRecordatorio(TENANT, cita.id, tipo), true, `${tipo} se puede reclamar`);
     }
     // Y cada uno solo una vez.
     for (const tipo of TIPOS) {
-      assert.equal(await repo.reclamarRecordatorio(cita.id, tipo), false, `${tipo} ya no se re-reclama`);
+      assert.equal(await repo.reclamarRecordatorio(TENANT, cita.id, tipo), false, `${tipo} ya no se re-reclama`);
     }
   } finally {
     await cerrar();

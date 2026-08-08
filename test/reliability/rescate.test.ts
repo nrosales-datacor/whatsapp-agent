@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { eq } from "drizzle-orm";
 import { crearDbEfimera } from "../helpers/pgliteDb";
 import { waCotizaciones } from "../../src/db/schema";
-import { reclamarToque1, reclamarToque2 } from "../../src/rescate/cola";
+import { purgarCotizacionesFinalizadas, reclamarToque1, reclamarToque2 } from "../../src/rescate/cola";
+import { procesarConTope } from "../../src/rescate/worker";
 import { RepositorioDrizzle } from "../../src/booking/drizzleRepository";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -90,6 +91,55 @@ test("reclamarToque2: solo reclama 'toque1' cuyo primer toque ya pasó el corte"
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Tope por tick (ROADMAP F8): `procesarTenant` ya no drena TODOS los toques
+// listos de un tenant en un `while` sin límite — se para en RESCATE_MAX_POR_TICK
+// para que el `for` sobre listarTenants() siempre le dé un turno al siguiente.
+// `procesarConTope` es la función pura que implementa ese tope; se prueba acá
+// con un mock de `intentar`/`esperar`, sin DB ni WhatsApp real.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("procesarConTope: procesa como mucho maxPorTick candidatos y deja el resto para la próxima vuelta (F8)", async () => {
+  let disponibles = 12; // ej.: un tenant con 12 cotizaciones listas para el toque1
+  const intentar = async (): Promise<boolean> => {
+    if (disponibles <= 0) return false;
+    disponibles--;
+    return true;
+  };
+  const esperas: number[] = [];
+  const esperar = async (ms: number): Promise<void> => {
+    esperas.push(ms);
+  };
+
+  const procesados = await procesarConTope(intentar, 5, esperar, 1200);
+
+  assert.equal(procesados, 5, "se procesan como mucho 5 por vuelta (RESCATE_MAX_POR_TICK)");
+  assert.equal(disponibles, 7, "los 7 restantes quedan para la próxima vuelta del `for` sobre tenants");
+  assert.equal(esperas.length, 5, "espera el throttle entre cada candidato procesado");
+  assert.ok(esperas.every((ms) => ms === 1200), "respeta el intervalo de envío en cada espera");
+});
+
+test("procesarConTope: con menos candidatos que el tope, corta apenas se acaban (no espera de más)", async () => {
+  let disponibles = 2;
+  const intentar = async (): Promise<boolean> => {
+    if (disponibles <= 0) return false;
+    disponibles--;
+    return true;
+  };
+  let llamadasEspera = 0;
+  const procesados = await procesarConTope(
+    intentar,
+    5,
+    async () => {
+      llamadasEspera++;
+    },
+    1200,
+  );
+
+  assert.equal(procesados, 2, "solo había 2 candidatos: no llega al tope de 5");
+  assert.equal(llamadasEspera, 2, "una espera por cada candidato realmente procesado");
+});
+
 test("Repositorio.registrarCotizacion: no permite dos rescates activos al mismo teléfono", async () => {
   const { db, cerrar } = await crearDbEfimera();
   try {
@@ -122,6 +172,72 @@ test("Repositorio.actualizarCotizacionPorCita: sin toques previos → 'agendada'
     const [f2] = await db.select().from(waCotizaciones).where(eq(waCotizaciones.id, idB));
     assert.equal(f2.estado, "recuperada");
     assert.equal(f2.montoRecuperado, 18000);
+  } finally {
+    await cerrar();
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Purga por retención (ROADMAP F11): purgarCotizacionesFinalizadas solo borra
+// estados finales viejos; deja vivos los estados que el rescate sigue tocando.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("purgarCotizacionesFinalizadas: borra estados finales viejos, respeta el corte de días", async () => {
+  const { db, cerrar } = await crearDbEfimera();
+  try {
+    const vieja = await sembrarCotizacion(db, { clienteWa: "50688890001", estado: "agendada" });
+    await db.update(waCotizaciones).set({ creadaEn: horasAtras(24 * 10) }).where(eq(waCotizaciones.id, vieja));
+
+    const reciente = await sembrarCotizacion(db, { clienteWa: "50688890002", estado: "recuperada" });
+    await db.update(waCotizaciones).set({ creadaEn: horasAtras(24 * 2) }).where(eq(waCotizaciones.id, reciente));
+
+    const borrados = await purgarCotizacionesFinalizadas(db, 7);
+    assert.equal(borrados, 1, "solo la de hace 10 días cruza el corte de 7");
+
+    const restantes = await db.select({ id: waCotizaciones.id }).from(waCotizaciones);
+    assert.deepEqual(restantes.map((r) => r.id).sort(), [reciente].sort());
+  } finally {
+    await cerrar();
+  }
+});
+
+test("purgarCotizacionesFinalizadas: NO toca 'pendiente'/'toque1'/'toque2' sin importar la antigüedad", async () => {
+  const { db, cerrar } = await crearDbEfimera();
+  try {
+    const pendiente = await sembrarCotizacion(db, { clienteWa: "50688891001" });
+    await db.update(waCotizaciones).set({ creadaEn: horasAtras(24 * 30) }).where(eq(waCotizaciones.id, pendiente));
+
+    const toque1 = await sembrarCotizacion(db, { clienteWa: "50688891002", estado: "toque1", toque1En: horasAtras(24 * 30) });
+    await db.update(waCotizaciones).set({ creadaEn: horasAtras(24 * 30) }).where(eq(waCotizaciones.id, toque1));
+
+    const toque2 = await sembrarCotizacion(db, { clienteWa: "50688891003", estado: "toque2", toque2En: horasAtras(24 * 30) });
+    await db.update(waCotizaciones).set({ creadaEn: horasAtras(24 * 30) }).where(eq(waCotizaciones.id, toque2));
+
+    const borrados = await purgarCotizacionesFinalizadas(db, 7);
+    assert.equal(borrados, 0, "ninguno de los tres es un estado final: la purga no toca nada");
+
+    const restantes = await db.select({ id: waCotizaciones.id }).from(waCotizaciones);
+    assert.equal(restantes.length, 3);
+  } finally {
+    await cerrar();
+  }
+});
+
+test("purgarCotizacionesFinalizadas: borra por lotes y termina (no loop infinito)", async () => {
+  const { db, cerrar } = await crearDbEfimera();
+  try {
+    const ids = await Promise.all(
+      Array.from({ length: 5 }, (_, i) => sembrarCotizacion(db, { clienteWa: `506888920${i}`, estado: "opt_out" })),
+    );
+    for (const id of ids) {
+      await db.update(waCotizaciones).set({ creadaEn: horasAtras(24 * 10) }).where(eq(waCotizaciones.id, id));
+    }
+
+    const borrados = await purgarCotizacionesFinalizadas(db, 7, 2); // lote de 2, con 5 filas → 3 vueltas
+    assert.equal(borrados, 5);
+
+    const restantes = await db.select({ id: waCotizaciones.id }).from(waCotizaciones);
+    assert.equal(restantes.length, 0);
   } finally {
     await cerrar();
   }

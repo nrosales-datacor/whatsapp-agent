@@ -216,7 +216,7 @@ test("cotiza una FOTO (visión, C1.5): descarga la imagen, la adjunta al LLM y l
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant);
   // Simula la persistencia que hace la fase 1 para el mensaje de foto entrante.
-  await repo.guardarMensaje(conv.id, {
+  await repo.guardarMensaje(tenant.id, conv.id, {
     rol: "user",
     contenido: "[foto] ¿cuánto por pulir esto?",
     creadoEn: new Date().toISOString(),
@@ -509,6 +509,60 @@ test("reacción (👍) se ignora por completo: no produce Pendiente (ni job, ni 
 
   const pendiente = await ingerirEntrante(body, repo);
   assert.equal(pendiente, null, "una reacción no debe producir ningún Pendiente (se ignora igual que un status)");
+});
+
+// ── E5-a: historial fresco (no el snapshot viejo de la ingesta) ──
+
+test("E5-a: aunque el payload traiga un historialPrevio VIEJO (snapshot desactualizado), el agente ve la conversación completa", async () => {
+  const mock = instalarMockWebhook();
+  mock.programarLLM({ texto: "¡Listo! Te veo el viernes." });
+  const repo = new RepositorioEnMemoria();
+  const tenant = tenantDemo();
+  const conv = await nuevaConv(repo, tenant);
+
+  // Simula lo que hace la fase 1 (ingesta) para los 3 mensajes de una ráfaga: los 3
+  // quedan persistidos en el repo (eso SIEMPRE pasa, sea cual sea el estado del job).
+  await repo.guardarMensaje(tenant.id, conv.id, { rol: "user", contenido: "Hola", creadoEn: new Date().toISOString(), waMessageId: "wamid.1" });
+  await repo.guardarMensaje(tenant.id, conv.id, {
+    rol: "user",
+    contenido: "quiero una cita",
+    creadoEn: new Date().toISOString(),
+    waMessageId: "wamid.2",
+  });
+  await repo.guardarMensaje(tenant.id, conv.id, {
+    rol: "user",
+    contenido: "para el viernes",
+    creadoEn: new Date().toISOString(),
+    waMessageId: "wamid.3",
+  });
+
+  // El Pendiente del 3er mensaje trae un snapshot VIEJO tomado antes de que llegara
+  // el 2º mensaje (race real: dos webhooks casi simultáneos, el 2º lee la
+  // conversación antes de que el 1º termine de guardar). Sin el fix (E5-a), el
+  // agente respondería sin haber visto "quiero una cita".
+  const pendiente: Pendiente = {
+    clase: "texto",
+    tenant,
+    conv,
+    primerContacto: false,
+    historialPrevio: [{ rol: "user", contenido: "Hola", creadoEn: new Date().toISOString(), waMessageId: "wamid.1" }],
+    entrante: {
+      phoneNumberId: tenant.phoneNumberId,
+      clienteWa: CLIENTE,
+      texto: "para el viernes",
+      esTexto: true,
+      messageId: "wamid.3",
+    },
+  };
+
+  await responderEntrante(pendiente, repo);
+
+  assert.equal(mock.llamadasLLM(), 1);
+  const mensajesPrompt = mock.solicitudesLLM[0].messages as Array<{ content: unknown }>;
+  const contenidos = mensajesPrompt.map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content)));
+  assert.ok(contenidos.some((c) => c.includes("quiero una cita")), "el historial fresco debe incluir el 2º mensaje, ausente del snapshot viejo");
+  assert.ok(contenidos.some((c) => c.includes("Hola")), "el historial fresco debe incluir el 1º mensaje");
+  assert.equal(contenidos.filter((c) => c.includes("para el viernes")).length, 1, "el 3er mensaje (turno actual) NO debe duplicarse en el historial");
 });
 
 // ── Fase de ingesta: dedup por wamid ──

@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import { crearDb } from "../db/client";
+import { obtenerDb as obtenerPoolGlobal } from "../db/client";
 import { schema, waUsoMensual } from "../db/schema";
 
 type DB = PostgresJsDatabase<typeof schema>;
@@ -15,11 +15,12 @@ type DB = PostgresJsDatabase<typeof schema>;
 // el hot path del webhook ni el envío de mensajes.
 // ─────────────────────────────────────────────────────────────────────────────
 
-let db: ReturnType<typeof crearDb> | null = null;
-function obtenerDb(): ReturnType<typeof crearDb> | null {
+// Gateado por DATABASE_URL (no-op sin DB, ver comentario de arriba). El pool en sí
+// es el singleton compartido de todo el proceso (ROADMAP F7): antes este módulo
+// mantenía su propio pool aparte del de `tenantStore`/`server`/campañas/rescate.
+function obtenerDb(): ReturnType<typeof obtenerPoolGlobal> | null {
   if (!process.env.DATABASE_URL) return null;
-  if (!db) db = crearDb();
-  return db;
+  return obtenerPoolGlobal();
 }
 
 /** "YYYY-MM" en UTC — alcanza para un contador mensual aproximado (no requiere la tz del tenant). */
@@ -34,6 +35,12 @@ export interface Incremento {
   mensajesSalientes?: number;
   plantillasMarketing?: number;
   plantillasUtilidad?: number;
+  // Costo de LLM por tenant (F13 — PLAN-ESCALA-MULTITENANT.md). tokensEntrada/tokensSalida
+  // son enteros normales; costoEstimadoMillonesimos está en millonésimos de dólar (ver el
+  // comentario de la columna en schema.ts y src/observabilidad/costoLlm.ts).
+  tokensEntrada?: number;
+  tokensSalida?: number;
+  costoEstimadoMillonesimos?: number;
 }
 
 /**
@@ -53,6 +60,9 @@ export async function incrementarUso(db: DB, tenantId: string, anioMes: string, 
       mensajesSalientes: delta.mensajesSalientes ?? 0,
       plantillasMarketing: delta.plantillasMarketing ?? 0,
       plantillasUtilidad: delta.plantillasUtilidad ?? 0,
+      tokensEntrada: delta.tokensEntrada ?? 0,
+      tokensSalida: delta.tokensSalida ?? 0,
+      costoEstimadoMillonesimos: delta.costoEstimadoMillonesimos ?? 0,
     })
     .onConflictDoUpdate({
       target: [waUsoMensual.tenantId, waUsoMensual.anioMes],
@@ -71,6 +81,11 @@ export async function incrementarUso(db: DB, tenantId: string, anioMes: string, 
           : {}),
         ...(delta.plantillasUtilidad
           ? { plantillasUtilidad: sql`${waUsoMensual.plantillasUtilidad} + ${delta.plantillasUtilidad}` }
+          : {}),
+        ...(delta.tokensEntrada ? { tokensEntrada: sql`${waUsoMensual.tokensEntrada} + ${delta.tokensEntrada}` } : {}),
+        ...(delta.tokensSalida ? { tokensSalida: sql`${waUsoMensual.tokensSalida} + ${delta.tokensSalida}` } : {}),
+        ...(delta.costoEstimadoMillonesimos
+          ? { costoEstimadoMillonesimos: sql`${waUsoMensual.costoEstimadoMillonesimos} + ${delta.costoEstimadoMillonesimos}` }
           : {}),
       },
     });
@@ -112,12 +127,34 @@ export function registrarMensajeSaliente(tenantId: string, plantilla?: "marketin
   });
 }
 
+/**
+ * Registra el consumo de LLM (tokens + costo estimado) de UN turno del agente, o de UNA
+ * transcripción de Whisper (F13 — PLAN-ESCALA-MULTITENANT.md). Fire-and-forget, mismo
+ * criterio que `registrarMensajeEntrante`/`registrarMensajeSaliente`: el turno YA terminó
+ * de responderle al cliente cuando esto corre, así que nunca debe agregar latencia ni
+ * tumbar nada si la base falla. Para Whisper, `tokensEntrada`/`tokensSalida` van en 0 (no
+ * se mide en tokens, ver costoLlm.ts) y solo se suma el costo.
+ */
+export function registrarUsoLlm(
+  tenantId: string,
+  tokensEntrada: number,
+  tokensSalida: number,
+  costoEstimadoMillonesimos: number,
+): void {
+  if (tokensEntrada <= 0 && tokensSalida <= 0 && costoEstimadoMillonesimos <= 0) return; // nada que sumar
+  void incrementar(tenantId, { tokensEntrada, tokensSalida, costoEstimadoMillonesimos });
+}
+
 export interface UsoMensualTenant {
   conversacionesIniciadas: number;
   mensajesEntrantes: number;
   mensajesSalientes: number;
   plantillasMarketing: number;
   plantillasUtilidad: number;
+  tokensEntrada: number;
+  tokensSalida: number;
+  /** Millonésimos de dólar (1 unidad = USD 0,000001). Dividir entre 1_000_000 para USD. */
+  costoEstimadoMillonesimos: number;
 }
 
 /** Uso del mes actual de UN tenant. null sin DB, o si todavía no tiene actividad este mes. */
@@ -137,6 +174,9 @@ export async function obtenerUsoMensual(tenantId: string): Promise<UsoMensualTen
     mensajesSalientes: f.mensajesSalientes,
     plantillasMarketing: f.plantillasMarketing,
     plantillasUtilidad: f.plantillasUtilidad,
+    tokensEntrada: f.tokensEntrada,
+    tokensSalida: f.tokensSalida,
+    costoEstimadoMillonesimos: f.costoEstimadoMillonesimos,
   };
 }
 
@@ -157,6 +197,9 @@ export async function listarUsoMensualActual(): Promise<Map<string, UsoMensualTe
       mensajesSalientes: f.mensajesSalientes,
       plantillasMarketing: f.plantillasMarketing,
       plantillasUtilidad: f.plantillasUtilidad,
+      tokensEntrada: f.tokensEntrada,
+      tokensSalida: f.tokensSalida,
+      costoEstimadoMillonesimos: f.costoEstimadoMillonesimos,
     });
   }
   return mapa;

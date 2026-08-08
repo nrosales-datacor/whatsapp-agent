@@ -30,47 +30,114 @@ export interface Job {
   payload: PendienteSerializado;
 }
 
+// E5-b (ráfaga): coalescing/debounce por conversación. Si al reclamar un job hay
+// otro job PENDIENTE de la MISMA conversación con un `creado_en` más nuevo, este
+// job quedó obsoleto — el cliente ya escribió algo más y el mensaje más nuevo va a
+// releer el historial completo (E5-a) de todos modos, así que responder a este
+// generaría una respuesta duplicada/incoherente. Se marca "reemplazado" (no se
+// llama a `responderEntrante`) y seguimos al siguiente candidato.
+//
+// No agregamos una columna `conversacion_id` a `wa_jobs` (evitamos migración):
+// `payload.conv.id` ya viaja en el JSONB de TODOS los jobs (`Pendiente.conv` es
+// obligatorio en el tipo), así que alcanza con leerlo vía `payload->'conv'->>'id'`.
+// No se agrega índice nuevo: en operación normal la cola pendiente tiene pocas
+// filas (se procesa casi en tiempo real), así que un filtro sobre esas pocas filas
+// no cambia el plan del claim principal (que sigue usando `wa_jobs_claim_idx`).
+//
+// Se usa `creado_en` (no `ejecutar_despues_de`) para decidir "más nuevo": el
+// backoff de reintentos empuja `ejecutar_despues_de` al futuro sin tocar
+// `creado_en`, que refleja el orden real de llegada de los mensajes.
+//
+// Atomicidad: la comparación pasa DENTRO de la misma transacción que reclama el
+// job (antes de marcarlo "procesando"), bajo el lock de `FOR UPDATE SKIP LOCKED`
+// del job reclamado. Como la condición es estrictamente "más nuevo que YO", dos
+// jobs de la misma conversación no pueden reemplazarse mutuamente: el más viejo
+// puede ceder ante el más nuevo, pero el más nuevo nunca encuentra algo "más nuevo
+// que él mismo" en ese chequeo.
+//
+// "reemplazado" es un estado nuevo (columna `estado` es texto libre, sin check
+// constraint) que significa "no se respondió a propósito, superseded por un
+// mensaje más nuevo de la misma conversación" — distinto de "hecho" (se respondió
+// bien) y de "error" (falló). No lo cuenta `profundidadCola` (solo mira
+// 'pendiente'), así que no ensucia esa métrica.
+const ESTADO_REEMPLAZADO = "reemplazado";
+
 /**
  * Reclama un job pendiente (FOR UPDATE SKIP LOCKED) y lo pone en "procesando".
  * Devuelve null si no hay ninguno listo. Toda la lógica va en una transacción
  * corta para que el lock quede liberado antes de llamar al LLM.
+ *
+ * Internamente puede reclamar y descartar (marcar "reemplazado") varios jobs
+ * obsoletos de una ráfaga antes de devolver el que corresponde procesar (el más
+ * nuevo de cada conversación) — ver comentario de E5-b arriba.
  */
 export async function reclamarUno(db: DB): Promise<Job | null> {
-  return db.transaction(async (tx) => {
-    const rows = filasDe<{
-      id: string;
-      tenant_id: string;
-      intentos: number;
-      max_intentos: number;
-      payload: PendienteSerializado;
-    }>(
+  while (true) {
+    const resultado = await db.transaction(async (tx) => {
+      const rows = filasDe<{
+        id: string;
+        tenant_id: string;
+        intentos: number;
+        max_intentos: number;
+        payload: PendienteSerializado;
+        creado_en: Date;
+      }>(
+        await tx.execute(sql`
+        SELECT id, tenant_id, intentos, max_intentos, payload, creado_en
+          FROM wa_jobs
+         WHERE estado = 'pendiente' AND ejecutar_despues_de <= now()
+         ORDER BY ejecutar_despues_de ASC
+         FOR UPDATE SKIP LOCKED
+         LIMIT 1
+      `),
+      );
+
+      if (rows.length === 0) return { tipo: "vacio" as const };
+      const r = rows[0];
+
+      const conversacionId = r.payload?.conv?.id;
+      if (conversacionId) {
+        const masNuevo = filasDe<{ id: string }>(
+          await tx.execute(sql`
+          SELECT id FROM wa_jobs
+           WHERE estado = 'pendiente'
+             AND payload->'conv'->>'id' = ${conversacionId}
+             AND creado_en > ${r.creado_en}
+           LIMIT 1
+        `),
+        );
+        if (masNuevo.length > 0) {
+          await tx.execute(sql`
+            UPDATE wa_jobs
+               SET estado = ${ESTADO_REEMPLAZADO}, locked_at = NULL, finalizado_en = now()
+             WHERE id = ${r.id}
+          `);
+          return { tipo: "reemplazado" as const };
+        }
+      }
+
       await tx.execute(sql`
-      SELECT id, tenant_id, intentos, max_intentos, payload
-        FROM wa_jobs
-       WHERE estado = 'pendiente' AND ejecutar_despues_de <= now()
-       ORDER BY ejecutar_despues_de ASC
-       FOR UPDATE SKIP LOCKED
-       LIMIT 1
-    `),
-    );
+        UPDATE wa_jobs
+           SET estado = 'procesando', locked_at = now(), intentos = intentos + 1
+         WHERE id = ${r.id}
+      `);
 
-    if (rows.length === 0) return null;
-    const r = rows[0];
+      return {
+        tipo: "job" as const,
+        job: {
+          id: r.id,
+          tenantId: r.tenant_id,
+          intentos: r.intentos + 1,
+          maxIntentos: r.max_intentos,
+          payload: r.payload,
+        },
+      };
+    });
 
-    await tx.execute(sql`
-      UPDATE wa_jobs
-         SET estado = 'procesando', locked_at = now(), intentos = intentos + 1
-       WHERE id = ${r.id}
-    `);
-
-    return {
-      id: r.id,
-      tenantId: r.tenant_id,
-      intentos: r.intentos + 1,
-      maxIntentos: r.max_intentos,
-      payload: r.payload,
-    };
-  });
+    if (resultado.tipo === "vacio") return null;
+    if (resultado.tipo === "reemplazado") continue; // sigue buscando el siguiente candidato
+    return resultado.job;
+  }
 }
 
 /** Marca el job como completado exitosamente. */
@@ -136,4 +203,44 @@ export async function reencolarVencidos(db: DB, umbralSeg = 180): Promise<number
   `),
   );
   return rows.length;
+}
+
+/**
+ * Purga por retención (ROADMAP F11): borra jobs ya "hecho" cuyo finalizado_en
+ * sea más viejo que retencionDias. Es la única causa por la que wa_jobs crecía
+ * sin límite (medido en producción: 9,4 MB con ~29 filas, la tabla más grande de
+ * la base) — cada mensaje deja para siempre una fila con el payload JSONB
+ * completo (incluye el snapshot de la conversación con fotos en base64, ver
+ * handleWebhook.ts). Solo toca "hecho"; "pendiente"/"procesando"/"error" quedan
+ * intactos (el reaper y el DLQ los necesitan vivos).
+ *
+ * Borra en LOTES (no un DELETE masivo de una sola vez): en el pooler de
+ * Supabase, un DELETE grande sobre wa_jobs puede retener por más tiempo el lock
+ * que el worker necesita para su propio FOR UPDATE SKIP LOCKED al reclamar, y
+ * con el worker concurrente (E7) esa contención empeora. Cada lote es su propia
+ * sentencia (sin transacción envolvente), así el lock se libera entre lotes.
+ *
+ * Devuelve el total de filas borradas (para loguear).
+ */
+export async function purgarJobsHechos(db: DB, retencionDias = 7, tamanoLote = 500): Promise<number> {
+  let total = 0;
+  for (;;) {
+    const rows = filasDe<{ id: string }>(
+      await db.execute(sql`
+      DELETE FROM wa_jobs
+       WHERE id IN (
+         SELECT id FROM wa_jobs
+          WHERE estado = 'hecho' AND finalizado_en < now() - ${retencionDias} * interval '1 day'
+          ORDER BY finalizado_en ASC
+          LIMIT ${tamanoLote}
+       )
+      RETURNING id
+    `),
+    );
+    total += rows.length;
+    // Lote incompleto = ya no queda nada más viejo que el corte: se terminó.
+    // Esto además garantiza que el loop no sea infinito.
+    if (rows.length < tamanoLote) break;
+  }
+  return total;
 }
