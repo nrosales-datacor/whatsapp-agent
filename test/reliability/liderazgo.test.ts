@@ -50,10 +50,14 @@ test("el titular vigente puede renovar su propio lease (no lo pierde por reinten
 test("si el lease vence, otro titular puede tomarlo", async () => {
   const { db, cerrar } = await crearDbEfimera();
   try {
-    assert.equal(await intentarLiderazgo(db, NOMBRE, "titular-a", 20), true, "titular-a adquiere con un lease bien corto");
+    // Lease de 500ms (no 20ms): bajo carga completa de la suite (300+ tests, mucha
+    // contención de CPU/PGlite) un margen de milisegundos entre dos awaits es
+    // demasiado angosto y el lease puede vencer ANTES de la siguiente aserción,
+    // volviendo el test flaky sin que haya ningún bug real en intentarLiderazgo.
+    assert.equal(await intentarLiderazgo(db, NOMBRE, "titular-a", 500), true, "titular-a adquiere con un lease corto");
     assert.equal(await intentarLiderazgo(db, NOMBRE, "titular-b", 60_000), false, "todavía no venció: titular-b no puede tomarlo");
 
-    await esperar(40); // más que el lease de 20 ms de titular-a: ya venció
+    await esperar(700); // más que el lease de 500 ms de titular-a: ya venció
 
     assert.equal(await intentarLiderazgo(db, NOMBRE, "titular-b", 60_000), true, "venció: titular-b lo toma");
     assert.equal(await intentarLiderazgo(db, NOMBRE, "titular-a", 60_000), false, "titular-a ya no es el titular");
