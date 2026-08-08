@@ -1,7 +1,15 @@
+import { randomUUID } from "node:crypto";
+import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import type { schema } from "../db/schema";
 import type { Repositorio, Tenant } from "../types";
 import { listarTenants } from "../config/tenantStore";
 import { tenantPuede } from "../billing/planes";
 import { capturarError } from "../observabilidad/sentry";
+import { mapConLimite } from "../red/concurrencia";
+import { iniciarCicloSinSolape } from "../red/programador";
+import { intentarLiderazgo } from "../red/liderazgo";
+
+type DB = PostgresJsDatabase<typeof schema>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Reputación en Google vía Places API (Carril D, Fase 1 - 1.3-c, motor de reseñas
@@ -16,6 +24,15 @@ import { capturarError } from "../observabilidad/sentry";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const INTERVALO_MIN = Number(process.env.REPUTACION_INTERVALO_MIN ?? 60);
+// Mismo criterio de F12 que reminders/scheduler.ts: concurrencia acotada en vez
+// de recorrer los tenants en serie.
+const CONCURRENCIA = Number(process.env.REPUTACION_CONCURRENCIA ?? 5);
+
+// Líder del ciclo (ROADMAP F6): mismo criterio que reminders/scheduler.ts —
+// con `ROL=worker` y N réplicas, solo el titular vigente del lease hace el
+// trabajo real; ver src/red/liderazgo.ts.
+const NOMBRE_LIDERAZGO = "reputacion";
+const TITULAR_LIDERAZGO = randomUUID();
 
 export function placesConfigurado(): boolean {
   return !!process.env.GOOGLE_PLACES_API_KEY;
@@ -58,32 +75,48 @@ async function procesarTenant(tenant: Tenant, repo: Repositorio, apiKey: string)
   console.log(`[reputacion] ${tenant.id}: rating ${rating} · ${totalResenas} reseñas`);
 }
 
-/** Arranca el job. No-op sin GOOGLE_PLACES_API_KEY. Llamar UNA vez al iniciar el servidor. */
-export function iniciarReputacion(repo: Repositorio): void {
+/**
+ * Arranca el job. No-op sin GOOGLE_PLACES_API_KEY. Llamar UNA vez al iniciar el
+ * servidor.
+ *
+ * F12: mismo tratamiento que `reminders/scheduler.ts` — ciclo sin solapamiento
+ * (`iniciarCicloSinSolape`) y tenants procesados con concurrencia acotada
+ * (`mapConLimite`) en vez de en serie.
+ *
+ * `db` es para el lease de liderazgo (F6, ver `intentarLiderazgo`): con
+ * `ROL=worker` y N réplicas, cada tick primero intenta renovarlo y solo si lo
+ * tiene gasta cuota de Places; `null` (modo memoria o `ROL=todo`) siempre gana.
+ */
+export function iniciarReputacion(repo: Repositorio, db: DB | null): void {
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) return;
 
-  const tick = async () => {
-    for (const tenant of listarTenants()) {
-      try {
-        await procesarTenant(tenant, repo, apiKey);
-      } catch (e) {
-        console.error(`[reputacion] error procesando tenant ${tenant.id}:`, e);
-        capturarError(e, { loop: "reputacion", tenantId: tenant.id });
+  const intervaloMs = INTERVALO_MIN * 60 * 1000;
+  iniciarCicloSinSolape({
+    etiqueta: "reputacion",
+    intervaloMs,
+    sugerenciaEscalado: "Con más tenants esto va a seguir empeorando: subir REPUTACION_CONCURRENCIA o REPUTACION_INTERVALO_MIN.",
+    tick: async () => {
+      if (!(await intentarLiderazgo(db, NOMBRE_LIDERAZGO, TITULAR_LIDERAZGO, intervaloMs * 3))) {
+        console.log("[reputacion] en espera: otro proceso tiene el liderazgo este tick.");
+        return;
       }
-    }
-  };
-  tick().catch((e) => {
-    console.error("[reputacion] primer chequeo:", e);
-    capturarError(e, { loop: "reputacion", momento: "primer-chequeo" });
+      await mapConLimite(listarTenants(), CONCURRENCIA, async (tenant) => {
+        try {
+          await procesarTenant(tenant, repo, apiKey);
+        } catch (e) {
+          console.error(`[reputacion] error procesando tenant ${tenant.id}:`, e);
+          capturarError(e, { loop: "reputacion", tenantId: tenant.id });
+        }
+      });
+    },
+    onError: (e, momento) => {
+      console.error(`[reputacion] ${momento}:`, e);
+      capturarError(e, { loop: "reputacion", momento });
+    },
   });
-  setInterval(
-    () =>
-      tick().catch((e) => {
-        console.error("[reputacion] tick:", e);
-        capturarError(e, { loop: "reputacion", momento: "tick" });
-      }),
-    INTERVALO_MIN * 60 * 1000,
+
+  console.log(
+    `Reputación (Places API) activa: chequeo cada ${INTERVALO_MIN} min, concurrencia ${CONCURRENCIA}, 1 llamada/día/tenant configurado.`,
   );
-  console.log(`Reputación (Places API) activa: chequeo cada ${INTERVALO_MIN} min, 1 llamada/día/tenant configurado.`);
 }

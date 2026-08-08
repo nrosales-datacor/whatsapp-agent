@@ -204,3 +204,43 @@ export async function reencolarVencidos(db: DB, umbralSeg = 180): Promise<number
   );
   return rows.length;
 }
+
+/**
+ * Purga por retención (ROADMAP F11): borra jobs ya "hecho" cuyo finalizado_en
+ * sea más viejo que retencionDias. Es la única causa por la que wa_jobs crecía
+ * sin límite (medido en producción: 9,4 MB con ~29 filas, la tabla más grande de
+ * la base) — cada mensaje deja para siempre una fila con el payload JSONB
+ * completo (incluye el snapshot de la conversación con fotos en base64, ver
+ * handleWebhook.ts). Solo toca "hecho"; "pendiente"/"procesando"/"error" quedan
+ * intactos (el reaper y el DLQ los necesitan vivos).
+ *
+ * Borra en LOTES (no un DELETE masivo de una sola vez): en el pooler de
+ * Supabase, un DELETE grande sobre wa_jobs puede retener por más tiempo el lock
+ * que el worker necesita para su propio FOR UPDATE SKIP LOCKED al reclamar, y
+ * con el worker concurrente (E7) esa contención empeora. Cada lote es su propia
+ * sentencia (sin transacción envolvente), así el lock se libera entre lotes.
+ *
+ * Devuelve el total de filas borradas (para loguear).
+ */
+export async function purgarJobsHechos(db: DB, retencionDias = 7, tamanoLote = 500): Promise<number> {
+  let total = 0;
+  for (;;) {
+    const rows = filasDe<{ id: string }>(
+      await db.execute(sql`
+      DELETE FROM wa_jobs
+       WHERE id IN (
+         SELECT id FROM wa_jobs
+          WHERE estado = 'hecho' AND finalizado_en < now() - ${retencionDias} * interval '1 day'
+          ORDER BY finalizado_en ASC
+          LIMIT ${tamanoLote}
+       )
+      RETURNING id
+    `),
+    );
+    total += rows.length;
+    // Lote incompleto = ya no queda nada más viejo que el corte: se terminó.
+    // Esto además garantiza que el loop no sea infinito.
+    if (rows.length < tamanoLote) break;
+  }
+  return total;
+}
