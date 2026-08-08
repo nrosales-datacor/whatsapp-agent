@@ -654,7 +654,12 @@ export async function descargarMedia(
 /**
  * Descarga una foto de WhatsApp y la devuelve como data URL
  * ("data:image/jpeg;base64,…"), lista para adjuntarla a un mensaje multimodal de
- * OpenAI (visión, C1.5) o para guardarla/mostrarla tal cual en el panel.
+ * OpenAI (visión, C1.5).
+ *
+ * ⚠️ Carril F, F9: `handleWebhook.ts` ya NO usa esta función para lo que se
+ * persiste en `wa_mensajes.media_url` (llama a `descargarMedia` directo, porque
+ * necesita el `Buffer` crudo para subirlo a Supabase Storage). Esta función sigue
+ * viva por si algún caller solo necesita el data URL en memoria (visión, tests).
  */
 export async function descargarImagenComoDataUrl(tenant: Tenant, mediaId: string): Promise<string> {
   const { buffer, mimeType } = await descargarMedia(tenant, mediaId);

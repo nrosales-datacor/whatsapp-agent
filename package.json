@@ -16,6 +16,7 @@
     "db:migrate": "drizzle-kit migrate",
     "seed:tenants": "tsx scripts/seedTenants.ts",
     "cifrar:tokens": "tsx scripts/cifrarTokens.ts",
+    "migrar:fotos": "tsx scripts/migrarFotosAStorage.ts",
     "web:dev": "npm --prefix web run dev",
     "web:build": "npm --prefix web install --include=dev && npm --prefix web run build"
   },

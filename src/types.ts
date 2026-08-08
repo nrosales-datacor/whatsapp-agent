@@ -410,7 +410,15 @@ export interface MensajeConversacion {
   porHumano?: boolean;
   /** id del mensaje en WhatsApp (msg.id). Permite deduplicar reintentos de Meta. */
   waMessageId?: string;
-  /** URL de datos ("data:image/...;base64,...") de una foto adjunta del cliente (C1.5). */
+  /**
+   * Foto adjunta del cliente (C1.5). Según quién lo produzca:
+   * - `Repositorio.obtenerConversacionPorId` (payload del panel): URL usable tal
+   *   cual — firmada de corta vida si la fila guarda una ruta de Supabase Storage
+   *   (Carril F, F9), o el data URL completo si es una fila legada pre-F9.
+   * - Otras lecturas (ej. `obtenerOConversacion`, historial del agente): el valor
+   *   CRUDO de la columna (ruta corta de Storage o data URL legado), sin resolver
+   *   — nada en ese camino lo consume, ver el comentario en `drizzleRepository.ts`.
+   */
   mediaUrl?: string;
   /** Tipo de adjunto de `mediaUrl`. Omitido si el mensaje no tiene media. */
   mediaTipo?: "imagen";
@@ -704,9 +712,13 @@ export interface Repositorio {
    */
   marcarOptOut(tenantId: string, conversacionId: string): Promise<void>;
   /**
-   * Adjunta la URL de una foto a un mensaje YA guardado, identificado por su
-   * waMessageId (C1.5). Fase 1 guarda un placeholder de texto rápido; fase 2
-   * descarga la imagen de Meta y la completa acá para que se vea en el panel.
+   * Adjunta la media de un mensaje YA guardado, identificado por su waMessageId
+   * (C1.5). Fase 1 guarda un placeholder de texto rápido; fase 2 descarga la
+   * imagen de Meta y la completa acá para que se vea en el panel.
+   * `mediaUrl` (Carril F, F9): ruta corta del objeto en Supabase Storage si está
+   * configurado, o el data URL base64 completo como fallback — la resolución la
+   * hace el caller (`storage/supabaseStorage.ts`), este método solo persiste lo
+   * que le llegue.
    * `tenantId` (F4): igual que `guardarMensaje`, se valida vía la conversación.
    */
   actualizarMediaMensaje(

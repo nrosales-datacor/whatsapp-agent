@@ -69,8 +69,14 @@ export const waMensajes = pgTable(
     // los reintentos de Meta. Null en los salientes (no vienen de Meta); Postgres
     // permite múltiples NULL en un índice único, así que no chocan entre sí.
     waMessageId: text("wa_message_id"),
-    // Foto adjunta del cliente (C1.5): data URL ("data:image/...;base64,...") para
-    // mostrarla en el panel. Se completa en fase 2, después de descargarla de Meta.
+    // Foto adjunta del cliente (C1.5). Se completa en fase 2, después de descargarla
+    // de Meta. Carril F, F9: ahora guarda la RUTA CORTA del objeto en Supabase
+    // Storage (ej. "tenantId/conversacionId/wamid.jpg"), no los bytes — el panel
+    // pide una URL firmada de corta vida al leer la conversación
+    // (`resolverMediaParaPanel` en `storage/supabaseStorage.ts`). Las filas de
+    // ANTES de F9 (o las guardadas sin Storage configurado, fallback) siguen
+    // teniendo un data URL completo ("data:image/...;base64,...") — se detectan
+    // por el prefijo "data:" y se devuelven tal cual, sin intentar firmarlas.
     mediaUrl: text("media_url"),
     mediaTipo: text("media_tipo"), // "imagen" | null
   },
