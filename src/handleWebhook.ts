@@ -7,7 +7,7 @@ import {
   enviarInteractivo,
   esConfirmacionCita,
   respuestaPostServicio,
-  descargarImagenComoDataUrl,
+  descargarMedia,
   type MensajeEntrante,
 } from "./whatsapp/client";
 import type { MensajeInteractivo } from "./types";
@@ -17,6 +17,7 @@ import { notificarOperador } from "./panel/notificaciones";
 import { registrarMensaje } from "./observabilidad/metricas";
 import { registrarMensajeEntrante } from "./observabilidad/uso";
 import { guardarCrudo } from "./db/webhooksCrudos";
+import { resolverMediaAPersistir } from "./storage/supabaseStorage";
 import type { schema } from "./db/schema";
 
 type DB = PostgresJsDatabase<typeof schema>;
@@ -323,12 +324,28 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio): Promis
 
     // Descargamos la foto YA (antes de mirar el modo): así el operador la ve en el
     // panel tanto si la atiende el bot como si la atiende una persona.
+    //
+    // `imagenDataUrl` (en memoria, NUNCA persistido así) sigue viajando completo a
+    // la visión de OpenAI (C1.5) — eso no cambia (F9). Lo que SÍ cambia es qué se
+    // guarda en `wa_mensajes.media_url`: si Supabase Storage está configurado, el
+    // binario se sube ahí y en la columna queda solo la ruta corta del objeto; si
+    // no, cae al comportamiento previo (persistir el data URL completo), ver
+    // `storage/supabaseStorage.ts`.
     let imagenDataUrl: string | undefined;
     try {
-      imagenDataUrl = await descargarImagenComoDataUrl(tenant, entrante.imagenId!);
+      const { buffer, mimeType } = await descargarMedia(tenant, entrante.imagenId!);
+      imagenDataUrl = `data:${mimeType};base64,${buffer.toString("base64")}`;
       if (entrante.messageId) {
+        const mediaAPersistir = await resolverMediaAPersistir(
+          tenant.id,
+          conv.id,
+          entrante.messageId,
+          buffer,
+          mimeType,
+          imagenDataUrl,
+        );
         await repo
-          .actualizarMediaMensaje(tenant.id, conv.id, entrante.messageId, imagenDataUrl, "imagen")
+          .actualizarMediaMensaje(tenant.id, conv.id, entrante.messageId, mediaAPersistir, "imagen")
           .catch((e) => console.error("[imagen] no se pudo guardar la media en el mensaje:", e));
       }
     } catch (e) {

@@ -34,6 +34,7 @@ import type {
 import { calcularMetricas, formatDelta } from "../panel/metricas";
 import { calcularVentana } from "../whatsapp/ventana";
 import { filasDe } from "../db/filas";
+import { resolverMediaParaPanel } from "../storage/supabaseStorage";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Repositorio Drizzle. Implementa la MISMA interfaz que el de memoria.
@@ -136,6 +137,15 @@ export class RepositorioDrizzle implements Repositorio {
         .limit(20)
     ).reverse();
 
+    // F9, decisión deliberada: acá NO se resuelve `mediaUrl` con `resolverMediaParaPanel`
+    // (a diferencia de `obtenerConversacionPorId`, que sí lo hace). Esta lectura corre
+    // en el HOT PATH del webhook (una vez por cada mensaje entrante, para armar el
+    // historial que ve el agente) y ningún consumidor real lee `mediaUrl` de acá —
+    // `correrAgente` recibe la foto del turno actual por `imagenDataUrl` en memoria
+    // (`handleWebhook.ts`), nunca releyendo el historial. Firmar una URL de Storage
+    // por cada foto del historial en cada mensaje sería una llamada de red extra sin
+    // ningún consumidor, en el camino más caliente del sistema. Se deja el valor
+    // crudo (ruta corta de Storage o data URL legado) tal cual está en la columna.
     const mensajes: MensajeConversacion[] = msgs.map((m) => ({
       rol: m.rol as "user" | "assistant",
       contenido: m.contenido,
@@ -763,21 +773,28 @@ export class RepositorioDrizzle implements Repositorio {
       .orderBy(waCitas.fecha, waCitas.hora)
       .limit(1);
 
-    const mensajes: MensajeConversacion[] = msgsAsc.map((m) => ({
-      rol: m.rol as "user" | "assistant",
-      contenido: m.contenido,
-      creadoEn: m.creadoEn.toISOString(),
-      porHumano: m.porHumano,
-      // waMessageId (hallazgo de F4): faltaba en esta proyección — RepositorioEnMemoria
-      // SÍ lo expone (guarda el objeto completo), así que un consumidor que necesite
-      // ubicar un mensaje por su id de WhatsApp tras una lectura vería un
-      // comportamiento distinto según la implementación. Nada en producción lo lee
-      // hoy (el dedup usa el índice único al escribir, no una relectura), pero es la
-      // clase de divergencia que este ítem pide no esconder.
-      waMessageId: m.waMessageId ?? undefined,
-      mediaUrl: m.mediaUrl ?? undefined,
-      mediaTipo: (m.mediaTipo as "imagen" | undefined) ?? undefined,
-    }));
+    // F9: este es el payload del chat que sirve el panel (`router.ts`, hasta 100
+    // mensajes) — acá SÍ vale la pena resolver `mediaUrl` a algo mostrable: si la
+    // columna guarda una ruta de Storage, se firma (URL de corta vida); si es un
+    // data URL legado (filas de antes de F9, o el fallback sin Storage
+    // configurado), se devuelve tal cual. `resolverMediaParaPanel` nunca lanza.
+    const mensajes: MensajeConversacion[] = await Promise.all(
+      msgsAsc.map(async (m) => ({
+        rol: m.rol as "user" | "assistant",
+        contenido: m.contenido,
+        creadoEn: m.creadoEn.toISOString(),
+        porHumano: m.porHumano,
+        // waMessageId (hallazgo de F4): faltaba en esta proyección — RepositorioEnMemoria
+        // SÍ lo expone (guarda el objeto completo), así que un consumidor que necesite
+        // ubicar un mensaje por su id de WhatsApp tras una lectura vería un
+        // comportamiento distinto según la implementación. Nada en producción lo lee
+        // hoy (el dedup usa el índice único al escribir, no una relectura), pero es la
+        // clase de divergencia que este ítem pide no esconder.
+        waMessageId: m.waMessageId ?? undefined,
+        mediaUrl: await resolverMediaParaPanel(m.mediaUrl),
+        mediaTipo: (m.mediaTipo as "imagen" | undefined) ?? undefined,
+      })),
+    );
 
     return {
       id: conv.id,

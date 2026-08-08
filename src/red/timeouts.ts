@@ -42,6 +42,9 @@ export const TIMEOUT_MEDIA_MS = msDeEnv("MEDIA_TIMEOUT_MS", 30_000);
 /** APIs de Google (Calendar, OAuth de la service account, Places). */
 export const TIMEOUT_GOOGLE_MS = msDeEnv("GOOGLE_TIMEOUT_MS", 15_000);
 
+/** Supabase Storage: subida de fotos y firma de URLs de corta vida (Carril F, F9). */
+export const TIMEOUT_STORAGE_MS = msDeEnv("STORAGE_TIMEOUT_MS", 20_000);
+
 /**
  * Señal de abort para pasarle a `fetch`. Envuelta en una función (en vez de usar
  * `AbortSignal.timeout` suelto en cada llamada) para que el timeout quede
