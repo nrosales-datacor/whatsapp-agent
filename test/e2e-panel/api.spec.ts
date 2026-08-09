@@ -9,18 +9,39 @@ import { E2E } from "./constantes";
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Mintea una cookie de sesión firmada, igual que src/panel/auth.ts::crearSesion. El
-// server E2E corre con este mismo PANEL_SESSION_SECRET, así podemos probar los guards
-// de rol sin que el usuario exista en la base (en modo memoria no hay tabla de usuarios).
+// server E2E corre con este mismo PANEL_SESSION_SECRET, así que la firma calza sin pasar
+// por el login real. El usuarioId (usr-e2e-<rol>) SÍ tiene que existir como cuenta viva en
+// el caché en memoria: E13/ALTO-06 hizo que `sesionDeOperador` revalide cada request
+// contra `obtenerUsuarioPorId` (no confía en el rol firmado en el token) — servidor.ts
+// registra esas dos cuentas (una por rol) vía `_registrarUsuarioParaTests`, con
+// `sessionEpoch: 0`, que es el epoch que se firma acá abajo.
 function mintSesion(rol: "operador" | "dueno"): string {
   const exp = Date.now() + 60 * 60 * 1000;
+  const epoch = 0;
   const ver = "1"; // PANEL_SESSION_VERSION por defecto
-  const payload = `${E2E.tenantId}.usr-e2e.${rol}.${exp}.${ver}`;
+  const payload = `${E2E.tenantId}.usr-e2e-${rol}.${rol}.${epoch}.${exp}.${ver}`;
   const firma = crypto.createHmac("sha256", E2E.secret).update(payload).digest("hex");
   return Buffer.from(`${payload}.${firma}`).toString("base64url");
 }
 
 const cookie = (rol: "operador" | "dueno") => `panel_sesion=${mintSesion(rol)}`;
-const fechaFutura = (dias: number) => new Date(Date.now() + dias * 86_400_000).toISOString().slice(0, 10);
+// El tenant de demo cierra fines de semana (src/config/tenants.ts: horario[0]/[6] = cerrado).
+// Un offset de CALENDARIO fijo (Date.now() + N días) cae en sábado/domingo ~2 de cada 7 días
+// según en qué fecha corra el CI, y ahí "disponibilidad" legítimamente devuelve 0 slots — no
+// es un bug de la app, es que el test pedía un día cerrado. Contamos días HÁBILES en vez de
+// calendario: además de nunca caer en fin de semana, sigue siendo estrictamente creciente en
+// `dias` (offsets distintos → fechas distintas), así que las citas que crean varios tests con
+// offsets consecutivos (30..36) no colisionan entre sí por fecha+hora.
+function fechaFutura(diasHabiles: number): string {
+  let d = new Date();
+  let restantes = diasHabiles;
+  while (restantes > 0) {
+    d = new Date(d.getTime() + 86_400_000);
+    const diaSemana = d.getDay(); // 0 = domingo, 6 = sábado
+    if (diaSemana !== 0 && diaSemana !== 6) restantes--;
+  }
+  return d.toISOString().slice(0, 10);
+}
 
 // Mintea una cookie de superadmin (onboarding), igual que auth.ts::crearSesionAdmin.
 // verificarSesionAdmin solo valida firma+versión+vencimiento (no depende del .env), así

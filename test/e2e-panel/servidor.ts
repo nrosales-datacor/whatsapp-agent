@@ -38,6 +38,10 @@ process.env.PANEL_LOGIN_RATE_LIMIT_MAX_IP = "1000";
 // enviarTexto exige un access token; el mock de Graph (paso 3) intercepta el POST, así
 // que este token dummy nunca viaja a la red.
 process.env.WHATSAPP_ACCESS_TOKEN = "e2e-token-dummy";
+// F5 (ALTO-05): la env global de WhatsApp solo aplica al tenant NOMBRADO acá — sin esto,
+// tokenDeTenant() rechaza al tenant fallback "selyon" (que no tiene accessToken propio en
+// memoria) y enviarTexto lanza "Falta el access token...". Mismo id que E2E.tenantId.
+process.env.WHATSAPP_ACCESS_TOKEN_TENANT_ID = E2E.tenantId;
 
 // (2) El panel se sirve del build de Vite (web/dist). Si no está, /panel devuelve 503
 // y los tests fallarían de forma confusa: cortamos temprano con un mensaje claro.
@@ -64,3 +68,27 @@ instalarMockWebhook();
 
 // (5) Importar el server arranca todo (top-level await: carga tenants, siembra demo, listen).
 await import("../../src/server");
+
+// (6) E13/ALTO-06 (revocación de sesiones): `sesionDeOperador` ya no confía en el rol
+// firmado en el token — revalida CADA request contra la cuenta viva del caché
+// (`obtenerUsuarioPorId`) y usa el `rol` de esa cuenta, no el del token. En modo memoria
+// (sin DB) el único usuario que trae `cacheFallback()` es el dueño "fallback"; para que
+// las specs de `api.spec.ts` puedan mintear sesiones de "operador" Y de "dueno" con
+// guards de rol reales (no solo la firma), hace falta una cuenta VIVA de cada rol en el
+// caché. `_registrarUsuarioParaTests` (solo-test, tenantStore.ts) inyecta sin pasar por
+// la base — se llama DESPUÉS de `cargarTenants()` (ya corrió dentro del import de arriba)
+// porque esa función reemplaza el caché entero; en modo memoria no hay refresh periódico
+// que lo pise después (ver `cargarTenants`: `iniciarRefresco()` solo se llama con DB).
+const { _registrarUsuarioParaTests } = await import("../../src/config/tenantStore");
+for (const rol of ["dueno", "operador"] as const) {
+  _registrarUsuarioParaTests(`usr-e2e-${rol}`, {
+    id: `usr-e2e-${rol}`,
+    tenantId: E2E.tenantId,
+    passwordHash: "no-se-usa-para-login-solo-sesiones-minteadas",
+    rol,
+    debeCambiarClave: false,
+    claveTemporalExpira: null,
+    activo: true,
+    sessionEpoch: 0, // mintSesion() en api.spec.ts firma epoch=0 a juego
+  });
+}
