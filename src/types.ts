@@ -388,6 +388,16 @@ export type EstadoFacturacion = "trial" | "activo" | "atrasado" | "cancelado";
 export interface PendienteSerializado {
   clase: "texto" | "no-texto" | "audio" | "imagen" | "documento" | "contacto";
   tenantId: string;
+  /**
+   * F14 (observabilidad por tenant): id generado en la ingesta (fase 1, antes de
+   * encolar) para reconstruir el recorrido de un mensaje — ingesta → cola →
+   * respuesta — en los logs estructurados (`src/observabilidad/log.ts`). Viaja
+   * gratis dentro del `payload` JSONB de `wa_jobs`, sin columna ni migración
+   * nueva. Opcional para no romper payloads legados que ya estén en la cola al
+   * desplegar este cambio (un job viejo sin `correlationId` sigue procesándose
+   * igual, solo sin ese campo en el log).
+   */
+  correlationId?: string;
   entrante: {
     phoneNumberId: string;
     clienteWa: string;

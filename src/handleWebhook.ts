@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { Conversacion, MensajeConversacion, PendienteSerializado, Repositorio, Tenant } from "./types";
 import { obtenerTenantPorPhoneNumberId, refrescarSiFaltaPhoneNumberId } from "./config/tenantStore";
@@ -15,6 +16,7 @@ import { transcribirAudio } from "./whatsapp/transcribir";
 import { correrAgente } from "./agent/runAgent";
 import { notificarOperador } from "./panel/notificaciones";
 import { registrarMensaje } from "./observabilidad/metricas";
+import { log } from "./observabilidad/log";
 import { registrarMensajeEntrante } from "./observabilidad/uso";
 import { estadoCuotaMensual } from "./observabilidad/cuotas";
 import { permitirIngesta, RATE_LIMIT_DIFERIR_SEG } from "./red/limiteIngesta";
@@ -67,10 +69,12 @@ async function enviarRespuestaBot(
 
 // Resultado de la fase de ingesta: lo que quedó listo (y ya persistido) para responder.
 // Exportado para que el worker pueda reconstruirlo desde el payload serializado.
+// `correlationId` (F14, opcional): generado en `ingerirEntrante`; ver el
+// comentario de `PendienteSerializado.correlationId` en types.ts.
 export type Pendiente =
-  | { clase: "no-texto"; tenant: Tenant; entrante: MensajeEntrante; conv: Conversacion }
-  | { clase: "documento"; tenant: Tenant; entrante: MensajeEntrante; conv: Conversacion }
-  | { clase: "contacto"; tenant: Tenant; entrante: MensajeEntrante; conv: Conversacion }
+  | { clase: "no-texto"; tenant: Tenant; entrante: MensajeEntrante; conv: Conversacion; correlationId?: string }
+  | { clase: "documento"; tenant: Tenant; entrante: MensajeEntrante; conv: Conversacion; correlationId?: string }
+  | { clase: "contacto"; tenant: Tenant; entrante: MensajeEntrante; conv: Conversacion; correlationId?: string }
   | {
       clase: "audio";
       tenant: Tenant;
@@ -78,6 +82,7 @@ export type Pendiente =
       conv: Conversacion;
       primerContacto: boolean;
       historialPrevio: MensajeConversacion[];
+      correlationId?: string;
     }
   | {
       clase: "imagen";
@@ -86,6 +91,7 @@ export type Pendiente =
       conv: Conversacion;
       primerContacto: boolean;
       historialPrevio: MensajeConversacion[];
+      correlationId?: string;
     }
   | {
       clase: "texto";
@@ -94,6 +100,7 @@ export type Pendiente =
       conv: Conversacion;
       primerContacto: boolean;
       historialPrevio: MensajeConversacion[];
+      correlationId?: string;
     };
 
 /**
@@ -143,6 +150,12 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio, db?: DB)
     return null;
   }
 
+  // F14 (observabilidad por tenant): correlation id generado ACÁ, antes de encolar,
+  // para reconstruir el recorrido completo de este mensaje en los logs
+  // estructurados (ingesta → job de la cola → respuesta). Viaja gratis dentro del
+  // `payload` JSONB de wa_jobs (ver PendienteSerializado.correlationId en types.ts).
+  const correlationId = randomUUID();
+
   // F10 (rate limit de ingesta por tenant): token bucket en memoria, techo por plan
   // (src/red/limiteIngesta.ts). Al excederse el mensaje se persiste y encola IGUAL
   // (F3: nunca se pierde) pero con `ejecutarDespuesDe` diferido — se degrada la
@@ -186,22 +199,25 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio, db?: DB)
       creadoEn: new Date().toISOString(),
       waMessageId: entrante.messageId,
     };
+    const clase = esAudio ? "audio" : esImagen ? "imagen" : esDocumento ? "documento" : esContacto ? "contacto" : "no-texto";
     const payload: PendienteSerializado = {
-      clase: esAudio ? "audio" : esImagen ? "imagen" : esDocumento ? "documento" : esContacto ? "contacto" : "no-texto",
+      clase,
       tenantId: tenant.id,
       entrante,
       conv,
+      correlationId,
       ...(esAudio || esImagen ? { primerContacto, historialPrevio } : {}),
     };
     const esNuevo = await repo.guardarEntranteYEncolar(conv.id, msg, payload, ejecutarDespuesDe);
     if (!esNuevo) return null;
-    registrarMensaje();
+    registrarMensaje(tenant.id);
     registrarMensajeEntrante(tenant.id, esConversacionIniciada(historialPrevio));
-    if (esAudio) return { clase: "audio", tenant, entrante, conv, primerContacto, historialPrevio };
-    if (esImagen) return { clase: "imagen", tenant, entrante, conv, primerContacto, historialPrevio };
-    if (esDocumento) return { clase: "documento", tenant, entrante, conv };
-    if (esContacto) return { clase: "contacto", tenant, entrante, conv };
-    return { clase: "no-texto", tenant, entrante, conv };
+    log.info("mensaje_ingresado", { correlationId, tenantId: tenant.id, conversacionId: conv.id, clase });
+    if (esAudio) return { clase: "audio", tenant, entrante, conv, primerContacto, historialPrevio, correlationId };
+    if (esImagen) return { clase: "imagen", tenant, entrante, conv, primerContacto, historialPrevio, correlationId };
+    if (esDocumento) return { clase: "documento", tenant, entrante, conv, correlationId };
+    if (esContacto) return { clase: "contacto", tenant, entrante, conv, correlationId };
+    return { clase: "no-texto", tenant, entrante, conv, correlationId };
   }
 
   console.log(`[entrante] ${entrante.clienteWa}: "${entrante.texto.slice(0, 80)}"`);
@@ -226,16 +242,18 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio, db?: DB)
     conv,
     primerContacto,
     historialPrevio,
+    correlationId,
   };
   const esNuevo = await repo.guardarEntranteYEncolar(conv.id, msg, payload, ejecutarDespuesDe);
   if (!esNuevo) {
     console.log(`[webhook] mensaje duplicado ignorado (${entrante.messageId ?? "sin id"})`);
     return null;
   }
-  registrarMensaje();
+  registrarMensaje(tenant.id);
   registrarMensajeEntrante(tenant.id, esConversacionIniciada(historialPrevio));
+  log.info("mensaje_ingresado", { correlationId, tenantId: tenant.id, conversacionId: conv.id, clase: "texto" });
 
-  return { clase: "texto", tenant, entrante, conv, primerContacto, historialPrevio };
+  return { clase: "texto", tenant, entrante, conv, primerContacto, historialPrevio, correlationId };
 }
 
 /**
@@ -615,7 +633,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
     return;
   }
 
-  const { tenant, entrante, conv, primerContacto, historialPrevio: historialSnapshot } = p;
+  const { tenant, entrante, conv, primerContacto, historialPrevio: historialSnapshot, correlationId } = p;
 
   // CONFIRMACIÓN DE CITA (C1.3): el cliente tocó "Confirmo ✅" en el recordatorio.
   // Es una acción directa (no pasa por el agente ni por la ventana de modo humano):
@@ -796,6 +814,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
       creadoEn: new Date().toISOString(),
     });
     console.log(`[saliente] → ${entrante.clienteWa}: "${respuesta.slice(0, 80)}"${fueraDeAlcance ? " [fuera de alcance]" : ""}`);
+    log.info("respuesta_enviada", { correlationId, tenantId: tenant.id, conversacionId: conv.id, fueraDeAlcance });
 
     await repo.registrarCalidad({
       tenantId: tenant.id,
