@@ -498,7 +498,7 @@ export async function correrAgente(
   try {
     return await correrAgenteInterno(ctx, textoUsuario, historial, imagenDataUrl);
   } finally {
-    registrarLatenciaAgente(Date.now() - inicio);
+    registrarLatenciaAgente(ctx.tenant.id, Date.now() - inicio);
   }
 }
 
