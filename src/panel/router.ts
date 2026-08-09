@@ -20,6 +20,7 @@ import {
   resetearClaveUsuario,
   restaurarVersionConfigTenant,
 } from "../config/tenantStore";
+import { darDeBajaTenant } from "../config/offboarding";
 import {
   limpiarLineas,
   limpiarTexto,
@@ -767,6 +768,50 @@ export async function manejarPanel(
       }
       await recargar(); // el negocio queda vivo en el caché sin reiniciar el proceso
       return json(res, 201, { ok: true, tenantId: v.tenant.id }), true;
+    }
+
+    // ── Offboarding de tenant + export de datos (ROADMAP F16): borra TODO lo del
+    // negocio (conversaciones, mensajes, citas, cotizaciones, etc.) en una sola
+    // transacción y devuelve el export completo para que el superadmin se lo lleve
+    // antes de que el negocio desaparezca del todo. Exige repetir el nombre EXACTO
+    // del tenant como confirmación (ver darDeBajaTenant en config/offboarding.ts).
+    const partesBaja = ruta.split("/");
+    if (
+      partesBaja[0] === "admin" &&
+      partesBaja[1] === "tenants" &&
+      partesBaja[2] &&
+      partesBaja[3] === "baja" &&
+      partesBaja.length === 4 &&
+      metodo === "POST"
+    ) {
+      if (!hayBaseDeDatos()) {
+        return json(res, 503, { ok: false, error: "La baja de negocios requiere base de datos (no configurada)." }), true;
+      }
+      const tenantId = decodeURIComponent(partesBaja[2]);
+      const body = await leerBody(req);
+      if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
+      const confirmarNombre = typeof body?.confirmarNombre === "string" ? body.confirmarNombre : "";
+      if (!confirmarNombre) {
+        return json(res, 400, { ok: false, error: "Falta confirmarNombre (nombre exacto del negocio)." }), true;
+      }
+      let exportado;
+      try {
+        exportado = await darDeBajaTenant(tenantId, confirmarNombre);
+      } catch (e) {
+        if (e instanceof Error && e.message === "SIN_DB") {
+          return json(res, 503, { ok: false, error: "La baja de negocios requiere base de datos." }), true;
+        }
+        if (e instanceof Error && e.message === "TENANT_NO_ENCONTRADO") {
+          return json(res, 404, { ok: false, error: "Negocio no encontrado" }), true;
+        }
+        if (e instanceof Error && e.message === "CONFIRMACION_INVALIDA") {
+          return json(res, 400, { ok: false, error: "El nombre no coincide con el del negocio; no se borró nada." }), true;
+        }
+        console.error("[admin] darDeBajaTenant:", e);
+        return json(res, 500, { ok: false, error: "No se pudo dar de baja el negocio." }), true;
+      }
+      await recargar(); // saca al tenant del caché en memoria sin reiniciar el proceso
+      return json(res, 200, { ok: true, export: exportado }), true;
     }
 
     // ── DLQ visible (ROADMAP F11): jobs de wa_jobs que agotaron reintentos ──
