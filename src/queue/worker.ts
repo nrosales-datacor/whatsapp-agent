@@ -6,6 +6,7 @@ import { responderEntrante } from "../handleWebhook";
 import { capturarError } from "../observabilidad/sentry";
 import { marcarFalloOReintentar, marcarHecho, purgarJobsHechos, reencolarVencidos, reclamarUno } from "./cola";
 import { purgarWebhooksCrudos } from "../db/webhooksCrudos";
+import { log } from "../observabilidad/log";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Worker de la cola durable (ROADMAP B1).
@@ -68,6 +69,12 @@ export function iniciarWorker(repo: Repositorio, db: DB): void {
           continue;
         }
 
+        // F14: correlationId/conversacionId viajan gratis dentro de job.payload
+        // (JSONB) desde la ingesta — ver PendienteSerializado.correlationId.
+        const correlationId = job.payload.correlationId;
+        const conversacionId = job.payload.conv?.id;
+        log.info("job_reclamado", { correlationId, tenantId: job.tenantId, jobId: job.id, conversacionId });
+
         // Reconstruir Pendiente: tenant se relee del caché (no se serializa para
         // evitar datos sensibles en la base y para tener siempre la config vigente).
         const tenant = obtenerTenantPorPhoneNumberId(job.payload.entrante.phoneNumberId);
@@ -83,6 +90,7 @@ export function iniciarWorker(repo: Repositorio, db: DB): void {
         try {
           await responderEntrante(pendiente, repo, db);
           await marcarHecho(db, job.id);
+          log.info("job_completado", { correlationId, tenantId: job.tenantId, jobId: job.id, conversacionId });
         } catch (e) {
           // La alerta ante error definitivo (agotó reintentos) vive DENTRO de
           // marcarFalloOReintentar (src/queue/cola.ts, ROADMAP F11): umbral por
@@ -91,6 +99,15 @@ export function iniciarWorker(repo: Repositorio, db: DB): void {
           // evento de Sentry por job agotado sería ruido; el job individual ya
           // queda visible en el DLQ, `GET admin/dlq`).
           await marcarFalloOReintentar(db, job.id, String(e), job.intentos, job.maxIntentos, job.tenantId);
+          log.warn("job_fallido", {
+            correlationId,
+            tenantId: job.tenantId,
+            jobId: job.id,
+            conversacionId,
+            intentos: job.intentos,
+            maxIntentos: job.maxIntentos,
+            error: String(e),
+          });
           console.error(`[worker] job ${job.id} falló (intento ${job.intentos}/${job.maxIntentos}):`, e);
         }
       } catch (e) {
