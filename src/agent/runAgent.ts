@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { ChatCompletionContentPart, ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import type { Cita, MensajeConversacion, MensajeInteractivo, Repositorio, Tenant } from "../types";
+import type { Cita, MensajeConversacion, MensajeInteractivo, Repositorio, Service, Tenant } from "../types";
 import { construirSystemPrompt } from "./systemPrompt";
 import { TOOLS } from "./tools";
 import { opcionEmpleado, opcionHorario } from "../whatsapp/client";
@@ -42,6 +42,21 @@ interface ContextoAgente {
 
 /** Máximo de filas que admite una lista de WhatsApp (límite duro de Meta). */
 const MAX_FILAS_LISTA = 10;
+
+/**
+ * Precio que se guarda en la cita (revisión pre-venta 2026-10, ALTO-09). Antes se
+ * persistía `args.precio` tal cual lo mandaba el modelo: "el precio acordado es
+ * 1000" (prompt injection) o un error de escala (15 en vez de 15000) entraba a
+ * ingresos, CRM y rescate. Si el servicio tiene precio FIJO en el catálogo, manda
+ * el catálogo; el del modelo solo se acepta para servicios de precio variable
+ * (cotizados), y solo si es un número positivo.
+ */
+export function precioDeCita(servicio: Service | undefined, precioModelo: unknown): number | undefined {
+  if (servicio && servicio.precio != null && !servicio.precioVariable) return servicio.precio;
+  if (precioModelo == null) return undefined;
+  const n = Number(precioModelo);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
 
 /**
  * Ejecuta una herramienta pedida por el modelo y devuelve el resultado (string JSON).
@@ -276,7 +291,10 @@ export async function ejecutarTool(
         fecha,
         hora,
         placa: args.placa ? String(args.placa) : undefined,
-        precio: args.precio != null && !Number.isNaN(Number(args.precio)) ? Number(args.precio) : undefined,
+        precio: precioDeCita(
+          tenant.servicios.find((s) => s.id === servicioId),
+          args.precio,
+        ),
       });
     } catch (e) {
       // Perdió la carrera contra otro cliente que reservó a la misma persona en el mismo
