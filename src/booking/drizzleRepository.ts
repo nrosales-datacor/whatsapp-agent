@@ -169,6 +169,7 @@ export class RepositorioDrizzle implements Repositorio {
       optInEn: conv.optInEn ? conv.optInEn.toISOString() : null,
       optOutEn: conv.optOutEn ? conv.optOutEn.toISOString() : null,
       modo: conv.modo as ModoConversacion,
+      humanoDesde: conv.modo === "humano" && conv.humanoEn ? conv.humanoEn.toISOString() : null,
       estado: conv.estado as EstadoConversacion,
       mensajes,
       ...calcularVentana(mensajes),
@@ -612,14 +613,18 @@ export class RepositorioDrizzle implements Repositorio {
 
   // ── Panel / bandeja humana ──
   async setModoConversacion(tenantId: string, conversacionId: string, modo: ModoConversacion): Promise<void> {
-    // Al pasar a humano marcamos humano_en SOLO si aún no estaba (COALESCE), para no
-    // pisar la marca del primer traspaso si se re-dispara. Al volver a bot NO la
-    // borramos: queda el registro de cuándo se atendió por última vez.
+    // Al pasar de bot a humano marcamos humano_en = now() (el ÚLTIMO traspaso: es el
+    // reloj de `modoHumanoVencido`). Si ya estaba en humano, no se pisa (re-disparo).
+    // Al volver a bot NO la borramos: `humano_en IS NULL` sigue significando "nunca
+    // se escaló" para las métricas de ahorro (C3.3).
     await this.db
       .update(waConversaciones)
       .set(
         modo === "humano"
-          ? { modo, humanoEn: sql`COALESCE(${waConversaciones.humanoEn}, now())` }
+          ? {
+              modo,
+              humanoEn: sql`CASE WHEN ${waConversaciones.modo} <> 'humano' THEN now() ELSE COALESCE(${waConversaciones.humanoEn}, now()) END`,
+            }
           : { modo },
       )
       .where(and(eq(waConversaciones.id, conversacionId), eq(waConversaciones.tenantId, tenantId)));

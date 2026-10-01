@@ -191,6 +191,34 @@ test("conversación en modo humano: el bot NO responde ni invoca al agente", asy
   assert.equal(mock.llamadasLLM(), 0);
 });
 
+test('"¿cuánto cuesta por persona?" NO escala: lo responde el agente (antes callaba al bot)', async () => {
+  const mock = instalarMockWebhook();
+  mock.programarLLM({ texto: "El precio es por vehículo, no por persona." });
+  const repo = new RepositorioEnMemoria();
+  const tenant = tenantDemo();
+  const conv = await nuevaConv(repo, tenant);
+
+  await responderEntrante(pendienteTexto(tenant, conv, { texto: "¿cuánto cuesta por persona?" }), repo);
+
+  assert.equal(await repo.obtenerModo(tenant.id, conv.id), "bot");
+  assert.equal(mock.llamadasLLM(), 1);
+});
+
+test("modo humano vencido (nadie del equipo respondió en 12 h): vuelve al bot y responde", async () => {
+  const mock = instalarMockWebhook();
+  mock.programarLLM({ texto: "¡Hola de nuevo! ¿En qué te ayudo?" });
+  const repo = new RepositorioEnMemoria();
+  const tenant = tenantDemo();
+  const conv = await nuevaConv(repo, tenant, CLIENTE, "humano");
+  conv.humanoDesde = new Date(Date.now() - 13 * 3_600_000).toISOString();
+
+  await responderEntrante(pendienteTexto(tenant, conv, { texto: "hola, ¿siguen ahí?" }), repo);
+
+  assert.equal(await repo.obtenerModo(tenant.id, conv.id), "bot");
+  assert.equal(mock.llamadasLLM(), 1);
+  assert.equal(mock.enviados.length, 1);
+});
+
 // ── Rutas del agente (LLM mockeado, determinista) ──
 
 test("cotiza con el texto que redacta el agente (relay fiel) y guarda la respuesta", async () => {
