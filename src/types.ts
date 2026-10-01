@@ -469,6 +469,12 @@ export interface Conversacion {
   optOutEn?: string | null;
   /** "bot" => responde la IA. "humano" => la IA se calla y atiende una persona. */
   modo: ModoConversacion;
+  /**
+   * ISO del último traspaso bot→humano (solo con `modo === "humano"`; null/ausente
+   * si no). Lo usa `modoHumanoVencido` para devolverle la conversación al bot si
+   * nadie del equipo respondió en N horas (revisión pre-venta 2026-10).
+   */
+  humanoDesde?: string | null;
   /** Cola de trabajo (C2.3): "abierta" | "atendida". */
   estado: EstadoConversacion;
   mensajes: MensajeConversacion[];

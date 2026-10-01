@@ -14,6 +14,7 @@ import {
 } from "./whatsapp/client";
 import type { MensajeInteractivo } from "./types";
 import { transcribirAudio } from "./whatsapp/transcribir";
+import { pideHumano, modoHumanoVencido } from "./whatsapp/traspasoHumano";
 import { correrAgente } from "./agent/runAgent";
 import { notificarOperador } from "./panel/notificaciones";
 import { registrarMensaje } from "./observabilidad/metricas";
@@ -103,6 +104,28 @@ export type Pendiente =
       historialPrevio: MensajeConversacion[];
       correlationId?: string;
     };
+
+/**
+ * Si la conversación está en modo humano pero el equipo no actuó en N horas
+ * (`modoHumanoVencido`), se la devuelve al bot ANTES de decidir si responder. Muta
+ * `conv.modo` para que el resto del turno ya la vea en "bot". Si falla la escritura,
+ * se deja en humano (el comportamiento previo, seguro).
+ */
+async function reactivarBotSiVencio(
+  repo: Repositorio,
+  tenant: Tenant,
+  conv: Conversacion,
+  historial: MensajeConversacion[],
+): Promise<void> {
+  if (!modoHumanoVencido(conv, historial)) return;
+  try {
+    await repo.setModoConversacion(tenant.id, conv.id, "bot");
+    conv.modo = "bot";
+    console.log(`[humano] conv ${conv.id}: sin actividad del equipo, vuelve al bot`);
+  } catch (e) {
+    console.error("[humano] no se pudo devolver la conversación al bot:", e);
+  }
+}
 
 /**
  * FASE 1 — rápida, se ejecuta ANTES de responder 200 a Meta.
@@ -404,6 +427,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
 
   if (p.clase === "imagen") {
     const { tenant, entrante, conv, primerContacto, historialPrevio: historialSnapshot } = p;
+    await reactivarBotSiVencio(repo, tenant, conv, historialSnapshot);
 
     // Descargamos la foto YA (antes de mirar el modo): así el operador la ve en el
     // panel tanto si la atiende el bot como si la atiende una persona.
@@ -520,6 +544,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
 
   if (p.clase === "audio") {
     const { tenant, entrante, conv, primerContacto, historialPrevio: historialSnapshot } = p;
+    await reactivarBotSiVencio(repo, tenant, conv, historialSnapshot);
 
     if (conv.modo === "humano") {
       await notificarOperador(repo, tenant, conv, "🎤 Nota de voz recibida.").catch((e) =>
@@ -544,7 +569,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
     }
 
     // Escotilla de salida: si el audio pide hablar con una persona, escalamos.
-    if (/\bagente\b|\bhumano\b|\bpersona\b/i.test(textoTranscrito)) {
+    if (pideHumano(textoTranscrito)) {
       try {
         await repo.setModoConversacion(tenant.id, conv.id, "humano");
         await enviarTexto(
@@ -717,7 +742,9 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
   }
 
   // Si la conversación YA está en modo humano, el bot NO responde: el mensaje ya
-  // quedó guardado; solo avisamos al operador para que conteste del panel.
+  // quedó guardado; solo avisamos al operador para que conteste del panel. Salvo
+  // que el traspaso haya vencido sin respuesta del equipo (vuelve al bot).
+  await reactivarBotSiVencio(repo, tenant, conv, historialSnapshot);
   if (conv.modo === "humano") {
     console.log(`[humano] ${entrante.clienteWa}: bot en pausa, atiende una persona`);
     await notificarOperador(repo, tenant, conv, entrante.texto).catch((e) =>
@@ -726,8 +753,9 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
     return;
   }
 
-  // Escotilla de salida humana: si pide "agente", pasamos la conversación a modo humano.
-  if (/\bagente\b|\bhumano\b|\bpersona\b/i.test(entrante.texto)) {
+  // Escotilla de salida humana: solo con un pedido EXPLÍCITO ("agente", "quiero
+  // hablar con una persona"); "¿cuánto es por persona?" ya no dispara.
+  if (pideHumano(entrante.texto)) {
     try {
       await repo.setModoConversacion(tenant.id, conv.id, "humano");
       await enviarTexto(

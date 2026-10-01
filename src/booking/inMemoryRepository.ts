@@ -75,6 +75,7 @@ export class RepositorioEnMemoria implements Repositorio {
       optInEn: c.optInEn,
       optOutEn: c.optOutEn ?? null,
       modo: c.modo,
+      humanoDesde: c.modo === "humano" ? c.humanoEn : null,
       estado: c.estado,
       // porHumano normalizado a boolean (paridad con Drizzle, que nunca es undefined).
       mensajes: c.mensajes.slice(-limite).map((m) => ({ ...m, porHumano: m.porHumano ?? false })),
@@ -385,9 +386,9 @@ export class RepositorioEnMemoria implements Repositorio {
   async setModoConversacion(tenantId: string, conversacionId: string, modo: ModoConversacion): Promise<void> {
     const c = this.conversaciones.get(conversacionId);
     if (!c || c.tenantId !== tenantId) return;
+    // Marca el ÚLTIMO traspaso bot→humano y NO la borra al volver a bot (paridad con Drizzle).
+    if (modo === "humano" && (c.modo !== "humano" || !c.humanoEn)) c.humanoEn = new Date().toISOString();
     c.modo = modo;
-    // Marca el primer traspaso a humano y NO la borra al volver a bot (paridad con Drizzle).
-    if (modo === "humano" && !c.humanoEn) c.humanoEn = new Date().toISOString();
   }
 
   async marcarEstadoConversacion(tenantId: string, conversacionId: string, estado: EstadoConversacion): Promise<void> {
