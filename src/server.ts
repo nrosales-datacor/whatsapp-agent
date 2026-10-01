@@ -19,6 +19,7 @@ import { iniciarRescate } from "./rescate/worker";
 import { iniciarSentry, sentryConfigurado, capturarError } from "./observabilidad/sentry";
 import { iniciarReporteMetricas } from "./observabilidad/metricas";
 import { chequearSalud, codigoHttpSalud } from "./salud";
+import { leerCuerpoConTope, MAX_BODY_WEBHOOK, conRedDeSeguridad } from "./red/http";
 import type { Repositorio } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -108,9 +109,14 @@ async function responderSalud(res: http.ServerResponse, url: URL): Promise<void>
   }
 }
 
+function reportarErrorHttp(e: unknown): void {
+  console.error("[server] error no manejado en un request:", e);
+  capturarError(e, { ruta: "http" });
+}
+
 // Servidor HTTP completo: webhook + panel + landing + /salud. Lo usan `ROL=web`
 // y `ROL=todo` (default, comportamiento idéntico al de siempre).
-const servidorCompleto = http.createServer(async (req, res) => {
+const servidorCompleto = http.createServer(conRedDeSeguridad(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
   if (url.pathname === "/salud") {
@@ -145,9 +151,15 @@ const servidorCompleto = http.createServer(async (req, res) => {
 
   // 2) Mensajes entrantes (POST).
   if (req.method === "POST") {
-    const chunks: Buffer[] = [];
-    for await (const c of req) chunks.push(c as Buffer);
-    const raw = Buffer.concat(chunks).toString("utf8");
+    // Tope de tamaño ANTES de verificar la firma: sin él, un POST anónimo enorme
+    // agota la memoria del proceso (src/red/http.ts).
+    const cuerpo = await leerCuerpoConTope(req, MAX_BODY_WEBHOOK);
+    if (cuerpo === null) {
+      res.writeHead(413, { connection: "close" });
+      res.end("Payload too large");
+      return;
+    }
+    const raw = cuerpo.toString("utf8");
 
     const firma = req.headers["x-hub-signature-256"];
     if (!firmaValida(raw, typeof firma === "string" ? firma : null)) {
@@ -194,7 +206,7 @@ const servidorCompleto = http.createServer(async (req, res) => {
 
   res.writeHead(405);
   res.end("Method not allowed");
-});
+}, reportarErrorHttp));
 
 // Servidor HTTP mínimo para `ROL=worker`: SOLO `/salud` (health check del
 // propio proceso, para el monitor de uptime/orquestador). Sin webhook, sin
@@ -202,7 +214,7 @@ const servidorCompleto = http.createServer(async (req, res) => {
 // consume wa_jobs y corre los schedulers (ver el `if (SIRVE_TRABAJO_DE_FONDO)`
 // más abajo). Reusa `chequearSalud`/`codigoHttpSalud` (src/salud.ts) igual que
 // el servidor completo: mismo criterio de "algo crítico falló → 503".
-const servidorMinimo = http.createServer(async (req, res) => {
+const servidorMinimo = http.createServer(conRedDeSeguridad(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
   if (url.pathname === "/salud") {
     await responderSalud(res, url);
@@ -210,7 +222,7 @@ const servidorMinimo = http.createServer(async (req, res) => {
   }
   res.writeHead(404);
   res.end("Not found");
-});
+}, reportarErrorHttp));
 
 const server = SIRVE_WEB ? servidorCompleto : servidorMinimo;
 

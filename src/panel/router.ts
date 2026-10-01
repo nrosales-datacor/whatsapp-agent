@@ -239,13 +239,20 @@ function json429RateLimit(res: ServerResponse, retryAfterSeg: number) {
   res.end(JSON.stringify({ ok: false, error: "Demasiados intentos. Probá de nuevo en unos minutos." }));
 }
 
-function leerCookies(req: IncomingMessage): Record<string, string> {
+export function leerCookies(req: IncomingMessage): Record<string, string> {
   const out: Record<string, string> = {};
   const raw = req.headers.cookie;
   if (!raw) return out;
   for (const par of raw.split(";")) {
     const i = par.indexOf("=");
-    if (i > -1) out[par.slice(0, i).trim()] = decodeURIComponent(par.slice(i + 1).trim());
+    if (i === -1) continue;
+    // `decodeURIComponent` LANZA con secuencias inválidas (`%`, `%zz`): una cookie
+    // malformada, sin autenticarse, no puede tumbar el request (ni el proceso).
+    try {
+      out[par.slice(0, i).trim()] = decodeURIComponent(par.slice(i + 1).trim());
+    } catch {
+      // cookie ilegible → se ignora, como si no viniera
+    }
   }
   return out;
 }
