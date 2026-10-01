@@ -90,7 +90,7 @@ export const TOOLS: ChatCompletionTool[] = [
           precio: {
             type: "number",
             description:
-              "Precio cotizado en la moneda del negocio (ej: 15000), según lo que le dijiste al cliente. Omitir si el servicio se cotiza en persona o no tiene precio fijo.",
+              "Solo para servicios de precio VARIABLE: el monto cotizado en la moneda del negocio (ej: 15000). Si el servicio tiene precio fijo, el sistema usa el del catálogo y este valor se ignora. Omitir si se cotiza en persona.",
           },
         },
         required: ["nombre", "servicioId", "fecha", "hora"],
