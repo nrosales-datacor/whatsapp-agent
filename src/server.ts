@@ -1,6 +1,6 @@
 import "dotenv/config";
 import http from "node:http";
-import { verificarWebhook, firmaValida } from "./whatsapp/client";
+import { verificarWebhook, firmaValida, separarPayloadWebhook } from "./whatsapp/client";
 import { ingerirEntrante, responderEntrante } from "./handleWebhook";
 import { RepositorioEnMemoria } from "./booking/inMemoryRepository";
 import { RepositorioDrizzle } from "./booking/drizzleRepository";
@@ -179,9 +179,14 @@ const servidorCompleto = http.createServer(conRedDeSeguridad(async (req, res) =>
 
     // FASE 1: persistir el entrante ANTES de responder 200. Si falla, devolvemos 500
     // y Meta reintenta — la deduplicación por waMessageId evita procesarlo dos veces.
-    let pendiente;
+    // Un POST puede traer VARIOS mensajes (varios entry/changes/messages): se
+    // ingiere cada uno, en orden (`separarPayloadWebhook`).
+    const pendientes = [];
     try {
-      pendiente = await ingerirEntrante(body, repo, db ?? undefined);
+      for (const parte of separarPayloadWebhook(body)) {
+        const p = await ingerirEntrante(parte, repo, db ?? undefined);
+        if (p) pendientes.push(p);
+      }
     } catch (e) {
       console.error("[server] no se pudo persistir el mensaje entrante (Meta reintentará):", e);
       capturarError(e, { ruta: "webhook", fase: 1 });
@@ -193,7 +198,7 @@ const servidorCompleto = http.createServer(conRedDeSeguridad(async (req, res) =>
     // FASE 2: respondemos 200 rápido y procesamos la respuesta (LLM) aparte.
     res.writeHead(200, { "content-type": "text/plain" });
     res.end("EVENT_RECEIVED");
-    if (pendiente && !db) {
+    for (const pendiente of db ? [] : pendientes) {
       // Sin base de datos (dev local / sin DATABASE_URL): procesar inline como antes.
       // Con DB el job ya quedó encolado en Fase 1 y el worker lo consume.
       responderEntrante(pendiente, repo).catch((e) => {
