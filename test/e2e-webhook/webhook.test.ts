@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import { RepositorioEnMemoria } from "../../src/booking/inMemoryRepository";
 import { ingerirEntrante, responderEntrante, type Pendiente } from "../../src/handleWebhook";
+import { separarPayloadWebhook } from "../../src/whatsapp/client";
 import { cargarTenants } from "../../src/config/tenantStore";
 import { TENANT_FALLBACK_SELYON } from "../../src/config/tenants";
 import type { Conversacion, HorarioDia, Tenant } from "../../src/types";
@@ -578,4 +579,18 @@ test("dedup por wamid: reenviar el mismo mensaje no re-procesa (ingerirEntrante)
   assert.ok(p1, "el primer mensaje produce un Pendiente");
   const p2 = await ingerirEntrante(body, repo);
   assert.equal(p2, null, "el reenvío del mismo wamid NO se re-procesa");
+});
+
+test("POST con 2 mensajes agrupados: ambos se ingieren (antes se perdía el 2º)", async () => {
+  delete process.env.DATABASE_URL;
+  await cargarTenants();
+  const pnid = TENANT_FALLBACK_SELYON.phoneNumberId;
+  const repo = new RepositorioEnMemoria();
+  const a = cuerpoTextoEntrante({ phoneNumberId: pnid, clienteWa: "50611112222", texto: "hola", messageId: "wamid.lote.1" }) as any;
+  const b = cuerpoTextoEntrante({ phoneNumberId: pnid, clienteWa: "50611112222", texto: "quiero cita", messageId: "wamid.lote.2" }) as any;
+  a.entry[0].changes[0].value.messages.push(b.entry[0].changes[0].value.messages[0]);
+
+  const pendientes = [];
+  for (const parte of separarPayloadWebhook(a)) pendientes.push(await ingerirEntrante(parte, repo));
+  assert.equal(pendientes.filter(Boolean).length, 2, "los dos mensajes producen un Pendiente");
 });

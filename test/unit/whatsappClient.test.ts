@@ -15,6 +15,7 @@ import {
   dependeDelTokenGlobal,
   tokenDeTenant,
   verificarWebhook,
+  separarPayloadWebhook,
 } from "../../src/whatsapp/client";
 import { crearTenant } from "../helpers/fixtures";
 
@@ -433,4 +434,46 @@ test("tokenDeTenant: el token propio del tenant le gana a la env global", () => 
       assert.equal(tokenDeTenant(piloto), "token-nuevo-lavacar");
     },
   );
+});
+
+// ─── separarPayloadWebhook (revisión pre-venta 2026-10) ────────────────────
+// Meta puede agrupar varios entry/changes/messages en UN POST; antes solo se leía
+// el primero y el resto se perdía en silencio con un 200.
+
+const msgTexto = (id: string, texto: string) => ({ from: "50688887777", id, type: "text", text: { body: texto } });
+
+test("separarPayloadWebhook: varios messages en un change → un pedazo por mensaje, en orden", () => {
+  const body = {
+    object: "whatsapp_business_account",
+    entry: [{ id: "waba1", changes: [{ field: "messages", value: { metadata: { phone_number_id: "P1" }, contacts: [{ wa_id: "50688887777" }], messages: [msgTexto("m1", "hola"), msgTexto("m2", "quiero cita")] } }] }],
+  };
+  const partes = separarPayloadWebhook(body);
+  assert.equal(partes.length, 2);
+  const c1 = clasificarEntrante(partes[0]);
+  const c2 = clasificarEntrante(partes[1]);
+  assert.ok(c1.tipo === "ok" && c2.tipo === "ok");
+  assert.equal(c1.mensaje.messageId, "m1");
+  assert.equal(c2.mensaje.messageId, "m2");
+  assert.equal(c2.mensaje.texto, "quiero cita");
+  assert.equal(c2.mensaje.phoneNumberId, "P1", "cada pedazo conserva su metadata");
+});
+
+test("separarPayloadWebhook: varios entry (dos WABA/tenants) → cada uno con su phone_number_id", () => {
+  const body = {
+    entry: [
+      { changes: [{ value: { metadata: { phone_number_id: "P1" }, messages: [msgTexto("a", "x")] } }] },
+      { changes: [{ value: { metadata: { phone_number_id: "P2" }, statuses: [{ id: "s" }] } }, { value: { metadata: { phone_number_id: "P2" }, messages: [msgTexto("b", "y")] } }] },
+    ],
+  };
+  const partes = separarPayloadWebhook(body).map((p) => clasificarEntrante(p));
+  assert.equal(partes.length, 3);
+  assert.ok(partes[0].tipo === "ok" && partes[0].mensaje.phoneNumberId === "P1");
+  assert.equal(partes[1].tipo, "ignorable", "el change de statuses sigue siendo ignorable");
+  assert.ok(partes[2].tipo === "ok" && partes[2].mensaje.phoneNumberId === "P2" && partes[2].mensaje.messageId === "b");
+});
+
+test("separarPayloadWebhook: body sin entry[] se devuelve tal cual (camino no-parseable)", () => {
+  const raro = { foo: 1 };
+  assert.deepEqual(separarPayloadWebhook(raro), [raro]);
+  assert.equal(clasificarEntrante(separarPayloadWebhook(raro)[0]).tipo, "no-parseable");
 });

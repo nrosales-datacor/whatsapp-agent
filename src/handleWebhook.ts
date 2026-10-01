@@ -4,6 +4,7 @@ import type { Conversacion, MensajeConversacion, PendienteSerializado, Repositor
 import { obtenerTenantPorPhoneNumberId, refrescarSiFaltaPhoneNumberId } from "./config/tenantStore";
 import {
   clasificarEntrante,
+  separarPayloadWebhook,
   enviarTexto,
   enviarInteractivo,
   esConfirmacionCita,
@@ -851,6 +852,8 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
  * llama por separado para responder 200 recién después de persistir el entrante.
  */
 export async function manejarWebhook(body: unknown, repo: Repositorio, db?: DB): Promise<void> {
-  const pendiente = await ingerirEntrante(body, repo, db);
-  if (pendiente) await responderEntrante(pendiente, repo);
+  for (const parte of separarPayloadWebhook(body)) {
+    const pendiente = await ingerirEntrante(parte, repo, db);
+    if (pendiente) await responderEntrante(pendiente, repo);
+  }
 }

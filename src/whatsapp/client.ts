@@ -163,6 +163,44 @@ export type ResultadoEntrante =
   | { tipo: "ignorable" } // status u otro evento sin mensaje: no se guarda
   | { tipo: "no-parseable" }; // forma inesperada: SÍ se guarda (red de seguridad F3)
 
+/**
+ * Parte un POST de Meta en N payloads de UN solo mensaje cada uno (revisión
+ * pre-venta 2026-10). Meta puede mandar en un mismo POST varios `entry` (uno por
+ * WABA → varios tenants de la misma app), varios `changes` y varios `messages`;
+ * `clasificarEntrante` lee solo `entry[0].changes[0].value.messages[0]`, así que
+ * el resto se perdía en silencio con un 200 (Meta no reintenta).
+ *
+ * Cada pedazo conserva la forma original (`entry→changes→value`, con su
+ * `metadata` y `contacts`) para que fluya sin cambios por `ingerirEntrante`
+ * (dedup por waMessageId, crudo F3, cola). Un `change` sin mensajes (statuses)
+ * sale como un pedazo propio, que se clasificará "ignorable". Si el body ni
+ * siquiera tiene `entry[]`, se devuelve tal cual (camino "no-parseable").
+ */
+export function separarPayloadWebhook(body: any): unknown[] {
+  const entries = body?.entry;
+  if (!Array.isArray(entries) || entries.length === 0) return [body];
+  const partes: unknown[] = [];
+  for (const entry of entries) {
+    const changes = entry?.changes;
+    if (!Array.isArray(changes) || changes.length === 0) {
+      partes.push({ ...body, entry: [entry] });
+      continue;
+    }
+    for (const change of changes) {
+      const value = change?.value;
+      const mensajes = value?.messages;
+      if (!Array.isArray(mensajes) || mensajes.length <= 1) {
+        partes.push({ ...body, entry: [{ ...entry, changes: [change] }] });
+        continue;
+      }
+      for (const msg of mensajes) {
+        partes.push({ ...body, entry: [{ ...entry, changes: [{ ...change, value: { ...value, messages: [msg] } }] }] });
+      }
+    }
+  }
+  return partes;
+}
+
 export function clasificarEntrante(body: any): ResultadoEntrante {
   try {
     const value = body?.entry?.[0]?.changes?.[0]?.value;
