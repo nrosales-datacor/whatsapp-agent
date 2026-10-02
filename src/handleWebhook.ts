@@ -20,7 +20,8 @@ import { notificarOperador } from "./panel/notificaciones";
 import { registrarMensaje } from "./observabilidad/metricas";
 import { log } from "./observabilidad/log";
 import { registrarMensajeEntrante } from "./observabilidad/uso";
-import { estadoCuotaMensual } from "./observabilidad/cuotas";
+import { estadoCuotasDelMes } from "./observabilidad/cuotas";
+import { aplicarFrenosPorCliente } from "./red/limiteCliente";
 import { permitirIngesta, RATE_LIMIT_DIFERIR_SEG } from "./red/limiteIngesta";
 import { guardarCrudo } from "./db/webhooksCrudos";
 import { resolverMediaAPersistir } from "./storage/supabaseStorage";
@@ -58,6 +59,11 @@ function textoEscalada(confirmacion?: string): string {
 // puede personalizarlo (tenant.mensajeTopeExcedido, "Mi negocio" → panel).
 const MENSAJE_TOPE_EXCEDIDO =
   "Por ahora alcanzamos el límite de conversaciones automáticas de este mes 🙏 Dejame pasarte con una persona del equipo para que te siga ayudando.";
+
+// Tope mensual de GASTO de LLM (revisión pre-venta 2026-10): texto neutro a
+// propósito — es una red de seguridad interna, no algo que el cliente final deba
+// leer como "se acabó el servicio".
+const MENSAJE_TOPE_GASTO = "¡Gracias por escribirnos! 🙂 En un momento te atiende una persona del equipo por acá.";
 
 /**
  * Envía la respuesta del bot al cliente: como mensaje INTERACTIVO (botones/lista)
@@ -333,7 +339,11 @@ async function historialFresco(
  * tope (el caller NO debe invocar a correrAgente); `false` si el tenant tiene
  * margen (o tiene el interruptor activado, o su plan no tiene tope).
  *
- * `db` opcional (ver estadoCuotaMensual): en producción el pool singleton alcanza;
+ * Mismo tratamiento para el tope mensual de GASTO de LLM en USD (por plan, con
+ * override por tenant, ver billing/planes.ts): misma lectura de `wa_uso_mensual`,
+ * texto neutro (MENSAJE_TOPE_GASTO) y su propio aviso al operador.
+ *
+ * `db` opcional (ver estadoCuotasDelMes): en producción el pool singleton alcanza;
  * los tests de fiabilidad (PGlite) lo pasan explícito.
  */
 async function aplicarTopeMensualSiCorresponde(
@@ -344,12 +354,16 @@ async function aplicarTopeMensualSiCorresponde(
   primerContacto: boolean,
   db?: DB,
 ): Promise<boolean> {
-  const estado = await estadoCuotaMensual(tenant, db);
-  if (!estado.excedido) return false;
+  const { conversaciones: estado, gastoLlm } = await estadoCuotasDelMes(tenant, db);
+  if (!estado.excedido && !gastoLlm.excedido) return false;
 
-  console.warn(`[tope-mensual] tenant ${tenant.id} alcanzó el tope (${estado.usados}/${estado.tope}): escala a humano sin llamar al LLM`);
+  if (estado.excedido) {
+    console.warn(`[tope-mensual] tenant ${tenant.id} alcanzó el tope (${estado.usados}/${estado.tope}): escala a humano sin llamar al LLM`);
+  } else {
+    log.warn("tope_gasto_llm_excedido", { tenantId: tenant.id, gastoUsd: gastoLlm.gastoUsd, topeUsd: gastoLlm.topeUsd });
+  }
   await repo.setModoConversacion(tenant.id, conv.id, "humano");
-  let salida = tenant.mensajeTopeExcedido?.trim() || MENSAJE_TOPE_EXCEDIDO;
+  let salida = estado.excedido ? tenant.mensajeTopeExcedido?.trim() || MENSAJE_TOPE_EXCEDIDO : MENSAJE_TOPE_GASTO;
   if (primerContacto) salida = `${AVISO_BOT.replace("%NOMBRE%", tenant.nombre)}\n\n${salida}`;
   await enviarTexto(tenant, entrante.clienteWa, salida).catch((e) => console.error("[tope-mensual] no se pudo avisar al cliente:", e));
   if (primerContacto) await repo.marcarOptIn(tenant.id, conv.id).catch(() => {});
@@ -360,7 +374,9 @@ async function aplicarTopeMensualSiCorresponde(
     repo,
     tenant,
     conv,
-    "⚠️ Este negocio alcanzó el tope de conversaciones del mes — el bot dejó de responder, atendé manualmente.",
+    estado.excedido
+      ? "⚠️ Este negocio alcanzó el tope de conversaciones del mes — el bot dejó de responder, atendé manualmente."
+      : `⚠️ Este negocio alcanzó el tope de gasto de IA del mes (USD ${gastoLlm.topeUsd}) — el bot dejó de responder, atendé manualmente.`,
   ).catch(() => {});
   return true;
 }
@@ -371,7 +387,7 @@ async function aplicarTopeMensualSiCorresponde(
  * aunque esto falle no se pierde.
  *
  * `db` opcional (F10): solo lo necesitan los tests de fiabilidad (PGlite) para el
- * enforcement del tope mensual (ver estadoCuotaMensual) — en producción no hace
+ * enforcement del tope mensual (ver estadoCuotasDelMes) — en producción no hace
  * falta pasarlo, el pool singleton ya resuelve solo con DATABASE_URL.
  */
 export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB): Promise<void> {
@@ -485,6 +501,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
       return;
     }
 
+    if (await aplicarFrenosPorCliente({ tenant, repo, conv, clienteWa: entrante.clienteWa, db })) return;
     if (await aplicarTopeMensualSiCorresponde(tenant, repo, entrante, conv, primerContacto, db)) return;
 
     try {
@@ -560,6 +577,9 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
       );
       return;
     }
+
+    // Frenos por cliente ANTES de transcribir: Whisper también se paga.
+    if (await aplicarFrenosPorCliente({ tenant, repo, conv, clienteWa: entrante.clienteWa, db })) return;
 
     let textoTranscrito: string;
     try {
@@ -794,6 +814,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
     return;
   }
 
+  if (await aplicarFrenosPorCliente({ tenant, repo, conv, clienteWa: entrante.clienteWa, db })) return;
   if (await aplicarTopeMensualSiCorresponde(tenant, repo, entrante, conv, primerContacto, db)) return;
 
   try {

@@ -61,7 +61,7 @@ import {
 import type { Cita, EstadoConversacion, KnowledgeBase, Plan, Repositorio, Rol, SegmentoFiltro, Tenant } from "../types";
 import { featuresDeTenant, tenantPuede } from "../billing/planes";
 import { listarUsoMensualActual } from "../observabilidad/uso";
-import { calcularEstadoCuota, estadoCuotaMensual } from "../observabilidad/cuotas";
+import { calcularEstadoCuotasDelMes, estadoCuotasDelMes } from "../observabilidad/cuotas";
 import {
   cancelarCampania,
   confirmarEnvioCampania,
@@ -663,7 +663,8 @@ export async function manejarPanel(
         const u = uso.get(t.id);
         // Tope mensual de conversaciones (F10): reusa el mismo `uso` ya consultado arriba
         // (una sola query para todos los tenants), sin ir de nuevo a la base por tenant.
-        const cuota = calcularEstadoCuota(t, u?.conversacionesIniciadas ?? 0);
+        // Tope de gasto de LLM en USD (revisión pre-venta 2026-10): misma fila de uso.
+        const { conversaciones: cuota, gastoLlm } = calcularEstadoCuotasDelMes(t, u);
         return {
           id: t.id,
           nombre: t.nombre,
@@ -688,6 +689,9 @@ export async function manejarPanel(
           cuotaAlcanzo80: cuota.alcanzo80,
           cuotaExcedida: cuota.excedido,
           topeConversacionesDesactivado: t.topeConversacionesDesactivado ?? false,
+          topeGastoLlmUsd: gastoLlm.topeUsd,
+          gastoLlmPorcentaje: gastoLlm.porcentaje,
+          gastoLlmExcedido: gastoLlm.excedido,
         };
       });
       json(res, 200, { ok: true, tenants });
@@ -999,7 +1003,7 @@ export async function manejarPanel(
   if (ruta === "me" && metodo === "GET") {
     // Tope mensual de conversaciones (F10): el dueño ve acá su propio consumo/tope,
     // igual que el superadmin lo ve en admin/tenants (misma fuente, calcularEstadoCuota).
-    const cuota = await estadoCuotaMensual(tenant);
+    const { conversaciones: cuota, gastoLlm } = await estadoCuotasDelMes(tenant);
     json(res, 200, {
       ok: true,
       nombre: tenant.nombre,
@@ -1036,6 +1040,16 @@ export async function manejarPanel(
         porcentaje: cuota.porcentaje,
         alcanzo80: cuota.alcanzo80,
         excedido: cuota.excedido,
+      },
+      // Tope mensual de GASTO de LLM en USD (revisión pre-venta 2026-10, por plan con
+      // override por tenant): misma forma que `cuotaMensual`. Al 100% el bot deja de
+      // llamar al LLM y pasa las conversaciones nuevas a humano. `topeUsd` null = sin tope.
+      gastoLlmMensual: {
+        topeUsd: gastoLlm.topeUsd,
+        gastoUsd: gastoLlm.gastoUsd,
+        porcentaje: gastoLlm.porcentaje,
+        alcanzo80: gastoLlm.alcanzo80,
+        excedido: gastoLlm.excedido,
       },
       mensajeTopeExcedido: tenant.mensajeTopeExcedido ?? "",
     });

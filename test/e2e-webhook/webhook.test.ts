@@ -277,6 +277,8 @@ test("cotiza una FOTO (visión, C1.5): descarga la imagen, la adjunta al LLM y l
   // La imagen viajó al LLM como contenido multimodal (image_url).
   const contenidoUser = mock.solicitudesLLM[0].messages.at(-1).content;
   assert.ok(Array.isArray(contenidoUser) && contenidoUser.some((p: any) => p.type === "image_url"));
+  // Costo acotado (revisión pre-venta 2026-10): la foto va con detail "low" por defecto.
+  assert.equal(contenidoUser.find((p: any) => p.type === "image_url").image_url.detail, "low");
   assert.equal(mock.enviados[0].texto, "Por esa foto, el pulido de parabrisas de un sedán son ₡15.000.");
 });
 
