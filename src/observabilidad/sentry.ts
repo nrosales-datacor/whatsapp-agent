@@ -39,3 +39,12 @@ export function capturarError(error: unknown, contexto?: Record<string, unknown>
   if (!DSN) return;
   Sentry.captureException(error, contexto ? { extra: contexto } : undefined);
 }
+
+/**
+ * Espera a que Sentry mande los eventos pendientes. Solo hace falta en scripts de
+ * vida corta (p. ej. `scripts/backupDb.ts`), que terminan antes del envío async.
+ */
+export async function vaciarSentry(ms = 5000): Promise<void> {
+  if (!DSN) return;
+  await Sentry.flush(ms).catch(() => {});
+}
