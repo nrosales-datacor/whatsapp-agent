@@ -1065,6 +1065,9 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 .admin-conectado { display: flex; flex-direction: column; gap: var(--space-xs); font-size: var(--step--1); }
 .admin-conectado code, .admin-conectar code { font-family: var(--mono, monospace); }
 .admin-hint { font-size: var(--step--1); color: var(--text-muted); margin: 0; }
+/* Acciones de plataforma por negocio (pausa/WhatsApp/borrar cliente/historial). */
+.admin-acciones { display: grid; gap: var(--space-md); margin-top: var(--space-md); }
+.admin-acciones form { display: grid; gap: var(--space-xs); margin-top: var(--space-sm); }
 .admin-manual { margin-top: var(--space-xs); }
 .admin-manual summary { font-size: var(--step--1); color: var(--text-muted); cursor: pointer; }
 .admin-manual .admin-grid { margin-top: var(--space-sm); }

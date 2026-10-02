@@ -640,6 +640,37 @@ export const waLideres = pgTable("wa_lideres", {
   venceEn: timestamp("vence_en", { withTimezone: true }).notNull(),
 }).enableRLS();
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Registro auditable de operaciones de PLATAFORMA (revisión pre-venta 2026-10):
+// pausar/reactivar un negocio por falta de pago, reconectar su WhatsApp, borrar
+// los datos de un cliente final (derecho de supresión, Ley 8968) y dar de baja
+// un negocio. A diferencia de `wa_tenants_historial` (F15) —que versiona la
+// config de "Mi negocio", se poda a 30 versiones y se puede RESTAURAR— esto es
+// un log append-only: no se poda, no se restaura y no se borra con la baja del
+// tenant (es el rastro de que la baja ocurrió). Por eso tampoco está en el
+// catálogo de `config/offboarding.ts`.
+//
+// `detalle` NUNCA guarda datos personales ni secretos: para un borrado de cliente
+// se guardan conteos e ids internos (no el teléfono, ni el nombre, ni mensajes);
+// para una reconexión, el phone_number_id nuevo pero jamás el token.
+// ─────────────────────────────────────────────────────────────────────────────
+export const waAuditoria = pgTable(
+  "wa_auditoria",
+  {
+    id: id(),
+    tenantId: text("tenant_id").notNull(),
+    // "pausar" | "reactivar" | "reconectar_whatsapp" | "borrar_cliente" | "baja_tenant" | "baja_storage_pendiente"
+    accion: text("accion").notNull(),
+    // Quién lo hizo: "superadmin:<usuario>" o "usuario:<id de wa_usuarios>".
+    actor: text("actor").notNull(),
+    detalle: jsonb("detalle").$type<Record<string, unknown>>().notNull().default({}),
+    creadoEn: timestamp("creado_en", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxTenant: index("wa_auditoria_tenant_idx").on(t.tenantId, t.creadoEn),
+  }),
+).enableRLS();
+
 export const schema = {
   waConversaciones,
   waMensajes,
@@ -657,4 +688,5 @@ export const schema = {
   waSeguimientos,
   waSnapshotReputacion,
   waLideres,
+  waAuditoria,
 };

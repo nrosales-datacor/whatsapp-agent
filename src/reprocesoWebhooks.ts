@@ -1,7 +1,7 @@
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { schema } from "./db/schema";
 import type { Repositorio } from "./types";
-import { obtenerTenantPorPhoneNumberId } from "./config/tenantStore";
+import { obtenerTenantPausadoPorPhoneNumberId, obtenerTenantPorPhoneNumberId } from "./config/tenantStore";
 import { ingerirEntrante } from "./handleWebhook";
 import { listarPendientes, marcarIntentoFallido, marcarProcesado } from "./db/webhooksCrudos";
 
@@ -61,7 +61,12 @@ export async function reprocesarPendientes(db: DB, repo: Repositorio): Promise<R
     // que insertaría una fila NUEVA (waMessageId null no choca con nada) en vez
     // de resolver esta. Por eso esas filas se cuentan como intento fallido
     // directamente, sin pasar por `ingerirEntrante`.
-    const resuelve = !!fila.phoneNumberId && !!obtenerTenantPorPhoneNumberId(fila.phoneNumberId);
+    // Un negocio PAUSADO también "resuelve": `ingerirEntrante` guarda el mensaje en su
+    // conversación sin responder (ver `guardarEntranteDePausado`) — así lo que llegó
+    // antes de que el caché supiera de la pausa tampoco se pierde.
+    const resuelve =
+      !!fila.phoneNumberId &&
+      (!!obtenerTenantPorPhoneNumberId(fila.phoneNumberId) || !!obtenerTenantPausadoPorPhoneNumberId(fila.phoneNumberId));
     if (!resuelve) {
       const descartada = await marcarIntentoFallido(db, fila.id, fila.intentos, MAX_INTENTOS_REPROCESO);
       if (descartada) descartados++;

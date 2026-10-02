@@ -6,6 +6,7 @@ import { schema, waTenants, waUsuarios } from "../db/schema";
 import { cifrar, descifrar } from "./secretos";
 import { TENANT_FALLBACK_SELYON } from "./tenants";
 import { normalizarKb } from "./validadores";
+import { registrarAuditoria } from "./auditoria";
 import {
   listarHistorialTenant,
   obtenerVersionHistorial,
@@ -52,6 +53,16 @@ interface Cache {
   porPnid: Map<string, Tenant>;
   porId: Map<string, Tenant>;
   usuarios: Map<string, CuentaUsuario>;
+  // Negocios PAUSADOS (wa_tenants.activo = false, revisión pre-venta 2026-10): viven en
+  // índices APARTE a propósito. Todo el código que ya existe (webhook, worker, schedulers,
+  // panel) consulta `porId`/`porPnid` y por lo tanto sigue sin "ver" a un pausado — el bot
+  // no le responde, no salen recordatorios ni campañas, y el login no entra. Solo los
+  // puntos que necesitan distinguir "pausado" de "no existe" consultan estos índices: el
+  // webhook (para guardar el mensaje sin responder, en vez de mandarlo a wa_webhooks_crudos
+  // a que se descarte), el panel (aviso de "cuenta pausada" en vez de un 401 genérico) y el
+  // admin (para listarlo y poder reactivarlo).
+  pausadosPorPnid: Map<string, Tenant>;
+  pausadosPorId: Map<string, Tenant>;
 }
 
 // Caché vivo. Se reemplaza ENTERO de forma atómica en cada recarga (nunca se muta
@@ -79,12 +90,19 @@ function construirCache(
     claveTemporalExpira: Date | null;
     sessionEpoch: number;
   }[],
+  pausados: Tenant[] = [],
 ): Cache {
   const porPnid = new Map<string, Tenant>();
   const porId = new Map<string, Tenant>();
   for (const t of tenants) {
     porId.set(t.id, t);
     porPnid.set(t.phoneNumberId, t);
+  }
+  const pausadosPorPnid = new Map<string, Tenant>();
+  const pausadosPorId = new Map<string, Tenant>();
+  for (const t of pausados) {
+    pausadosPorId.set(t.id, t);
+    pausadosPorPnid.set(t.phoneNumberId, t);
   }
   const us = new Map<string, CuentaUsuario>();
   for (const u of usuarios) {
@@ -102,7 +120,7 @@ function construirCache(
       sessionEpoch: u.sessionEpoch,
     });
   }
-  return { porPnid, porId, usuarios: us };
+  return { porPnid, porId, usuarios: us, pausadosPorPnid, pausadosPorId };
 }
 
 // Caché de emergencia: el tenant hardcodeado + un usuario sintético desde el hash
@@ -212,10 +230,16 @@ function notificarRecarga(): void {
 async function recargarDesdeDb(): Promise<void> {
   try {
     const d = obtenerDb();
-    const tenants = await d.select().from(waTenants).where(eq(waTenants.activo, true));
+    // Se leen TODOS los tenants (no solo activo = true) para poder separar los pausados en
+    // sus propios índices (ver `Cache`). Si TODOS están pausados se arma igual un caché sin
+    // activos, NO el fallback: el fallback hardcodeado podría ser justamente un negocio que
+    // se pausó por falta de pago, y volvería a atender gratis.
+    const filas = await d.select().from(waTenants);
+    const tenants = filas.filter((f) => f.activo);
+    const pausados = filas.filter((f) => !f.activo);
     const usuarios = await d.select().from(waUsuarios).where(eq(waUsuarios.activo, true));
-    if (tenants.length === 0) {
-      activarFallback("la base no tiene tenants activos");
+    if (filas.length === 0) {
+      activarFallback("la base no tiene tenants");
       return;
     }
     cache = construirCache(
@@ -230,6 +254,7 @@ async function recargarDesdeDb(): Promise<void> {
         claveTemporalExpira: u.claveTemporalExpira,
         sessionEpoch: u.sessionEpoch,
       })),
+      pausados.map(filaATenant),
     );
     fuenteActual = "db";
     notificarRecarga();
@@ -242,7 +267,7 @@ async function recargarDesdeDb(): Promise<void> {
 // inalcanzable). Si ya hay un caché válido (p. ej. un refresh que falló), se
 // conserva — nunca tiramos tenants buenos por un blip de red.
 function activarFallback(motivo: string): void {
-  if (cache.porId.size > 0) {
+  if (cache.porId.size > 0 || cache.pausadosPorId.size > 0) {
     console.error(`[tenantStore] ⚠️ ${motivo}; conservo el caché actual (${cache.porId.size} tenant/s).`);
     return;
   }
@@ -288,6 +313,23 @@ export function obtenerTenantPorId(id: string): Tenant | undefined {
 
 export function listarTenants(): Tenant[] {
   return [...cache.porId.values()];
+}
+
+// ── Negocios pausados (revisión pre-venta 2026-10) ──
+// Ver el comentario de `Cache.pausadosPorPnid`: estos accesores existen SOLO para los
+// puntos que tienen que distinguir "pausado" de "no existe". El resto del código usa los
+// de arriba y, por construcción, nunca ve a un negocio pausado.
+
+export function obtenerTenantPausadoPorPhoneNumberId(pnid: string): Tenant | undefined {
+  return cache.pausadosPorPnid.get(pnid);
+}
+
+export function obtenerTenantPausadoPorId(id: string): Tenant | undefined {
+  return cache.pausadosPorId.get(id);
+}
+
+export function listarTenantsPausados(): Tenant[] {
+  return [...cache.pausadosPorId.values()];
 }
 
 /** Cuenta de panel para el login (resuelve usuario → tenant + hash). */
@@ -535,6 +577,78 @@ export async function actualizarTopeTenant(tenantId: string, desactivado: boolea
     .where(eq(waTenants.id, tenantId));
 }
 
+// ── Pausar / reactivar un negocio (revisión pre-venta 2026-10, cobro manual) ──
+
+/**
+ * Pausa (`activo: false`) o reactiva (`activo: true`) un negocio, y deja el rastro en
+ * `wa_auditoria` en la MISMA transacción (o cambia el estado y queda registrado, o no
+ * pasa ninguna de las dos). Es la palanca del día 10 de PROCESO-COBRO-MANUAL.md, que
+ * antes era un `UPDATE` a mano en Supabase sin registro de quién ni por qué.
+ *
+ * NO borra ni toca ningún dato del negocio: pausado, el bot deja de responder (el
+ * mensaje entrante igual se guarda, ver `ingerirEntrante`), no salen recordatorios,
+ * campañas ni rescates, y el panel muestra "cuenta pausada". Reactivar lo devuelve
+ * todo tal cual estaba.
+ *
+ * Devuelve `"no_encontrado"` si el id no existe y `"sin_cambio"` si ya estaba en ese
+ * estado (no se registra nada: una pausa doble no es una pausa nueva). El caller debe
+ * llamar `recargar()` después, mismo patrón que el resto de las escrituras. `db` es
+ * opcional y SOLO para tests.
+ */
+export async function cambiarEstadoTenant(
+  tenantId: string,
+  activo: boolean,
+  actor: string,
+  motivo: string | null,
+  db?: DB,
+): Promise<"ok" | "sin_cambio" | "no_encontrado"> {
+  if (!db && !hayDb) throw new Error("SIN_DB");
+  const d = db ?? obtenerDb();
+  return d.transaction(async (tx) => {
+    const [fila] = await tx.select({ activo: waTenants.activo }).from(waTenants).where(eq(waTenants.id, tenantId));
+    if (!fila) return "no_encontrado" as const;
+    if (fila.activo === activo) return "sin_cambio" as const;
+    await tx.update(waTenants).set({ activo, actualizadoEn: new Date() }).where(eq(waTenants.id, tenantId));
+    await registrarAuditoria(tx, tenantId, activo ? "reactivar" : "pausar", actor, motivo ? { motivo } : {});
+    return "ok" as const;
+  });
+}
+
+/**
+ * Carga o rota la conexión de WhatsApp de un negocio YA creado (revisión pre-venta
+ * 2026-10): antes, un negocio dado de alta sin token (o con un token vencido/revocado)
+ * no tenía arreglo — el token está cifrado (F2), así que tampoco se podía corregir con
+ * SQL a mano. Cifra igual que `crearTenant` (único punto de escritura del token junto con
+ * él) y audita en la misma transacción, SIN el token (solo el phone_number_id y si cambió).
+ *
+ * Deja propagar el 23505 de Postgres si el phone_number_id ya lo usa otro negocio (el
+ * router lo mapea a 409). Devuelve false si el tenant no existe. El caller debe llamar
+ * `recargar()` después. `db` opcional, SOLO para tests.
+ */
+export async function actualizarConexionWhatsapp(
+  tenantId: string,
+  phoneNumberId: string,
+  accessToken: string,
+  actor: string,
+  db?: DB,
+): Promise<boolean> {
+  if (!db && !hayDb) throw new Error("SIN_DB");
+  const d = db ?? obtenerDb();
+  return d.transaction(async (tx) => {
+    const [fila] = await tx.select({ pnid: waTenants.phoneNumberId }).from(waTenants).where(eq(waTenants.id, tenantId));
+    if (!fila) return false;
+    await tx
+      .update(waTenants)
+      .set({ phoneNumberId, accessToken: cifrar(accessToken), actualizadoEn: new Date() })
+      .where(eq(waTenants.id, tenantId));
+    await registrarAuditoria(tx, tenantId, "reconectar_whatsapp", actor, {
+      phoneNumberId,
+      cambioNumero: fila.pnid !== phoneNumberId,
+    });
+    return true;
+  });
+}
+
 // ── Usuarios del panel por tenant (ROADMAP C2.3, "Mi negocio" → pestaña Usuarios) ──
 // A diferencia del caché (que solo indexa usuarios ACTIVOS por username, para el login),
 // estas lecturas/escrituras van directo a la base: son de baja frecuencia (las abre el
@@ -735,8 +849,22 @@ export function _registrarUsuarioParaTests(usuario: string, cuenta: CuentaUsuari
  * reemplaza atómico, ver `construirCache`).
  */
 export function _registrarTenantParaTests(tenant: Tenant): void {
+  cache.pausadosPorId.delete(tenant.id);
+  cache.pausadosPorPnid.delete(tenant.phoneNumberId);
   cache.porId.set(tenant.id, tenant);
   cache.porPnid.set(tenant.phoneNumberId, tenant);
+}
+
+/**
+ * Solo para tests: registra un tenant PAUSADO directo en el caché en memoria (y lo saca
+ * de los índices de activos), sin pasar por la base — mismo espíritu que
+ * `_registrarTenantParaTests`.
+ */
+export function _registrarTenantPausadoParaTests(tenant: Tenant): void {
+  cache.porId.delete(tenant.id);
+  cache.porPnid.delete(tenant.phoneNumberId);
+  cache.pausadosPorId.set(tenant.id, tenant);
+  cache.pausadosPorPnid.set(tenant.phoneNumberId, tenant);
 }
 
 /**

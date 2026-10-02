@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { Conversacion, MensajeConversacion, PendienteSerializado, Repositorio, Tenant } from "./types";
-import { obtenerTenantPorPhoneNumberId, refrescarSiFaltaPhoneNumberId } from "./config/tenantStore";
+import {
+  obtenerTenantPausadoPorPhoneNumberId,
+  obtenerTenantPorPhoneNumberId,
+  refrescarSiFaltaPhoneNumberId,
+} from "./config/tenantStore";
 import {
   clasificarEntrante,
   separarPayloadWebhook,
@@ -142,6 +146,37 @@ async function reactivarBotSiVencio(
 }
 
 /**
+ * Mensaje entrante a un negocio PAUSADO: se persiste en su conversación (deduplicado por
+ * waMessageId, igual que el camino normal) SIN encolar job — nadie le responde, no se
+ * transcribe ni se descarga la foto, no cuenta para el uso mensual. El contenido es el
+ * texto tal cual o un marcador del tipo de mensaje, mismo criterio que la rama no-texto.
+ */
+async function guardarEntranteDePausado(repo: Repositorio, tenant: Tenant, entrante: MensajeEntrante): Promise<void> {
+  const conv = await repo.obtenerOConversacion(tenant.id, entrante.clienteWa);
+  const contenido =
+    entrante.esTexto && entrante.texto.trim()
+      ? entrante.texto
+      : entrante.audioId
+        ? "[audio]"
+        : entrante.imagenId
+          ? entrante.imagenCaption
+            ? `[foto] ${entrante.imagenCaption}`
+            : "[foto]"
+          : entrante.documentoId
+            ? `[documento] ${entrante.documentoNombre ?? "sin nombre"}`
+            : entrante.contactoNombre
+              ? `[contacto] ${entrante.contactoNombre}`
+              : "[multimedia]";
+  await repo.guardarMensaje(tenant.id, conv.id, {
+    rol: "user",
+    contenido,
+    creadoEn: new Date().toISOString(),
+    waMessageId: entrante.messageId,
+  });
+  console.warn(`[webhook] negocio ${tenant.id} PAUSADO: mensaje guardado sin responder (conv ${conv.id})`);
+}
+
+/**
  * FASE 1 — rápida, se ejecuta ANTES de responder 200 a Meta.
  * Valida el evento, persiste el mensaje entrante y deduplica reintentos. Si esto
  * lanza, el server NO responde 200 y Meta reintrega; como guardamos por waMessageId,
@@ -173,6 +208,15 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio, db?: DB)
 
   const tenant = obtenerTenantPorPhoneNumberId(entrante.phoneNumberId);
   if (!tenant) {
+    // Negocio PAUSADO por la plataforma (falta de pago, PROCESO-COBRO-MANUAL.md): el bot
+    // NO responde, pero el mensaje se guarda en la conversación del cliente para que el
+    // dueño lo vea al reactivarse — en vez de ir a wa_webhooks_crudos, donde el reproceso
+    // lo terminaría descartando como "tenant desconocido" mientras dure la pausa.
+    const pausado = obtenerTenantPausadoPorPhoneNumberId(entrante.phoneNumberId);
+    if (pausado) {
+      await guardarEntranteDePausado(repo, pausado, entrante);
+      return null;
+    }
     console.warn("[webhook] mensaje a un phone_number_id sin tenant:", entrante.phoneNumberId);
     // Quizás es un negocio recién dado de alta que el caché aún no tiene: gatilla un
     // refresh (fire-and-forget, con cooldown) para tomarlo en el próximo mensaje.

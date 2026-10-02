@@ -206,6 +206,98 @@ export async function resolverMediaParaPanel(mediaUrl: string | null | undefined
   return firmada ?? undefined;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Borrado (revisión pre-venta 2026-10): derecho de supresión de un cliente final
+// (Ley 8968) y baja completa de un negocio. Los objetos viven bajo
+// `{tenantId}/{conversacionId}/…` (ver `rutaObjeto`), así que "borrar todo lo de un
+// cliente" es borrar el prefijo `{tenantId}/{conversacionId}` y "borrar todo lo de un
+// negocio" es borrar `{tenantId}`. A diferencia de la subida (fail-soft), acá un error
+// de Storage LANZA: el caller decide si aborta (supresión de un cliente: no se borra
+// nada de la base si las fotos no se pudieron borrar, para poder reintentar) o si lo
+// registra y sigue (baja de negocio, que ya se confirmó en la base).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PAGINA_LISTADO = 1000;
+const LOTE_BORRADO = 100;
+// Un prefijo vacío o con ".." borraría el bucket entero (o algo fuera del negocio):
+// solo se aceptan segmentos "tenant/conversacion" con caracteres seguros.
+const RE_PREFIJO_SEGURO = /^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*$/;
+
+function validarPrefijo(prefijo: string): void {
+  if (!RE_PREFIJO_SEGURO.test(prefijo) || prefijo.split("/").some((seg) => seg === "." || seg === "..")) {
+    throw new Error(`Prefijo de Storage inválido: "${prefijo}"`);
+  }
+}
+
+/**
+ * Rutas completas de los objetos bajo `prefijo` (recorre subcarpetas hasta
+ * `profundidad` niveles; la estructura real tiene como mucho tenant/conversación/archivo).
+ * Lanza si Storage responde con error.
+ */
+async function listarRutas(prefijo: string, profundidad: number): Promise<string[]> {
+  const rutas: string[] = [];
+  for (let offset = 0; ; offset += PAGINA_LISTADO) {
+    const res = await fetch(`${process.env.SUPABASE_URL}/storage/v1/object/list/${BUCKET}`, {
+      method: "POST",
+      headers: { ...headersAuth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ prefix: prefijo, limit: PAGINA_LISTADO, offset, sortBy: { column: "name", order: "asc" } }),
+      signal: conTimeout(TIMEOUT_STORAGE_MS),
+    });
+    if (!res.ok) {
+      const detalle = await res.text().catch(() => "");
+      throw new Error(`Supabase Storage listar (${res.status}): ${detalle.slice(0, 200)}`);
+    }
+    const pagina = (await res.json()) as { name: string; id: string | null }[];
+    for (const item of pagina) {
+      if (!item?.name) continue;
+      const ruta = `${prefijo}/${item.name}`;
+      // Las "carpetas" vienen con id null: se recorren (con tope de profundidad).
+      if (item.id === null) {
+        if (profundidad > 0) rutas.push(...(await listarRutas(ruta, profundidad - 1)));
+      } else {
+        rutas.push(ruta);
+      }
+    }
+    if (pagina.length < PAGINA_LISTADO) break;
+  }
+  return rutas;
+}
+
+/** Borra objetos puntuales por ruta (en lotes). Lanza si Storage responde con error. */
+export async function borrarObjetos(rutas: string[]): Promise<number> {
+  if (!credencialesConfiguradas() || rutas.length === 0) return 0;
+  for (const r of rutas) validarPrefijo(r);
+  let borrados = 0;
+  for (let i = 0; i < rutas.length; i += LOTE_BORRADO) {
+    const lote = rutas.slice(i, i + LOTE_BORRADO);
+    const res = await fetch(`${process.env.SUPABASE_URL}/storage/v1/object/${BUCKET}`, {
+      method: "DELETE",
+      headers: { ...headersAuth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ prefixes: lote }),
+      signal: conTimeout(TIMEOUT_STORAGE_MS),
+    });
+    if (!res.ok) {
+      const detalle = await res.text().catch(() => "");
+      throw new Error(`Supabase Storage borrar (${res.status}): ${detalle.slice(0, 200)}`);
+    }
+    borrados += lote.length;
+  }
+  return borrados;
+}
+
+/**
+ * Borra TODOS los objetos bajo `prefijo` (ej. `"tenant-x"` o `"tenant-x/conv-id"`).
+ * Devuelve `{ configurado: false }` sin hacer nada si Storage no está configurado (no hay
+ * nada que borrar ahí: las fotos viven como data URL en la base y se van con sus filas).
+ * Lanza si Storage responde con error, o si el prefijo no es seguro.
+ */
+export async function borrarPrefijo(prefijo: string): Promise<{ configurado: boolean; borrados: number }> {
+  validarPrefijo(prefijo);
+  if (!credencialesConfiguradas()) return { configurado: false, borrados: 0 };
+  const rutas = await listarRutas(prefijo, 2);
+  return { configurado: true, borrados: await borrarObjetos(rutas) };
+}
+
 // Solo para tests: permite resetear el flag del aviso único entre casos.
 export function _resetearAvisoParaTests(): void {
   avisoFaltaConfigMostrado = false;

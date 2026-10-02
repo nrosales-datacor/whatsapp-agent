@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
-import { ApiError, esNoAutenticado } from "./api";
+import { ApiError, esCuentaPausada, esNoAutenticado } from "./api";
 import { initTema } from "./lib/tema";
 import "./global.css";
 
@@ -18,6 +18,12 @@ initTema();
 // repetimos el chequeo de 401 en cada pantalla (lo hacía el `api()` del inbox.html).
 // ─────────────────────────────────────────────────────────────────────────────
 function alFallar(error: unknown) {
+  // Negocio pausado mientras el panel estaba abierto: cualquier llamada responde 403
+  // "cuenta_pausada" → se revalida ["me"], que también da 403 y <App> muestra el aviso.
+  if (esCuentaPausada(error)) {
+    if (error.path !== "/me") void queryClient.invalidateQueries({ queryKey: ["me"] });
+    return;
+  }
   if (!esNoAutenticado(error)) return;
   // Un 401 cae a la compuerta correcta: las rutas /admin/* a ["adminMe"], el resto a ["me"].
   const path = error instanceof ApiError ? error.path : undefined;

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { login } from "../api";
+import { esCuentaPausada, login } from "../api";
 import Icono from "./Iconos";
 
 // Único canal de contacto real que existe hoy en todo el producto (el mismo
@@ -31,6 +31,8 @@ export default function Login() {
       ? entrar.error.message
       : "No se pudo entrar"
     : "";
+  // Negocio pausado (cobro manual): el backend solo lo dice con la clave correcta.
+  const pausada = entrar.isError && esCuentaPausada(entrar.error);
 
   return (
     <div className="login-shell">
@@ -105,6 +107,16 @@ export default function Login() {
             {entrar.isPending ? "Entrando…" : "Entrar →"}
           </button>
           <div id="loginError">{error}</div>
+          {pausada && (
+            <a
+              className="login-ayuda"
+              href={linkSoporte("Hola, mi cuenta del panel aparece pausada")}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Escribir a Selyon para reactivarla
+            </a>
+          )}
           <a
             className="login-ayuda"
             href={linkSoporte("Hola, tengo problemas para entrar al panel")}

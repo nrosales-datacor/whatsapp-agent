@@ -1,9 +1,10 @@
 import { Route, Routes } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { me } from "./api";
+import { esCuentaPausada, me } from "./api";
 import Login from "./components/Login";
 import Panel from "./components/Panel";
 import CambiarClaveObligatorio from "./components/CambiarClaveObligatorio";
+import CuentaPausada from "./components/CuentaPausada";
 import RutaAdmin from "./components/admin/RutaAdmin";
 
 // Compuerta del operador (lo de siempre): la sesión vive en ["me"]; un 401 la pone en
@@ -11,6 +12,8 @@ import RutaAdmin from "./components/admin/RutaAdmin";
 function RutaOperador() {
   const sesion = useQuery({ queryKey: ["me"], queryFn: me });
   if (sesion.isLoading) return null;
+  // Negocio pausado por la plataforma (falta de pago): aviso claro en vez del login.
+  if (esCuentaPausada(sesion.error)) return <CuentaPausada />;
   if (!sesion.data) return <Login />;
   // Reset de contraseña desde el admin (Carril D, 0.5): con una clave temporal pendiente,
   // el panel no se muestra hasta que el usuario la cambie por una propia.

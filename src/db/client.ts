@@ -51,3 +51,11 @@ export function obtenerDb(): ReturnType<typeof crearDb> {
 export function _resetPoolParaTests(): void {
   poolGlobal = null;
 }
+
+// Solo para tests: hace que `obtenerDb()` devuelva una base inyectada (PGlite
+// efímero, ver test/helpers/pgliteDb.ts) en vez de abrir un pool contra
+// DATABASE_URL. Permite ejercer el router y el tenantStore REALES de punta a
+// punta contra Postgres sin levantar un servidor.
+export function _inyectarDbParaTests(db: unknown): void {
+  poolGlobal = db as ReturnType<typeof crearDb>;
+}

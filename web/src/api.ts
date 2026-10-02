@@ -60,6 +60,8 @@ export class ApiError extends Error {
     public status: number,
     message: string,
     public path?: string,
+    /** Código de máquina opcional del backend (ej. "cuenta_pausada"). */
+    public codigo?: string,
   ) {
     super(message);
     this.name = "ApiError";
@@ -71,8 +73,14 @@ export function esNoAutenticado(e: unknown): e is ApiError {
   return e instanceof ApiError && e.status === 401;
 }
 
-// Sobre del backend: éxito trae { ok:true, ...datos }; error trae { ok:false, error }.
-type Respuesta<T> = ({ ok: true } & T) | { ok: false; error: string };
+/** true si el negocio está pausado por la plataforma (falta de pago): el panel muestra
+ * "cuenta pausada, contactá a Selyon" en vez del login o de un error genérico. */
+export function esCuentaPausada(e: unknown): e is ApiError {
+  return e instanceof ApiError && e.status === 403 && e.codigo === "cuenta_pausada";
+}
+
+// Sobre del backend: éxito trae { ok:true, ...datos }; error trae { ok:false, error, codigo? }.
+type Respuesta<T> = ({ ok: true } & T) | { ok: false; error: string; codigo?: string };
 
 async function pedir<T = unknown>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
@@ -95,7 +103,8 @@ async function pedir<T = unknown>(path: string, init?: RequestInit): Promise<T> 
 
   if (!res.ok || !cuerpo || cuerpo.ok === false) {
     const msg = cuerpo && cuerpo.ok === false ? cuerpo.error : `Error ${res.status || "de red"}`;
-    throw new ApiError(res.status, msg, path);
+    const codigo = cuerpo && cuerpo.ok === false ? cuerpo.codigo : undefined;
+    throw new ApiError(res.status, msg, path, codigo);
   }
   return cuerpo as T;
 }
@@ -437,6 +446,31 @@ export interface TenantResumen {
   tokensEsteMes: number;
   /** Costo estimado de OpenAI este mes, en USD (F13) — ver AUDIT.md § 7 para las tarifas usadas. */
   costoUsdEsteMes: number;
+  /** false = pausado por la plataforma (cobro manual): el bot no responde. */
+  activo: boolean;
+  /** ISO de la última pausa y su motivo (solo si está pausado). */
+  pausadoDesde: string | null;
+  motivoPausa: string | null;
+  /** ¿Puede enviar por WhatsApp? (token propio o el legado del piloto). Nunca expone el token. */
+  whatsappConectado: boolean;
+  /** true si envía con el token GLOBAL del piloto en vez del suyo propio. */
+  whatsappTokenGlobal: boolean;
+}
+
+/** Entrada del registro auditable de un negocio (pausas, reconexiones, borrados). */
+export interface EntradaAuditoria {
+  id: string;
+  accion: string;
+  actor: string;
+  detalle: Record<string, unknown>;
+  creadoEn: string;
+}
+
+/** Resultado de borrar los datos de un cliente: solo conteos, nada del cliente. */
+export interface ResultadoBorradoCliente {
+  conteos: Record<string, number>;
+  archivosStorage: number;
+  eventosCalendario: number;
 }
 
 /** Cuerpo del alta de negocio (lo valida y normaliza el backend igual). */
@@ -515,6 +549,46 @@ export function adminCrearTenant(body: AltaTenant): Promise<{ tenantId: string }
 /** Cambia el plan de un negocio (Carril D, 0.1) — sin redeploy, vía el caché del tenantStore. */
 export async function adminCambiarPlan(id: string, plan: Plan): Promise<void> {
   await pedir(`/admin/tenants/${encodeURIComponent(id)}/plan`, { method: "POST", body: JSON.stringify({ plan }) });
+}
+
+// ── Acciones de plataforma sobre un negocio (revisión pre-venta 2026-10) ──
+const rutaTenant = (id: string) => `/admin/tenants/${encodeURIComponent(id)}`;
+
+export async function adminPausarTenant(id: string, motivo: string): Promise<void> {
+  await pedir(`${rutaTenant(id)}/pausar`, { method: "POST", body: JSON.stringify({ motivo }) });
+}
+
+export async function adminReactivarTenant(id: string, motivo: string): Promise<void> {
+  await pedir(`${rutaTenant(id)}/reactivar`, { method: "POST", body: JSON.stringify({ motivo }) });
+}
+
+/** Carga/rota phone_number_id + token (o el handle de Embedded Signup). El token no vuelve. */
+export async function adminReconectarWhatsapp(
+  id: string,
+  datos: { phoneNumberId?: string; accessToken?: string; tokenHandle?: string },
+): Promise<void> {
+  await pedir(`${rutaTenant(id)}/whatsapp`, { method: "POST", body: JSON.stringify(datos) });
+}
+
+/** Manda un texto de prueba con el token vigente. Si Graph falla, el error trae su mensaje. */
+export async function adminProbarWhatsapp(id: string, para: string): Promise<void> {
+  await pedir(`${rutaTenant(id)}/whatsapp/probar`, { method: "POST", body: JSON.stringify({ para }) });
+}
+
+export function adminBorrarCliente(id: string, clienteWa: string, confirmar: string): Promise<ResultadoBorradoCliente> {
+  return pedir(`${rutaTenant(id)}/clientes/borrar`, { method: "POST", body: JSON.stringify({ clienteWa, confirmar }) });
+}
+
+export function adminAuditoriaTenant(id: string): Promise<EntradaAuditoria[]> {
+  return pedir<{ auditoria: EntradaAuditoria[] }>(`${rutaTenant(id)}/auditoria`).then((r) => r.auditoria);
+}
+
+/** Borra TODOS los datos del cliente de esta conversación (solo dueño). `confirmar` = su teléfono. */
+export function borrarCliente(convId: string, confirmar: string): Promise<ResultadoBorradoCliente> {
+  return pedir(`/conversaciones/${encodeURIComponent(convId)}/borrar-cliente`, {
+    method: "POST",
+    body: JSON.stringify({ confirmar }),
+  });
 }
 
 // ── Usuarios del panel del negocio (ROADMAP C2.3, solo dueño) ──

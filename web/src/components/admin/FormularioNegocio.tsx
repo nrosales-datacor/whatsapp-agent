@@ -86,6 +86,7 @@ export default function FormularioNegocio({ hayDb }: { hayDb: boolean }) {
   const [password, setPassword] = useState("");
 
   const [okMsg, setOkMsg] = useState("");
+  const [errToken, setErrToken] = useState("");
 
   // Embedded Signup (C4.2): si el server lo tiene configurado, el número se conecta
   // por el popup de Meta en vez de pegar phone_number_id + token a mano.
@@ -187,6 +188,13 @@ export default function FormularioNegocio({ hayDb }: { hayDb: boolean }) {
 
   function enviar() {
     setOkMsg("");
+    // Sin token el negocio quedaría creado y mudo (F5: no hay número de prueba de
+    // respaldo). El backend lo exige igual; acá se avisa antes de mandar.
+    if (!tokenHandle && !accessToken.trim()) {
+      setErrToken("Falta el access token de WhatsApp (o conectá el número con Meta).");
+      return;
+    }
+    setErrToken("");
     const kb: KnowledgeBase = {
       faq: faqs.filter((f) => f.pregunta.trim() && f.respuesta.trim()).map((f) => ({ pregunta: f.pregunta.trim(), respuesta: f.respuesta.trim() })),
       datos: limpiar(datos),
@@ -236,8 +244,14 @@ export default function FormularioNegocio({ hayDb }: { hayDb: boolean }) {
         <input id="oPnid" value={phoneNumberId} onChange={(e) => setPhoneNumberId(e.target.value)} placeholder="solo números" />
       </div>
       <div className="campo">
-        <label htmlFor="oToken">accessToken (opcional)</label>
-        <input id="oToken" value={accessToken} onChange={(e) => setAccessToken(e.target.value)} placeholder="vacío usa el número de prueba" />
+        <label htmlFor="oToken">accessToken (obligatorio)</label>
+        <input
+          id="oToken"
+          value={accessToken}
+          onChange={(e) => setAccessToken(e.target.value)}
+          placeholder="token del WABA del negocio (EAA…)"
+          autoComplete="off"
+        />
       </div>
     </div>
   );
@@ -473,6 +487,7 @@ export default function FormularioNegocio({ hayDb }: { hayDb: boolean }) {
       <button type="submit" className="admin-submit" disabled={crear.isPending || !hayDb}>
         {crear.isPending ? "Creando…" : "Crear negocio"}
       </button>
+      {errToken && <div className="admin-error">{errToken}</div>}
       {error && <div className="admin-error">{error}</div>}
       {okMsg && <div className="admin-ok">{okMsg}</div>}
     </form>
