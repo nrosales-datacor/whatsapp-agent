@@ -497,6 +497,59 @@ export interface ResultadoAgente {
    * `cuerpo` se rellena con `respuesta`. Lo produce una herramienta (ofrecer_horarios).
    */
   interactivo?: MensajeInteractivo;
+  /**
+   * Confirmación fija de lo que YA quedó guardado en este turno (cita agendada,
+   * reprogramada o cancelada). Viene junto a `escalar: true` cuando el modelo
+   * escaló DESPUÉS de una acción exitosa: handleWebhook la manda antes del aviso de
+   * traspaso, para que el cliente no crea que la cita no quedó (revisión pre-venta).
+   */
+  confirmacion?: string;
+}
+
+/** "2026-06-12" → "viernes 12 de junio". */
+function fechaLegible(fecha: string, timezone: string): string {
+  try {
+    return new Date(`${fecha}T12:00:00`).toLocaleDateString("es", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      timeZone: timezone,
+    });
+  } catch {
+    return fecha;
+  }
+}
+
+/**
+ * Texto FIJO (no lo redacta el modelo) que confirma una acción de agenda que ya
+ * quedó persistida en este turno, o null si la tool no modificó nada. Es la red de
+ * seguridad de la revisión pre-venta 2026-10: si después de `agendar_cita` el turno
+ * termina en escalada, en "se agotaron los pasos" o en un error de OpenAI, el
+ * cliente igual se entera de que su cita quedó (antes recibía "tuvimos un
+ * problemita", reintentaba y dejaba citas duplicadas).
+ */
+export function confirmacionDeAccion(nombreTool: string, resultado: string, tenant: Tenant): string | null {
+  let r: any;
+  try {
+    r = JSON.parse(resultado);
+  } catch {
+    return null;
+  }
+  if (r?.ok !== true) return null;
+  const nombreServicio = (id: string) => tenant.servicios.find((s) => s.id === id)?.nombre ?? id;
+  if (nombreTool === "agendar_cita" && r.cita) {
+    const c = r.cita;
+    return `✅ Tu cita quedó agendada: ${nombreServicio(c.servicioId)}, ${fechaLegible(c.fecha, tenant.timezone)} a las ${c.hora}.`;
+  }
+  if (nombreTool === "reprogramar_cita" && r.cita) {
+    const c = r.cita;
+    return `✅ Tu cita quedó cambiada: ${c.servicio}, ${fechaLegible(c.fecha, tenant.timezone)} a las ${c.hora}.`;
+  }
+  if (nombreTool === "cancelar_cita" && r.cancelada) {
+    const c = r.cancelada;
+    return `Tu cita de ${c.servicio} del ${fechaLegible(c.fecha, tenant.timezone)} quedó cancelada.`;
+  }
+  return null;
 }
 
 /**
@@ -549,14 +602,27 @@ async function correrAgenteInterno(
   // registro vive en el `finally`, que corre para los tres `return` de más abajo.
   let tokensEntrada = 0;
   let tokensSalida = 0;
+  // Acciones de agenda que YA quedaron guardadas en este turno (ver `confirmacionDeAccion`).
+  const confirmaciones: string[] = [];
+  const confirmacion = () => (confirmaciones.length ? confirmaciones.join("\n") : undefined);
   try {
     for (let paso = 0; paso < MAX_PASOS; paso++) {
-      const res = await getOpenAI().chat.completions.create({
-        model: MODELO,
-        messages: mensajes,
-        tools: TOOLS,
-        temperature: 0.3,
-      });
+      let res;
+      try {
+        res = await getOpenAI().chat.completions.create({
+          model: MODELO,
+          messages: mensajes,
+          tools: TOOLS,
+          temperature: 0.3,
+        });
+      } catch (e) {
+        // OpenAI falló DESPUÉS de una acción ya guardada: el cliente recibe la
+        // confirmación fija en vez de "tuvimos un problemita" (que lo haría reintentar
+        // y duplicar la cita). Sin acciones previas, se propaga como siempre.
+        if (!confirmaciones.length) throw e;
+        console.error("[agente] OpenAI falló tras una acción ya guardada; se confirma con texto fijo:", e);
+        return { respuesta: confirmacion()!, fueraDeAlcance: false, escalar: false };
+      }
       // `usage` puede faltar en respuestas raras del SDK (streaming/errores parciales);
       // no rompemos el turno del cliente por un dato de costeo que falte.
       if (res.usage) {
@@ -585,12 +651,14 @@ async function correrAgenteInterno(
           } catch {
             // sin motivo legible: igual escalamos
           }
-          return { respuesta: "", fueraDeAlcance: false, escalar: true, motivo };
+          return { respuesta: "", fueraDeAlcance: false, escalar: true, motivo, confirmacion: confirmacion() };
         }
         let resultado: string;
         try {
           const args = JSON.parse(call.function.arguments || "{}");
           resultado = await ejecutarTool(call.function.name, args, ctx, capturas);
+          const conf = confirmacionDeAccion(call.function.name, resultado, ctx.tenant);
+          if (conf) confirmaciones.push(conf);
         } catch (e) {
           resultado = JSON.stringify({ error: String(e) });
         }
@@ -598,8 +666,14 @@ async function correrAgenteInterno(
       }
     }
 
-    // Se agotaron los pasos de tool-calling sin una respuesta final: el bot quedó
-    // trabado → lo pasamos a una persona (en vez de dejar al cliente sin solución).
+    // Se agotaron los pasos de tool-calling sin una respuesta final. Si en el camino
+    // ya quedó guardada una acción (p. ej. `agendar_cita` en el último paso), se
+    // confirma con texto fijo: el pedido del cliente SÍ se resolvió.
+    if (confirmaciones.length) {
+      return { respuesta: confirmacion()!, fueraDeAlcance: false, escalar: false };
+    }
+    // Si no, el bot quedó trabado → lo pasamos a una persona (en vez de dejar al
+    // cliente sin solución).
     return {
       respuesta: "",
       fueraDeAlcance: false,

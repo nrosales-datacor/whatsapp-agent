@@ -44,6 +44,14 @@ const AVISO_BOT =
 
 // Mensaje al cliente cuando el bot no pudo resolver y pasa el caso a una persona.
 const MENSAJE_ESCALADA = "Dejame consultarlo con una persona del equipo 🙋 En un momento te responden por acá.";
+/**
+ * Aviso de traspaso. Si en el mismo turno ya quedó guardada una cita (agendada,
+ * reprogramada o cancelada), se confirma PRIMERO con texto fijo: el cliente no debe
+ * creer que no agendó y reintentar (revisión pre-venta 2026-10).
+ */
+function textoEscalada(confirmacion?: string): string {
+  return confirmacion ? `${confirmacion}\n\n${MENSAJE_ESCALADA}` : MENSAJE_ESCALADA;
+}
 
 // F10 (PLAN-ESCALA-MULTITENANT.md): mensaje al cliente cuando el negocio alcanzó el
 // 100% del tope mensual de conversaciones de su plan. Default razonable; el dueño
@@ -481,7 +489,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
 
     try {
       const historialPrevio = await historialFresco(repo, tenant, conv, entrante.messageId, historialSnapshot);
-      const { respuesta, fueraDeAlcance, escalar, motivo, interactivo } = await correrAgente(
+      const { respuesta, fueraDeAlcance, escalar, motivo, interactivo, confirmacion } = await correrAgente(
         { tenant, repo, clienteWa: entrante.clienteWa },
         entrante.imagenCaption?.trim() || "El cliente mandó esta foto sin comentario. Mirala y ayudalo.",
         historialPrevio,
@@ -496,11 +504,11 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
 
       if (escalar) {
         await repo.setModoConversacion(tenant.id, conv.id, "humano");
-        let salida = MENSAJE_ESCALADA;
+        let salida = textoEscalada(confirmacion);
         if (primerContacto) salida = `${AVISO_BOT.replace("%NOMBRE%", tenant.nombre)}\n\n${salida}`;
         await enviarTexto(tenant, entrante.clienteWa, salida);
         if (primerContacto) await repo.marcarOptIn(tenant.id, conv.id);
-        await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: MENSAJE_ESCALADA, creadoEn: new Date().toISOString() });
+        await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: textoEscalada(confirmacion), creadoEn: new Date().toISOString() });
         await notificarOperador(
           repo,
           tenant,
@@ -594,7 +602,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
 
     try {
       const historialPrevio = await historialFresco(repo, tenant, conv, entrante.messageId, historialSnapshot);
-      const { respuesta, fueraDeAlcance, escalar, motivo, interactivo } = await correrAgente(
+      const { respuesta, fueraDeAlcance, escalar, motivo, interactivo, confirmacion } = await correrAgente(
         { tenant, repo, clienteWa: entrante.clienteWa },
         textoTranscrito,
         historialPrevio,
@@ -608,11 +616,11 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
 
       if (escalar) {
         await repo.setModoConversacion(tenant.id, conv.id, "humano");
-        let salida = MENSAJE_ESCALADA;
+        let salida = textoEscalada(confirmacion);
         if (primerContacto) salida = `${AVISO_BOT.replace("%NOMBRE%", tenant.nombre)}\n\n${salida}`;
         await enviarTexto(tenant, entrante.clienteWa, salida);
         if (primerContacto) await repo.marcarOptIn(tenant.id, conv.id);
-        await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: MENSAJE_ESCALADA, creadoEn: new Date().toISOString() });
+        await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: textoEscalada(confirmacion), creadoEn: new Date().toISOString() });
         await notificarOperador(
           repo,
           tenant,
@@ -790,7 +798,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
 
   try {
     const historialPrevio = await historialFresco(repo, tenant, conv, entrante.messageId, historialSnapshot);
-    const { respuesta, fueraDeAlcance, escalar, motivo, interactivo } = await correrAgente(
+    const { respuesta, fueraDeAlcance, escalar, motivo, interactivo, confirmacion } = await correrAgente(
       { tenant, repo, clienteWa: entrante.clienteWa },
       entrante.texto,
       historialPrevio,
@@ -808,13 +816,13 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
     // a una persona y avisamos (push), en vez de mandar una respuesta vaga o genérica.
     if (escalar) {
       await repo.setModoConversacion(tenant.id, conv.id, "humano");
-      let salida = MENSAJE_ESCALADA;
+      let salida = textoEscalada(confirmacion);
       if (primerContacto) salida = `${AVISO_BOT.replace("%NOMBRE%", tenant.nombre)}\n\n${salida}`;
       await enviarTexto(tenant, entrante.clienteWa, salida);
       if (primerContacto) await repo.marcarOptIn(tenant.id, conv.id);
       await repo.guardarMensaje(tenant.id, conv.id, {
         rol: "assistant",
-        contenido: MENSAJE_ESCALADA,
+        contenido: textoEscalada(confirmacion),
         creadoEn: new Date().toISOString(),
       });
       await notificarOperador(repo, tenant, conv, motivo ? `🙋 El bot pasó este caso: ${motivo}` : entrante.texto);
