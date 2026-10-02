@@ -30,10 +30,20 @@ export const waConversaciones = pgTable(
     id: id(),
     tenantId: text("tenant_id").notNull(),
     clienteWa: text("cliente_wa").notNull(),
+    // Cuándo se le mandó al cliente el AVISO de que lo atiende un bot (transparencia).
+    // NO es consentimiento de marketing: para eso está marketing_consentimiento_en.
     optInEn: timestamp("opt_in_en", { withTimezone: true }),
-    // Opt-out de CAMPAÑAS de marketing (C3.2): el cliente escribió "BAJA". No afecta
-    // recordatorios ni seguimiento post-servicio (son mensajes de servicio, no marketing).
+    // Opt-out de CAMPAÑAS de marketing (C3.2): el cliente pidió la baja ("BAJA", "stop",
+    // "no me manden más"… ver campaigns/consentimiento.ts). No afecta recordatorios ni
+    // seguimiento post-servicio (son mensajes de servicio, no marketing).
     optOutEn: timestamp("opt_out_en", { withTimezone: true }),
+    // Consentimiento EXPLÍCITO de marketing: cuándo el cliente tocó "Sí" en el mensaje
+    // de botones que lo pregunta (campaigns/consentimiento.ts). null = no consintió (o
+    // revocó). Las campañas SOLO van a quien lo tiene y no pidió la baja después.
+    marketingConsentimientoEn: timestamp("marketing_consentimiento_en", { withTimezone: true }),
+    // Cuándo se le PREGUNTÓ por última vez (para no insistir: el bot lo ofrece una
+    // sola vez y el panel no deja re-preguntar antes de 30 días).
+    marketingConsentimientoPedidoEn: timestamp("marketing_consentimiento_pedido_en", { withTimezone: true }),
     creadaEn: timestamp("creada_en", { withTimezone: true }).notNull().defaultNow(),
     // Panel / bandeja humana.
     modo: text("modo").notNull().default("bot"), // "bot" | "humano"

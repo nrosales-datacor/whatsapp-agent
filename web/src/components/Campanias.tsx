@@ -7,6 +7,7 @@ import {
   listarCampanias,
   obtenerCampania,
   obtenerConfig,
+  obtenerResumenConsentimiento,
   previsualizarSegmento,
   type Campania,
   type PreviewSegmento,
@@ -23,6 +24,9 @@ import { useToast } from "./Toast";
 // /api/panel/campanias si el rol no es "dueno"). Arma un segmento del CRM,
 // previsualiza cuántos clientes califican, y confirma el envío (ahora o
 // programado) por la plantilla MARKETING configurada en "Mi negocio".
+// Solo reciben campañas los clientes con CONSENTIMIENTO explícito de marketing
+// (botón "Sí" — ver src/campaigns/consentimiento.ts) que no pidieron la baja; la
+// tarjeta "Permiso de promociones" y el preview muestran cuántos son.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const NOMBRES_ESTADO: Record<Campania["estado"], string> = {
@@ -50,6 +54,7 @@ export default function Campanias() {
   const { flash } = useToast();
   const q = useQuery({ queryKey: ["campanias"], queryFn: listarCampanias });
   const config = useQuery({ queryKey: ["config"], queryFn: obtenerConfig });
+  const consentimiento = useQuery({ queryKey: ["campanias-consentimiento"], queryFn: obtenerResumenConsentimiento });
 
   const [seleccionadaId, setSeleccionadaId] = useState<string | null>(null);
 
@@ -182,6 +187,23 @@ export default function Campanias() {
         </div>
 
         <div className="card admin-form">
+          <h3>Permiso de promociones</h3>
+          <p className="campo-ayuda">
+            {consentimiento.data
+              ? `${consentimiento.data.conConsentimiento} de ${consentimiento.data.clientes} cliente${consentimiento.data.clientes === 1 ? "" : "s"} dieron permiso para recibir promociones${consentimiento.data.conBaja ? ` · ${consentimiento.data.conBaja} pidieron la baja` : ""}.`
+              : consentimiento.isError
+                ? "No se pudo cargar el conteo de permisos."
+                : "Calculando…"}
+          </p>
+          <p className="campo-ayuda">
+            Las campañas solo llegan a quienes tocaron {'"'}Sí{'"'} en el mensaje que les pregunta si quieren recibir
+            promociones. El bot se lo ofrece una sola vez, después de una cita en la que el cliente respondió que le fue
+            bien; también podés pedírselo desde el chat con el botón {'"'}Pedir permiso promos{'"'}. Quien escribe BAJA
+            (o {'"'}stop{'"'}, {'"'}no me manden más{'"'}…) deja de recibirlas.
+          </p>
+        </div>
+
+        <div className="card admin-form">
           <h3>Nueva campaña</h3>
           <div className="campo">
             <label htmlFor="campNombre">Nombre (interno, no lo ve el cliente)</label>
@@ -250,8 +272,11 @@ export default function Campanias() {
           {preview && (
             <p className="campo-ayuda">
               {preview.total === 0
-                ? "Ningún cliente califica para este segmento todavía."
-                : `Este segmento tiene ${preview.total} cliente${preview.total === 1 ? "" : "s"}.`}
+                ? "Ningún cliente con permiso de promociones califica para este segmento todavía."
+                : `La campaña llegaría a ${preview.total} cliente${preview.total === 1 ? "" : "s"} con permiso de promociones.`}
+              {preview.sinConsentimiento > 0 &&
+                ` ${preview.sinConsentimiento} más califica${preview.sinConsentimiento === 1 ? "" : "n"} pero no dio permiso (no se les envía).`}
+              {preview.conBaja > 0 && ` ${preview.conBaja} pidió${preview.conBaja === 1 ? "" : "eron"} la baja.`}
             </p>
           )}
 

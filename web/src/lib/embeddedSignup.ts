@@ -132,6 +132,11 @@ export function lanzarEmbeddedSignup(cfg: EsConfig): Promise<EsResultado> {
             config_id: cfg.configId,
             response_type: "code",
             override_default_response_type: true,
+            // featureType "" = onboarding normal, SIN coexistencia: el número queda en la
+            // Cloud API y deja de funcionar en la app de WhatsApp Business del celular
+            // (hay que usar un número nuevo o migrarlo desde la app). La coexistencia
+            // ("whatsapp_business_app_onboarding") no está implementada — la landing NO
+            // debe prometer "tu mismo número sin cambios".
             extras: { setup: {}, featureType: "", sessionInfoVersion: "3" },
           },
         );

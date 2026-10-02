@@ -75,7 +75,8 @@ import {
   listarCampanias,
   obtenerCampania,
 } from "../campaigns/campanias";
-import { previsualizarSegmento } from "../campaigns/segmentos";
+import { previsualizarSegmentoDetalle, resumenConsentimiento } from "../campaigns/segmentos";
+import { pedirConsentimientoMarketing } from "../campaigns/consentimiento";
 import { empleadoOcupado, espaciosPorEmpleado } from "../booking/availability";
 import { esChoqueDeEmpleado } from "../booking/errores";
 import {
@@ -1459,8 +1460,21 @@ export async function manejarPanel(
       const q = new URL(req.url ?? "/", "http://panel.local").searchParams;
       const filtro = leerSegmentoFiltro(q, tenant);
       if (!filtro) return json(res, 400, { ok: false, error: "Segmento inválido" }), true;
-      const destinatarios = await previsualizarSegmento(tenant.id, filtro);
-      return json(res, 200, { ok: true, total: destinatarios.length, muestra: destinatarios.slice(0, 20) }), true;
+      const { destinatarios, sinConsentimiento, conBaja } = await previsualizarSegmentoDetalle(tenant.id, filtro);
+      return json(res, 200, {
+        ok: true,
+        total: destinatarios.length,
+        muestra: destinatarios.slice(0, 20),
+        // Califican por el filtro pero NO reciben la campaña (consentimiento obligatorio).
+        sinConsentimiento,
+        conBaja,
+      }), true;
+    }
+
+    // Cuántos clientes del negocio dieron permiso de promociones (consentimiento explícito).
+    if (ruta === "campanias/consentimiento" && metodo === "GET") {
+      const resumen = await resumenConsentimiento(tenant.id);
+      return json(res, 200, { ok: true, ...resumen }), true;
     }
 
     if (ruta === "campanias" && metodo === "POST") {
@@ -2157,6 +2171,35 @@ export async function manejarPanel(
         creadoEn: new Date().toISOString(),
         porHumano: true,
       });
+      return json(res, 200, { ok: true }), true;
+    }
+
+    // Consentimiento de marketing: el negocio le pide al cliente, con botones Sí/No,
+    // permiso para mandarle promociones (campaigns/consentimiento.ts). Requiere la
+    // ventana de 24h abierta (es un mensaje interactivo, no una plantilla).
+    if (accion === "pedir-consentimiento" && metodo === "POST") {
+      const conv = await repo.obtenerConversacionPorId(tenant.id, convId);
+      if (!conv) return json(res, 404, { ok: false, error: "No existe" }), true;
+      if (!conv.ventanaAbierta) {
+        return json(res, 409, { ok: false, error: "ventana_cerrada", ventanaCierraEn: conv.ventanaCierraEn }), true;
+      }
+      let resultado;
+      try {
+        resultado = await pedirConsentimientoMarketing(tenant, repo, conv, { manual: true });
+      } catch (e) {
+        console.error("[panel] pedirConsentimientoMarketing falló:", e);
+        return json(res, 502, { ok: false, error: "No se pudo enviar el pedido de permiso" }), true;
+      }
+      const errores: Record<string, [number, string]> = {
+        sin_plan: [403, "plan_requerido"],
+        baja: [409, "El cliente pidió la baja de promociones: no se le vuelve a preguntar"],
+        ya_consiente: [409, "Este cliente ya dio permiso para recibir promociones"],
+        ya_preguntado: [409, "Ya se le preguntó hace poco (se puede volver a preguntar a los 30 días)"],
+      };
+      if (resultado !== "enviado") {
+        const [status, error] = errores[resultado];
+        return json(res, status, { ok: false, error, ...(resultado === "sin_plan" ? { plan: "pro" } : {}) }), true;
+      }
       return json(res, 200, { ok: true }), true;
     }
 

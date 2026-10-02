@@ -30,22 +30,37 @@ interface AgregadoCliente {
 }
 
 type CitaSegmento = { clienteWa: string; clienteNombre: string; fecha: string; estado: string; servicioId: string };
-type ConversacionSegmento = { clienteWa: string; optOutEn: unknown };
+type ConversacionSegmento = { clienteWa: string; optOutEn: unknown; marketingConsentimientoEn: unknown };
+
+/** Resultado del segmento con el desglose de a quién se excluyó (lo muestra el panel). */
+export interface DetalleSegmento {
+  /** Los que reciben la campaña: califican, dieron consentimiento y no pidieron la baja. */
+  destinatarios: ClienteSegmento[];
+  /** Califican por el filtro pero NUNCA dieron consentimiento de marketing (no se les envía). */
+  sinConsentimiento: number;
+  /** Califican por el filtro pero pidieron la baja (no se les envía). */
+  conBaja: number;
+}
 
 /**
  * Agrega citas + conversaciones y arma la lista de destinatarios que califican
  * para el segmento de una campaña. Pura (sin I/O): mismo estilo que
- * calcularMetricas (src/panel/metricas.ts). Excluye SIEMPRE a los clientes que
- * pidieron baja ("BAJA", opt-out de marketing). `hoy` ("YYYY-MM-DD") es
- * inyectable para pruebas deterministas; por defecto la fecha actual.
+ * calcularMetricas (src/panel/metricas.ts). Filtro OBLIGATORIO para todos los
+ * segmentos: solo quedan los clientes con consentimiento EXPLÍCITO de marketing
+ * (`marketingConsentimientoEn`, botón "Sí" — ver consentimiento.ts) y que no
+ * pidieron la baja (`optOutEn`). `hoy` ("YYYY-MM-DD") es inyectable para pruebas
+ * deterministas; por defecto la fecha actual.
  */
-export function calcularSegmento(
+export function calcularSegmentoDetalle(
   citas: CitaSegmento[],
   conversaciones: ConversacionSegmento[],
   filtro: SegmentoFiltro,
   hoy: string = new Date().toISOString().slice(0, 10),
-): ClienteSegmento[] {
+): DetalleSegmento {
   const optOut = new Set(conversaciones.filter((c) => c.optOutEn).map((c) => c.clienteWa));
+  const conConsentimiento = new Set(
+    conversaciones.filter((c) => c.marketingConsentimientoEn).map((c) => c.clienteWa),
+  );
 
   const porCliente = new Map<string, AgregadoCliente>();
   for (const c of citas) {
@@ -75,7 +90,8 @@ export function calcularSegmento(
 
   let resultado: ClienteSegmento[];
   if (filtro.tipo === "todos") {
-    // Todos los clientes que alguna vez escribieron, tengan cita o no.
+    // Todos los clientes que alguna vez escribieron, tengan cita o no (el filtro de
+    // consentimiento de abajo deja solo a los que dijeron que sí).
     resultado = conversaciones.map((conv) => {
       const a = porCliente.get(conv.clienteWa);
       return { clienteWa: conv.clienteWa, nombre: a?.nombre ?? "estimado cliente", ultimaVisita: a?.ultimaVisita ?? null };
@@ -87,7 +103,7 @@ export function calcularSegmento(
       .map((a) => ({ clienteWa: a.clienteWa, nombre: a.nombre, ultimaVisita: a.ultimaVisita }));
   } else {
     // "servicio_antiguo"
-    if (!filtro.servicioId) return [];
+    if (!filtro.servicioId) return { destinatarios: [], sinConsentimiento: 0, conBaja: 0 };
     const corte = fechaHaceDias((filtro.meses ?? DEFAULT_MESES_SERVICIO) * DIAS_POR_MES, hoy);
     resultado = [...porCliente.values()]
       .filter((a) => {
@@ -97,20 +113,63 @@ export function calcularSegmento(
       .map((a) => ({ clienteWa: a.clienteWa, nombre: a.nombre, ultimaVisita: a.ultimaVisita }));
   }
 
-  return resultado
-    .filter((r) => !optOut.has(r.clienteWa))
-    .sort((a, b) => (b.ultimaVisita ?? "").localeCompare(a.ultimaVisita ?? ""));
+  let conBaja = 0;
+  let sinConsentimiento = 0;
+  const destinatarios = resultado.filter((r) => {
+    if (optOut.has(r.clienteWa)) {
+      conBaja++;
+      return false;
+    }
+    if (!conConsentimiento.has(r.clienteWa)) {
+      sinConsentimiento++;
+      return false;
+    }
+    return true;
+  });
+  destinatarios.sort((a, b) => (b.ultimaVisita ?? "").localeCompare(a.ultimaVisita ?? ""));
+  return { destinatarios, sinConsentimiento, conBaja };
 }
 
-/**
- * Arma la lista de destinatarios que califican para el segmento de una campaña.
- * Excluye SIEMPRE a los clientes que pidieron baja ("BAJA", opt-out de marketing).
- */
-export async function previsualizarSegmento(tenantId: string, filtro: SegmentoFiltro): Promise<ClienteSegmento[]> {
+/** Igual que calcularSegmentoDetalle pero solo la lista de destinatarios. */
+export function calcularSegmento(
+  citas: CitaSegmento[],
+  conversaciones: ConversacionSegmento[],
+  filtro: SegmentoFiltro,
+  hoy: string = new Date().toISOString().slice(0, 10),
+): ClienteSegmento[] {
+  return calcularSegmentoDetalle(citas, conversaciones, filtro, hoy).destinatarios;
+}
+
+/** Segmento del tenant con el desglose de excluidos (sin consentimiento / con baja). */
+export async function previsualizarSegmentoDetalle(tenantId: string, filtro: SegmentoFiltro): Promise<DetalleSegmento> {
   const d = obtenerDb();
   const [citas, conversaciones] = await Promise.all([
     d.select().from(waCitas).where(eq(waCitas.tenantId, tenantId)),
     d.select().from(waConversaciones).where(eq(waConversaciones.tenantId, tenantId)),
   ]);
-  return calcularSegmento(citas, conversaciones, filtro);
+  return calcularSegmentoDetalle(citas, conversaciones, filtro);
+}
+
+/**
+ * Arma la lista de destinatarios que califican para el segmento de una campaña.
+ * Solo clientes con consentimiento de marketing y sin baja (ver calcularSegmentoDetalle).
+ */
+export async function previsualizarSegmento(tenantId: string, filtro: SegmentoFiltro): Promise<ClienteSegmento[]> {
+  return (await previsualizarSegmentoDetalle(tenantId, filtro)).destinatarios;
+}
+
+/** Resumen del tenant para el panel de campañas: cuántos clientes dieron permiso de promociones. */
+export async function resumenConsentimiento(
+  tenantId: string,
+): Promise<{ clientes: number; conConsentimiento: number; conBaja: number }> {
+  const d = obtenerDb();
+  const filas = await d
+    .select({ optOutEn: waConversaciones.optOutEn, consentimientoEn: waConversaciones.marketingConsentimientoEn })
+    .from(waConversaciones)
+    .where(eq(waConversaciones.tenantId, tenantId));
+  return {
+    clientes: filas.length,
+    conConsentimiento: filas.filter((f) => f.consentimientoEn && !f.optOutEn).length,
+    conBaja: filas.filter((f) => f.optOutEn).length,
+  };
 }

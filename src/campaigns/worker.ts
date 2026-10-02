@@ -83,20 +83,23 @@ async function activarProgramadas(): Promise<void> {
 }
 
 /**
- * true si el cliente pidió baja DESPUÉS de armarse el segmento (defensa en
- * profundidad: previsualizarSegmento ya excluye opt-out al materializar, esto
- * cubre la ventana entre esa materialización y el turno real de envío).
+ * true si el cliente YA NO califica para marketing: pidió baja o retiró su
+ * consentimiento DESPUÉS de armarse el segmento (defensa en profundidad:
+ * previsualizarSegmento ya filtra consentimiento + baja al materializar, esto
+ * cubre la ventana entre esa materialización y el turno real de envío). Sin fila
+ * de conversación tampoco hay consentimiento: no se envía.
  */
 async function siguioOptOut(tenantId: string, clienteWa: string): Promise<boolean> {
   const d = obtenerDb();
   const rows = filasDe(
     await d.execute(sql`
     SELECT 1 FROM wa_conversaciones
-     WHERE tenant_id = ${tenantId} AND cliente_wa = ${clienteWa} AND opt_out_en IS NOT NULL
+     WHERE tenant_id = ${tenantId} AND cliente_wa = ${clienteWa}
+       AND opt_out_en IS NULL AND marketing_consentimiento_en IS NOT NULL
      LIMIT 1
   `),
   );
-  return rows.length > 0;
+  return rows.length === 0;
 }
 
 /** Reclama y procesa UN envío pendiente. Devuelve false si no había ninguno. */

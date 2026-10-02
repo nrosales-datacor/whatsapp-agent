@@ -28,7 +28,8 @@ El corazón del producto. Un cliente escribe al WhatsApp del negocio y el agente
 - **Notas de voz** — transcribe el audio del cliente (Whisper) y responde igual que a un texto.
 - **Seguimiento post-servicio** — horas después de la cita pregunta *"¿Cómo te fue?"*; si algo salió mal, intercepta al cliente antes de que deje una reseña negativa y avisa al operador; si todo bien, le pide una **reseña de Google**.
 - **Escalada a humano** — cuando no puede resolver algo (un reclamo, un caso especial), pasa la conversación a una persona del equipo y la notifica, en vez de improvisar.
-- **Opt-out real** — el cliente escribe *"BAJA"* y deja de recibir campañas de marketing (los mensajes de servicio siguen).
+- **Consentimiento de marketing explícito** — tras una cita en la que el cliente respondió que le fue bien, el bot le pregunta UNA vez, con botones *Sí / No*, si quiere recibir promociones (el negocio también puede pedirlo desde el chat). Solo quien toca *Sí* recibe campañas.
+- **Opt-out real** — el cliente escribe *"BAJA"* (o *"stop"*, *"cancelar suscripción"*, *"no me manden más"*…) y deja de recibir campañas de marketing (los mensajes de servicio siguen).
 
 En la bandeja, una conversación real del bot cerrando una cita se ve así:
 
@@ -99,7 +100,7 @@ Pestaña visible solo para el **dueño**. Permite listar, crear y activar/desact
 
 ## 8. Campañas (marketing segmentado)
 
-Pestaña solo para el dueño. Arma un segmento del CRM (*todos*, *inactivos hace N+ días*, *hicieron un servicio hace N+ meses*), previsualiza cuántos clientes califican y envía por una **plantilla de marketing aprobada por Meta**, con throttling propio y respeto al opt-out (*"BAJA"*). Reporta enviados, fallidos, omitidos por opt-out, respuestas y citas generadas.
+Pestaña solo para el dueño. Arma un segmento del CRM (*todos*, *inactivos hace N+ días*, *hicieron un servicio hace N+ meses*), previsualiza cuántos clientes califican y envía por una **plantilla de marketing aprobada por Meta**, con throttling propio. **Solo llega a clientes con consentimiento explícito de marketing** (y que no pidieron la baja); la pestaña muestra cuántos clientes dieron permiso y cuántos del segmento quedan afuera por no haberlo dado. Reporta enviados, fallidos, omitidos por opt-out, respuestas y citas generadas.
 
 > *Al igual que Usuarios, esta vista se apoya en tablas de la base de datos de producción y no se renderiza en el demo local. La cola de envío es independiente de la cola principal del webhook para no arriesgar la fiabilidad del sistema.*
 

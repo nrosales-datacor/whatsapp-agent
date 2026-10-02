@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="es-CR">
+<head>
+<meta charset="utf-8">
+<title>Contrato de servicio — Selyon</title>
+<meta name="description" content="Modelo de contrato de servicio y acuerdo de tratamiento de datos (DPA) entre Selyon y los negocios que contratan Recepcionista IA.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/landing/estilos.css">
+</head>
+<body>
+
+<header class="cabecera">
+  <div class="contenedor contenedor--ancha">
+    <a class="marca" href="/">
+      <svg width="36" height="36" viewBox="0 0 36 36" fill="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="marca-degradado" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#248DE3"/>
+            <stop offset="1" stop-color="#103050"/>
+          </linearGradient>
+        </defs>
+        <rect width="36" height="36" rx="10" fill="url(#marca-degradado)"/>
+        <path d="M10 24.5 L18 8 L26 24.5" stroke="#7AFAFC" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        <circle cx="18" cy="8" r="3" fill="#FFC517"/>
+        <circle cx="10" cy="24.5" r="2.4" fill="#7AFAFC"/>
+        <circle cx="26" cy="24.5" r="2.4" fill="#7AFAFC"/>
+      </svg>
+      <span class="marca-texto">selyon</span>
+    </a>
+  </div>
+</header>
+
+<!-- BORRADOR B2B: textos entre [CORCHETES] = datos o decisiones pendientes, no
+     inventar. Pendiente de revisión por un abogado costarricense (Código de Comercio,
+     Ley 8968 y su reglamento, Ley 7472). Los precios vigentes de referencia están en
+     PROCESO-COBRO-MANUAL.md; acá se dejan como placeholder hasta definir la lista pública.
+     Debe describir lo que el sistema hace de verdad (proveedores, retención, export y
+     borrado al salir = offboarding de src/config/offboarding.ts). -->
+<main class="legal">
+  <div class="contenedor">
+    <a class="volver" href="/">← Volver al inicio</a>
+    <p class="aviso-borrador" role="note"><strong>Borrador — pendiente de revisión legal.</strong> Este modelo de contrato todavía no fue revisado por un abogado y no es una oferta vinculante. Los datos entre [corchetes] están pendientes.</p>
+    <h1>Contrato de servicio y Acuerdo de tratamiento de datos</h1>
+    <p class="vigencia">Modelo para negocios · versión borrador del 1 de octubre de 2026.</p>
+
+    <p>
+      Entre <strong>[RAZÓN SOCIAL]</strong>, cédula jurídica <strong>[CÉDULA JURÍDICA]</strong>, con domicilio en
+      <strong>[DOMICILIO]</strong>, representada por <strong>[REPRESENTANTE LEGAL]</strong> (“Selyon”), y
+      <strong>[NOMBRE O RAZÓN SOCIAL DEL CLIENTE]</strong>, cédula <strong>[CÉDULA DEL CLIENTE]</strong>, representada
+      por <strong>[REPRESENTANTE DEL CLIENTE]</strong> (“el Negocio”), se celebra este contrato, que tiene dos partes: el
+      <strong>Contrato de servicio</strong> (parte I) y el <strong>Acuerdo de tratamiento de datos</strong> (parte II).
+    </p>
+
+    <h2>Parte I — Contrato de servicio</h2>
+
+    <h3>1. Objeto</h3>
+    <p>
+      Selyon le presta al Negocio, como software en la nube (suscripción), la plataforma <strong>Recepcionista IA</strong>:
+      un asistente de inteligencia artificial que atiende el WhatsApp del Negocio (responde consultas con la información
+      que el Negocio carga, cotiza, agenda, reprograma y cancela citas, envía recordatorios y seguimientos, y pasa la
+      conversación a una persona cuando hace falta) y un panel web para el equipo del Negocio (bandeja, agenda, fichas de
+      clientes, métricas y configuración).
+    </p>
+
+    <h3>2. Planes y precio</h3>
+    <ul>
+      <li><strong>Plan Básico</strong>: asistente de WhatsApp, agenda (con Google Calendar opcional), recordatorios con confirmación, seguimiento post-servicio y panel. Incluye hasta <strong>500 conversaciones por mes</strong>; al llegar al tope, el asistente deja de responder automáticamente ese mes y pasa las conversaciones nuevas al equipo del Negocio. Precio: <strong>[PRECIO PLAN BÁSICO]</strong> colones por mes.</li>
+      <li><strong>Plan Pro</strong>: todo lo del Básico, sin tope mensual de conversaciones, más campañas por WhatsApp, varios usuarios con roles, marca propia en el panel, seguimiento de cotizaciones no agendadas, sugerencia de extras al agendar y motor de reseñas de Google. Precio: <strong>[PRECIO PLAN PRO]</strong> colones por mes.</li>
+      <li>Los precios [incluyen / no incluyen] el IVA. [PENDIENTE: definir y confirmar emisión de factura electrónica.]</li>
+      <li><strong>No incluyen</strong> los cargos que Meta cobra directamente al Negocio por conversaciones o plantillas de WhatsApp, cuando apliquen.</li>
+      <li>Selyon puede actualizar precios avisando por escrito con al menos <strong>[30]</strong> días de anticipación; el Negocio puede terminar el contrato antes de que el cambio aplique.</li>
+    </ul>
+
+    <h3>3. Pago</h3>
+    <ul>
+      <li>Por mes adelantado, cada 30 días contados desde la fecha de alta, por SINPE Móvil o transferencia a la cuenta que indique Selyon [o el medio de pago en línea que se habilite].</li>
+      <li>Si un pago se atrasa, hay <strong>5 días</strong> de gracia. Desde el día 5 de atraso Selyon puede pasar un plan Pro a Básico, y desde el día 10 puede pausar el asistente hasta que se regularice el pago. Los datos del Negocio no se borran por atraso; se aplica la cláusula 12 si el contrato termina.</li>
+    </ul>
+
+    <h3>4. Plazo y cancelación</h3>
+    <ul>
+      <li>Plazo mensual que se renueva solo. No hay permanencia mínima [salvo que se pacte un precio fundador con permanencia].</li>
+      <li>El Negocio puede cancelar en cualquier momento avisando por escrito (correo o WhatsApp) con al menos <strong>[15]</strong> días antes del siguiente corte; el servicio sigue hasta el final del período pagado. No hay reembolsos proporcionales de un mes ya iniciado, salvo incumplimiento grave de Selyon.</li>
+      <li>Selyon puede terminar el contrato con <strong>[30]</strong> días de aviso, o de inmediato si el Negocio usa el servicio para fines ilegales, para enviar mensajes no solicitados o en violación de las políticas de WhatsApp, o si deja de pagar más de [30] días.</li>
+    </ul>
+
+    <h3>5. Puesta en marcha y número de WhatsApp</h3>
+    <ul>
+      <li>Selyon configura el asistente con la información que el Negocio entrega (servicios, precios, horarios, políticas) y conecta el número a la WhatsApp Business Platform (Cloud API) de Meta.</li>
+      <li>El número conectado <strong>deja de poder usarse en la app de WhatsApp Business del celular</strong>. Se puede usar un número nuevo o migrar el actual desde la app (el historial de chats de la app no se traslada). Hoy no se ofrece el modo “coexistencia” (app y plataforma a la vez).</li>
+      <li>La cuenta de WhatsApp Business y el número son del Negocio. El Negocio debe completar los trámites que Meta le pida (verificación, nombre visible, aprobación de plantillas).</li>
+    </ul>
+
+    <h3>6. Nivel de servicio y soporte</h3>
+    <ul>
+      <li><strong>Disponibilidad objetivo</strong>: <strong>[99 %]</strong> mensual de la plataforma de Selyon (procesamiento de mensajes y panel). No cuentan: mantenimientos avisados con 24 horas de anticipación, fallas de Meta/WhatsApp, OpenAI, Google u otros proveedores externos, ni causas de fuerza mayor.</li>
+      <li>Si en un mes la disponibilidad baja de <strong>[97 %]</strong> por causas atribuibles a Selyon, el Negocio puede pedir un crédito del <strong>[10 %]</strong> de ese mes en la siguiente factura. Es la única compensación por indisponibilidad.</li>
+      <li><strong>Soporte</strong> por WhatsApp o correo a [CORREO DE SOPORTE], de [lunes a viernes, 8:00 a 17:00, hora de Costa Rica]. Tiempo objetivo de primera respuesta: <strong>[4 horas hábiles]</strong> si el asistente dejó de responder; <strong>[1 día hábil]</strong> para lo demás.</li>
+      <li>Los mensajes que llegan mientras la plataforma está caída se guardan y se procesan al volver, dentro de lo que Meta reintente.</li>
+    </ul>
+
+    <h3>7. Responsabilidades del Negocio</h3>
+    <ul>
+      <li>Que la información que carga (precios, horarios, servicios, políticas) sea correcta y esté al día: el asistente responde con ella.</li>
+      <li>Revisar el panel y atender las conversaciones que el asistente le pasa a su equipo.</li>
+      <li>Cumplir las políticas de WhatsApp Business y de mensajes de Meta, y la ley costarricense, incluida la de protección de datos (como responsable, ver parte II) y la de protección al consumidor.</li>
+      <li>Enviar <strong>campañas</strong> solo por la función de campañas, que llega únicamente a clientes con consentimiento expreso de marketing y sin baja; no cargar listas de contactos externas ni intentar evadir ese filtro.</li>
+      <li>Cuidar las credenciales del panel y dar de baja a los usuarios que ya no trabajen para el Negocio.</li>
+    </ul>
+
+    <h3>8. Responsabilidades de Selyon</h3>
+    <ul>
+      <li>Prestar el servicio con diligencia profesional, mantener la plataforma y aplicar las medidas de seguridad de la cláusula II.6.</li>
+      <li>Avisar con anticipación razonable los cambios que afecten de forma importante el funcionamiento.</li>
+      <li>Tratar los datos de los clientes del Negocio solo según la parte II.</li>
+    </ul>
+
+    <h3>9. Inteligencia artificial y limitación de responsabilidad</h3>
+    <ul>
+      <li>Las respuestas del asistente las genera un modelo de IA. Selyon lo configura para no inventar y para pasar a una persona lo que no puede resolver, pero <strong>no garantiza</strong> que todas las respuestas sean exactas.</li>
+      <li>Selyon no responde por el servicio que el Negocio presta a sus clientes, ni por daños indirectos o lucro cesante (por ejemplo, ventas o citas perdidas).</li>
+      <li>La responsabilidad total de Selyon por cualquier reclamo en virtud de este contrato se limita a lo que el Negocio haya pagado en los <strong>[3]</strong> meses anteriores al hecho, salvo dolo o culpa grave, o en lo que la ley no permita limitar.</li>
+    </ul>
+
+    <h3>10. Propiedad intelectual</h3>
+    <p>El software y la marca Selyon son de Selyon. La información que carga el Negocio, su marca y los datos de sus clientes son del Negocio. El Negocio autoriza a Selyon a usar su nombre como referencia comercial [solo con autorización escrita aparte].</p>
+
+    <h3>11. Confidencialidad</h3>
+    <p>Cada parte mantiene confidencial la información no pública de la otra, durante el contrato y [2] años después.</p>
+
+    <h3>12. Al terminar: entrega y borrado de los datos</h3>
+    <ul>
+      <li>Al terminar el contrato, Selyon le entrega al Negocio, si lo pide dentro de <strong>[30]</strong> días, una <strong>exportación completa</strong> de sus datos en formato digital estructurado (JSON): configuración, usuarios del panel, conversaciones y mensajes, citas, cotizaciones, campañas y métricas.</li>
+      <li>Luego Selyon <strong>borra todos los datos del Negocio</strong> de la plataforma en una sola operación, a más tardar <strong>[30]</strong> días después de la terminación. Las copias de seguridad que los contengan se eliminan al rotar, en un máximo de <strong>[14]</strong> días más.</li>
+      <li>Quedan fuera solo los registros técnicos de corta vida (unos 7 días) y lo que una ley obligue a conservar (por ejemplo, registros contables de la facturación).</li>
+    </ul>
+
+    <h3>13. Varios</h3>
+    <ul>
+      <li>Ley aplicable: la de la República de Costa Rica. [PENDIENTE: jurisdicción o arbitraje.]</li>
+      <li>Avisos: por escrito a los correos que cada parte indique: Selyon [CORREO DE SOPORTE]; Negocio [CORREO DEL CLIENTE].</li>
+      <li>Si una cláusula es inválida, el resto sigue vigente. Cambios a este contrato, solo por escrito.</li>
+    </ul>
+
+    <h2>Parte II — Acuerdo de tratamiento de datos (encargo)</h2>
+
+    <h3>II.1 Roles</h3>
+    <p>
+      Según la Ley N.° 8968 y su reglamento, <strong>el Negocio es el responsable</strong> de la base de datos de sus
+      clientes y <strong>Selyon es encargado</strong> del tratamiento: trata esos datos por cuenta del Negocio, solo para
+      prestar el servicio de la parte I y según sus instrucciones documentadas (este acuerdo y la configuración que el
+      Negocio hace en el panel).
+    </p>
+
+    <h3>II.2 Datos y finalidades</h3>
+    <ul>
+      <li><strong>Personas</strong>: clientes y potenciales clientes que escriben al WhatsApp del Negocio; usuarios del panel del Negocio.</li>
+      <li><strong>Datos</strong>: número de WhatsApp; contenido de mensajes (texto, transcripción de notas de voz, fotos, ubicación y contactos compartidos); nombre y datos de citas (servicio, fecha, hora, placa del vehículo si aplica); cotizaciones; respuestas de seguimiento; notas internas; consentimiento de marketing y bajas; registros técnicos.</li>
+      <li><strong>Finalidades</strong>: atender consultas, cotizar, gestionar citas, recordatorios y seguimientos, traspaso a humanos, panel/CRM y métricas del Negocio, y campañas solo a quienes consintieron.</li>
+      <li><strong>Duración</strong>: la del contrato, más los plazos de la cláusula 12.</li>
+    </ul>
+
+    <h3>II.3 Obligaciones de Selyon como encargado</h3>
+    <ul>
+      <li>No usar los datos para fines propios, no venderlos, no usarlos para entrenar modelos propios y no compartirlos con otros clientes de Selyon.</li>
+      <li>Asegurar que su personal con acceso esté obligado a confidencialidad y que el acceso se limite a lo necesario (soporte, operación).</li>
+      <li>Asistir al Negocio para responder solicitudes de acceso, rectificación y supresión de sus clientes. Si una persona le escribe directamente a Selyon, Selyon se lo traslada al Negocio en un plazo de <strong>[2]</strong> días hábiles. Hoy la supresión individual la ejecuta el equipo de Selyon a pedido del Negocio, dentro de <strong>[3]</strong> días hábiles.</li>
+      <li>Hacer cumplir en el sistema el consentimiento de marketing y las bajas (ver II.5).</li>
+      <li>Avisar al Negocio sin demora indebida, y a más tardar en <strong>[48 horas]</strong> desde que lo detecta, cualquier incidente de seguridad que afecte sus datos, con la información disponible, para que el Negocio pueda cumplir sus propias obligaciones de aviso. [VERIFICAR plazos del reglamento de la Ley 8968.]</li>
+      <li>Devolver y borrar los datos al terminar (cláusula 12).</li>
+      <li>Poner a disposición del Negocio la información razonable para comprobar el cumplimiento de este acuerdo.</li>
+    </ul>
+
+    <h3>II.4 Obligaciones del Negocio como responsable</h3>
+    <ul>
+      <li>Tener base legal para el tratamiento y dar a sus clientes la información que exige la ley (puede enlazar la <a href="/privacidad">política de privacidad</a> de la plataforma, que describe el tratamiento técnico).</li>
+      <li>Responder a sus clientes las solicitudes de derechos, con la asistencia de Selyon.</li>
+      <li>No pedir por este medio datos sensibles innecesarios.</li>
+      <li>[PENDIENTE abogado: si corresponde inscribir la base de datos ante la PRODHAB y quién lo hace.]</li>
+    </ul>
+
+    <h3>II.5 Marketing</h3>
+    <p>
+      Las campañas solo se envían a clientes que tocaron “Sí” en el mensaje de consentimiento de marketing (el asistente lo
+      pregunta una vez después de una cita con buena respuesta, o el Negocio lo pide desde el chat con un límite de una vez
+      cada 30 días) y que no pidieron la baja. La baja (“BAJA”, “stop”, “no me manden más”, etc.) se registra al instante,
+      retira el consentimiento y detiene campañas y seguimientos de cotizaciones; no detiene los recordatorios de citas ya
+      agendadas.
+    </p>
+
+    <h3>II.6 Seguridad</h3>
+    <ul>
+      <li>Cifrado en tránsito (HTTPS/TLS) hacia el panel, Meta y los proveedores.</li>
+      <li>Aislamiento de los datos de cada Negocio; credenciales de WhatsApp cifradas en la base; contraseñas guardadas como hash; acceso al panel por usuario y rol; sesiones con expiración.</li>
+      <li>Fotos en almacenamiento privado o en la base de datos, visibles solo desde el panel autenticado.</li>
+      <li>Copias de seguridad diarias de la base, con retención de [14] días.</li>
+      <li>Registro de errores y monitoreo de la plataforma.</li>
+    </ul>
+
+    <h3>II.7 Subencargados</h3>
+    <p>El Negocio autoriza a Selyon a usar estos subencargados:</p>
+    <ul>
+      <li><strong>Meta Platforms</strong> — WhatsApp Business Platform (Cloud API): envío y recepción de mensajes. EE. UU. y otros países.</li>
+      <li><strong>OpenAI</strong> — generación de respuestas, transcripción de notas de voz y análisis de fotos. EE. UU.</li>
+      <li><strong>Supabase</strong> — base de datos y almacenamiento de fotos. Región [REGIÓN DE SUPABASE].</li>
+      <li><strong>DigitalOcean</strong> — servidor de la aplicación. Región [REGIÓN DEL SERVIDOR].</li>
+      <li><strong>Google</strong> — Google Calendar (si el Negocio lo conecta: nombre, número, servicio, fecha, hora y placa en su calendario) y Google Places (solo la calificación pública del Negocio).</li>
+      <li><strong>Servicios de notificaciones del navegador</strong> (Google, Apple, Mozilla, según el dispositivo del equipo): avisos con el número del cliente y un extracto del mensaje.</li>
+      <li><strong>Sentry</strong> — reportes técnicos de errores (si está activo).</li>
+      <li><strong>Stripe</strong> — cobro en línea al Negocio, cuando se habilite (no trata datos de los clientes del Negocio).</li>
+    </ul>
+    <p>
+      Selyon avisa al Negocio con al menos <strong>[15]</strong> días de anticipación antes de agregar o cambiar un
+      subencargado que trate datos de sus clientes. Si el Negocio se opone por motivos razonables de protección de datos,
+      puede terminar el contrato sin penalidad antes de que el cambio aplique. Selyon exige a sus subencargados
+      obligaciones de seguridad y confidencialidad equivalentes, en la medida que sus condiciones contractuales lo permitan.
+    </p>
+
+    <h3>II.8 Transferencia internacional</h3>
+    <p>
+      Varios subencargados tratan datos fuera de Costa Rica, principalmente en EE. UU. El Negocio lo acepta y se compromete
+      a informarlo a sus clientes (la política de privacidad de la plataforma lo explica). [PENDIENTE abogado: requisitos
+      de la Ley 8968 y su reglamento para la transferencia internacional y el consentimiento correspondiente.]
+    </p>
+
+    <h2>Firmas</h2>
+    <p>Por Selyon: [NOMBRE, FIRMA Y FECHA] · Por el Negocio: [NOMBRE, FIRMA Y FECHA]</p>
+    <p>Ver también: <a href="/privacidad">Política de privacidad</a> · <a href="/terminos">Términos del servicio</a>.</p>
+  </div>
+</main>
+
+<footer class="pie">
+  <div class="pie-grid">
+    <div>
+      <a class="marca" href="/">
+        <svg width="36" height="36" viewBox="0 0 36 36" fill="none" aria-hidden="true">
+          <rect width="36" height="36" rx="10" fill="url(#marca-degradado)"/>
+          <path d="M10 24.5 L18 8 L26 24.5" stroke="#7AFAFC" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          <circle cx="18" cy="8" r="3" fill="#FFC517"/>
+          <circle cx="10" cy="24.5" r="2.4" fill="#7AFAFC"/>
+          <circle cx="26" cy="24.5" r="2.4" fill="#7AFAFC"/>
+        </svg>
+        <span class="marca-texto">selyon</span>
+      </a>
+      <p class="pie-desc">Agentes de IA que atienden y agendan por tu negocio. Hecho en Costa Rica.</p>
+    </div>
+    <div>
+      <div class="pie-titulo-col">Productos</div>
+      <nav class="pie-enlaces">
+        <a href="/#agente">Recepcionista IA</a>
+        <span class="pie-enlace-proximamente" title="Todavía no disponible">Menú Digital IA (en desarrollo)</span>
+        <a href="/#precios">Precios</a>
+      </nav>
+    </div>
+    <div>
+      <div class="pie-titulo-col">Selyon</div>
+      <nav class="pie-enlaces">
+        <a href="/privacidad">Política de privacidad</a>
+        <a href="/terminos">Términos del servicio</a>
+        <a href="/contrato">Contrato para negocios</a>
+        <a href="https://wa.me/50683658231?text=Hola%2C%20quiero%20hablar%20de%20Selyon%20para%20mi%20negocio" target="_blank" rel="noopener">Contacto</a>
+      </nav>
+    </div>
+  </div>
+  <div class="pie-bottom">© 2026 Selyon. Todos los derechos reservados.</div>
+</footer>
+
+</body>
+</html>
