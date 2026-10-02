@@ -573,6 +573,18 @@ export async function correrAgente(
   }
 }
 
+/**
+ * Nivel de detalle de las fotos que van a visión (revisión pre-venta 2026-10). Con
+ * "low" OpenAI procesa la imagen a 512x512 con un costo fijo y chico de tokens; con
+ * "high"/"auto" una foto de celular se parte en muchos tiles y cuesta varias veces
+ * más. Para cotizar un lavado (¿sedán o SUV?, ¿qué tan sucio?) "low" alcanza.
+ * Configurable por `OPENAI_VISION_DETALLE` (low | high | auto), default "low".
+ */
+export function detalleVision(): "low" | "high" | "auto" {
+  const v = process.env.OPENAI_VISION_DETALLE?.trim().toLowerCase();
+  return v === "high" || v === "auto" ? v : "low";
+}
+
 async function correrAgenteInterno(
   ctx: ContextoAgente,
   textoUsuario: string,
@@ -582,7 +594,7 @@ async function correrAgenteInterno(
   const contenidoUsuario: string | ChatCompletionContentPart[] = imagenDataUrl
     ? [
         { type: "text", text: textoUsuario },
-        { type: "image_url", image_url: { url: imagenDataUrl } },
+        { type: "image_url", image_url: { url: imagenDataUrl, detail: detalleVision() } },
       ]
     : textoUsuario;
 

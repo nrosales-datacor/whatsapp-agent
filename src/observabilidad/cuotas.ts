@@ -1,8 +1,8 @@
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { schema } from "../db/schema";
 import type { Tenant } from "../types";
-import { TOPE_CONVERSACIONES_MES } from "../billing/planes";
-import { anioMesActual, obtenerUsoMensual, obtenerUsoMensualDb } from "./uso";
+import { TOPE_CONVERSACIONES_MES, topeGastoLlmUsd } from "../billing/planes";
+import { anioMesActual, obtenerUsoMensual, obtenerUsoMensualDb, type UsoMensualTenant } from "./uso";
 
 type DB = PostgresJsDatabase<typeof schema>;
 
@@ -62,4 +62,71 @@ export function calcularEstadoCuota(tenant: Tenant, conversacionesIniciadas: num
 export async function estadoCuotaMensual(tenant: Tenant, db?: DB): Promise<EstadoCuotaMensual> {
   const uso = db ? await obtenerUsoMensualDb(db, tenant.id, anioMesActual()) : await obtenerUsoMensual(tenant.id);
   return calcularEstadoCuota(tenant, uso?.conversacionesIniciadas ?? 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tope mensual de GASTO de LLM en USD (revisión pre-venta 2026-10; tope por plan +
+// override por tenant en billing/planes.ts). Mismo criterio 80%/100% que el de
+// conversaciones y mismo split puro/I-O, para que handleWebhook.ts (enforcement) y
+// router.ts (GET /me, admin/tenants) no dupliquen la aritmética.
+//
+// El costo se registra fire-and-forget al TERMINAR cada turno (uso.ts →
+// registrarUsoLlm), así que el corte llega con un turno de atraso como mucho: el
+// turno que cruza el 100% se completa, el siguiente ya no llama al LLM. Para un
+// tope de USD 15-40 ese desfase (≈ USD 0,002) es irrelevante.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface EstadoGastoLlm {
+  /** Tope de gasto del mes en USD. null = sin tope (override del tenant en 0). */
+  topeUsd: number | null;
+  /** Gasto estimado acumulado del mes en USD (solo presentación: la fuente es el entero en millonésimos). */
+  gastoUsd: number;
+  /** 0-100+ (puede pasar de 100). null si no hay tope. */
+  porcentaje: number | null;
+  /** true desde el 80% del tope. Siempre false sin tope. */
+  alcanzo80: boolean;
+  /** true al 100% o más: el bot deja de llamar al LLM para este tenant. Siempre false sin tope. */
+  excedido: boolean;
+}
+
+/** Cálculo puro (sin I/O) del estado de gasto, a partir del acumulado en millonésimos de dólar. */
+export function calcularEstadoGastoLlm(tenant: Tenant, costoMillonesimos: number): EstadoGastoLlm {
+  const gastoUsd = costoMillonesimos / 1_000_000;
+  const topeUsd = topeGastoLlmUsd(tenant);
+  if (topeUsd === null) {
+    return { topeUsd: null, gastoUsd, porcentaje: null, alcanzo80: false, excedido: false };
+  }
+  // Comparación en millonésimos (enteros) para el corte, no en float.
+  const topeMillonesimos = Math.round(topeUsd * 1_000_000);
+  const porcentaje = Math.round((costoMillonesimos / topeMillonesimos) * 100);
+  return {
+    topeUsd,
+    gastoUsd,
+    porcentaje,
+    alcanzo80: porcentaje >= UMBRAL_AVISO_PORCENTAJE,
+    excedido: costoMillonesimos >= topeMillonesimos,
+  };
+}
+
+export interface EstadoCuotasDelMes {
+  conversaciones: EstadoCuotaMensual;
+  gastoLlm: EstadoGastoLlm;
+}
+
+/** Ambos topes desde UNA fila de uso ya leída (o null si no hay actividad este mes). */
+export function calcularEstadoCuotasDelMes(tenant: Tenant, uso: UsoMensualTenant | null | undefined): EstadoCuotasDelMes {
+  return {
+    conversaciones: calcularEstadoCuota(tenant, uso?.conversacionesIniciadas ?? 0),
+    gastoLlm: calcularEstadoGastoLlm(tenant, uso?.costoEstimadoMillonesimos ?? 0),
+  };
+}
+
+/**
+ * Estado de los DOS topes mensuales (conversaciones + gasto de LLM) con una sola
+ * lectura de `wa_uso_mensual`. Es lo que usa el enforcement antes de cada llamada
+ * al LLM y GET /me. `db` opcional, mismo criterio que `estadoCuotaMensual`.
+ */
+export async function estadoCuotasDelMes(tenant: Tenant, db?: DB): Promise<EstadoCuotasDelMes> {
+  const uso = db ? await obtenerUsoMensualDb(db, tenant.id, anioMesActual()) : await obtenerUsoMensual(tenant.id);
+  return calcularEstadoCuotasDelMes(tenant, uso);
 }
