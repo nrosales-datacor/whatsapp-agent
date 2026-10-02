@@ -328,6 +328,47 @@ test("agenda: el tap en un horario (slot|…) crea la cita en el repo", async ()
   assert.equal(mock.enviados.at(-1)!.texto, "¡Listo! Te agendé el pulido ✅");
 });
 
+// Revisión pre-venta 2026-10: la cita YA guardada se confirma con texto fijo aunque el
+// turno termine en escalada o en un error de OpenAI (antes el cliente creía que no
+// agendó, reintentaba y dejaba citas duplicadas).
+
+test("cita agendada y luego el modelo escala: el cliente recibe la confirmación antes del traspaso", async () => {
+  const mock = instalarMockWebhook();
+  const fecha = fechaFutura(4);
+  mock.programarLLM(
+    { tool: "agendar_cita", args: { servicioId: "pulido", fecha, hora: "09:00", nombre: "Juan Pérez" } },
+    { escalar: "pregunta sobre factura" },
+  );
+  const repo = new RepositorioEnMemoria();
+  const tenant = tenantDemo();
+  const conv = await nuevaConv(repo, tenant);
+
+  await responderEntrante(pendienteTexto(tenant, conv, { texto: `agendame pulido el ${fecha} 9am y necesito factura` }), repo);
+
+  assert.equal(await repo.obtenerModo(tenant.id, conv.id), "humano");
+  const texto = mock.enviados.at(-1)!.texto ?? "";
+  assert.match(texto, /quedó agendada: Pulido/);
+  assert.match(texto, /persona del equipo/);
+});
+
+test("cita agendada y luego OpenAI falla: confirmación fija, no 'tuvimos un problemita'", async () => {
+  const mock = instalarMockWebhook();
+  const fecha = fechaFutura(4);
+  // Solo un turno programado: la 2ª llamada al LLM lanza (simula caída de OpenAI).
+  mock.programarLLM({ tool: "agendar_cita", args: { servicioId: "pulido", fecha, hora: "09:00", nombre: "Juan Pérez" } });
+  const repo = new RepositorioEnMemoria();
+  const tenant = tenantDemo();
+  const conv = await nuevaConv(repo, tenant);
+
+  await responderEntrante(pendienteTexto(tenant, conv, { texto: `agendame pulido el ${fecha} a las 9` }), repo);
+
+  const [cita] = await repo.citasActivasCliente(tenant.id, CLIENTE, fechaFutura(0));
+  assert.ok(cita, "la cita quedó creada");
+  const texto = mock.enviados.at(-1)!.texto ?? "";
+  assert.match(texto, /quedó agendada: Pulido/);
+  assert.doesNotMatch(texto, /problemita/);
+});
+
 test("reprograma por el bot y REINICIA los recordatorios de la cita", async () => {
   const mock = instalarMockWebhook();
   const fechaVieja = fechaFutura(5);
