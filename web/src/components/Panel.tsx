@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { listarConversaciones, logout, type Features, type Sesion, type ResumenConversacion } from "../api";
+import { listarConversaciones, logout, me, type Features, type Sesion, type ResumenConversacion } from "../api";
 import { useTema } from "../lib/tema";
 import { aplicarMarca, resetMarca } from "../lib/marca";
 import { iniciales } from "../lib/formato";
@@ -15,9 +15,13 @@ import Campanias from "./Campanias";
 import BotonNotif from "./BotonNotif";
 import ErrorState from "./ErrorState";
 import Icono, { type IconoId } from "./Iconos";
+import AvisoCuota from "./AvisoCuota";
 import { ToastProvider } from "./Toast";
 
 const ANCHO_MOVIL = 760;
+// Cada cuánto se revalida /me para que el aviso de cuota (80%/100%) aparezca sin
+// recargar la página: el consumo cambia durante el día, el resto de la sesión no.
+const REFRESCO_SESION_MS = 5 * 60_000;
 type Vista = "inbox" | "panel" | "agenda" | "config" | "usuarios" | "campanias";
 
 // Navegación principal. En desktop se pinta como tabs segmentadas en el header;
@@ -41,6 +45,13 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
   const [mostrarChatMovil, setMostrarChatMovil] = useState(false);
   const [fichaAbierta, setFichaAbierta] = useState(false);
   const [modalPlanAbierto, setModalPlanAbierto] = useState(false);
+
+  // Mismo queryKey que la compuerta de App.tsx: solo agrega el refresco periódico.
+  // Si falla (sin red), TanStack conserva los datos previos; un 401 cae al login
+  // por el manejador global de main.tsx, igual que cualquier otra query.
+  const sesionViva = useQuery({ queryKey: ["me"], queryFn: me, refetchInterval: REFRESCO_SESION_MS });
+  const cuota = sesionViva.data?.cuotaMensual ?? sesion.cuotaMensual;
+  const gastoIaExcedido = (sesionViva.data?.gastoLlmMensual ?? sesion.gastoLlmMensual)?.excedido ?? false;
 
   const convs = useQuery({
     queryKey: ["conversaciones"],
@@ -138,6 +149,14 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
             </button>
           </div>
         </header>
+
+        <AvisoCuota
+          cuota={cuota}
+          gastoIaExcedido={gastoIaExcedido}
+          contacto={sesion.contactoPlataforma}
+          rol={sesion.rol}
+          nombreNegocio={sesion.nombre}
+        />
 
         <div id="mainView">
           {vista === "inbox" && (

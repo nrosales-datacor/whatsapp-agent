@@ -4,6 +4,8 @@ import type { schema } from "./db/schema";
 import { filasDe } from "./db/filas";
 import { fuenteCacheTenants, hayBaseDeDatos, listarTenants } from "./config/tenantStore";
 import { dependeDelTokenGlobal } from "./whatsapp/client";
+import { listarTokensInvalidos } from "./whatsapp/estadoToken";
+import { evaluarVigilancia, type ResumenVigilancia } from "./observabilidad/vigilancia";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Health check real (ROADMAP E10 / AUDIT.md BLOQUEANTE-11).
@@ -65,6 +67,26 @@ export interface SaludDetalle {
   tenants: SaludTenants;
   tokenGlobal: SaludTokenGlobal;
   cola: SaludCola;
+  /**
+   * Detectores de "bot mudo" (observabilidad/vigilancia.ts): cola atascada, DLQ
+   * reciente, tenants sin entrantes en horario, tokens inválidos y cuota agotada.
+   * Solo con `?detalle=1` (`incluirVigilancia`). INFORMATIVO: no cambia el 200/503
+   * — un 503 por, p.ej., un tenant sin mensajes haría fallar el smoke del deploy
+   * y el uptime monitor por algo que no es una caída de la plataforma; esas
+   * señales salen por el canal de alertas (observabilidad/alertas.ts).
+   * Sin datos personales: solo tenantIds, conteos y tiempos.
+   */
+  vigilancia?: ResumenVigilancia | SaludVigilanciaSinDb;
+}
+
+/** Sin DB no hay wa_jobs ni uso mensual: solo se puede mostrar lo que vive en memoria. */
+export interface SaludVigilanciaSinDb {
+  tokensInvalidos: ReturnType<typeof listarTokensInvalidos>;
+}
+
+export interface OpcionesSalud {
+  /** true = agrega el resumen de los detectores (`/salud?detalle=1`). */
+  incluirVigilancia?: boolean;
 }
 
 /** `SELECT 1` con timeout corto. No lanza: devuelve el resultado, ok o no. */
@@ -117,7 +139,7 @@ async function contarCola(db: DB): Promise<SaludCola> {
  * ya tiene abierto server.ts (o `null` en modo memoria) — esta función NUNCA abre
  * una conexión propia, respeta el singleton de F7 (`obtenerDb()`).
  */
-export async function chequearSalud(db: DB | null): Promise<SaludDetalle> {
+export async function chequearSalud(db: DB | null, opciones: OpcionesSalud = {}): Promise<SaludDetalle> {
   const tenants = listarTenants();
   const fuente = fuenteCacheTenants();
   const dependientes = tenants.filter(dependeDelTokenGlobal).length;
@@ -138,7 +160,7 @@ export async function chequearSalud(db: DB | null): Promise<SaludDetalle> {
   const conDb = hayBaseDeDatos();
   const critico = conDb && (!dbEstado.ok || fuente === "fallback");
 
-  return {
+  const detalle: SaludDetalle = {
     ok: !critico,
     uptimeSeg: Math.round(process.uptime()),
     db: dbEstado,
@@ -146,6 +168,13 @@ export async function chequearSalud(db: DB | null): Promise<SaludDetalle> {
     tokenGlobal: { dependientes, total: tenants.length },
     cola,
   };
+  if (opciones.incluirVigilancia) {
+    // Con la DB caída los detectores fallarían uno por uno (cada uno ya se protege
+    // solo, ver `seguro` en vigilancia.ts): no vale la pena ni intentarlo.
+    detalle.vigilancia =
+      db && dbEstado.ok ? await evaluarVigilancia(db, { tenants }) : { tokensInvalidos: listarTokensInvalidos() };
+  }
+  return detalle;
 }
 
 /** 200 en el camino feliz, 503 si `chequearSalud` marcó algo crítico. */

@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import type { MensajeInteractivo, OpcionInteractiva, Sentimiento, Tenant } from "../types";
 import { registrarMensajeSaliente } from "../observabilidad/uso";
 import { conTimeout, TIMEOUT_GRAPH_MS, TIMEOUT_MEDIA_MS } from "../red/timeouts";
+import { registrarRespuestaGraph } from "./estadoToken";
 
 // ⚠️ La versión del Graph API cambia con el tiempo. Confirmá la vigente en la
 // documentación de Meta antes de producción. Se deja configurable por .env.
@@ -545,10 +546,15 @@ async function postMensaje(
     if (res.ok) {
       // Contador de uso mensual (Carril D, 0.2): solo se cuenta un envío exitoso.
       registrarMensajeSaliente(tenant.id, plantillaCategoria);
+      registrarRespuestaGraph(tenant.id, true, res.status);
       return;
     }
 
     const detalle = await res.text();
+    // Token revocado/inválido (401 / Graph 190): marca el tenant y alerta a la
+    // plataforma (whatsapp/estadoToken.ts). Solo observa: el flujo de abajo
+    // (reintento o throw) queda idéntico.
+    registrarRespuestaGraph(tenant.id, false, res.status, detalle);
     ultimoError = new Error(`Error ${etiqueta} (${res.status}): ${detalle}`);
     const transitorio = statusEsTransitorio(res.status) || cuerpoEsTransitorio(detalle);
     if (transitorio && intento < MAX_INTENTOS_ENVIO) {
@@ -675,8 +681,10 @@ export async function descargarMedia(
   });
   if (!metaRes.ok) {
     const detalle = await metaRes.text();
+    registrarRespuestaGraph(tenant.id, false, metaRes.status, detalle); // ver postMensaje
     throw new Error(`Error obteniendo URL de media ${mediaId} (${metaRes.status}): ${detalle.slice(0, 140)}`);
   }
+  registrarRespuestaGraph(tenant.id, true, metaRes.status);
   const { url, mime_type } = (await metaRes.json()) as { url: string; mime_type: string };
 
   // Timeout más holgado que el resto de Graph: acá viajan bytes (audio/foto), no JSON.

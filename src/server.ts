@@ -1,5 +1,6 @@
 import "dotenv/config";
 import http from "node:http";
+import { timingSafeEqual } from "node:crypto";
 import { verificarWebhook, firmaValida, separarPayloadWebhook } from "./whatsapp/client";
 import { ingerirEntrante, responderEntrante } from "./handleWebhook";
 import { RepositorioEnMemoria } from "./booking/inMemoryRepository";
@@ -18,6 +19,8 @@ import { iniciarCampanias } from "./campaigns/worker";
 import { iniciarRescate } from "./rescate/worker";
 import { iniciarSentry, sentryConfigurado, capturarError } from "./observabilidad/sentry";
 import { iniciarReporteMetricas } from "./observabilidad/metricas";
+import { iniciarVigilancia } from "./observabilidad/vigilancia";
+import { canalesDeAlertaConfigurados } from "./observabilidad/alertas";
 import { chequearSalud, codigoHttpSalud } from "./salud";
 import { leerCuerpoConTope, MAX_BODY_WEBHOOK, conRedDeSeguridad } from "./red/http";
 import type { Repositorio } from "./types";
@@ -97,10 +100,26 @@ if (db) {
 // Factorizado en un helper (ROADMAP F6) porque ahora lo sirven DOS handlers de
 // servidor distintos: el completo (`ROL=web`/`todo`) y el mínimo (`ROL=worker`,
 // que no expone webhook/panel/landing — ver más abajo).
+function tokenSaludValido(dado: string | null): boolean {
+  const esperado = process.env.SALUD_DETALLE_TOKEN;
+  if (!esperado || !dado) return false;
+  const a = Buffer.from(dado);
+  const b = Buffer.from(esperado);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 async function responderSalud(res: http.ServerResponse, url: URL): Promise<void> {
-  const detalle = await chequearSalud(db);
+  const conDetalle = url.searchParams.get("detalle") === "1";
+  // Los detectores de "bot mudo" solo corren en el modo humano (?detalle=1): el
+  // GET plano del uptime monitor sigue igual de barato que antes. Como `/salud` es
+  // público y la vigilancia lista ids de negocios, además exige `&token=` igual a
+  // SALUD_DETALLE_TOKEN (sin esa env, la vigilancia no se expone por HTTP; las
+  // alertas salen igual por el canal de alertas).
+  const detalle = await chequearSalud(db, {
+    incluirVigilancia: conDetalle && tokenSaludValido(url.searchParams.get("token")),
+  });
   const codigo = codigoHttpSalud(detalle);
-  if (url.searchParams.get("detalle") === "1") {
+  if (conDetalle) {
     res.writeHead(codigo, { "content-type": "application/json; charset=utf-8" });
     res.end(JSON.stringify(detalle));
   } else {
@@ -260,6 +279,7 @@ server.listen(PORT, () => {
   );
   console.log(`Notificaciones push: ${pushConfigurado() ? "configuradas ✅" : "no configuradas (faltan llaves VAPID)"}`);
   console.log(`Sentry: ${sentryConfigurado() ? "activo ✅" : "no configurado (opcional, falta SENTRY_DSN)"}`);
+  console.log(`Alertas a la plataforma: ${canalesDeAlertaConfigurados().join(" + ")}${process.env.ALERTAS_WEBHOOK_URL ? " ✅" : " (opcional: ALERTAS_WEBHOOK_URL para Slack/Discord)"}`);
   console.log(`Reputación (Places API): ${placesConfigurado() ? "configurada ✅" : "no configurada (opcional, falta GOOGLE_PLACES_API_KEY)"}`);
 
   // Workers de cola + schedulers (ROADMAP F6): con `ROL=web` este proceso NO los
@@ -287,5 +307,10 @@ server.listen(PORT, () => {
 
     // Métricas internas: msg/min, latencia del turno del agente, profundidad de cola.
     iniciarReporteMetricas(db);
+
+    // Vigilancia de "bot mudo" (cola atascada, DLQ, tenants sin entrantes en
+    // horario, cuota agotada) con alertas a la plataforma. Solo con DB: sin ella
+    // no hay wa_jobs ni uso mensual que vigilar. Coordinada por lease (F6).
+    if (db) iniciarVigilancia(db);
   }
 });

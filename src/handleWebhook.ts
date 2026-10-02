@@ -57,8 +57,7 @@ function textoEscalada(confirmacion?: string): string {
 // F10 (PLAN-ESCALA-MULTITENANT.md): mensaje al cliente cuando el negocio alcanzó el
 // 100% del tope mensual de conversaciones de su plan. Default razonable; el dueño
 // puede personalizarlo (tenant.mensajeTopeExcedido, "Mi negocio" → panel).
-const MENSAJE_TOPE_EXCEDIDO =
-  "Por ahora alcanzamos el límite de conversaciones automáticas de este mes 🙏 Dejame pasarte con una persona del equipo para que te siga ayudando.";
+const MENSAJE_TOPE_EXCEDIDO = "¡Gracias por escribirnos! 🙌 En un momento te atiende alguien del equipo.";
 
 // Tope mensual de GASTO de LLM (revisión pre-venta 2026-10): texto neutro a
 // propósito — es una red de seguridad interna, no algo que el cliente final deba

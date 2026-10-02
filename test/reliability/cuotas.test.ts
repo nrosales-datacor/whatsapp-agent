@@ -147,7 +147,9 @@ test("F10 — tope mensual al 100%: el bot NO llama al LLM, escala a humano, y e
     assert.equal(mock.llamadasLLM(), 0, "no debe invocar al LLM: el tenant ya agotó su tope mensual");
     assert.equal(await repo.obtenerModo(tenant.id, conv.id), "humano", "debe escalar la conversación a humano");
     assert.equal(mock.enviados.length, 1, "el cliente SIEMPRE recibe algo (nunca silencio)");
-    assert.match(mock.enviados[0].texto ?? "", /límite de conversaciones/i);
+    // Texto neutro: al cliente final no se le menciona el límite del plan del negocio.
+    assert.match(mock.enviados[0].texto ?? "", /te atiende alguien del equipo/i);
+    assert.doesNotMatch(mock.enviados[0].texto ?? "", /límite/i);
   } finally {
     desactivarMockWebhook();
     await cerrar();

@@ -1052,6 +1052,13 @@ export async function manejarPanel(
         excedido: gastoLlm.excedido,
       },
       mensajeTopeExcedido: tenant.mensajeTopeExcedido ?? "",
+      // Botón "Mejorar plan" del aviso de cuota (80%/100%): no hay pasarela de pago
+      // todavía, así que abre un WhatsApp/correo de la plataforma (env). null = sin
+      // configurar (el panel muestra el aviso sin botón).
+      contactoPlataforma: {
+        whatsapp: (process.env.PLATAFORMA_CONTACTO_WHATSAPP ?? "").replace(/\D/g, "") || null,
+        email: process.env.PLATAFORMA_CONTACTO_EMAIL?.trim() || null,
+      },
     });
     return true;
   }
