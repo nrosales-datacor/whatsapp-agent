@@ -146,6 +146,9 @@ export const waCitas = pgTable(
     // 09:00 contra una de 30 a las 09:30). Eso necesitaría un EXCLUDE con btree_gist
     // sobre columnas generadas, porque fecha/hora son `text`. La lógica de solapes sí
     // vive completa en src/booking/availability.ts; esto es solo el guard de carrera.
+    // El guard completo (recurso único, solapes, reprogramación) es el re-chequeo
+    // atómico bajo advisory lock por tenant+fecha de RepositorioDrizzle.crearCita /
+    // reprogramarCita (revisión pre-venta 2026-10); este índice queda de última red.
     uqEmpleadoSlot: uniqueIndex("wa_citas_empleado_slot_uq")
       .on(t.tenantId, t.empleadoId, t.fecha, t.hora)
       .where(sql`${t.estado} = 'agendada' AND ${t.empleadoId} IS NOT NULL`),

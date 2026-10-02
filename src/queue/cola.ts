@@ -17,7 +17,8 @@ import { capturarError } from "../observabilidad/sentry";
 // (raro: solo en esa ventana). Aceptado para el piloto.
 //
 // Pooler-safe: FOR UPDATE SKIP LOCKED corre dentro de db.transaction (postgres.js
-// fija una conexión por transacción). No usamos advisory locks de sesión.
+// fija una conexión por transacción). No usamos advisory locks de sesión; el único
+// advisory lock (exclusión por conversación, E7) es de TRANSACCIÓN.
 // ─────────────────────────────────────────────────────────────────────────────
 
 type DB = PostgresJsDatabase<typeof schema>;
@@ -61,7 +62,40 @@ export interface Job {
 // mensaje más nuevo de la misma conversación" — distinto de "hecho" (se respondió
 // bien) y de "error" (falló). No lo cuenta `profundidadCola` (solo mira
 // 'pendiente'), así que no ensucia esa métrica.
+//
+// E7 (reintentos): un job que vuelve de un fallo transitorio (`intentos > 0`, con
+// backoff) también cede ante un mensaje más nuevo de su conversación que YA se
+// respondió ("hecho"): ese turno releyó el historial con este mensaje adentro, así
+// que contestarlo ahora llegaría tarde y fuera de orden. Un job fresco o reencolado
+// a mano desde el DLQ (`intentos = 0`) no entra en esta regla.
 const ESTADO_REEMPLAZADO = "reemplazado";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// E7 — worker concurrente: N slots (y N réplicas) reclaman en paralelo, con dos
+// garantías que viven ACÁ, en el claim, y no en el worker (así valen igual con
+// varias réplicas que con varios slots del mismo proceso):
+//
+// 1) Como máximo UN job "procesando" por conversación. Sin esto, dos mensajes del
+//    mismo cliente se responderían en paralelo (respuestas cruzadas, el agente sin
+//    ver el turno anterior). El candidato se filtra con un NOT EXISTS sobre los
+//    "procesando" de su conversación — pero eso solo no alcanza: en READ COMMITTED,
+//    dos claims simultáneos no ven el UPDATE a "procesando" del otro (todavía sin
+//    commit) y cada uno puede tomar un job distinto de la MISMA conversación. Por eso
+//    además se toma un advisory lock de TRANSACCIÓN por conversación
+//    (`pg_try_advisory_xact_lock`, pooler-safe: se suelta solo al terminar la
+//    transacción) y, con el lock en mano, se re-chequea en una sentencia nueva (que
+//    ya ve lo que el otro commiteó antes de soltar el lock). Quien no consigue el
+//    lock no espera: devuelve "nada para mí" y reintenta en el próximo poll.
+//    Contracara aceptada: un job zombi (proceso caído) bloquea SU conversación hasta
+//    que el reaper lo rescata (QUEUE_REAPER_UMBRAL_SEG); las demás no se enteran.
+//
+// 2) Reparto por tenant (mismo espíritu que F8 en campañas/rescate): entre los
+//    candidatos listos, primero el tenant con MENOS jobs en vuelo, y recién después
+//    el más viejo. Un negocio con 500 mensajes encolados (campaña que generó
+//    respuestas, un bot de spam) ya no monopoliza los slots: el tenant que llega con
+//    1 mensaje pasa delante en cuanto se libera un slot. Los "procesando" son pocos
+//    (≤ slots × réplicas), así que el GROUP BY es barato.
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Reclama un job pendiente (FOR UPDATE SKIP LOCKED) y lo pone en "procesando".
@@ -70,7 +104,8 @@ const ESTADO_REEMPLAZADO = "reemplazado";
  *
  * Internamente puede reclamar y descartar (marcar "reemplazado") varios jobs
  * obsoletos de una ráfaga antes de devolver el que corresponde procesar (el más
- * nuevo de cada conversación) — ver comentario de E5-b arriba.
+ * nuevo de cada conversación) — ver comentario de E5-b arriba. Nunca devuelve un
+ * job de una conversación que ya tiene otro "procesando" (E7, ver arriba).
  */
 export async function reclamarUno(db: DB): Promise<Job | null> {
   while (true) {
@@ -84,11 +119,22 @@ export async function reclamarUno(db: DB): Promise<Job | null> {
         creado_en: Date;
       }>(
         await tx.execute(sql`
-        SELECT id, tenant_id, intentos, max_intentos, payload, creado_en
-          FROM wa_jobs
-         WHERE estado = 'pendiente' AND ejecutar_despues_de <= now()
-         ORDER BY ejecutar_despues_de ASC
-         FOR UPDATE SKIP LOCKED
+        SELECT j.id, j.tenant_id, j.intentos, j.max_intentos, j.payload, j.creado_en
+          FROM wa_jobs j
+          LEFT JOIN (
+            SELECT tenant_id, count(*) AS en_vuelo
+              FROM wa_jobs
+             WHERE estado = 'procesando'
+             GROUP BY tenant_id
+          ) v ON v.tenant_id = j.tenant_id
+         WHERE j.estado = 'pendiente' AND j.ejecutar_despues_de <= now()
+           AND NOT EXISTS (
+             SELECT 1 FROM wa_jobs p
+              WHERE p.estado = 'procesando'
+                AND p.payload->'conv'->>'id' = j.payload->'conv'->>'id'
+           )
+         ORDER BY COALESCE(v.en_vuelo, 0) ASC, j.ejecutar_despues_de ASC
+         FOR UPDATE OF j SKIP LOCKED
          LIMIT 1
       `),
       );
@@ -98,12 +144,28 @@ export async function reclamarUno(db: DB): Promise<Job | null> {
 
       const conversacionId = r.payload?.conv?.id;
       if (conversacionId) {
+        // E7: exclusión por conversación entre claims simultáneos (ver arriba).
+        const [lock] = filasDe<{ ok: boolean }>(
+          await tx.execute(
+            sql`SELECT pg_try_advisory_xact_lock(hashtextextended(${"wa_jobs:conv:" + conversacionId}, 0)) AS ok`,
+          ),
+        );
+        if (!lock?.ok) return { tipo: "conversacion_ocupada" as const };
+        const enCurso = filasDe<{ id: string }>(
+          await tx.execute(sql`
+          SELECT id FROM wa_jobs
+           WHERE estado = 'procesando' AND payload->'conv'->>'id' = ${conversacionId}
+           LIMIT 1
+        `),
+        );
+        if (enCurso.length > 0) return { tipo: "conversacion_ocupada" as const };
+
         const masNuevo = filasDe<{ id: string }>(
           await tx.execute(sql`
           SELECT id FROM wa_jobs
-           WHERE estado = 'pendiente'
-             AND payload->'conv'->>'id' = ${conversacionId}
+           WHERE payload->'conv'->>'id' = ${conversacionId}
              AND creado_en > ${r.creado_en}
+             AND (estado = 'pendiente' OR (${r.intentos} > 0 AND estado = 'hecho'))
            LIMIT 1
         `),
         );
@@ -135,7 +197,10 @@ export async function reclamarUno(db: DB): Promise<Job | null> {
       };
     });
 
-    if (resultado.tipo === "vacio") return null;
+    // "conversacion_ocupada": otro claim simultáneo ganó esa conversación (carrera de
+    // milisegundos). No se insiste en caliente: el slot vuelve en el próximo poll y
+    // para entonces el NOT EXISTS ya ve el "procesando" ajeno y elige otro candidato.
+    if (resultado.tipo === "vacio" || resultado.tipo === "conversacion_ocupada") return null;
     if (resultado.tipo === "reemplazado") continue; // sigue buscando el siguiente candidato
     return resultado.job;
   }

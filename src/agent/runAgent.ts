@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import type { ChatCompletionContentPart, ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import type { Cita, MensajeConversacion, MensajeInteractivo, Repositorio, Service, Tenant } from "../types";
+import type { Cita, MensajeConversacion, MensajeInteractivo, Repositorio, Service, Tenant, VerificarHorario } from "../types";
 import { construirSystemPrompt } from "./systemPrompt";
 import { TOOLS } from "./tools";
 import { opcionEmpleado, opcionHorario } from "../whatsapp/client";
@@ -280,25 +280,38 @@ export async function ejecutarTool(
       }
     }
 
+    // Doble reserva: el chequeo de arriba lee FUERA de cualquier lock (sirve para dar
+    // un buen motivo al modelo); el que decide de verdad es este, que el repo corre
+    // atómico con el INSERT sobre las citas frescas del día. Mismo criterio: la hora
+    // sigue libre y, con equipo, la persona asignada sigue teniéndola libre.
+    const sigueLibre: VerificarHorario = (citasFrescas) => {
+      const e = espaciosPorEmpleado(tenant, fecha, servicioId, citasFrescas).find((x) => x.hora === hora);
+      return !!e && (!empleadoId || e.empleados.includes(empleadoId));
+    };
+
     let cita: Cita;
     try {
-      cita = await repo.crearCita({
-        tenantId: tenant.id,
-        clienteWa,
-        clienteNombre: String(args.nombre),
-        servicioId,
-        empleadoId,
-        fecha,
-        hora,
-        placa: args.placa ? String(args.placa) : undefined,
-        precio: precioDeCita(
-          tenant.servicios.find((s) => s.id === servicioId),
-          args.precio,
-        ),
-      });
+      cita = await repo.crearCita(
+        {
+          tenantId: tenant.id,
+          clienteWa,
+          clienteNombre: String(args.nombre),
+          servicioId,
+          empleadoId,
+          fecha,
+          hora,
+          placa: args.placa ? String(args.placa) : undefined,
+          precio: precioDeCita(
+            tenant.servicios.find((s) => s.id === servicioId),
+            args.precio,
+          ),
+        },
+        sigueLibre,
+      );
     } catch (e) {
-      // Perdió la carrera contra otro cliente que reservó a la misma persona en el mismo
-      // instante: el índice único la frenó. Es un "no está disponible", no un error.
+      // Perdió la carrera contra otro cliente que reservó el mismo horario en el mismo
+      // instante: lo frenó el re-chequeo atómico (`HorarioOcupadoError`) o, de última,
+      // el índice único. Es un "no está disponible", no un error.
       if (esChoqueDeEmpleado(e)) {
         return JSON.stringify({
           ok: false,
@@ -423,12 +436,18 @@ export async function ejecutarTool(
         disponibles: propios,
       });
     }
+    // Mismo re-chequeo atómico que en agendar_cita (el repo excluye la propia cita).
+    const empleadoDeLaCita = objetivo.empleadoId;
+    const sigueLibreRe: VerificarHorario = (citasFrescas) =>
+      espaciosPorEmpleado(tenant, fecha, objetivo!.servicioId, citasFrescas).some(
+        (e) => e.hora === hora && (!empleadoDeLaCita || e.empleados.includes(empleadoDeLaCita)),
+      );
     let actualizada: Cita | null;
     try {
-      actualizada = await repo.reprogramarCita(tenant.id, objetivo.id, fecha, hora);
+      actualizada = await repo.reprogramarCita(tenant.id, objetivo.id, fecha, hora, sigueLibreRe);
     } catch (e) {
-      // Mismo caso de carrera que en agendar_cita: alguien tomó ese horario de esa
-      // persona entre el chequeo y el UPDATE, y el índice único lo frenó.
+      // Mismo caso de carrera que en agendar_cita: alguien tomó ese horario entre el
+      // chequeo y el UPDATE, y lo frenó el re-chequeo atómico o el índice único.
       if (esChoqueDeEmpleado(e)) {
         return JSON.stringify({ ok: false, motivo: "justo se acaba de ocupar ese horario. Ofrecele otro." });
       }
@@ -502,6 +521,11 @@ export interface ResultadoAgente {
    * reprogramada o cancelada). Viene junto a `escalar: true` cuando el modelo
    * escaló DESPUÉS de una acción exitosa: handleWebhook la manda antes del aviso de
    * traspaso, para que el cliente no crea que la cita no quedó (revisión pre-venta).
+   *
+   * E7: viene en TODAS las salidas del turno que guardaron algo (no solo en la
+   * escalada). handleWebhook la usa también como señal de "este turno ya tuvo
+   * efectos": si después falla el envío por WhatsApp, NO se reintenta el job (re-correr
+   * el agente volvería a llamar a `agendar_cita` y duplicaría la cita).
    */
   confirmacion?: string;
 }
@@ -633,7 +657,7 @@ async function correrAgenteInterno(
         // y duplicar la cita). Sin acciones previas, se propaga como siempre.
         if (!confirmaciones.length) throw e;
         console.error("[agente] OpenAI falló tras una acción ya guardada; se confirma con texto fijo:", e);
-        return { respuesta: confirmacion()!, fueraDeAlcance: false, escalar: false };
+        return { respuesta: confirmacion()!, fueraDeAlcance: false, escalar: false, confirmacion: confirmacion() };
       }
       // `usage` puede faltar en respuestas raras del SDK (streaming/errores parciales);
       // no rompemos el turno del cliente por un dato de costeo que falte.
@@ -648,7 +672,7 @@ async function correrAgenteInterno(
       if (!msg.tool_calls?.length) {
         const respuesta = msg.content ?? "Disculpá, no entendí. ¿Me lo repetís?";
         const fueraDeAlcance = /solo puedo ayudarte con/i.test(respuesta);
-        return { respuesta, fueraDeAlcance, escalar: false, interactivo: capturas.interactivo };
+        return { respuesta, fueraDeAlcance, escalar: false, interactivo: capturas.interactivo, confirmacion: confirmacion() };
       }
 
       for (const call of msg.tool_calls) {
@@ -682,7 +706,7 @@ async function correrAgenteInterno(
     // ya quedó guardada una acción (p. ej. `agendar_cita` en el último paso), se
     // confirma con texto fijo: el pedido del cliente SÍ se resolvió.
     if (confirmaciones.length) {
-      return { respuesta: confirmacion()!, fueraDeAlcance: false, escalar: false };
+      return { respuesta: confirmacion()!, fueraDeAlcance: false, escalar: false, confirmacion: confirmacion() };
     }
     // Si no, el bot quedó trabado → lo pasamos a una persona (en vez de dejar al
     // cliente sin solución).
