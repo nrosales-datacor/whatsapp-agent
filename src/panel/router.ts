@@ -2,17 +2,21 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
+  actualizarConexionWhatsapp,
   actualizarConfigTenant,
   actualizarFacturacionTenant,
   actualizarTopeTenant,
   actualizarUsuarioTenant,
   cambiarClavePropia,
+  cambiarEstadoTenant,
   crearTenant,
   crearUsuarioTenant,
   hayBaseDeDatos,
   listarHistorialConfigTenant,
   listarTenants,
+  listarTenantsPausados,
   listarUsuariosDeTenant,
+  obtenerTenantPausadoPorId,
   obtenerTenantPorId,
   obtenerUsuario,
   obtenerUsuarioPorId,
@@ -21,6 +25,8 @@ import {
   restaurarVersionConfigTenant,
 } from "../config/tenantStore";
 import { darDeBajaTenant } from "../config/offboarding";
+import { actorSuperadmin, actorUsuario, listarAuditoriaTenant, ultimaPausaPorTenant } from "../config/auditoria";
+import { borrarDatosCliente, normalizarTelefono, type ResultadoSupresion } from "../config/supresionCliente";
 import {
   limpiarLineas,
   limpiarTexto,
@@ -46,7 +52,7 @@ import {
   validarTamanoKb,
   validarTextoRescate,
 } from "../config/validadores";
-import { enviarPlantilla, enviarTexto } from "../whatsapp/client";
+import { dependeDelTokenGlobal, enviarPlantilla, enviarTexto, puedeEnviarWhatsapp } from "../whatsapp/client";
 import { listarJobsEnError, reencolarJobError } from "../queue/cola";
 import { obtenerDb } from "../db/client";
 import {
@@ -324,6 +330,90 @@ function esAdmin(req: IncomingMessage): boolean {
   return verificarSesionAdmin(leerCookies(req)[COOKIE_ADMIN]);
 }
 
+// ── Negocio pausado por la plataforma (revisión pre-venta 2026-10, cobro manual) ──
+// Un negocio pausado no está en el caché de activos, así que `sesionDeOperador` devuelve
+// null y antes el dueño veía un 401/login fallido sin explicación ("¿me hackearon?").
+// Ahora, si la sesión (o el login) es VÁLIDA pero el negocio está pausado, se responde
+// 403 con un código que el panel reconoce para mostrar "cuenta pausada, contactá a
+// Selyon". Solo se revela DESPUÉS de autenticar (firma + cuenta viva + epoch, o clave
+// correcta): un anónimo no puede averiguar qué negocios están pausados.
+export const CODIGO_CUENTA_PAUSADA = "cuenta_pausada";
+const MENSAJE_CUENTA_PAUSADA = "Tu cuenta está pausada. Contactá a Selyon para reactivarla.";
+
+function jsonCuentaPausada(res: ServerResponse) {
+  json(res, 403, { ok: false, error: MENSAJE_CUENTA_PAUSADA, codigo: CODIGO_CUENTA_PAUSADA });
+}
+
+/** true si el request trae una sesión de operador VÁLIDA (mismos chequeos que
+ * `sesionDeOperador`) cuyo negocio está pausado. */
+export function esSesionDeNegocioPausado(req: IncomingMessage): boolean {
+  const s = verificarSesion(leerCookies(req)[COOKIE]);
+  if (!s || !obtenerTenantPausadoPorId(s.tenantId)) return false;
+  const usuario = obtenerUsuarioPorId(s.usuarioId);
+  return !!usuario && usuario.activo && usuario.tenantId === s.tenantId && usuario.sessionEpoch === s.epoch;
+}
+
+/** Negocio por id para las acciones del superadmin: activo O pausado (pausar no debe
+ * dejar al negocio fuera del alcance del admin que lo tiene que reactivar). */
+function tenantParaAdmin(id: string): Tenant | undefined {
+  return obtenerTenantPorId(id) ?? obtenerTenantPausadoPorId(id);
+}
+
+/**
+ * Token de WhatsApp (alta y "Reconectar WhatsApp"): OBLIGATORIO. Antes era opcional con
+ * el texto "vacío usa el número de prueba", pero desde F5 (ALTO-05) `tokenDeTenant`
+ * falla sin token propio — el negocio quedaba creado y mudo, y como el token se guarda
+ * cifrado (F2) no había forma de cargarlo después ni siquiera por SQL.
+ */
+function validarAccessToken(v: unknown): { ok: true; token: string } | { ok: false; error: string } {
+  const token = typeof v === "string" ? v.trim() : "";
+  if (!token) return { ok: false, error: "El access token de WhatsApp es obligatorio" };
+  if (token.length < 20 || token.length > 512 || /\s/.test(token)) {
+    return { ok: false, error: "El access token de WhatsApp no tiene un formato válido (20 a 512 caracteres, sin espacios)" };
+  }
+  return { ok: true, token };
+}
+
+/** Extrae el mensaje legible de un error de Graph ("Error enviando WhatsApp (400): {json}")
+ * para mostrárselo al superadmin en "Enviar mensaje de prueba". Nunca incluye el token
+ * (Graph no lo devuelve en el cuerpo del error). */
+function detalleErrorGraph(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  const i = msg.indexOf("{");
+  if (i >= 0) {
+    try {
+      const err = JSON.parse(msg.slice(i))?.error;
+      if (err?.message) {
+        const codigo = err.code ? ` (código ${err.code}${err.error_subcode ? `/${err.error_subcode}` : ""})` : "";
+        return `${String(err.message).slice(0, 300)}${codigo}`;
+      }
+    } catch {
+      // no era JSON: se devuelve el mensaje crudo recortado
+    }
+  }
+  return msg.slice(0, 300);
+}
+
+/** Mapea los errores de `borrarDatosCliente` a la respuesta HTTP. */
+function responderErrorSupresion(res: ServerResponse, e: unknown): void {
+  const m = e instanceof Error ? e.message : "";
+  if (m === "SIN_DB") return json(res, 503, { ok: false, error: "Borrar datos de clientes requiere base de datos." });
+  if (m === "CLIENTE_NO_ENCONTRADO") return json(res, 404, { ok: false, error: "No hay datos de ese cliente en este negocio." });
+  if (m === "CALENDARIO_FALLO") {
+    return json(res, 502, { ok: false, error: "No se pudieron borrar los eventos de Google Calendar; no se borró nada. Probá de nuevo." });
+  }
+  if (m === "STORAGE_FALLO") {
+    return json(res, 502, { ok: false, error: "No se pudieron borrar las fotos guardadas; no se borró nada. Probá de nuevo." });
+  }
+  console.error("[supresion] borrarDatosCliente:", e);
+  json(res, 500, { ok: false, error: "No se pudieron borrar los datos del cliente." });
+}
+
+/** Respuesta de un borrado exitoso: solo conteos (nada del cliente). */
+function resumenSupresion(r: ResultadoSupresion) {
+  return { conteos: r.conteos, archivosStorage: r.archivosStorage, eventosCalendario: r.eventosCalendario };
+}
+
 // ── Validación del alta de negocios (server-side; no confiar en el cliente) ──
 // Los validadores de horario/servicios/faq/bloqueos viven en ../config/validadores,
 // compartidos con la config self-service (ROADMAP C2.2).
@@ -351,8 +441,9 @@ function validarAltaTenant(body: any): ResultadoAlta {
   const ubicacion = String(t.ubicacion ?? "").trim();
   if (!ubicacion || ubicacion.length > 1000) return { ok: false, error: "La ubicación es obligatoria (máx 1000)" };
 
-  const accessToken = t.accessToken ? String(t.accessToken).trim() : undefined;
-  if (accessToken && accessToken.length > 512) return { ok: false, error: "El accessToken es demasiado largo" };
+  const vToken = validarAccessToken(t.accessToken);
+  if (!vToken.ok) return { ok: false, error: vToken.error };
+  const accessToken = vToken.token;
 
   const timezone = String(t.timezone ?? "").trim() || "America/Costa_Rica";
   const moneda = String(t.moneda ?? "").trim() || "₡";
@@ -463,8 +554,25 @@ function validarSegmentoFiltro(
   return { tipo, servicioId, meses };
 }
 
+/**
+ * Error de Postgres "de verdad" detrás de una excepción de Drizzle: desde drizzle-orm
+ * 0.44 los errores de query llegan envueltos (`DrizzleQueryError`) con el original en
+ * `cause`, así que `e.code`/`e.constraint_name` pueden no estar en el primer nivel.
+ */
+function errorPg(e: unknown): { code?: string; constraint_name?: string; constraint?: string } {
+  const x = e as { code?: string; cause?: unknown };
+  if (x?.code) return x as { code?: string; constraint_name?: string };
+  return (x?.cause as { code?: string; constraint_name?: string }) ?? {};
+}
+
+/** true si el error es un choque de índice único (23505), envuelto o no. */
+function esChoqueUnico(e: unknown): boolean {
+  return errorPg(e).code === "23505";
+}
+
 function mensajeConflicto(e: unknown): string {
-  const nombre = (e as { constraint_name?: string }).constraint_name;
+  const pg = errorPg(e);
+  const nombre = pg.constraint_name ?? pg.constraint;
   if (nombre === "wa_tenants_pkey") return "Ya existe un negocio con ese id";
   if (nombre === "wa_tenants_pnid_uq") return "Ese phone_number_id ya está en uso por otro negocio";
   if (nombre === "wa_usuarios_usuario_uq") return "Ese usuario de panel ya existe";
@@ -659,7 +767,19 @@ export async function manejarPanel(
       // Uso mensual (Carril D, 0.2): una sola consulta para todos los negocios, en vez
       // de N — "medir sin bloquear" (sin DB o sin actividad todavía, queda en 0).
       const uso = await listarUsoMensualActual();
-      const tenants = listarTenants().map((t) => {
+      // Pausados (revisión pre-venta 2026-10): se listan también, marcados, para poder
+      // reactivarlos desde acá — antes un negocio con activo=false desaparecía del admin.
+      const pausados = listarTenantsPausados();
+      let pausas = new Map<string, { desde: string; motivo: string | null }>();
+      if (pausados.length && hayBaseDeDatos()) {
+        try {
+          pausas = await ultimaPausaPorTenant(obtenerDb(), pausados.map((t) => t.id));
+        } catch (e) {
+          console.error("[admin] ultimaPausaPorTenant:", e); // dato de presentación: no tumba la lista
+        }
+      }
+      const filas = [...listarTenants().map((t) => ({ t, activo: true })), ...pausados.map((t) => ({ t, activo: false }))];
+      const tenants = filas.map(({ t, activo }) => {
         const u = uso.get(t.id);
         // Tope mensual de conversaciones (F10): reusa el mismo `uso` ya consultado arriba
         // (una sola query para todos los tenants), sin ir de nuevo a la base por tenant.
@@ -692,6 +812,13 @@ export async function manejarPanel(
           topeGastoLlmUsd: gastoLlm.topeUsd,
           gastoLlmPorcentaje: gastoLlm.porcentaje,
           gastoLlmExcedido: gastoLlm.excedido,
+          activo,
+          pausadoDesde: activo ? null : (pausas.get(t.id)?.desde ?? null),
+          motivoPausa: activo ? null : (pausas.get(t.id)?.motivo ?? null),
+          // Estado de la conexión (sin exponer el token): ¿puede enviar? y ¿con el token
+          // global del piloto en vez del suyo? — para saber a quién hay que "Reconectar".
+          whatsappConectado: puedeEnviarWhatsapp(t),
+          whatsappTokenGlobal: dependeDelTokenGlobal(t),
         };
       });
       json(res, 200, { ok: true, tenants });
@@ -706,7 +833,7 @@ export async function manejarPanel(
         return json(res, 503, { ok: false, error: "El cambio de tope requiere base de datos (no configurada)." }), true;
       }
       const tenantId = decodeURIComponent(partesTope[2]);
-      if (!obtenerTenantPorId(tenantId)) return json(res, 404, { ok: false, error: "Negocio no encontrado" }), true;
+      if (!tenantParaAdmin(tenantId)) return json(res, 404, { ok: false, error: "Negocio no encontrado" }), true;
       const body = await leerBody(req);
       if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
       const desactivado = !!body?.desactivado;
@@ -731,7 +858,7 @@ export async function manejarPanel(
         return json(res, 503, { ok: false, error: "El cambio de plan requiere base de datos (no configurada)." }), true;
       }
       const tenantId = decodeURIComponent(partesPlan[2]);
-      if (!obtenerTenantPorId(tenantId)) return json(res, 404, { ok: false, error: "Negocio no encontrado" }), true;
+      if (!tenantParaAdmin(tenantId)) return json(res, 404, { ok: false, error: "Negocio no encontrado" }), true;
       const body = await leerBody(req);
       if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
       const plan: Plan | undefined = body?.plan === "basico" || body?.plan === "pro" ? body.plan : undefined;
@@ -770,7 +897,7 @@ export async function manejarPanel(
       try {
         await crearTenant(v.tenant, { usuario: v.usuario, passwordHash: await hashearPassword(v.password) });
       } catch (e) {
-        if ((e as { code?: string }).code === "23505") return json(res, 409, { ok: false, error: mensajeConflicto(e) }), true;
+        if (esChoqueUnico(e)) return json(res, 409, { ok: false, error: mensajeConflicto(e) }), true;
         if (e instanceof Error && e.message === "SIN_DB") {
           return json(res, 503, { ok: false, error: "El alta de negocios requiere base de datos." }), true;
         }
@@ -823,6 +950,125 @@ export async function manejarPanel(
       }
       await recargar(); // saca al tenant del caché en memoria sin reiniciar el proceso
       return json(res, 200, { ok: true, export: exportado }), true;
+    }
+
+    // ── Acciones de plataforma sobre UN negocio (revisión pre-venta 2026-10) ──
+    // admin/tenants/:id/{pausar|reactivar|whatsapp|whatsapp/probar|clientes/borrar|auditoria}.
+    // Mismo gate que el resto de admin/* (sesión de superadmin) + el CSRF de arriba para
+    // los POST + tope de body de leerBody. Todas aceptan negocios activos o pausados.
+    const partesAccion = ruta.split("/");
+    if (partesAccion[0] === "admin" && partesAccion[1] === "tenants" && partesAccion[2]) {
+      const tenantId = decodeURIComponent(partesAccion[2]);
+      const accion = partesAccion.slice(3).join("/");
+
+      // Historial auditable del negocio. No exige que exista: el rastro de una baja
+      // sigue consultable después de que el negocio desapareció.
+      if (accion === "auditoria" && metodo === "GET") {
+        if (!hayBaseDeDatos()) return json(res, 503, { ok: false, error: "Requiere base de datos (no configurada)." }), true;
+        try {
+          return json(res, 200, { ok: true, auditoria: await listarAuditoriaTenant(obtenerDb(), tenantId) }), true;
+        } catch (e) {
+          console.error("[admin] listarAuditoriaTenant:", e);
+          return json(res, 500, { ok: false, error: "No se pudo leer el historial." }), true;
+        }
+      }
+
+      // Pausar / reactivar (cobro manual, PROCESO-COBRO-MANUAL.md §5): reemplaza el UPDATE
+      // a mano en Supabase. Motivo opcional, queda en wa_auditoria junto con quién lo hizo.
+      if ((accion === "pausar" || accion === "reactivar") && metodo === "POST") {
+        if (!hayBaseDeDatos()) return json(res, 503, { ok: false, error: "Pausar negocios requiere base de datos (no configurada)." }), true;
+        const body = await leerBody(req);
+        if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
+        const motivo = limpiarTexto(body?.motivo, 300) || null;
+        let r: Awaited<ReturnType<typeof cambiarEstadoTenant>>;
+        try {
+          r = await cambiarEstadoTenant(tenantId, accion === "reactivar", actorSuperadmin(), motivo);
+        } catch (e) {
+          if (e instanceof Error && e.message === "SIN_DB") return json(res, 503, { ok: false, error: "Requiere base de datos." }), true;
+          console.error("[admin] cambiarEstadoTenant:", e);
+          return json(res, 500, { ok: false, error: "No se pudo cambiar el estado del negocio." }), true;
+        }
+        if (r === "no_encontrado") return json(res, 404, { ok: false, error: "Negocio no encontrado" }), true;
+        if (r === "sin_cambio") {
+          return json(res, 409, { ok: false, error: accion === "pausar" ? "El negocio ya estaba pausado." : "El negocio ya estaba activo." }), true;
+        }
+        await recargar(); // el bot deja de (o vuelve a) responder sin reiniciar
+        return json(res, 200, { ok: true }), true;
+      }
+
+      // Reconectar WhatsApp: carga o rota phone_number_id + token de un negocio YA creado
+      // (antes no había forma: el token está cifrado). Acepta el token pegado a mano o el
+      // handle de Embedded Signup (C4.2), igual que el alta — el token nunca vuelve.
+      if (accion === "whatsapp" && metodo === "POST") {
+        if (!hayBaseDeDatos()) return json(res, 503, { ok: false, error: "Requiere base de datos (no configurada)." }), true;
+        if (!tenantParaAdmin(tenantId)) return json(res, 404, { ok: false, error: "Negocio no encontrado" }), true;
+        const body = await leerBody(req);
+        if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
+        let phoneNumberId = String(body?.phoneNumberId ?? "").trim();
+        let tokenCrudo: unknown = body?.accessToken;
+        if (typeof body?.tokenHandle === "string" && body.tokenHandle) {
+          const conexion = tomarToken(body.tokenHandle);
+          if (!conexion) return json(res, 400, { ok: false, error: "La conexión de WhatsApp venció; volvé a conectar el número." }), true;
+          phoneNumberId = conexion.phoneNumberId;
+          tokenCrudo = conexion.token;
+        }
+        if (!/^\d{5,30}$/.test(phoneNumberId)) {
+          return json(res, 400, { ok: false, error: "El phone_number_id debe ser numérico (5 a 30 dígitos)" }), true;
+        }
+        const vToken = validarAccessToken(tokenCrudo);
+        if (!vToken.ok) return json(res, 400, { ok: false, error: vToken.error }), true;
+        try {
+          const ok = await actualizarConexionWhatsapp(tenantId, phoneNumberId, vToken.token, actorSuperadmin());
+          if (!ok) return json(res, 404, { ok: false, error: "Negocio no encontrado" }), true;
+        } catch (e) {
+          if (esChoqueUnico(e)) return json(res, 409, { ok: false, error: mensajeConflicto(e) }), true;
+          if (e instanceof Error && e.message === "SIN_DB") return json(res, 503, { ok: false, error: "Requiere base de datos." }), true;
+          console.error("[admin] actualizarConexionWhatsapp:", e);
+          return json(res, 500, { ok: false, error: "No se pudo guardar la conexión de WhatsApp." }), true;
+        }
+        await recargar(); // el token nuevo se usa desde el próximo mensaje, sin reiniciar
+        return json(res, 200, { ok: true, phoneNumberId }), true;
+      }
+
+      // Enviar mensaje de prueba con el token/número VIGENTES del negocio. Si Graph falla,
+      // se devuelve su mensaje de error tal cual (sin el token) para diagnosticar.
+      if (accion === "whatsapp/probar" && metodo === "POST") {
+        const t = tenantParaAdmin(tenantId);
+        if (!t) return json(res, 404, { ok: false, error: "Negocio no encontrado" }), true;
+        const body = await leerBody(req);
+        if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
+        const para = normalizarTelefono(body?.para);
+        if (para.length < 8 || para.length > 15) {
+          return json(res, 400, { ok: false, error: "Número de destino inválido (con código de país, ej. 50688887777)" }), true;
+        }
+        const texto = limpiarTexto(body?.texto, 500) || `Mensaje de prueba de Selyon: la conexión de WhatsApp de ${t.nombre} funciona.`;
+        try {
+          await enviarTexto(t, para, texto);
+        } catch (e) {
+          return json(res, 502, { ok: false, error: detalleErrorGraph(e) }), true;
+        }
+        return json(res, 200, { ok: true }), true;
+      }
+
+      // Borrar un cliente final (derecho de supresión, Ley 8968) desde el admin: por
+      // teléfono, porque el superadmin no ve las conversaciones del negocio.
+      if (accion === "clientes/borrar" && metodo === "POST") {
+        const t = tenantParaAdmin(tenantId);
+        if (!t) return json(res, 404, { ok: false, error: "Negocio no encontrado" }), true;
+        const body = await leerBody(req);
+        if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
+        const clienteWa = normalizarTelefono(body?.clienteWa);
+        if (!clienteWa) return json(res, 400, { ok: false, error: "Falta el teléfono del cliente" }), true;
+        if (normalizarTelefono(body?.confirmar) !== clienteWa) {
+          return json(res, 400, { ok: false, error: "La confirmación no coincide con el teléfono; no se borró nada." }), true;
+        }
+        try {
+          const r = await borrarDatosCliente({ tenant: t, clienteWa, actor: actorSuperadmin() });
+          return json(res, 200, { ok: true, ...resumenSupresion(r) }), true;
+        } catch (e) {
+          return responderErrorSupresion(res, e), true;
+        }
+      }
     }
 
     // ── DLQ visible (ROADMAP F11): jobs de wa_jobs que agotaron reintentos ──
@@ -905,7 +1151,7 @@ export async function manejarPanel(
     ) {
       if (!hayBaseDeDatos()) return json(res, 503, { ok: false, error: "Requiere base de datos (no configurada)." }), true;
       const tenantId = decodeURIComponent(partesUsuariosTenant[2]);
-      if (!obtenerTenantPorId(tenantId)) return json(res, 404, { ok: false, error: "Negocio no encontrado" }), true;
+      if (!tenantParaAdmin(tenantId)) return json(res, 404, { ok: false, error: "Negocio no encontrado" }), true;
       const usuarios = await listarUsuariosDeTenant(tenantId);
       return json(res, 200, { ok: true, usuarios }), true;
     }
@@ -965,6 +1211,13 @@ export async function manejarPanel(
     const tenant = cuenta ? obtenerTenantPorId(cuenta.tenantId) : undefined;
     // Clave temporal del reset de admin (0.5): vencida a las 24h, hay que pedir un reset nuevo.
     const claveVencida = !!cuenta?.claveTemporalExpira && Date.now() > cuenta.claveTemporalExpira.getTime();
+    // Negocio pausado por la plataforma: con la clave CORRECTA se le explica por qué no
+    // entra (en vez del "usuario o contraseña incorrectos" de antes). Sin la clave correcta
+    // sigue el 401 genérico de abajo — no es un oráculo de qué negocios están pausados.
+    if (cuenta && ok && !tenant && !claveVencida && obtenerTenantPausadoPorId(cuenta.tenantId)) {
+      registrarExitoLogin("login", usuarioInput);
+      return jsonCuentaPausada(res), true;
+    }
     if (!cuenta || !ok || !tenant || claveVencida) {
       registrarFalloLogin("login", usuarioInput);
       const error = claveVencida
@@ -995,6 +1248,7 @@ export async function manejarPanel(
   // ── A partir de acá, todo requiere sesión ──
   const sesion = sesionDeOperador(req);
   if (!sesion) {
+    if (esSesionDeNegocioPausado(req)) return jsonCuentaPausada(res), true;
     json(res, 401, { ok: false, error: "No autenticado" });
     return true;
   }
@@ -1124,7 +1378,7 @@ export async function manejarPanel(
       try {
         await crearUsuarioTenant(tenant.id, { usuario, passwordHash: await hashearPassword(password), rol: nuevoRol });
       } catch (e) {
-        if ((e as { code?: string }).code === "23505") return json(res, 409, { ok: false, error: "Ese usuario de panel ya existe" }), true;
+        if (esChoqueUnico(e)) return json(res, 409, { ok: false, error: "Ese usuario de panel ya existe" }), true;
         if (e instanceof Error && e.message === "SIN_DB") {
           return json(res, 503, { ok: false, error: "La gestión de usuarios requiere base de datos." }), true;
         }
@@ -1935,6 +2189,30 @@ export async function manejarPanel(
         historial: ficha.historial.map((h) => ({ ...h, servicioNombre: nombreDe(h.servicioId) })),
       };
       return json(res, 200, { ok: true, ficha: enriquecida }), true;
+    }
+
+    // Borrar TODOS los datos de este cliente (derecho de supresión, Ley 8968): solo el
+    // dueño, con confirmación fuerte (repetir el teléfono del cliente). Scopeado por la
+    // sesión: `borrarDatosCliente` busca la conversación con tenant.id en el WHERE, así
+    // que el id de una conversación de OTRO negocio responde 404 sin tocar nada.
+    if (accion === "borrar-cliente" && metodo === "POST") {
+      if (rol !== "dueno") {
+        return json(res, 403, { ok: false, error: "Solo el dueño del negocio puede borrar los datos de un cliente" }), true;
+      }
+      const body = await leerBody(req);
+      if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
+      const conv = await repo.obtenerConversacionPorId(tenant.id, convId);
+      if (!conv) return json(res, 404, { ok: false, error: "No existe" }), true;
+      const confirmar = normalizarTelefono(body?.confirmar);
+      if (!confirmar || confirmar !== normalizarTelefono(conv.clienteWa)) {
+        return json(res, 400, { ok: false, error: "El número no coincide con el del cliente; no se borró nada." }), true;
+      }
+      try {
+        const r = await borrarDatosCliente({ tenant, conversacionId: conv.id, actor: actorUsuario(usuarioId) });
+        return json(res, 200, { ok: true, ...resumenSupresion(r) }), true;
+      } catch (e) {
+        return responderErrorSupresion(res, e), true;
+      }
     }
 
     if (accion === "notas" && metodo === "POST") {

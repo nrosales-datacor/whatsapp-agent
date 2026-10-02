@@ -18,6 +18,8 @@ import {
   waCotizaciones,
   waSeguimientos,
   waSnapshotReputacion,
+  waWebhooksCrudos,
+  waAuditoria,
 } from "../../src/db/schema";
 import { darDeBajaTenant } from "../../src/config/offboarding";
 
@@ -227,6 +229,70 @@ test("dar de baja un tenant NO toca los datos de OTRO tenant", async () => {
     const despuesB = await contarFilasDeTenant(db, tenantB);
     assert.deepEqual(despuesB, antesB, "B no debe verse afectado por la baja de A");
   } finally {
+    await cerrar();
+  }
+});
+
+// ── Revisión pre-venta 2026-10: la baja también limpia wa_webhooks_crudos de su
+// número y las fotos de Storage, y deja un rastro en wa_auditoria (que NO se borra) ──
+
+test("la baja borra (y exporta) los wa_webhooks_crudos de SU phone_number_id, no los de otro número", async () => {
+  const { db, cerrar } = await crearDbEfimera();
+  try {
+    const tenantId = "tenant-f16-6";
+    await sembrarTenant(db, tenantId, NOMBRE_TENANT, "6");
+    await db.insert(waWebhooksCrudos).values([
+      { payload: { de: "cliente" }, phoneNumberId: `pnid-${tenantId}`, waMessageId: "wamid.6a", motivo: "tenant_desconocido" },
+      { payload: { de: "otro" }, phoneNumberId: "pnid-de-otro", waMessageId: "wamid.6b", motivo: "tenant_desconocido" },
+    ]);
+
+    const exportado = await darDeBajaTenant(tenantId, NOMBRE_TENANT, db);
+
+    assert.equal(exportado.waWebhooksCrudos.length, 1, "el crudo propio va en el export");
+    const restantes = await db.select().from(waWebhooksCrudos);
+    assert.deepEqual(restantes.map((r) => r.phoneNumberId), ["pnid-de-otro"]);
+
+    const [aud] = await db.select().from(waAuditoria).where(eq(waAuditoria.tenantId, tenantId));
+    assert.equal(aud.accion, "baja_tenant", "queda el rastro de la baja (wa_auditoria no se borra)");
+  } finally {
+    await cerrar();
+  }
+});
+
+test("la baja borra el prefijo del tenant en Supabase Storage; si Storage falla, la baja queda hecha y se registra el pendiente", async () => {
+  const { db, cerrar } = await crearDbEfimera();
+  const fetchOriginal = globalThis.fetch;
+  process.env.SUPABASE_URL = "https://storage.test";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-test";
+  try {
+    const llamadas: { url: string; body: { prefix?: string; prefixes?: string[] } | null; metodo: string }[] = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(String(init.body)) : null;
+      llamadas.push({ url: String(url), body, metodo: init?.method ?? "GET" });
+      if (String(url).includes("/object/list/")) {
+        // Raíz del tenant: una carpeta (conversación); dentro: una foto.
+        if (body.prefix === "tenant-f16-7") return new Response(JSON.stringify([{ name: "conv-1", id: null }]), { status: 200 });
+        return new Response(JSON.stringify([{ name: "wamid.jpg", id: "obj" }]), { status: 200 });
+      }
+      return new Response("[]", { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await sembrarTenant(db, "tenant-f16-7", NOMBRE_TENANT, "7");
+    await darDeBajaTenant("tenant-f16-7", NOMBRE_TENANT, db);
+    const borrado = llamadas.find((l) => l.metodo === "DELETE");
+    assert.deepEqual(borrado?.body?.prefixes, ["tenant-f16-7/conv-1/wamid.jpg"]);
+
+    // Storage caído: la baja en la base igual se confirma y queda el pendiente auditado.
+    globalThis.fetch = (async () => new Response("caído", { status: 503 })) as unknown as typeof fetch;
+    await sembrarTenant(db, "tenant-f16-8", "Otro negocio", "8");
+    await darDeBajaTenant("tenant-f16-8", "Otro negocio", db);
+    assert.equal((await db.select().from(waTenants).where(eq(waTenants.id, "tenant-f16-8"))).length, 0);
+    const acciones = (await db.select().from(waAuditoria).where(eq(waAuditoria.tenantId, "tenant-f16-8"))).map((a) => a.accion).sort();
+    assert.deepEqual(acciones, ["baja_storage_pendiente", "baja_tenant"]);
+  } finally {
+    globalThis.fetch = fetchOriginal;
+    delete process.env.SUPABASE_URL;
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
     await cerrar();
   }
 });

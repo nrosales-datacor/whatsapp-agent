@@ -17,8 +17,11 @@ import {
   waCotizaciones,
   waSeguimientos,
   waSnapshotReputacion,
+  waWebhooksCrudos,
 } from "../db/schema";
 import { obtenerDb } from "../db/client";
+import { borrarPrefijo } from "../storage/supabaseStorage";
+import { actorSuperadmin, registrarAuditoria } from "./auditoria";
 import { hayBaseDeDatos } from "./tenantStore";
 
 type DB = PostgresJsDatabase<typeof schema>;
@@ -35,12 +38,21 @@ type DB = PostgresJsDatabase<typeof schema>;
 //   - wa_mensajes: no tiene tenant_id propio, cuelga de wa_conversaciones
 //     (conversacion_id). Se exporta/borra por join/subquery sobre las
 //     conversaciones del tenant, ANTES de borrar wa_conversaciones.
-//   - wa_webhooks_crudos: tiene phone_number_id, no tenant_id. Un
-//     phone_number_id puede reciclarse a otro tenant en el futuro (número que
-//     cambia de dueño), así que correlacionarlo por ese campo arriesga borrar
-//     — o exportar — datos de OTRO negocio. Además es basura cruda de
-//     auditoría/debug de corta vida, no dato del negocio. Queda FUERA del
-//     offboarding a propósito.
+//   - wa_webhooks_crudos: tiene phone_number_id, no tenant_id. Antes quedaba
+//     FUERA por miedo a que el número se hubiera reciclado a otro negocio. Desde
+//     la revisión pre-venta 2026-10 SÍ se borra (y exporta) por el
+//     phone_number_id ACTUAL del tenant: `wa_tenants_pnid_uq` garantiza que hoy
+//     ese número es solo de este negocio, y lo que llegó a él antes de un cambio
+//     de dueño ya se borró con la baja del dueño anterior. Son payloads crudos con
+//     teléfonos y textos de clientes: dejarlos contradice "borrá mis datos".
+//   - wa_auditoria: NO se borra. Es el rastro de plataforma de que la baja (y las
+//     pausas/supresiones previas) ocurrieron; no guarda datos personales.
+//
+// Fuera de la base: las fotos de Supabase Storage (prefijo `{tenantId}/`) se
+// borran DESPUÉS de confirmar la transacción (si la base fallara, el negocio
+// seguiría vivo y sin fotos). Si Storage falla ahí, la baja igual queda hecha y
+// se registra `baja_storage_pendiente` en wa_auditoria con el prefijo, para
+// limpiarlo a mano.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Catálogo de tablas con `tenant_id` propio, MENOS wa_conversaciones (se maneja
@@ -78,6 +90,7 @@ export interface ExportTenant {
   waCotizaciones: (typeof waCotizaciones.$inferSelect)[];
   waSeguimientos: (typeof waSeguimientos.$inferSelect)[];
   waSnapshotReputacion: (typeof waSnapshotReputacion.$inferSelect)[];
+  waWebhooksCrudos: (typeof waWebhooksCrudos.$inferSelect)[];
 }
 
 /**
@@ -101,7 +114,7 @@ export async function darDeBajaTenant(tenantId: string, confirmarNombre: string,
   if (!db && !hayBaseDeDatos()) throw new Error("SIN_DB");
   const d = db ?? obtenerDb();
 
-  return d.transaction(async (tx) => {
+  const exportado = await d.transaction(async (tx) => {
     const [tenant] = await tx.select().from(waTenants).where(eq(waTenants.id, tenantId));
     if (!tenant) throw new Error("TENANT_NO_ENCONTRADO");
     if (tenant.nombre !== confirmarNombre) throw new Error("CONFIRMACION_INVALIDA");
@@ -114,11 +127,14 @@ export async function darDeBajaTenant(tenantId: string, confirmarNombre: string,
       ? await tx.select().from(waMensajes).where(inArray(waMensajes.conversacionId, idsConversaciones))
       : [];
 
+    const crudos = await tx.select().from(waWebhooksCrudos).where(eq(waWebhooksCrudos.phoneNumberId, tenant.phoneNumberId));
+
     const exportado = {
       waTenants: tenant,
       waUsuarios: usuarios,
       waConversaciones: conversaciones,
       waMensajes: mensajes,
+      waWebhooksCrudos: crudos,
     } as ExportTenant;
 
     for (const [clave, tabla] of Object.entries(TABLAS_TENANT_ID)) {
@@ -140,9 +156,35 @@ export async function darDeBajaTenant(tenantId: string, confirmarNombre: string,
       await tx.delete(tabla as any).where(eq((tabla as any).tenantId, tenantId));
     }
 
+    await tx.delete(waWebhooksCrudos).where(eq(waWebhooksCrudos.phoneNumberId, tenant.phoneNumberId));
+
     await tx.delete(waUsuarios).where(eq(waUsuarios.tenantId, tenantId));
     await tx.delete(waTenants).where(eq(waTenants.id, tenantId));
 
+    // Rastro de la baja (sin datos personales: solo conteos), dentro de la MISMA transacción.
+    await registrarAuditoria(tx, tenantId, "baja_tenant", actorSuperadmin(), {
+      conversaciones: conversaciones.length,
+      mensajes: mensajes.length,
+      usuarios: usuarios.length,
+    });
+
     return exportado;
   });
+
+  // ── (c) Fotos en Supabase Storage, con la baja ya confirmada en la base ──
+  try {
+    await borrarPrefijo(tenantId);
+  } catch (e) {
+    console.error(`[offboarding] la baja de ${tenantId} quedó hecha pero NO se pudieron borrar sus fotos de Storage:`, e);
+    try {
+      await registrarAuditoria(d, tenantId, "baja_storage_pendiente", actorSuperadmin(), {
+        prefijo: `${tenantId}/`,
+        error: e instanceof Error ? e.message.slice(0, 200) : String(e).slice(0, 200),
+      });
+    } catch (e2) {
+      console.error("[offboarding] tampoco se pudo registrar el pendiente de Storage:", e2);
+    }
+  }
+
+  return exportado;
 }

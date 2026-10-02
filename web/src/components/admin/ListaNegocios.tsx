@@ -1,7 +1,17 @@
 import { Fragment, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { adminCambiarPlan, adminListarTenants, adminListarUsuariosTenant, adminResetearClave, type Plan } from "../../api";
+import {
+  adminCambiarPlan,
+  adminListarTenants,
+  adminListarUsuariosTenant,
+  adminPausarTenant,
+  adminReactivarTenant,
+  adminResetearClave,
+  type Plan,
+  type TenantResumen,
+} from "../../api";
 import ErrorState from "../ErrorState";
+import AccionesNegocio from "./AccionesNegocio";
 
 // Tabla de negocios ya dados de alta (resumen liviano, sin secretos). Se refresca
 // sola cuando el formulario invalida ["adminTenants"] tras crear uno.
@@ -15,8 +25,32 @@ export default function ListaNegocios() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["adminTenants"] }),
   });
 
+  // Pausar / reactivar (cobro manual, PROCESO-COBRO-MANUAL.md §5): reemplaza el UPDATE a
+  // mano en Supabase. Confirmación + motivo opcional (queda en el historial auditable).
+  const cambiarEstado = useMutation({
+    mutationFn: ({ t, pausar, motivo }: { t: TenantResumen; pausar: boolean; motivo: string }) =>
+      pausar ? adminPausarTenant(t.id, motivo) : adminReactivarTenant(t.id, motivo),
+    onSuccess: (_r, { t }) => {
+      qc.invalidateQueries({ queryKey: ["adminTenants"] });
+      qc.invalidateQueries({ queryKey: ["adminAuditoria", t.id] });
+    },
+    onError: (e) => alert(e instanceof Error ? e.message : "No se pudo cambiar el estado del negocio."),
+  });
+
+  function alternarPausa(t: TenantResumen) {
+    const pausar = t.activo;
+    const pregunta = pausar
+      ? `¿Pausar "${t.nombre}"? El bot deja de responder a sus clientes (los mensajes se siguen guardando) y el dueño ` +
+        "verá \"cuenta pausada\" en su panel.\n\nMotivo (opcional):"
+      : `¿Reactivar "${t.nombre}"? El bot vuelve a responder de inmediato.\n\nNota (opcional):`;
+    const motivo = prompt(pregunta, pausar ? "Falta de pago" : "");
+    if (motivo === null) return; // canceló
+    cambiarEstado.mutate({ t, pausar, motivo: motivo.trim() });
+  }
+
   // Detalle del negocio (Carril D, 0.5): solo un tenant expandido a la vez, muestra su
-  // equipo con el botón "Resetear clave".
+  // equipo con el botón "Resetear clave" y las acciones de plataforma (WhatsApp,
+  // borrar un cliente, historial).
   const [expandido, setExpandido] = useState<string | null>(null);
 
   return (
@@ -34,6 +68,7 @@ export default function ListaNegocios() {
             <thead>
               <tr>
                 <th>Nombre</th>
+                <th>Estado</th>
                 <th>id</th>
                 <th>phone_number_id</th>
                 <th>Servicios</th>
@@ -49,6 +84,24 @@ export default function ListaNegocios() {
                 <Fragment key={t.id}>
                   <tr>
                     <td>{t.nombre}</td>
+                    <td>
+                      {t.activo ? "Activo" : "Pausado"}
+                      {!t.activo && t.pausadoDesde && (
+                        <div className="admin-hint">
+                          desde {new Date(t.pausadoDesde).toLocaleDateString("es-CR")}
+                          {t.motivoPausa ? ` · ${t.motivoPausa}` : ""}
+                        </div>
+                      )}
+                      {!t.whatsappConectado && <div className="admin-hint">⚠️ sin token de WhatsApp</div>}
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        disabled={cambiarEstado.isPending && cambiarEstado.variables?.t.id === t.id}
+                        onClick={() => alternarPausa(t)}
+                      >
+                        {t.activo ? "Pausar" : "Reactivar"}
+                      </button>
+                    </td>
                     <td>{t.id}</td>
                     <td>{t.phoneNumberId}</td>
                     <td>{t.servicios}</td>
@@ -67,14 +120,15 @@ export default function ListaNegocios() {
                     <td>${t.costoUsdEsteMes.toFixed(2)}</td>
                     <td>
                       <button type="button" className="btn-ghost" onClick={() => setExpandido(expandido === t.id ? null : t.id)}>
-                        {expandido === t.id ? "Ocultar" : "Ver equipo"}
+                        {expandido === t.id ? "Ocultar" : "Ver detalle"}
                       </button>
                     </td>
                   </tr>
                   {expandido === t.id && (
                     <tr>
-                      <td colSpan={9}>
+                      <td colSpan={10}>
                         <EquipoNegocio tenantId={t.id} />
+                        <AccionesNegocio tenant={t} />
                       </td>
                     </tr>
                   )}

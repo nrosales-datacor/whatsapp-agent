@@ -5,7 +5,7 @@
 > quede cableado — hasta entonces, esto es lo único que hay entre "el cliente paga" y "el bot le
 > sigue funcionando".
 
-**Última actualización:** 2026-07-16
+**Última actualización:** 2026-10-01
 
 ---
 
@@ -75,13 +75,14 @@ Enviar al **número personal del dueño** (no al número del bot), en tres momen
 | Día 5 | Si el negocio es **Pro** y no pagó, bajarlo a **Básico** desde `/panel/admin` (columna Plan,
 sin redeploy) — pierde Campañas/features Pro pero el bot sigue atendiendo. Es la palanca que ya
 existe hoy (Carril D, 0.1). |
-| Día 10 | Si sigue sin pago, **pausar el bot por completo**: en Supabase, tabla `wa_tenants`,
-`UPDATE wa_tenants SET activo = false WHERE id = '<id>';`. El tenant deja de cargarse en memoria
-(`tenantStore.ts` solo carga `activo = true`) y el webhook no le responde más a ese número — sin
-tocar código, es un flag que ya existe en el schema pero **no tiene botón en el admin todavía**
-(construirlo es trabajo futuro si este paso se vuelve frecuente). |
-| Al pagar | Revertir: `UPDATE wa_tenants SET activo = true` (si se pausó) + volver el plan a Pro
-desde el admin (si se había bajado). Confirmar por WhatsApp que ya está reactivado. |
+| Día 10 | Si sigue sin pago, **pausar el bot por completo**: en `/panel/admin`, fila del negocio →
+botón **"Pausar"** (pide confirmación y un motivo opcional, ej. "falta de pago septiembre"). Efecto
+inmediato, sin redeploy: el bot deja de responder a ese número (los mensajes que lleguen **se
+siguen guardando** en el chat, el dueño los ve al reactivar), no salen recordatorios, campañas ni
+rescates, y el dueño ve en su panel "Tu cuenta está pausada. Contactá a Selyon". No se borra
+ningún dato. Queda registrado quién pausó, cuándo y por qué (botón "Historial" del negocio). |
+| Al pagar | En `/panel/admin` → botón **"Reactivar"** del negocio (si se pausó) + volver el plan a
+Pro desde la columna Plan (si se había bajado). Confirmar por WhatsApp que ya está reactivado. |
 
 No se corta nunca a mitad de una conversación activa con un cliente final — el corte es a nivel de
 negocio completo, y el dueño recibe el aviso del día 0 y del día 10 antes de que pase.
@@ -95,7 +96,8 @@ negocio completo, y el dueño recibe el aviso del día 0 y del día 10 antes de 
    (Básico ~500/mes, sin bloqueo todavía — Carril D, 0.2) y contra lo que factura Meta Business
    Manager, para detectar desvíos grandes (±5%).
 4. Para los que están atrasados según §5, mandar el recordatorio que corresponda (§4) y aplicar la
-   acción del día que toque (bajar plan / pausar).
+   acción del día que toque (bajar plan / pausar con el botón "Pausar"). Los pausados aparecen en la
+   misma tabla marcados como **Pausado**, con la fecha y el motivo.
 5. Actualizar la hoja de seguimiento con el resultado (pagó / bajado a Básico / pausado).
 
 ## Nota

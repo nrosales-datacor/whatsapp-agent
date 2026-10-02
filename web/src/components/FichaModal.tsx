@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { guardarNotas, obtenerFicha } from "../api";
+import { borrarCliente, guardarNotas, me, obtenerFicha } from "../api";
 import { fechaCorta, fmtNum, iniciales } from "../lib/formato";
 import Icono from "./Iconos";
 
@@ -50,6 +50,11 @@ export default function FichaModal({ convId, clienteWa, onCerrar }: Props) {
       qc.invalidateQueries({ queryKey: ["ficha", convId] });
     },
   });
+
+  // Derecho de supresión (Ley 8968): solo el dueño ve la zona de borrado. La sesión ya
+  // está en caché bajo ["me"] (la carga <App>), así que esto no pega de nuevo al server.
+  const sesion = useQuery({ queryKey: ["me"], queryFn: me });
+  const esDueno = sesion.data?.rol === "dueno";
 
   const nombre = ficha?.nombre?.trim() || null;
   const avatarTxt = nombre ? iniciales(nombre) : clienteWa.slice(-2);
@@ -138,8 +143,77 @@ export default function FichaModal({ convId, clienteWa, onCerrar }: Props) {
               {guardado ? "Guardado" : "Guardar notas"}
             </button>
           </div>
+
+          {esDueno && <BorrarDatosCliente convId={convId} clienteWa={clienteWa} />}
         </div>
       </div>
+    </div>
+  );
+}
+
+// Zona de borrado definitivo (derecho de supresión, Ley 8968 de Costa Rica). Confirmación
+// fuerte: hay que escribir el número del cliente; el backend lo vuelve a comparar. Al
+// terminar se recarga el panel: la conversación ya no existe y así no queda ningún
+// componente mostrando datos borrados (la lista/el chat se arman de cero).
+function BorrarDatosCliente({ convId, clienteWa }: { convId: string; clienteWa: string }) {
+  const [abierto, setAbierto] = useState(false);
+  const [confirmacion, setConfirmacion] = useState("");
+  const borrar = useMutation({ mutationFn: () => borrarCliente(convId, confirmacion) });
+  const coincide = confirmacion.replace(/\D/g, "") === clienteWa.replace(/\D/g, "");
+
+  if (borrar.isSuccess) {
+    return (
+      <div className="ficha-notas-card">
+        <div className="ficha-notas-titulo">Datos del cliente borrados</div>
+        <p>Se borraron el chat, las citas, las cotizaciones y las fotos de este cliente. No queda copia en el panel.</p>
+        <button type="button" className="ficha-notas-guardar" onClick={() => window.location.reload()}>
+          Listo
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="ficha-notas-card">
+      <div className="ficha-notas-titulo">Borrar datos del cliente</div>
+      {!abierto ? (
+        <button type="button" className="btn-ghost" onClick={() => setAbierto(true)}>
+          Borrar todos los datos de este cliente…
+        </button>
+      ) : (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (coincide) borrar.mutate();
+          }}
+        >
+          <p>
+            Esto borra <strong>de forma definitiva</strong> el chat, las citas (y sus eventos futuros en Google Calendar),
+            cotizaciones, fotos y notas de este cliente. No se puede deshacer. Usalo cuando el cliente pida que borren sus
+            datos.
+          </p>
+          <label htmlFor="borrarConfirmacion">
+            Para confirmar, escribí el número del cliente (<span className="tnum">{fmtNum(clienteWa)}</span>)
+          </label>
+          <input
+            id="borrarConfirmacion"
+            className="ficha-notas-input"
+            inputMode="tel"
+            autoComplete="off"
+            value={confirmacion}
+            onChange={(e) => setConfirmacion(e.target.value)}
+          />
+          <button type="submit" className="ficha-notas-guardar" disabled={!coincide || borrar.isPending}>
+            {borrar.isPending ? "Borrando…" : "Borrar definitivamente"}
+          </button>
+          <button type="button" className="btn-ghost" onClick={() => setAbierto(false)} disabled={borrar.isPending}>
+            Cancelar
+          </button>
+          {borrar.isError && (
+            <div className="admin-error">{borrar.error instanceof Error ? borrar.error.message : "No se pudo borrar."}</div>
+          )}
+        </form>
+      )}
     </div>
   );
 }
