@@ -1945,18 +1945,12 @@ export async function manejarPanel(
 
     let cita: Cita;
     try {
-      cita = await repo.crearCita({
-        tenantId: tenant.id,
-        clienteWa,
-        clienteNombre,
-        servicioId,
-        empleadoId,
-        fecha,
-        hora,
-        placa,
-        precio,
-        origen: "manual",
-      });
+      cita = await repo.crearCita(
+        { tenantId: tenant.id, clienteWa, clienteNombre, servicioId, empleadoId, fecha, hora, placa, precio, origen: "manual" },
+        // Re-chequeo ATÓMICO (E7): bajo el lock de la fecha, que esa persona siga libre.
+        // Sin persona asignada no se verifica nada (walk-ins encimados, a propósito).
+        empleadoId ? (citas) => !empleadoOcupado(tenant, empleadoId, fecha, hora, servicioId, citas) : undefined,
+      );
     } catch (e) {
       if (esChoqueDeEmpleado(e)) {
         return json(res, 409, { ok: false, error: "Esa persona ya tiene una cita a esa hora" }), true;
@@ -2030,7 +2024,17 @@ export async function manejarPanel(
       }
       let cita: Cita | null;
       try {
-        cita = await repo.reprogramarCita(tenant.id, citaId, fecha, hora);
+        const empleadoDeLaCita = laCita.empleadoId;
+        cita = await repo.reprogramarCita(
+          tenant.id,
+          citaId,
+          fecha,
+          hora,
+          // Re-chequeo ATÓMICO (E7) de la persona de la cita; las citas ya vienen sin la propia.
+          empleadoDeLaCita
+            ? (citas) => !empleadoOcupado(tenant, empleadoDeLaCita, fecha, hora, laCita.servicioId, citas, citaId)
+            : undefined,
+        );
       } catch (e) {
         if (esChoqueDeEmpleado(e)) {
           return json(res, 409, { ok: false, error: "Esa persona ya tiene una cita a esa hora" }), true;
