@@ -790,6 +790,30 @@ export class RepositorioDrizzle implements Repositorio {
     });
   }
 
+  async mensajesRecientes(tenantId: string, conversacionId: string, limite: number): Promise<MensajeConversacion[]> {
+    if (limite <= 0) return [];
+    // Una sola consulta: el JOIN con la conversación aplica la frontera de tenant
+    // (wa_mensajes no tiene tenant_id). Los N MÁS RECIENTES (desc + limit) y se
+    // invierten a orden cronológico, mismo criterio que `obtenerOConversacion`. Sin
+    // `resolverMediaParaPanel`: el agente no lee `mediaUrl` (ver nota F9 más arriba).
+    const filas = await this.db
+      .select({ m: waMensajes })
+      .from(waMensajes)
+      .innerJoin(waConversaciones, eq(waConversaciones.id, waMensajes.conversacionId))
+      .where(and(eq(waMensajes.conversacionId, conversacionId), eq(waConversaciones.tenantId, tenantId)))
+      .orderBy(desc(waMensajes.creadoEn))
+      .limit(limite);
+    return filas.reverse().map(({ m }) => ({
+      rol: m.rol as "user" | "assistant",
+      contenido: m.contenido,
+      creadoEn: m.creadoEn.toISOString(),
+      porHumano: m.porHumano,
+      waMessageId: m.waMessageId ?? undefined,
+      mediaUrl: m.mediaUrl ?? undefined,
+      mediaTipo: (m.mediaTipo as "imagen" | undefined) ?? undefined,
+    }));
+  }
+
   async obtenerConversacionPorId(tenantId: string, conversacionId: string): Promise<Conversacion | null> {
     // Las dos lecturas (conversación + mensajes) van en paralelo: los mensajes se
     // filtran por conversacionId, que ya conocemos, así no hay que esperar la primera

@@ -30,36 +30,66 @@ function precioUsdAMillonesimos(envVar: string | undefined, defaultUsd: number):
 }
 
 interface TarifaModelo {
-  /** Millonésimos de USD por CADA millón de tokens de entrada. */
+  /** Millonésimos de USD por CADA millón de tokens de entrada NO cacheados. */
   entradaPor1M: number;
+  /**
+   * Millonésimos de USD por CADA millón de tokens de entrada servidos desde el caché
+   * automático de prompts de OpenAI (`usage.prompt_tokens_details.cached_tokens`). Hoy
+   * es la mitad (familia 4o) o menos (4.1, 5) de la tarifa de entrada normal.
+   */
+  cachePor1M: number;
   /** Millonésimos de USD por CADA millón de tokens de salida. */
   salidaPor1M: number;
 }
 
+/** Arma una fila de la tabla desde precios en USD por 1M tokens (entrada / caché / salida). */
+function tarifa(entradaUsd: number, cacheUsd: number, salidaUsd: number): TarifaModelo {
+  return {
+    entradaPor1M: Math.round(entradaUsd * USD_A_MILLONESIMOS),
+    cachePor1M: Math.round(cacheUsd * USD_A_MILLONESIMOS),
+    salidaPor1M: Math.round(salidaUsd * USD_A_MILLONESIMOS),
+  };
+}
+
 /**
- * Tabla de precios por modelo (item 3 del ítem F13: "Tarifas configurables").
- * Env vars para actualizar sin deploy (en USD normales, no en millonésimos):
- *   OPENAI_PRECIO_GPT4O_MINI_ENTRADA_USD_POR_1M
- *   OPENAI_PRECIO_GPT4O_MINI_SALIDA_USD_POR_1M
+ * Tabla de precios por modelo (item 3 del ítem F13: "Tarifas configurables"), con las
+ * tres tarifas que cobra OpenAI: entrada, entrada cacheada y salida (USD por 1M tokens).
  *
- * ⚠️ Default vigente a la fecha de AUDIT.md § 7 ("Estimación por conversación"): $0,15/1M
- * in · $0,60/1M out. Revisar contra la tabla de precios de OpenAI antes de confiar en esto
- * para fijar el precio de venta de un plan nuevo.
+ * El modelo en producción (gpt-4o-mini) se puede actualizar SIN DEPLOY con estas env
+ * vars (en USD normales, no en millonésimos):
+ *   OPENAI_PRECIO_GPT4O_MINI_ENTRADA_USD_POR_1M   (default 0.15)
+ *   OPENAI_PRECIO_GPT4O_MINI_CACHE_USD_POR_1M     (default 0.075)
+ *   OPENAI_PRECIO_GPT4O_MINI_SALIDA_USD_POR_1M    (default 0.60)
+ * El resto de las filas son los precios públicos de OpenAI para poder cambiar
+ * `OPENAI_MODEL` sin que el costo se estime mal en silencio.
+ *
+ * ⚠️ Defaults vigentes a la fecha de AUDIT.md § 7 ("Estimación por conversación") y de la
+ * tabla pública de OpenAI. Revisar en https://openai.com/api/pricing/ antes de confiar en
+ * esto para fijar el precio de venta de un plan nuevo.
  */
 const TARIFAS: Record<string, TarifaModelo> = {
   "gpt-4o-mini": {
     entradaPor1M: precioUsdAMillonesimos(process.env.OPENAI_PRECIO_GPT4O_MINI_ENTRADA_USD_POR_1M, 0.15),
+    cachePor1M: precioUsdAMillonesimos(process.env.OPENAI_PRECIO_GPT4O_MINI_CACHE_USD_POR_1M, 0.075),
     salidaPor1M: precioUsdAMillonesimos(process.env.OPENAI_PRECIO_GPT4O_MINI_SALIDA_USD_POR_1M, 0.6),
   },
+  "gpt-4o": tarifa(2.5, 1.25, 10),
+  "gpt-4.1": tarifa(2, 0.5, 8),
+  "gpt-4.1-mini": tarifa(0.4, 0.1, 1.6),
+  "gpt-4.1-nano": tarifa(0.1, 0.025, 0.4),
+  "gpt-5": tarifa(1.25, 0.125, 10),
+  "gpt-5-mini": tarifa(0.25, 0.025, 2),
+  "gpt-5-nano": tarifa(0.05, 0.005, 0.4),
 };
 
 // Modelo de fallback cuando MODELO (env OPENAI_MODEL) no tiene fila en la tabla de arriba:
 // se estima con la tarifa de gpt-4o-mini en vez de dejar el costo en cero en silencio. Se
 // avisa por consola una sola vez por modelo (no en cada turno) para no inundar los logs.
+// Un id con fecha (ej. "gpt-4o-mini-2024-07-18") usa la fila de su modelo base.
 const avisados = new Set<string>();
 function tarifaDe(modelo: string): TarifaModelo {
-  const tarifa = TARIFAS[modelo];
-  if (tarifa) return tarifa;
+  const exacta = TARIFAS[modelo] ?? TARIFAS[modelo.replace(/-\d{4}-\d{2}-\d{2}$/, "")];
+  if (exacta) return exacta;
   if (!avisados.has(modelo)) {
     avisados.add(modelo);
     console.warn(`[costoLlm] no hay tarifa configurada para el modelo "${modelo}"; se estima con la de gpt-4o-mini`);
@@ -70,11 +100,24 @@ function tarifaDe(modelo: string): TarifaModelo {
 /**
  * Costo estimado de una llamada (o de un turno completo, sumando los tokens de todos sus
  * pasos de tool-calling), en millonésimos de dólar. Redondea UNA vez — no llamar por token.
+ *
+ * `tokensEntrada` es el `prompt_tokens` TOTAL que reporta OpenAI, que YA incluye a los
+ * cacheados; `tokensCacheados` (`prompt_tokens_details.cached_tokens`) es la parte de esos
+ * que se cobró a la tarifa de caché. Se acota a [0, tokensEntrada] por si llega un dato raro.
  */
-export function calcularCostoMillonesimos(modelo: string, tokensEntrada: number, tokensSalida: number): number {
+export function calcularCostoMillonesimos(
+  modelo: string,
+  tokensEntrada: number,
+  tokensSalida: number,
+  tokensCacheados = 0,
+): number {
   if (tokensEntrada <= 0 && tokensSalida <= 0) return 0;
-  const tarifa = tarifaDe(modelo);
-  return Math.round((tokensEntrada * tarifa.entradaPor1M + tokensSalida * tarifa.salidaPor1M) / USD_A_MILLONESIMOS);
+  const t = tarifaDe(modelo);
+  const cacheados = Math.min(Math.max(tokensCacheados, 0), Math.max(tokensEntrada, 0));
+  const noCacheados = Math.max(tokensEntrada, 0) - cacheados;
+  return Math.round(
+    (noCacheados * t.entradaPor1M + cacheados * t.cachePor1M + tokensSalida * t.salidaPor1M) / USD_A_MILLONESIMOS,
+  );
 }
 
 // Whisper (transcripción de audio) cobra por MINUTO, no por token — no encaja en la tabla

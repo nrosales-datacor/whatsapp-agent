@@ -77,7 +77,7 @@ export const TOOLS: ChatCompletionTool[] = [
       parameters: {
         type: "object",
         properties: {
-          nombre: { type: "string", description: "Nombre del cliente." },
+          nombre: { type: "string", description: "Nombre del cliente (máx. 80 caracteres)." },
           servicioId: { type: "string", description: "id del servicio agendable elegido." },
           fecha: { type: "string", description: "Fecha en formato YYYY-MM-DD." },
           hora: { type: "string", description: "Hora en formato HH:mm (24h)." },
@@ -168,14 +168,17 @@ export const TOOLS: ChatCompletionTool[] = [
     function: {
       name: "agregar_addon_a_cita",
       description:
-        "Agrega el add-on sugerido a una cita ya agendada, cuando el cliente ACEPTA la oferta de upsell que le hiciste. Usá el citaId y el addonId que te dio el resultado de agendar_cita (campo addonSugerido).",
+        "Agrega el add-on sugerido a una cita ya agendada, cuando el cliente ACEPTA la oferta de upsell que le hiciste (en el mismo mensaje o en uno posterior). El addonId está en la lista de servicios del prompt (y en addonSugerido de agendar_cita). Si no tenés el citaId a mano, omitilo: el sistema usa la cita activa del cliente que lleva ese add-on.",
       parameters: {
         type: "object",
         properties: {
-          citaId: { type: "string", description: "id de la cita a la que se agrega el add-on." },
-          addonId: { type: "string", description: "id del add-on (addonSugerido.addonId que te devolvió agendar_cita)." },
+          citaId: {
+            type: "string",
+            description: "id de la cita a la que se agrega el add-on. Opcional: omitilo si no lo tenés exacto (NO lo inventes).",
+          },
+          addonId: { type: "string", description: "id del add-on (addonSugerido.addonId, o el addonId de la lista de servicios)." },
         },
-        required: ["citaId", "addonId"],
+        required: ["addonId"],
         additionalProperties: false,
       },
     },
@@ -185,14 +188,17 @@ export const TOOLS: ChatCompletionTool[] = [
     function: {
       name: "rechazar_addon",
       description:
-        "Registra que el cliente NO quiso el add-on que le ofreciste (dijo que no, o no mostró interés). Llamala para no volver a insistir con lo mismo pronto. Usá el citaId y el addonId de la oferta que le hiciste (addonSugerido de agendar_cita).",
+        "Registra que el cliente NO quiso el add-on que le ofreciste (dijo que no, o no mostró interés). Llamala para no volver a insistir con lo mismo pronto. Mismo criterio de ids que agregar_addon_a_cita: el citaId es opcional.",
       parameters: {
         type: "object",
         properties: {
-          citaId: { type: "string", description: "id de la cita cuya oferta de add-on se rechazó." },
-          addonId: { type: "string", description: "id del add-on rechazado (addonSugerido.addonId)." },
+          citaId: {
+            type: "string",
+            description: "id de la cita cuya oferta de add-on se rechazó. Opcional: omitilo si no lo tenés exacto (NO lo inventes).",
+          },
+          addonId: { type: "string", description: "id del add-on rechazado (addonSugerido.addonId, o el de la lista de servicios)." },
         },
-        required: ["citaId", "addonId"],
+        required: ["addonId"],
         additionalProperties: false,
       },
     },

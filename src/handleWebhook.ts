@@ -28,6 +28,7 @@ import {
   respuestaConsentimiento,
 } from "./campaigns/consentimiento";
 import { correrAgente } from "./agent/runAgent";
+import { HISTORIAL_MAX_MENSAJES, recortarHistorial } from "./agent/historial";
 import { notificarOperador } from "./panel/notificaciones";
 import { registrarMensaje } from "./observabilidad/metricas";
 import { log } from "./observabilidad/log";
@@ -363,6 +364,13 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio, db?: DB)
  * Si la relectura falla o la conversación ya no existe (no debería pasar en la
  * práctica), cae de vuelta al snapshot del payload para no dejar al cliente sin
  * respuesta.
+ *
+ * Revisión pre-venta 2026-10: se lee con `mensajesRecientes` (liviana, solo los
+ * últimos N) en vez de `obtenerConversacionPorId` (100 mensajes + media firmada, pensada
+ * para el panel), y el resultado —o el snapshot— se recorta a la ventana del agente
+ * (`recortarHistorial`: `AGENTE_HISTORIAL_MAX_MENSAJES` / `AGENTE_HISTORIAL_MAX_DIAS`).
+ * Se pide UNO más que el tope porque la relectura trae también el turno actual, que se
+ * excluye acá.
  */
 async function historialFresco(
   repo: Repositorio,
@@ -372,14 +380,14 @@ async function historialFresco(
   snapshot: MensajeConversacion[],
 ): Promise<MensajeConversacion[]> {
   try {
-    const fresca = await repo.obtenerConversacionPorId(tenant.id, conv.id);
-    if (!fresca) return snapshot;
-    return waMessageIdActual
-      ? fresca.mensajes.filter((m) => m.waMessageId !== waMessageIdActual)
-      : fresca.mensajes.slice(0, -1);
+    const recientes = await repo.mensajesRecientes(tenant.id, conv.id, HISTORIAL_MAX_MENSAJES + 1);
+    if (!recientes.length) return recortarHistorial(snapshot);
+    return recortarHistorial(
+      waMessageIdActual ? recientes.filter((m) => m.waMessageId !== waMessageIdActual) : recientes.slice(0, -1),
+    );
   } catch (e) {
     console.error("[historialFresco] no se pudo releer la conversación, se usa el snapshot de la ingesta:", e);
-    return snapshot;
+    return recortarHistorial(snapshot);
   }
 }
 

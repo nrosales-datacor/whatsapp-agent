@@ -1,5 +1,6 @@
 import type { Tenant } from "../types";
 import { inferirPaisRegistro } from "../config/validadores";
+import { tenantPuede } from "../billing/planes";
 
 const DIAS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
 
@@ -19,6 +20,14 @@ const FRASE_REGISTRO: Record<"vos" | "tu" | "usted", string> = {
  *
  * CUMPLIMIENTO (política de Meta, 15-ene-2026): el agente es de SOPORTE ACOTADO de ESTE
  * negocio, NO un asistente general. Si le piden algo fuera de alcance, redirige con amabilidad.
+ *
+ * CACHÉ DE PROMPTS (revisión pre-venta 2026-10): OpenAI cachea solo el PREFIJO idéntico de
+ * la request (tools + mensajes, desde 1024 tokens). Antes la hora al minuto iba en las
+ * primeras líneas, así que el prefijo cambiaba cada minuto y la base de conocimiento
+ * (hasta 12 000 caracteres) nunca pegaba en el caché. Ahora este prompt es 100% ESTABLE
+ * para un tenant (no depende de la hora): la fecha/hora va en un mensaje system aparte,
+ * al final, justo antes del turno actual (`construirMensajeFecha`). No metas acá nada
+ * que cambie entre llamadas.
  */
 export function construirSystemPrompt(tenant: Tenant): string {
   const inferido = inferirPaisRegistro(tenant.timezone);
@@ -41,6 +50,19 @@ export function construirSystemPrompt(tenant: Tenant): string {
     .join("\n");
 
   const agendables = tenant.servicios.filter((s) => s.agendable);
+  // Upsell (Carril D 1.2): el add-on de cada servicio va con su id en el prompt. El
+  // historial solo guarda TEXTO, así que el `addonId` que devuelve `agendar_cita` se
+  // perdía para el turno siguiente ("sí, agregalo") y el modelo lo adivinaba. Es config
+  // estable del tenant: no rompe el caché del prefijo.
+  const hayUpsell = tenantPuede(tenant, "upsell");
+  const lineaAddon = (s: Tenant["servicios"][number]): string => {
+    if (!hayUpsell || !s.addonActivo || !s.addonSugeridoId) return "";
+    const addon = tenant.servicios.find((a) => a.id === s.addonSugeridoId);
+    if (!addon) return "";
+    const precioAddon = s.addonPrecioPromo ?? addon.precio;
+    const precioTexto = precioAddon != null ? `, ${tenant.moneda}${precioAddon.toLocaleString("es-CR")}` : "";
+    return ` [add-on al agendarlo: ${addon.nombre} (addonId: ${addon.id}${precioTexto})]`;
+  };
   const serviciosAgenda = agendables.length
     ? agendables
         .map((s) => {
@@ -49,7 +71,7 @@ export function construirSystemPrompt(tenant: Tenant): string {
             : s.precioVariable || s.precio == null
               ? "se cotiza"
               : `${tenant.moneda}${s.precio.toLocaleString("es-CR")}`;
-          return `- ${s.nombre} (id: ${s.id}): ${precio}, ~${s.duracionMin} min${s.descripcion ? ` — ${s.descripcion}` : ""}`;
+          return `- ${s.nombre} (id: ${s.id}): ${precio}, ~${s.duracionMin} min${s.descripcion ? ` — ${s.descripcion}` : ""}${lineaAddon(s)}`;
         })
         .join("\n")
     : "(ninguno)";
@@ -64,35 +86,8 @@ export function construirSystemPrompt(tenant: Tenant): string {
   const datos = tenant.kb.datos.map((d) => `- ${d}`).join("\n");
   const politicas = tenant.kb.politicas.map((p) => `- ${p}`).join("\n");
 
-  // Fecha/hora actual en la zona del tenant. CRÍTICO: sin esto el modelo no sabe en qué
-  // año está y agenda en fechas equivocadas.
-  const ahoraTexto = new Intl.DateTimeFormat("es-CR", {
-    timeZone: tenant.timezone,
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(new Date());
-  const hoyISO = new Intl.DateTimeFormat("en-CA", {
-    timeZone: tenant.timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-  const anioActual = hoyISO.slice(0, 4);
-
   // ── Bloques condicionales (agenda) ──
   const trabajoAgenda = hayAgenda ? " y AGENDAR citas cuando corresponda" : "";
-  const fechaBloque = hayAgenda
-    ? `\n\n# FECHA Y HORA ACTUAL (¡USALA SIEMPRE!)
-Ahora mismo es: ${ahoraTexto} (zona ${tenant.timezone}). Hoy es ${hoyISO}.
-Interpretá "hoy", "mañana", "el lunes", "el 18", "18 de junio", etc. SIEMPRE en base a esta fecha. Al agendar, la fecha va en formato YYYY-MM-DD y SIEMPRE con el año actual (${anioActual}). JAMÁS agendes en un año pasado ni inventes el año.`
-    : `\n\n# FECHA Y HORA ACTUAL
-Ahora mismo es: ${ahoraTexto} (zona ${tenant.timezone}). Hoy es ${hoyISO}. Usá esta fecha para interpretar "hoy", "mañana", etc.`;
-
   // Equipo que atiende (ALTO-07). Solo entra al prompt si el negocio cargó gente: un
   // negocio de una sola persona no paga ni un token por esta rama.
   const equipoActivo = (tenant.empleados ?? []).filter((e) => e.activo);
@@ -116,7 +111,7 @@ Ahora mismo es: ${ahoraTexto} (zona ${tenant.timezone}). Hoy es ${hoyISO}. Usá 
     ? `
 - AGENDAR: para agendar necesitás como mínimo: nombre del cliente, CUÁL servicio quiere (de la lista "Servicios que se agendan"), fecha y hora. ANTES de agendar, repetile al cliente para que confirme: el servicio, el precio (si aplica), la fecha y la hora. Al llamar la herramienta de agendar, incluí el campo "precio" con el monto que cotizaste si el servicio tiene precio.
 - SEGUIMIENTO DE COTIZACIONES: cada vez que le des un PRECIO a un servicio agendable (cotización con intención de venta) y el cliente NO agende en ese momento, llamá \`registrar_cotizacion\` con el servicio y el monto. Es silencioso (no lo menciones): habilita un recordatorio si no vuelve a escribir. No la llames para servicios que no se agendan ni si el cliente ya agendó.
-- UPSELL AL AGENDAR: si el resultado de \`agendar_cita\` trae \`addonSugerido\` (con un nombre y, si tiene, un precioPromo), ofreceselo al cliente UNA sola vez, casual, en el MISMO mensaje donde confirmás la cita. Si acepta, llamá \`agregar_addon_a_cita\` con el citaId y el addonId. Si declina o no muestra interés, llamá \`rechazar_addon\` con esos mismos ids para no volver a insistir pronto. Si no viene \`addonSugerido\`, no ofrezcas nada.
+- UPSELL AL AGENDAR: si el resultado de \`agendar_cita\` trae \`addonSugerido\` (con un nombre y, si tiene, un precioPromo), ofreceselo al cliente UNA sola vez, casual, en el MISMO mensaje donde confirmás la cita. Si acepta (aunque sea en un mensaje posterior), llamá \`agregar_addon_a_cita\` con el addonId (está en la lista de servicios, entre corchetes); el citaId podés omitirlo si no lo tenés a mano: el sistema usa la cita activa del cliente que lleva ese add-on. Si declina o no muestra interés, llamá \`rechazar_addon\` igual. Si no viene \`addonSugerido\`, no ofrezcas nada (aunque el servicio tenga add-on en la lista).
 - DISPONIBILIDAD: para OFRECERLE horarios al cliente usá \`ofrecer_horarios\` (le muestra los horarios como una LISTA TOCABLE de WhatsApp). Redactá una frase corta invitándolo a elegir y NO repitas los horarios en texto. Si hay muchos, preguntale primero si prefiere mañana o tarde y volvé a llamarla con esa franja. Usá \`consultar_disponibilidad\` (texto, no tocable) solo para VERIFICAR internamente una hora puntual que el cliente ya pidió. NUNCA inventes horarios ni digas que no hay campo sin confirmarlo con una de estas herramientas.
 - Solo podés agendar en los horarios EXACTOS que devuelve la herramienta. Si el cliente pide una hora intermedia, ofrecele la más cercana disponible.${reglaEquipo}
 - GESTIÓN DE CITAS EXISTENTES: el cliente puede consultar, mover o cancelar su cita por acá; se identifica por su número de WhatsApp (no le pidas datos que ya tenés). Usá \`consultar_mi_cita\` para ver sus citas activas, \`reprogramar_cita\` para mover y \`cancelar_cita\` para cancelar, SIEMPRE después de confirmar con el cliente. Si tiene varias citas activas, preguntale a cuál se refiere y pasá el citaId de \`consultar_mi_cita\`. Si no tiene ninguna, decíselo con amabilidad${hayAgenda ? " y ofrecé agendar una" : ""}.`
@@ -131,7 +126,7 @@ Ahora mismo es: ${ahoraTexto} (zona ${tenant.timezone}). Hoy es ${hoyISO}. Usá 
   return `Sos el asistente de WhatsApp de "${tenant.nombre}", ${tipoNegocio}${pais ? ` en ${pais}` : ""}.
 
 # TU ÚNICO TRABAJO
-Atender a clientes de ESTE negocio: responder sus dudas sobre servicios, precios, horarios y ubicación${trabajoAgenda}. Nada más.${fechaBloque}
+Atender a clientes de ESTE negocio: responder sus dudas sobre servicios, precios, horarios y ubicación${trabajoAgenda}. Nada más.
 
 # REGLAS ESTRICTAS
 - Hablá en español${FRASE_REGISTRO[registro]}, ${tono}. Es WhatsApp: respuestas cortas.
@@ -157,4 +152,43 @@ ${datos}
 
 ## Políticas
 ${politicas}`;
+}
+
+/**
+ * Mensaje system con la fecha/hora actual en la zona del tenant. CRÍTICO: sin esto el
+ * modelo no sabe en qué año está y agenda en fechas equivocadas.
+ *
+ * Va APARTE del system prompt estable y al FINAL de la request (después del historial,
+ * justo antes del turno actual) para que el prefijo cacheable —prompt del tenant +
+ * historial— no cambie cada minuto (ver la nota de caché en `construirSystemPrompt`).
+ * `ahora` es inyectable para los tests.
+ */
+export function construirMensajeFecha(tenant: Tenant, ahora: Date = new Date()): string {
+  const hayAgenda = tenant.servicios.some((s) => s.agendable);
+  const ahoraTexto = new Intl.DateTimeFormat("es-CR", {
+    timeZone: tenant.timezone,
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(ahora);
+  const hoyISO = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tenant.timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(ahora);
+  const anioActual = hoyISO.slice(0, 4);
+
+  const fechaBloque = hayAgenda
+    ? `# FECHA Y HORA ACTUAL (¡USALA SIEMPRE!)
+Ahora mismo es: ${ahoraTexto} (zona ${tenant.timezone}). Hoy es ${hoyISO}.
+Interpretá "hoy", "mañana", "el lunes", "el 18", "18 de junio", etc. SIEMPRE en base a esta fecha. Al agendar, la fecha va en formato YYYY-MM-DD y SIEMPRE con el año actual (${anioActual}). JAMÁS agendes en un año pasado ni inventes el año.`
+    : `# FECHA Y HORA ACTUAL
+Ahora mismo es: ${ahoraTexto} (zona ${tenant.timezone}). Hoy es ${hoyISO}. Usá esta fecha para interpretar "hoy", "mañana", etc.`;
+
+  return fechaBloque;
 }
