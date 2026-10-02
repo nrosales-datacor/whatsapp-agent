@@ -342,6 +342,13 @@ cualquier otra rama, o un PR contra `main`, solo corre el typecheck/build (sin t
    `deploy_ci` (la privada, no la `.pub`). Borrá `deploy_ci`/`deploy_ci.pub` de tu disco después.
 4. Borrá el par de llaves local (`rm deploy_ci deploy_ci.pub`) una vez cargada — ya vive solo en
    el droplet (pública) y en GitHub (privada).
+5. **Gate de aprobación (G9, recomendado):** repo → *Settings* → *Environments* → *New
+   environment* `produccion` → marcá **Required reviewers** y agregate. Desde entonces cada push a
+   `main` corre CI completo, pero el job de deploy **espera** a que lo apruebes en la pestaña
+   *Actions* ("Review deployments"). Sin esta regla configurada, el deploy sigue siendo automático.
+6. **Backup antes de migrar (G9):** si el push trae archivos nuevos en `drizzle/`, el deploy corre
+   `scripts/backupDb.ts` antes de `migrar.ts`; si el backup falla, el deploy se corta **sin tocar la
+   base**. Requiere lo de la §19.1 en el droplet (`postgresql-client` + `BACKUP_DATABASE_URL`).
 
 El host, usuario, carpeta y nombre del proceso PM2 están hardcodeados en el workflow (no son
 secretos: ya están documentados en este mismo archivo, que vive en un repo privado). Si el droplet

@@ -77,6 +77,11 @@ jobs:
     needs: [verificar, e2e-panel]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    # Revisión pre-venta 2026-10 (G9): gate de aprobación. Con el environment
+    # "produccion" configurado en GitHub (Settings → Environments → produccion →
+    # Required reviewers), el deploy espera a que una persona lo apruebe en la pestaña
+    # Actions. Sin esa regla configurada, corre igual que antes (no rompe nada).
+    environment: produccion
     concurrency:
       group: deploy-produccion
       cancel-in-progress: false
@@ -130,8 +135,16 @@ jobs:
             set -e
             cd $DEPLOY_DIR
             git checkout main
+            antes=\$(git rev-parse HEAD)
             git pull
             npm ci
+            # G9: si este deploy trae migraciones nuevas, backup ANTES de migrar (el
+            # rollback de código no revierte el esquema). Si el backup falla, set -e
+            # corta el deploy sin tocar la base.
+            if [ -n \"\$(git diff --name-only \$antes HEAD -- drizzle/)\" ]; then
+              echo 'Migraciones nuevas: backup previo de la base…'
+              npx tsx scripts/backupDb.ts
+            fi
             npx tsx scripts/migrar.ts
             npx tsx scripts/seedTenants.ts
             npm ci --prefix web --include=dev
