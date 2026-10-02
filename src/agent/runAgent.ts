@@ -1,7 +1,8 @@
 import OpenAI from "openai";
 import type { ChatCompletionContentPart, ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import type { Cita, MensajeConversacion, MensajeInteractivo, Repositorio, Service, Tenant, VerificarHorario } from "../types";
-import { construirSystemPrompt } from "./systemPrompt";
+import { construirMensajeFecha, construirSystemPrompt } from "./systemPrompt";
+import { historialParaModelo } from "./historial";
 import { TOOLS } from "./tools";
 import { opcionEmpleado, opcionHorario } from "../whatsapp/client";
 import { empleadosElegibles, espaciosDisponibles, espaciosPorEmpleado } from "../booking/availability";
@@ -42,6 +43,39 @@ interface ContextoAgente {
 
 /** Máximo de filas que admite una lista de WhatsApp (límite duro de Meta). */
 const MAX_FILAS_LISTA = 10;
+
+/**
+ * Tope de citas ACTIVAS futuras por número de WhatsApp (revisión pre-venta 2026-10).
+ * Sin esto, un bromista llenaba la agenda desde un solo número. Env
+ * `MAX_CITAS_ACTIVAS_POR_CLIENTE` (1-50, default 3). Se lee en cada llamada para que
+ * los tests puedan cambiarlo sin reimportar el módulo.
+ */
+export function maxCitasActivasPorCliente(): number {
+  const n = Number(process.env.MAX_CITAS_ACTIVAS_POR_CLIENTE);
+  return Number.isInteger(n) && n >= 1 && n <= 50 ? n : 3;
+}
+
+/** Largo máximo de los campos de texto libre que el modelo pasa a las tools. */
+export const MAX_LARGO_NOMBRE = 80;
+export const MAX_LARGO_PLACA = 20;
+export const MAX_LARGO_MOTIVO = 300;
+/** Largo máximo de un id (servicio, empleado, cita, add-on) que manda el modelo. */
+const MAX_LARGO_ID = 100;
+
+/**
+ * Normaliza un texto libre que viene del modelo (y, detrás, del cliente) antes de
+ * persistirlo o mostrarlo en el panel: quita caracteres de control, saltos de línea y
+ * caracteres invisibles/de dirección, colapsa espacios y trunca a `max` caracteres (sin
+ * cortar un emoji a la mitad). `""` si no queda nada usable.
+ */
+export function textoLibre(v: unknown, max: number): string {
+  if (v == null) return "";
+  const limpio = String(v)
+    .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return Array.from(limpio).slice(0, max).join("").trim();
+}
 
 /**
  * Precio que se guarda en la cita (revisión pre-venta 2026-10, ALTO-09). Antes se
@@ -217,6 +251,13 @@ export async function ejecutarTool(
     const servicioId = String(args.servicioId);
     const fecha = String(args.fecha);
     const hora = String(args.hora);
+    // Texto libre acotado (revisión pre-venta 2026-10): el nombre y la placa se
+    // guardan en la cita y se muestran en panel, CRM y Calendar.
+    const nombreCliente = textoLibre(args.nombre, MAX_LARGO_NOMBRE);
+    const placa = textoLibre(args.placa, MAX_LARGO_PLACA) || undefined;
+    if (!nombreCliente) {
+      return JSON.stringify({ ok: false, motivo: "falta el nombre del cliente: pedíselo antes de agendar." });
+    }
     if (!servicioEsAgendable(servicioId)) {
       // Sin texto de rubro: el motivo lo lee el modelo y puede parafrasearlo al cliente,
       // así que "los lavados son por orden de llegada" no puede vivir en un motor
@@ -239,6 +280,22 @@ export async function ejecutarTool(
     // ya transcurrida de hoy, porque confía en lo que le devolvió `ofrecer_horarios`.
     if (fecha < hoyEnTz(tenant.timezone)) {
       return JSON.stringify({ ok: false, motivo: "no se puede agendar en una fecha pasada." });
+    }
+    // Tope de citas activas por número (revisión pre-venta 2026-10): un solo número no
+    // puede llenar la agenda. El motivo le da al modelo una salida concreta.
+    const maxCitas = maxCitasActivasPorCliente();
+    const activasCliente = await repo.citasActivasCliente(tenant.id, clienteWa, hoyEnTz(tenant.timezone));
+    if (activasCliente.length >= maxCitas) {
+      return JSON.stringify({
+        ok: false,
+        motivo: `este número ya tiene ${activasCliente.length} citas activas y el máximo por cliente es ${maxCitas}. No se puede agendar otra: ofrecele reprogramar o cancelar una de las que ya tiene (están en citasActivas), o escalá a una persona si de verdad necesita más.`,
+        citasActivas: activasCliente.map((c) => ({
+          citaId: c.id,
+          servicio: tenant.servicios.find((s) => s.id === c.servicioId)?.nombre ?? c.servicioId,
+          fecha: c.fecha,
+          hora: c.hora,
+        })),
+      });
     }
     // Validar que el espacio siga libre antes de crear (evita doble reserva). Con el
     // arreglo de BLOQ-09, esta lista además ya no incluye horas pasadas de hoy.
@@ -295,12 +352,12 @@ export async function ejecutarTool(
         {
           tenantId: tenant.id,
           clienteWa,
-          clienteNombre: String(args.nombre),
+          clienteNombre: nombreCliente,
           servicioId,
           empleadoId,
           fecha,
           hora,
-          placa: args.placa ? String(args.placa) : undefined,
+          placa,
           precio: precioDeCita(
             tenant.servicios.find((s) => s.id === servicioId),
             args.precio,
@@ -476,19 +533,54 @@ export async function ejecutarTool(
   }
 
   if (nombre === "agregar_addon_a_cita" || nombre === "rechazar_addon") {
-    const citaId = String(args.citaId);
-    const addonId = String(args.addonId);
+    const citaIdArg = textoLibre(args.citaId, MAX_LARGO_ID);
+    const addonIdArg = textoLibre(args.addonId, MAX_LARGO_ID);
     // Validamos citaId/addonId contra la config del tenant en vez de confiar en lo
     // que pasa el modelo: la cita debe ser del cliente y el addonId debe ser
     // EXACTAMENTE el que está configurado para el servicio de esa cita (evita que
     // el modelo agregue un add-on arbitrario o con un precio inventado).
     const activas = await repo.citasActivasCliente(tenant.id, clienteWa, hoyEnTz(tenant.timezone));
-    const cita = activas.find((c) => c.id === citaId);
-    if (!cita) return JSON.stringify({ ok: false, motivo: "no encontré esa cita entre las activas del cliente." });
-    const servicioBase = tenant.servicios.find((s) => s.id === cita.servicioId);
-    if (!servicioBase?.addonActivo || servicioBase.addonSugeridoId !== addonId) {
+    const addonDe = (c: Cita): string | undefined => {
+      const s = tenant.servicios.find((x) => x.id === c.servicioId);
+      return s?.addonActivo ? s.addonSugeridoId : undefined;
+    };
+    // Revisión pre-venta 2026-10: el historial solo guarda TEXTO, así que cuando el
+    // cliente acepta en el turno SIGUIENTE ("sí, agregalo") el modelo ya no tiene el
+    // citaId que devolvió `agendar_cita` y lo adivinaba → rechazo. Si el citaId falta o
+    // no es una cita activa del cliente, se resuelve acá: la ÚNICA cita activa del
+    // cliente que lleva ese add-on (o que lleva alguno, si tampoco vino el addonId).
+    // Con varias candidatas no se adivina: se devuelve la lista para que pregunte.
+    let cita = citaIdArg ? activas.find((c) => c.id === citaIdArg) : undefined;
+    if (!cita) {
+      const candidatas = activas.filter((c) => {
+        const a = addonDe(c);
+        return !!a && (!addonIdArg || a === addonIdArg);
+      });
+      if (candidatas.length > 1) {
+        return JSON.stringify({
+          ok: false,
+          motivo: "el cliente tiene varias citas activas con ese add-on; preguntale a cuál y pasá el citaId.",
+          citas: candidatas.map((c) => ({
+            citaId: c.id,
+            servicio: tenant.servicios.find((s) => s.id === c.servicioId)?.nombre ?? c.servicioId,
+            fecha: c.fecha,
+            hora: c.hora,
+          })),
+        });
+      }
+      if (candidatas.length === 0) {
+        return JSON.stringify({ ok: false, motivo: "no encontré una cita activa del cliente a la que corresponda ese add-on." });
+      }
+      cita = candidatas[0];
+    }
+    // El addonId lo fija la config de la cita: si el modelo no lo mandó, se usa ese;
+    // si mandó OTRO, se rechaza (no se agrega algo distinto de lo ofrecido).
+    const addonId = addonDe(cita);
+    if (!addonId || (addonIdArg && addonIdArg !== addonId)) {
       return JSON.stringify({ ok: false, motivo: "ese add-on no corresponde a esta cita." });
     }
+    const citaId = cita.id;
+    const servicioBase = tenant.servicios.find((s) => s.id === cita.servicioId)!;
 
     if (nombre === "rechazar_addon") {
       await repo.registrarRechazoAddon(tenant.id, clienteWa, addonId);
@@ -622,9 +714,16 @@ async function correrAgenteInterno(
       ]
     : textoUsuario;
 
+  // Orden pensado para el caché automático de prompts de OpenAI (revisión pre-venta
+  // 2026-10): primero lo ESTABLE (prompt del tenant, idéntico entre llamadas), después
+  // el historial (crece por el final entre turnos), y recién al final lo que cambia en
+  // cada llamada: la fecha/hora actual y el turno del cliente. Así el prefijo cacheable
+  // cubre la base de conocimiento y, dentro de una conversación, el historial previo.
+  const ahora = new Date();
   const mensajes: ChatCompletionMessageParam[] = [
     { role: "system", content: construirSystemPrompt(ctx.tenant) },
-    ...historial.map((m) => ({ role: m.rol, content: m.contenido }) as ChatCompletionMessageParam),
+    ...historialParaModelo(historial, ctx.tenant.timezone, ahora),
+    { role: "system", content: construirMensajeFecha(ctx.tenant, ahora) },
     { role: "user", content: contenidoUsuario },
   ];
 
@@ -638,6 +737,8 @@ async function correrAgenteInterno(
   // registro vive en el `finally`, que corre para los tres `return` de más abajo.
   let tokensEntrada = 0;
   let tokensSalida = 0;
+  // Parte de `tokensEntrada` servida desde el caché de prompts (se cobra más barata).
+  let tokensCacheados = 0;
   // Acciones de agenda que YA quedaron guardadas en este turno (ver `confirmacionDeAccion`).
   const confirmaciones: string[] = [];
   const confirmacion = () => (confirmaciones.length ? confirmaciones.join("\n") : undefined);
@@ -650,6 +751,9 @@ async function correrAgenteInterno(
           messages: mensajes,
           tools: TOOLS,
           temperature: 0.3,
+          // Agrupa en el mismo caché las requests de un tenant (comparten el prefijo
+          // largo: prompt + KB), lo que sube la tasa de aciertos del caché de OpenAI.
+          prompt_cache_key: `tenant:${ctx.tenant.id}`,
         });
       } catch (e) {
         // OpenAI falló DESPUÉS de una acción ya guardada: el cliente recibe la
@@ -664,6 +768,7 @@ async function correrAgenteInterno(
       if (res.usage) {
         tokensEntrada += res.usage.prompt_tokens ?? 0;
         tokensSalida += res.usage.completion_tokens ?? 0;
+        tokensCacheados += res.usage.prompt_tokens_details?.cached_tokens ?? 0;
       }
 
       const msg = res.choices[0].message;
@@ -683,7 +788,7 @@ async function correrAgenteInterno(
         if (call.function.name === "escalar_a_humano") {
           let motivo = "";
           try {
-            motivo = String(JSON.parse(call.function.arguments || "{}").motivo ?? "");
+            motivo = textoLibre(JSON.parse(call.function.arguments || "{}").motivo, MAX_LARGO_MOTIVO);
           } catch {
             // sin motivo legible: igual escalamos
           }
@@ -719,6 +824,11 @@ async function correrAgenteInterno(
   } finally {
     // Fire-and-forget (ver observabilidad/uso.ts): nunca debe agregar latencia a la
     // respuesta ya calculada arriba ni tumbar el turno si la base falla.
-    registrarUsoLlm(ctx.tenant.id, tokensEntrada, tokensSalida, calcularCostoMillonesimos(MODELO, tokensEntrada, tokensSalida));
+    registrarUsoLlm(
+      ctx.tenant.id,
+      tokensEntrada,
+      tokensSalida,
+      calcularCostoMillonesimos(MODELO, tokensEntrada, tokensSalida, tokensCacheados),
+    );
   }
 }

@@ -52,3 +52,35 @@ test("calcularCostoWhisperMillonesimos: sin duración (0, negativo o no numéric
   assert.equal(calcularCostoWhisperMillonesimos(-5), 0);
   assert.equal(calcularCostoWhisperMillonesimos(NaN), 0);
 });
+
+// ── Caché de prompts (revisión pre-venta 2026-10) ──
+// `prompt_tokens` de OpenAI YA incluye a los cacheados; la parte cacheada
+// (`prompt_tokens_details.cached_tokens`) se cobra a la tarifa de caché (gpt-4o-mini:
+// $0,075/1M, la mitad de la entrada normal).
+
+test("calcularCostoMillonesimos: los tokens cacheados se cobran a la tarifa de caché", () => {
+  // 1M de entrada, todos cacheados → $0,075 en vez de $0,15.
+  assert.equal(calcularCostoMillonesimos("gpt-4o-mini", 1_000_000, 0, 1_000_000), 75_000);
+  // 1M de entrada, 600k cacheados: 400k × 0,15 + 600k × 0,075 = 0,06 + 0,045 = $0,105.
+  assert.equal(calcularCostoMillonesimos("gpt-4o-mini", 1_000_000, 0, 600_000), 105_000);
+  // Sin el 4º argumento, el comportamiento previo (nada cacheado).
+  assert.equal(calcularCostoMillonesimos("gpt-4o-mini", 1_000_000, 0), 150_000);
+});
+
+test("calcularCostoMillonesimos: cacheados fuera de rango se acotan (nunca costo negativo ni de más)", () => {
+  assert.equal(
+    calcularCostoMillonesimos("gpt-4o-mini", 1_000, 0, 5_000),
+    calcularCostoMillonesimos("gpt-4o-mini", 1_000, 0, 1_000),
+  );
+  assert.equal(calcularCostoMillonesimos("gpt-4o-mini", 1_000, 0, -50), calcularCostoMillonesimos("gpt-4o-mini", 1_000, 0));
+});
+
+test("calcularCostoMillonesimos: la tabla tiene tarifas propias por modelo (no todo es gpt-4o-mini)", () => {
+  // gpt-4.1-mini: $0,40 in · $0,10 caché · $1,60 out por 1M.
+  assert.equal(calcularCostoMillonesimos("gpt-4.1-mini", 1_000_000, 1_000_000, 500_000), 200_000 + 50_000 + 1_600_000);
+  // Un id con fecha usa la fila de su modelo base.
+  assert.equal(
+    calcularCostoMillonesimos("gpt-4o-mini-2024-07-18", 1_000, 1_000, 500),
+    calcularCostoMillonesimos("gpt-4o-mini", 1_000, 1_000, 500),
+  );
+});

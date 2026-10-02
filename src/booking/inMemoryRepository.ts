@@ -479,6 +479,12 @@ export class RepositorioEnMemoria implements Repositorio {
     };
   }
 
+  async mensajesRecientes(tenantId: string, conversacionId: string, limite: number): Promise<MensajeConversacion[]> {
+    const c = this.conversaciones.get(conversacionId);
+    if (!c || c.tenantId !== tenantId || limite <= 0) return [];
+    return c.mensajes.slice(-limite).map((m) => ({ ...m, porHumano: m.porHumano ?? false }));
+  }
+
   async obtenerModo(tenantId: string, conversacionId: string): Promise<ModoConversacion | null> {
     const c = this.conversaciones.get(conversacionId);
     return c && c.tenantId === tenantId ? c.modo : null;

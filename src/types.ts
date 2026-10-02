@@ -932,6 +932,14 @@ export interface Repositorio {
   listarConversaciones(tenantId: string): Promise<ResumenConversacion[]>;
   /** Trae una conversación con su historial por id (null si no existe o no es del tenant). */
   obtenerConversacionPorId(tenantId: string, conversacionId: string): Promise<Conversacion | null>;
+  /**
+   * Últimos `limite` mensajes de una conversación, en orden cronológico, para armar el
+   * historial del AGENTE (revisión pre-venta 2026-10). Lectura liviana a propósito: a
+   * diferencia de `obtenerConversacionPorId` (payload del panel: 100 mensajes, URLs de
+   * media firmadas, cita activa), no firma media ni lee citas — corre en el hot path de
+   * cada turno. `[]` si la conversación no existe o no es del tenant.
+   */
+  mensajesRecientes(tenantId: string, conversacionId: string, limite: number): Promise<MensajeConversacion[]>;
   /** Lee SOLO el modo actual (lectura liviana, p. ej. para revalidar antes de que el bot responda). */
   obtenerModo(tenantId: string, conversacionId: string): Promise<ModoConversacion | null>;
   /** Marca como leídos los mensajes del cliente hasta ahora (resetea el badge). */

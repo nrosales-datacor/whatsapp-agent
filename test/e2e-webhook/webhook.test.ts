@@ -637,6 +637,104 @@ test("E5-a: aunque el payload traiga un historialPrevio VIEJO (snapshot desactua
   assert.equal(contenidos.filter((c) => c.includes("para el viernes")).length, 1, "el 3er mensaje (turno actual) NO debe duplicarse en el historial");
 });
 
+// ── Revisión pre-venta 2026-10: historial acotado y fechado + orden para el caché ──
+
+test("historial: el agente ve a lo sumo 20 mensajes previos, los de días viejos con su fecha, y la hora va al final", async () => {
+  const mock = instalarMockWebhook();
+  mock.programarLLM({ texto: "¡Claro! ¿Para qué día?" });
+  const repo = new RepositorioEnMemoria();
+  const tenant = tenantDemo();
+  const conv = await nuevaConv(repo, tenant);
+
+  // Cliente recurrente: 30 mensajes de hace 5 días + el turno actual (ya persistido en
+  // la ingesta, como en producción).
+  const haceCincoDias = Date.now() - 5 * 86_400_000;
+  for (let i = 0; i < 30; i++) {
+    await repo.guardarMensaje(tenant.id, conv.id, {
+      rol: i % 2 ? "assistant" : "user",
+      contenido: `viejo-${i}${i === 29 ? " (te espero mañana)" : ""}`,
+      creadoEn: new Date(haceCincoDias + i * 60_000).toISOString(),
+    });
+  }
+  await repo.guardarMensaje(tenant.id, conv.id, {
+    rol: "user",
+    contenido: "quiero otra cita",
+    creadoEn: new Date().toISOString(),
+    waMessageId: "wamid.hist.actual",
+  });
+  const pendiente = pendienteTexto(tenant, conv, { texto: "quiero otra cita" });
+  pendiente.entrante.messageId = "wamid.hist.actual";
+
+  await responderEntrante(pendiente, repo);
+
+  const req = mock.solicitudesLLM[0];
+  const msgs = req.messages as Array<{ role: string; content: string }>;
+  // 1) Prefijo estable: el system prompt del tenant no lleva la hora.
+  assert.equal(msgs[0].role, "system");
+  assert.doesNotMatch(msgs[0].content, /Ahora mismo es/);
+  // 2) La fecha/hora va al final, justo antes del turno actual.
+  assert.equal(msgs.at(-2)!.role, "system");
+  assert.match(msgs.at(-2)!.content, /Ahora mismo es/);
+  assert.deepEqual(msgs.at(-1), { role: "user", content: "quiero otra cita" });
+  // 3) Historial acotado a 20 (los más recientes) y sin duplicar el turno actual.
+  const conversacion = msgs.slice(1, -2).filter((m) => m.role !== "system");
+  assert.equal(conversacion.length, 20);
+  assert.equal(conversacion[0].content, "viejo-10");
+  assert.equal(msgs.filter((m) => m.content === "quiero otra cita").length, 1);
+  // 4) Los mensajes de hace 5 días van precedidos de su fecha relativa.
+  const separador = msgs.slice(1, -2).find((m) => m.role === "system");
+  assert.ok(separador, "debe haber un separador de fecha para los mensajes viejos");
+  assert.match(separador!.content, /hace 5 días/);
+  // 5) Caché agrupado por tenant.
+  assert.equal(req.prompt_cache_key, `tenant:${tenant.id}`);
+});
+
+// ── Revisión pre-venta 2026-10: upsell aceptado en el turno SIGUIENTE ──
+
+test("upsell: el cliente acepta el add-on en el mensaje siguiente y el bot lo agrega sin el citaId", async () => {
+  const mock = instalarMockWebhook();
+  const fecha = fechaFutura(4);
+  const repo = new RepositorioEnMemoria();
+  const tenant = tenantDemo({
+    plan: "pro",
+    servicios: [
+      {
+        id: "limpieza_dental",
+        nombre: "Limpieza dental",
+        precio: 25000,
+        duracionMin: 45,
+        agendable: true,
+        addonSugeridoId: "fluor",
+        addonPrecioPromo: 8000,
+        addonActivo: true,
+      },
+      { id: "fluor", nombre: "Aplicación de flúor", precio: 9000, duracionMin: 15 },
+    ],
+  });
+  const conv = await nuevaConv(repo, tenant);
+
+  // Turno 1: agenda; el resultado de la tool trae addonSugerido y el bot lo ofrece.
+  mock.programarLLM(
+    { tool: "agendar_cita", args: { servicioId: "limpieza_dental", fecha, hora: "09:00", nombre: "Diego" } },
+    { texto: "¡Listo, quedó tu cita! ¿Te agrego la aplicación de flúor por ₡8.000?" },
+  );
+  await responderEntrante(pendienteTexto(tenant, conv, { texto: `limpieza el ${fecha} a las 9` }), repo);
+
+  // Turno 2: el historial solo tiene TEXTO (sin el citaId). El modelo toma el addonId
+  // del prompt y omite el citaId; el servidor resuelve la cita activa.
+  mock.programarLLM({ tool: "agregar_addon_a_cita", args: { addonId: "fluor" } }, { texto: "¡Agregado! 🦷" });
+  await responderEntrante(pendienteTexto(tenant, conv, { texto: "sí, agregalo" }), repo);
+
+  const promptTurno2 = mock.solicitudesLLM[2].messages[0].content as string;
+  assert.match(promptTurno2, /addonId: fluor/, "el id del add-on está en el prompt (no depende del historial)");
+  const resultadoTool = mock.solicitudesLLM[3].messages.at(-1);
+  assert.equal(resultadoTool.role, "tool");
+  assert.equal(JSON.parse(resultadoTool.content).ok, true, resultadoTool.content);
+  const [cita] = await repo.citasActivasCliente(tenant.id, CLIENTE, fechaFutura(0));
+  assert.deepEqual(cita.addons, [{ servicioId: "fluor", precio: 8000 }]);
+  assert.equal(mock.enviados.at(-1)!.texto, "¡Agregado! 🦷");
+});
+
 // ── Fase de ingesta: dedup por wamid ──
 
 test("dedup por wamid: reenviar el mismo mensaje no re-procesa (ingerirEntrante)", async () => {
