@@ -694,6 +694,31 @@ whatsapp-bot-worker`) y volvé al `pm2 start npm --name whatsapp-bot -- start` d
 `ROL` en el `.env` (o con `ROL=todo` explícito) — es exactamente el comportamiento de siempre,
 la tabla `wa_lideres` queda simplemente sin usar.
 
+## 22. Alertas de "bot mudo" a la plataforma (OPCIONAL, recomendado)
+
+`/salud` solo responde 503 si se cae la base o el caché de tenants. Hay fallas que dejan a
+UN negocio sin bot sin que nada se caiga: worker colgado (cola atascada), mensajes que
+agotan reintentos (DLQ), un token de Meta revocado (HTTP 401 / error Graph 190), un número
+que dejó de recibir webhooks, o el tope del plan agotado. Para eso corre un scheduler de
+vigilancia (`src/observabilidad/vigilancia.ts`, cada `ALERTAS_INTERVALO_MIN`, solo en el
+proceso líder) y el envío a WhatsApp detecta el token inválido al momento.
+
+1. Creá un Incoming Webhook en Slack (o un webhook de canal en Discord) y pegá la URL en
+   `ALERTAS_WEBHOOK_URL` del `.env`. Sin ella, las alertas igual quedan en `pm2 logs`
+   (`grep alerta_plataforma`) y en Sentry si hay `SENTRY_DSN`.
+2. Ajustá los umbrales si hace falta (`ALERTA_*` en `.env.example`). El de "sin entrantes"
+   cuenta horas **hábiles** según el horario y la zona horaria de cada negocio.
+3. `pm2 restart whatsapp-bot`. Al arrancar se loguea `Alertas a la plataforma: log + …`.
+4. Para ver el estado en vivo (requiere `SALUD_DETALLE_TOKEN` en el `.env`): `curl -s "https://TU-DOMINIO/salud?detalle=1&token=$SALUD_DETALLE_TOKEN" | jq .vigilancia`
+   (sin datos personales: solo ids de negocio, conteos y tiempos). Es informativo: **no**
+   cambia el 200/503 del uptime monitor.
+
+Con procesos separados (paso 21), la marca de "token inválido" vive en el proceso
+`worker`: mirá su `/salud?detalle=1` (puerto del worker). La alerta sale igual al momento.
+
+Para el botón "Mejorar plan" del aviso de cuota del panel, definí
+`PLATAFORMA_CONTACTO_WHATSAPP` (solo dígitos) o `PLATAFORMA_CONTACTO_EMAIL`.
+
 ## Mantenimiento rápido
 
 | Acción | Comando |

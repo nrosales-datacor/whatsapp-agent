@@ -146,6 +146,28 @@ export interface Sesion {
   /** Ventana de 24h (Carril D, 0.3): true si el negocio configuró la plantilla de
    * reapertura — habilita el botón "Reabrir conversación" fuera de ventana. */
   reaperturaConfigurada: boolean;
+  /** Tope mensual de conversaciones (F10). Opcional: un backend viejo no lo manda. */
+  cuotaMensual?: CuotaMensual;
+  /** Contacto de la plataforma para "Mejorar plan" (sin pasarela de pago todavía). */
+  contactoPlataforma?: ContactoPlataforma;
+  /** Tope mensual de gasto de IA (USD). Al excederse el bot se pausa igual que con la cuota. */
+  gastoLlmMensual?: { topeUsd: number | null; porcentaje: number | null; alcanzo80: boolean; excedido: boolean };
+}
+
+/** Estado del tope mensual de conversaciones del negocio (ver src/observabilidad/cuotas.ts). */
+export interface CuotaMensual {
+  /** null = sin tope (plan Pro o interruptor del superadmin). */
+  tope: number | null;
+  usados: number;
+  porcentaje: number | null;
+  alcanzo80: boolean;
+  excedido: boolean;
+}
+
+/** A dónde manda el botón "Mejorar plan": WhatsApp (solo dígitos) y/o correo. */
+export interface ContactoPlataforma {
+  whatsapp: string | null;
+  email: string | null;
 }
 
 /** La ficha que devuelve el panel agrega el nombre del servicio a cada ítem del historial. */
