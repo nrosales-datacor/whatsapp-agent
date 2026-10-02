@@ -11,6 +11,15 @@ import type { AddonCita, Bloqueo, Empleado, HorarioDia, KnowledgeBase, Pendiente
 //   1. Pegá estas tablas en tu paquete @gp/db (src/schema/…) y exportálas.
 //   2. Como son multi-tenant (columna tenant_id), agregá políticas RLS en tu
 //      flujo `rls/apply.ts`, igual que tus otras tablas.
+//
+// RLS (revisión pre-venta 2026-10, G2): TODAS las tablas llevan `.enableRLS()` y,
+// por ahora, NINGUNA política. Supabase expone `public` por su Data API (PostgREST)
+// con la anon key —que es pública— y le da grants por defecto a `anon`/
+// `authenticated`: sin RLS, cualquiera leía/escribía todas las tablas de todos los
+// tenants. Con RLS activo y sin políticas, esos roles no ven ni una fila; la app no
+// cambia porque conecta como `postgres` (BYPASSRLS). Las políticas por tenant y el
+// rol sin BYPASSRLS son F1. Toda tabla NUEVA debe llevar `.enableRLS()` (lo exige
+// `test/security/rls.test.ts`).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const id = () => text("id").primaryKey().$defaultFn(() => randomUUID());
@@ -52,7 +61,7 @@ export const waConversaciones = pgTable(
     uq: uniqueIndex("wa_conv_tenant_cliente_uq").on(t.tenantId, t.clienteWa),
     idxTenant: index("wa_conv_tenant_idx").on(t.tenantId),
   }),
-);
+).enableRLS();
 
 export const waMensajes = pgTable(
   "wa_mensajes",
@@ -84,7 +93,7 @@ export const waMensajes = pgTable(
     idxConv: index("wa_msg_conv_idx").on(t.conversacionId),
     uqWaId: uniqueIndex("wa_msg_waid_uq").on(t.waMessageId),
   }),
-);
+).enableRLS();
 
 export const waCitas = pgTable(
   "wa_citas",
@@ -141,7 +150,7 @@ export const waCitas = pgTable(
       .on(t.tenantId, t.empleadoId, t.fecha, t.hora)
       .where(sql`${t.estado} = 'agendada' AND ${t.empleadoId} IS NOT NULL`),
   }),
-);
+).enableRLS();
 
 export const waEventosCalidad = pgTable(
   "wa_eventos_calidad",
@@ -156,7 +165,7 @@ export const waEventosCalidad = pgTable(
   (t) => ({
     idxTenant: index("wa_eventos_tenant_idx").on(t.tenantId, t.creadoEn),
   }),
-);
+).enableRLS();
 
 // Suscripciones de notificaciones push del panel (Web Push), por negocio.
 export const waPushSubs = pgTable(
@@ -173,7 +182,7 @@ export const waPushSubs = pgTable(
     uq: uniqueIndex("wa_push_endpoint_uq").on(t.endpoint),
     idxTenant: index("wa_push_tenant_idx").on(t.tenantId),
   }),
-);
+).enableRLS();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Multi-tenant: los negocios y sus usuarios del panel viven en la base (antes
@@ -289,7 +298,7 @@ export const waTenants = pgTable(
     uqPnid: uniqueIndex("wa_tenants_pnid_uq").on(t.phoneNumberId),
     uqStripeCustomer: uniqueIndex("wa_tenants_stripe_customer_uq").on(t.stripeCustomerId),
   }),
-);
+).enableRLS();
 
 export const waUsuarios = pgTable(
   "wa_usuarios",
@@ -322,7 +331,7 @@ export const waUsuarios = pgTable(
     uqUsuario: uniqueIndex("wa_usuarios_usuario_uq").on(t.usuario),
     idxTenant: index("wa_usuarios_tenant_idx").on(t.tenantId),
   }),
-);
+).enableRLS();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Historial de config del tenant (ROADMAP F15). `actualizarConfigTenant`
@@ -353,7 +362,7 @@ export const waTenantsHistorial = pgTable(
     // ambos filtran por tenant_id y ordenan por creado_en, así que este índice cubre los dos.
     idxTenant: index("wa_tenants_historial_tenant_idx").on(t.tenantId, t.creadoEn),
   }),
-);
+).enableRLS();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Cola durable de jobs (B1). Cada mensaje entrante genera un job aquí ANTES de
@@ -385,7 +394,7 @@ export const waJobs = pgTable(
     idxClaim: index("wa_jobs_claim_idx").on(t.estado, t.ejecutarDespuesDe),
     uqWaId: uniqueIndex("wa_jobs_waid_uq").on(t.waMessageId),
   }),
-);
+).enableRLS();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Red de seguridad de ingesta cruda (ROADMAP F3). El webhook responde 200 a Meta
@@ -429,7 +438,7 @@ export const waWebhooksCrudos = pgTable(
     // Índice que usa el reproceso y el barrido de alertas: pendientes, más viejos primero.
     idxPendiente: index("wa_webhooks_crudos_pendiente_idx").on(t.estado, t.recibidoEn),
   }),
-);
+).enableRLS();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Campañas segmentadas (ROADMAP C3.2). Envío masivo de plantilla MARKETING a un
@@ -462,7 +471,7 @@ export const waCampanias = pgTable(
   (t) => ({
     idxTenant: index("wa_campanias_tenant_idx").on(t.tenantId, t.creadaEn),
   }),
-);
+).enableRLS();
 
 export const waCampaniaEnvios = pgTable(
   "wa_campania_envios",
@@ -486,7 +495,7 @@ export const waCampaniaEnvios = pgTable(
     uqCampaniaCliente: uniqueIndex("wa_campania_envios_campania_cliente_uq").on(t.campaniaId, t.clienteWa),
     idxClaim: index("wa_campania_envios_claim_idx").on(t.estado),
   }),
-);
+).enableRLS();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Contadores de uso mensual por tenant (Carril D, 0.2): cuántas conversaciones/
@@ -526,7 +535,7 @@ export const waUsoMensual = pgTable(
   (t) => ({
     uqTenantMes: uniqueIndex("wa_uso_mensual_tenant_mes_uq").on(t.tenantId, t.anioMes),
   }),
-);
+).enableRLS();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Rescate de cotizaciones abandonadas (Carril D, Fase 1 - 1.1). El CRUD (crear al
@@ -557,7 +566,7 @@ export const waCotizaciones = pgTable(
     idxClaim: index("wa_cotizaciones_claim_idx").on(t.tenantId, t.estado, t.creadaEn),
     idxCliente: index("wa_cotizaciones_cliente_idx").on(t.tenantId, t.clienteWa),
   }),
-);
+).enableRLS();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Motor de reseñas de Google completo (Carril D, Fase 1 - 1.3). Extiende el
@@ -587,7 +596,7 @@ export const waSeguimientos = pgTable(
     uqCita: uniqueIndex("wa_seguimientos_cita_uq").on(t.citaId),
     idxTenant: index("wa_seguimientos_tenant_idx").on(t.tenantId),
   }),
-);
+).enableRLS();
 
 export const waSnapshotReputacion = pgTable(
   "wa_snapshot_reputacion",
@@ -603,7 +612,7 @@ export const waSnapshotReputacion = pgTable(
     // Idempotencia: el job diario no duplica el snapshot si corre dos veces el mismo día.
     uqTenantFecha: uniqueIndex("wa_snapshot_reputacion_tenant_fecha_uq").on(t.tenantId, t.fecha),
   }),
-);
+).enableRLS();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Lease de liderazgo para schedulers tipo cron (ROADMAP F6). Recordatorios,
@@ -626,7 +635,7 @@ export const waLideres = pgTable("wa_lideres", {
   // Hasta cuándo es válido el lease. Vencido → cualquier otro titular puede
   // tomarlo en su próximo intento; no hace falta heartbeat ni quorum aparte.
   venceEn: timestamp("vence_en", { withTimezone: true }).notNull(),
-});
+}).enableRLS();
 
 export const schema = {
   waConversaciones,
