@@ -225,6 +225,13 @@
       "when": 1786227626131,
       "tag": "0031_glossy_kabuki",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1790899525507,
+      "tag": "0032_rls_sin_politicas",
+      "breakpoints": true
     }
   ]
 }
