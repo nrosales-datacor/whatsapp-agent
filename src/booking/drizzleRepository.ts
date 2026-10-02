@@ -26,6 +26,7 @@ import type {
   PushSub,
   Repositorio,
   ResumenConversacion,
+  VerificarHorario,
   Seguimiento,
   Sentimiento,
   SnapshotReputacion,
@@ -35,6 +36,7 @@ import { calcularMetricas, formatDelta } from "../panel/metricas";
 import { calcularVentana } from "../whatsapp/ventana";
 import { filasDe } from "../db/filas";
 import { resolverMediaParaPanel } from "../storage/supabaseStorage";
+import { HorarioOcupadoError } from "./errores";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Repositorio Drizzle. Implementa la MISMA interfaz que el de memoria.
@@ -107,6 +109,19 @@ function fechaHaceDias(dias: number, hoy: string): string {
   const d = new Date(`${hoy}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() - dias);
   return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Doble reserva (revisión pre-venta 2026-10): serializa TODA escritura de citas de un
+ * mismo tenant+fecha con un advisory lock de TRANSACCIÓN (pooler-safe: se suelta solo
+ * al commit/rollback, nunca queda colgado en una conexión del pool). Así el re-chequeo
+ * de `verificar` y el INSERT/UPDATE son atómicos respecto de cualquier otra cita de
+ * ese día — cosa que el índice único no puede dar: excluye `empleado_id IS NULL`
+ * (modo recurso único, el más común) y solo ve la hora EXACTA, no solapes por
+ * duración. El lock es por día, no global: dos negocios (o dos días) no se esperan.
+ */
+async function bloquearAgendaDelDia(tx: { execute: DB["execute"] }, tenantId: string, fecha: string): Promise<void> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`wa_citas:${tenantId}:${fecha}`}, 0))`);
 }
 
 export class RepositorioDrizzle implements Repositorio {
@@ -263,24 +278,33 @@ export class RepositorioDrizzle implements Repositorio {
     return rows.map(filaACita);
   }
 
-  async crearCita(cita: Omit<Cita, "id" | "creadaEn" | "estado">): Promise<Cita> {
-    const [r] = await this.db
-      .insert(waCitas)
-      .values({
-        tenantId: cita.tenantId,
-        clienteWa: cita.clienteWa,
-        clienteNombre: cita.clienteNombre,
-        servicioId: cita.servicioId,
-        empleadoId: cita.empleadoId,
-        fecha: cita.fecha,
-        hora: cita.hora,
-        placa: cita.placa,
-        precio: cita.precio,
-        origen: cita.origen ?? "bot",
-      })
-      .returning();
-
-    return filaACita(r);
+  async crearCita(cita: Omit<Cita, "id" | "creadaEn" | "estado">, verificar?: VerificarHorario): Promise<Cita> {
+    return this.db.transaction(async (tx) => {
+      await bloquearAgendaDelDia(tx, cita.tenantId, cita.fecha);
+      if (verificar) {
+        const delDia = await tx
+          .select()
+          .from(waCitas)
+          .where(and(eq(waCitas.tenantId, cita.tenantId), eq(waCitas.fecha, cita.fecha)));
+        if (!verificar(delDia.map(filaACita))) throw new HorarioOcupadoError();
+      }
+      const [r] = await tx
+        .insert(waCitas)
+        .values({
+          tenantId: cita.tenantId,
+          clienteWa: cita.clienteWa,
+          clienteNombre: cita.clienteNombre,
+          servicioId: cita.servicioId,
+          empleadoId: cita.empleadoId,
+          fecha: cita.fecha,
+          hora: cita.hora,
+          placa: cita.placa,
+          precio: cita.precio,
+          origen: cita.origen ?? "bot",
+        })
+        .returning();
+      return filaACita(r);
+    });
   }
 
   async guardarGcalEventId(tenantId: string, citaId: string, eventId: string): Promise<void> {
@@ -306,14 +330,32 @@ export class RepositorioDrizzle implements Repositorio {
     return rows.map(filaACita);
   }
 
-  async reprogramarCita(tenantId: string, citaId: string, fecha: string, hora: string): Promise<Cita | null> {
-    // Reinicia los recordatorios: deben salir según el nuevo horario, no el viejo.
-    const [r] = await this.db
-      .update(waCitas)
-      .set({ fecha, hora, recordatorioDiaAntesEn: null, recordatorioMismoDiaEn: null })
-      .where(and(eq(waCitas.id, citaId), eq(waCitas.tenantId, tenantId)))
-      .returning();
-    return r ? filaACita(r) : null;
+  async reprogramarCita(
+    tenantId: string,
+    citaId: string,
+    fecha: string,
+    hora: string,
+    verificar?: VerificarHorario,
+  ): Promise<Cita | null> {
+    return this.db.transaction(async (tx) => {
+      // Se bloquea la fecha DESTINO: es la única donde se consume capacidad (la de
+      // origen solo se libera).
+      await bloquearAgendaDelDia(tx, tenantId, fecha);
+      if (verificar) {
+        const delDia = await tx
+          .select()
+          .from(waCitas)
+          .where(and(eq(waCitas.tenantId, tenantId), eq(waCitas.fecha, fecha)));
+        if (!verificar(delDia.filter((c) => c.id !== citaId).map(filaACita))) throw new HorarioOcupadoError();
+      }
+      // Reinicia los recordatorios: deben salir según el nuevo horario, no el viejo.
+      const [r] = await tx
+        .update(waCitas)
+        .set({ fecha, hora, recordatorioDiaAntesEn: null, recordatorioMismoDiaEn: null })
+        .where(and(eq(waCitas.id, citaId), eq(waCitas.tenantId, tenantId)))
+        .returning();
+      return r ? filaACita(r) : null;
+    });
   }
 
   async obtenerCitaPorId(tenantId: string, citaId: string): Promise<Cita | null> {

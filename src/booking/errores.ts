@@ -7,6 +7,21 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * El horario dejó de estar libre entre que se ofreció y que se intentó guardar: lo
+ * lanza el repositorio cuando el re-chequeo atómico de `crearCita`/`reprogramarCita`
+ * (parámetro `verificar`) da false. Cubre lo que el índice único NO cubre: el modo
+ * recurso único (citas sin empleado), los solapes parciales por duración y la
+ * reprogramación. Con el worker concurrente (E7) dos turnos de clientes distintos
+ * corren en paralelo de verdad, así que esta carrera dejó de ser teórica.
+ */
+export class HorarioOcupadoError extends Error {
+  constructor() {
+    super("ese horario ya no está disponible");
+    this.name = "HorarioOcupadoError";
+  }
+}
+
+/**
  * true si el error es la violación del índice único `wa_citas_empleado_slot_uq`, que
  * impide dejar a UNA misma persona con dos citas "agendada" en el mismo horario
  * (ALTO-07).
@@ -17,9 +32,14 @@
  * recibe este error, y el caller debe traducirlo a "ese horario ya no está disponible"
  * — nunca dejarlo escapar como 500.
  *
- * Sin DB (repo en memoria) nunca se dispara: ahí la única barrera es la de aplicación.
+ * Sin DB (repo en memoria) el índice no existe; ahí solo puede llegar un
+ * `HorarioOcupadoError` del re-chequeo de `verificar` (que el repo en memoria también
+ * implementa, por paridad).
  */
 export function esChoqueDeEmpleado(e: unknown): boolean {
+  // `HorarioOcupadoError` es el mismo "perdiste la carrera", detectado por el re-chequeo
+  // atómico en vez de por el índice: los callers ya lo traducen igual.
+  if (e instanceof HorarioOcupadoError) return true;
   // Drizzle NO propaga el error de Postgres crudo: lo envuelve en un DrizzleQueryError
   // con el original colgando de `cause`. Mirar solo el error de arriba devuelve false
   // siempre y el 23505 termina saliendo como un 500 — verificado contra Postgres real en

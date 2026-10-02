@@ -25,6 +25,7 @@ import { aplicarFrenosPorCliente } from "./red/limiteCliente";
 import { permitirIngesta, RATE_LIMIT_DIFERIR_SEG } from "./red/limiteIngesta";
 import { guardarCrudo } from "./db/webhooksCrudos";
 import { resolverMediaAPersistir } from "./storage/supabaseStorage";
+import { esErrorTransitorio } from "./red/transitorio";
 import type { schema } from "./db/schema";
 
 type DB = PostgresJsDatabase<typeof schema>;
@@ -381,6 +382,28 @@ async function aplicarTopeMensualSiCorresponde(
 }
 
 /**
+ * En qué intento de la cola durable va este turno (E7). Lo pasa el worker desde la
+ * fila de wa_jobs (`intentos` ya incrementado por el claim, `max_intentos`).
+ */
+export interface IntentoJob {
+  numero: number;
+  max: number;
+}
+
+/**
+ * E7: ¿relanzar este error para que la cola reintente el job con backoff, en vez de
+ * disculparse con el cliente? Solo si es transitorio (429/5xx/red de OpenAI o Graph,
+ * ver src/red/transitorio.ts) y al job le queda al menos un intento más. En el ÚLTIMO
+ * intento —o sin cola (modo memoria / `manejarWebhook`: `intento` ausente)— se cae al
+ * camino de siempre: disculpa + aviso al operador, y el job termina "hecho".
+ */
+function reintentarMasTarde(e: unknown, intento: IntentoJob | undefined): boolean {
+  if (!intento || intento.numero >= intento.max || !esErrorTransitorio(e)) return false;
+  console.warn(`[reintento] error transitorio (intento ${intento.numero}/${intento.max}), la cola reintenta con backoff:`, String(e));
+  return true;
+}
+
+/**
  * FASE 2 — puede tardar (llama al LLM y a la API de WhatsApp). Se ejecuta DESPUÉS
  * de responder 200. El mensaje entrante ya quedó guardado en la fase 1, así que
  * aunque esto falle no se pierde.
@@ -388,8 +411,12 @@ async function aplicarTopeMensualSiCorresponde(
  * `db` opcional (F10): solo lo necesitan los tests de fiabilidad (PGlite) para el
  * enforcement del tope mensual (ver estadoCuotasDelMes) — en producción no hace
  * falta pasarlo, el pool singleton ya resuelve solo con DATABASE_URL.
+ *
+ * `intento` (E7): lo pasa el worker de la cola. Con él, un error transitorio en el
+ * turno del agente LANZA (la cola reintenta) mientras queden intentos — salvo que el
+ * turno ya haya tenido efectos que un reintento duplicaría (ver `reintentable`).
  */
-export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB): Promise<void> {
+export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB, intento?: IntentoJob): Promise<void> {
   if (p.clase === "no-texto") {
     // Lo que queda sin tipar tras E12: video y sticker (las fotos las procesa la
     // rama "imagen" de abajo, C1.5; documento/contacto/reacción/ubicación tienen su
@@ -479,6 +506,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
           .catch((e) => console.error("[imagen] no se pudo guardar la media en el mensaje:", e));
       }
     } catch (e) {
+      if (reintentarMasTarde(e, intento)) throw e;
       console.error("[imagen] no se pudo descargar la foto:", e);
     }
 
@@ -503,6 +531,8 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
     if (await aplicarFrenosPorCliente({ tenant, repo, conv, clienteWa: entrante.clienteWa, db })) return;
     if (await aplicarTopeMensualSiCorresponde(tenant, repo, entrante, conv, primerContacto, db)) return;
 
+    // E7: mismo criterio que la rama de texto (ver el comentario de `reintentable` ahí).
+    let reintentable = true;
     try {
       const historialPrevio = await historialFresco(repo, tenant, conv, entrante.messageId, historialSnapshot);
       const { respuesta, fueraDeAlcance, escalar, motivo, interactivo, confirmacion } = await correrAgente(
@@ -511,6 +541,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
         historialPrevio,
         imagenDataUrl,
       );
+      if (confirmacion) reintentable = false;
 
       const modoActual = await repo.obtenerModo(tenant.id, conv.id);
       if (modoActual === "humano") {
@@ -519,6 +550,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
       }
 
       if (escalar) {
+        reintentable = false;
         await repo.setModoConversacion(tenant.id, conv.id, "humano");
         let salida = textoEscalada(confirmacion);
         if (primerContacto) salida = `${AVISO_BOT.replace("%NOMBRE%", tenant.nombre)}\n\n${salida}`;
@@ -543,6 +575,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
       let salida = respuesta;
       if (primerContacto) salida = `${AVISO_BOT.replace("%NOMBRE%", tenant.nombre)}\n\n${respuesta}`;
       await enviarRespuestaBot(tenant, entrante.clienteWa, salida, interactivo);
+      reintentable = false;
       if (primerContacto) await repo.marcarOptIn(tenant.id, conv.id);
       await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: respuesta, creadoEn: new Date().toISOString() });
       console.log(`[imagen→saliente] → ${entrante.clienteWa}: "${respuesta.slice(0, 80)}"`);
@@ -552,6 +585,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
         tipo: fueraDeAlcance ? "fuera_de_alcance" : "mensaje_ok",
       });
     } catch (e) {
+      if (reintentable && reintentarMasTarde(e, intento)) throw e;
       console.error("[imagen] error procesando:", e);
       await repo
         .registrarCalidad({ tenantId: tenant.id, clienteWa: entrante.clienteWa, tipo: "error", detalle: String(e) })
@@ -585,6 +619,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
       textoTranscrito = await transcribirAudio(tenant, entrante.audioId!);
       console.log(`[audio] ${entrante.clienteWa}: "${textoTranscrito.slice(0, 80)}"`);
     } catch (e) {
+      if (reintentarMasTarde(e, intento)) throw e;
       console.error("[audio] transcripción fallida:", e);
       await enviarTexto(
         tenant,
@@ -619,6 +654,8 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
 
     if (await aplicarTopeMensualSiCorresponde(tenant, repo, entrante, conv, primerContacto, db)) return;
 
+    // E7: mismo criterio que la rama de texto (ver el comentario de `reintentable` ahí).
+    let reintentable = true;
     try {
       const historialPrevio = await historialFresco(repo, tenant, conv, entrante.messageId, historialSnapshot);
       const { respuesta, fueraDeAlcance, escalar, motivo, interactivo, confirmacion } = await correrAgente(
@@ -626,6 +663,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
         textoTranscrito,
         historialPrevio,
       );
+      if (confirmacion) reintentable = false;
 
       const modoActual = await repo.obtenerModo(tenant.id, conv.id);
       if (modoActual === "humano") {
@@ -634,6 +672,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
       }
 
       if (escalar) {
+        reintentable = false;
         await repo.setModoConversacion(tenant.id, conv.id, "humano");
         let salida = textoEscalada(confirmacion);
         if (primerContacto) salida = `${AVISO_BOT.replace("%NOMBRE%", tenant.nombre)}\n\n${salida}`;
@@ -658,6 +697,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
       let salida = respuesta;
       if (primerContacto) salida = `${AVISO_BOT.replace("%NOMBRE%", tenant.nombre)}\n\n${respuesta}`;
       await enviarRespuestaBot(tenant, entrante.clienteWa, salida, interactivo);
+      reintentable = false;
       if (primerContacto) await repo.marcarOptIn(tenant.id, conv.id);
       await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: respuesta, creadoEn: new Date().toISOString() });
       console.log(`[audio→saliente] → ${entrante.clienteWa}: "${respuesta.slice(0, 80)}"`);
@@ -667,6 +707,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
         tipo: fueraDeAlcance ? "fuera_de_alcance" : "mensaje_ok",
       });
     } catch (e) {
+      if (reintentable && reintentarMasTarde(e, intento)) throw e;
       console.error("[audio] error procesando:", e);
       await repo
         .registrarCalidad({ tenantId: tenant.id, clienteWa: entrante.clienteWa, tipo: "error", detalle: String(e) })
@@ -816,6 +857,13 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
   if (await aplicarFrenosPorCliente({ tenant, repo, conv, clienteWa: entrante.clienteWa, db })) return;
   if (await aplicarTopeMensualSiCorresponde(tenant, repo, entrante, conv, primerContacto, db)) return;
 
+  // E7: un error transitorio (OpenAI 429/5xx/timeout, Graph caído) relanza para que la
+  // cola reintente el turno ENTERO con backoff — pero solo mientras el turno no haya
+  // dejado efectos que un reintento repetiría: una acción de agenda ya guardada
+  // (`confirmacion`, red de seguridad G5 de runAgent: re-correr el agente volvería a
+  // llamar a `agendar_cita` y duplicaría la cita), el traspaso a humano ya aplicado o
+  // la respuesta ya enviada. Pasado ese punto, el fallo se maneja como siempre.
+  let reintentable = true;
   try {
     const historialPrevio = await historialFresco(repo, tenant, conv, entrante.messageId, historialSnapshot);
     const { respuesta, fueraDeAlcance, escalar, motivo, interactivo, confirmacion } = await correrAgente(
@@ -823,6 +871,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
       entrante.texto,
       historialPrevio,
     );
+    if (confirmacion) reintentable = false;
 
     // Mientras el LLM pensaba, un humano pudo tomar la conversación desde el panel.
     // Revalidamos el modo (lectura liviana) ANTES de hablar para no pisar a la persona.
@@ -835,6 +884,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
     // El bot no pudo resolver (pidió escalar_a_humano o se trabó): pasamos la conversación
     // a una persona y avisamos (push), en vez de mandar una respuesta vaga o genérica.
     if (escalar) {
+      reintentable = false;
       await repo.setModoConversacion(tenant.id, conv.id, "humano");
       let salida = textoEscalada(confirmacion);
       if (primerContacto) salida = `${AVISO_BOT.replace("%NOMBRE%", tenant.nombre)}\n\n${salida}`;
@@ -864,6 +914,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
     // "fantasma" en el historial que el cliente nunca recibió (y el opt-in no se
     // marca, así el aviso se reintenta en el próximo mensaje).
     await enviarRespuestaBot(tenant, entrante.clienteWa, salida, interactivo);
+    reintentable = false;
     if (primerContacto) await repo.marcarOptIn(tenant.id, conv.id);
     await repo.guardarMensaje(tenant.id, conv.id, {
       rol: "assistant",
@@ -879,6 +930,9 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
       tipo: fueraDeAlcance ? "fuera_de_alcance" : "mensaje_ok",
     });
   } catch (e) {
+    // Quedan intentos y el error es transitorio: sin disculpa ni aviso al operador
+    // todavía — eso es solo para el último intento (o para errores permanentes).
+    if (reintentable && reintentarMasTarde(e, intento)) throw e;
     console.error("[webhook] error procesando mensaje:", e);
     await repo.registrarCalidad({
       tenantId: tenant.id,

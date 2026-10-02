@@ -718,6 +718,16 @@ export interface FichaCliente {
 // ─────────────────────────────────────────────────────────────────────────────
 // Repositorio: abstrae la persistencia (impl en memoria o Prisma).
 // ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Re-chequeo de disponibilidad que el repositorio corre de forma ATÓMICA con la
+ * escritura de una cita (doble reserva, revisión pre-venta 2026-10). Recibe las citas
+ * de la fecha tal como están en ese instante (bajo el lock) y devuelve true si el
+ * horario sigue libre. La regla vive en el caller (src/booking/availability.ts, que
+ * conoce duraciones y equipo del tenant); el repo solo garantiza que nadie escriba
+ * esa fecha entre la lectura y la escritura.
+ */
+export type VerificarHorario = (citasDelDia: Cita[]) => boolean;
+
 export interface Repositorio {
   obtenerOConversacion(tenantId: string, clienteWa: string): Promise<Conversacion>;
   /**
@@ -763,7 +773,14 @@ export interface Repositorio {
    * fecha/hora ascendente. Base de la vista Agenda del panel (día/semana).
    */
   citasEnRango(tenantId: string, desde: string, hasta: string): Promise<Cita[]>;
-  crearCita(cita: Omit<Cita, "id" | "creadaEn" | "estado">): Promise<Cita>;
+  /**
+   * Crea una cita. Con `verificar` (doble reserva, revisión pre-venta 2026-10), el
+   * chequeo de disponibilidad se REPITE de forma atómica con el insert: el repo le
+   * pasa las citas frescas de esa fecha y, si devuelve false, lanza
+   * `HorarioOcupadoError` sin insertar (ver src/booking/errores.ts). Sin `verificar`
+   * (alta manual del panel, que permite encimar walk-ins a propósito) se inserta tal cual.
+   */
+  crearCita(cita: Omit<Cita, "id" | "creadaEn" | "estado">, verificar?: VerificarHorario): Promise<Cita>;
   /** Guarda el id del evento de Google Calendar asociado a la cita. Scopeada por tenantId (F4). */
   guardarGcalEventId(tenantId: string, citaId: string, eventId: string): Promise<void>;
   /**
@@ -778,7 +795,14 @@ export interface Repositorio {
    * salgan según el nuevo horario, no el viejo). Scopeada por tenantId (defensa en
    * profundidad). Devuelve la cita actualizada, o null si no existe / no es del tenant.
    */
-  reprogramarCita(tenantId: string, citaId: string, fecha: string, hora: string): Promise<Cita | null>;
+  reprogramarCita(
+    tenantId: string,
+    citaId: string,
+    fecha: string,
+    hora: string,
+    /** Igual que en `crearCita`; recibe las citas de la NUEVA fecha sin la propia cita. */
+    verificar?: VerificarHorario,
+  ): Promise<Cita | null>;
   /**
    * Una cita por id, scopeada por tenantId. null si no existe o no es de ese negocio.
    * La necesitan reprogramar/reasignar para saber a quién está asignada ANTES de mover

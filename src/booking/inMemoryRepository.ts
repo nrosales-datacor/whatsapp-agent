@@ -13,6 +13,7 @@ import type {
   RechazoAddon,
   Repositorio,
   ResumenConversacion,
+  VerificarHorario,
   Seguimiento,
   Sentimiento,
   SnapshotReputacion,
@@ -20,6 +21,7 @@ import type {
 } from "../types";
 import { calcularMetricas } from "../panel/metricas";
 import { calcularVentana } from "../whatsapp/ventana";
+import { HorarioOcupadoError } from "./errores";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Repositorio EN MEMORIA. Sirve para probar el agente YA, sin base de datos.
@@ -168,7 +170,12 @@ export class RepositorioEnMemoria implements Repositorio {
       .sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora));
   }
 
-  async crearCita(cita: Omit<Cita, "id" | "creadaEn" | "estado">): Promise<Cita> {
+  async crearCita(cita: Omit<Cita, "id" | "creadaEn" | "estado">, verificar?: VerificarHorario): Promise<Cita> {
+    // Paridad con Drizzle (doble reserva): re-chequeo y alta sin ningún `await` en el
+    // medio — en un solo hilo de JS eso ya es atómico, no hace falta lock.
+    if (verificar && !verificar(this.citas.filter((c) => c.tenantId === cita.tenantId && c.fecha === cita.fecha))) {
+      throw new HorarioOcupadoError();
+    }
     const nueva: Cita = {
       ...cita,
       origen: cita.origen ?? "bot",
@@ -207,9 +214,18 @@ export class RepositorioEnMemoria implements Repositorio {
       .sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora));
   }
 
-  async reprogramarCita(tenantId: string, citaId: string, fecha: string, hora: string): Promise<Cita | null> {
+  async reprogramarCita(
+    tenantId: string,
+    citaId: string,
+    fecha: string,
+    hora: string,
+    verificar?: VerificarHorario,
+  ): Promise<Cita | null> {
     const c = this.citas.find((x) => x.id === citaId && x.tenantId === tenantId);
     if (!c) return null;
+    if (verificar && !verificar(this.citas.filter((x) => x.tenantId === tenantId && x.fecha === fecha && x.id !== citaId))) {
+      throw new HorarioOcupadoError();
+    }
     c.fecha = fecha;
     c.hora = hora;
     // Reinicia recordatorios: deben salir según el nuevo horario, no el viejo.

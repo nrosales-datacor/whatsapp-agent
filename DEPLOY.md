@@ -652,9 +652,19 @@ importar.
 - **`ROL=worker`**: arranca los 3 workers de cola y los 3 schedulers. Sirve un HTTP **mínimo**
   que solo responde `/salud` (health check del proceso; sin webhook, sin panel, sin landing —
   eso lo atiende la réplica `web`).
-- Los workers de cola (mensajes, campañas, rescate) ya eran seguros ante N réplicas por su
-  claim atómico (`FOR UPDATE SKIP LOCKED`); se puede correr **más de una** réplica `worker` sin
-  duplicar trabajo. Los 3 schedulers usan un **lease de liderazgo** nuevo (tabla `wa_lideres`,
+- Los workers de cola (mensajes, campañas, rescate) son seguros ante N réplicas por su claim
+  atómico (`FOR UPDATE SKIP LOCKED`); se puede correr **más de una** réplica `worker` sin
+  duplicar trabajo. En la cola de **mensajes** eso no alcanzaba solo: hasta E7, con 2 réplicas
+  dos mensajes seguidos del MISMO cliente podían responderse en paralelo (la agrupación de
+  ráfagas solo miraba los `pendiente`). Desde E7 el claim garantiza **como máximo un job en
+  curso por conversación** (`NOT EXISTS` sobre los `procesando` + advisory lock de
+  transacción por conversación) y reparte por tenant, así que N réplicas × N slots es seguro.
+- Cada proceso que corre la cola de mensajes (`ROL=worker` o `ROL=todo`) procesa
+  `WORKER_CONCURRENCIA` jobs en paralelo (default **4**). Capacidad total = réplicas ×
+  `WORKER_CONCURRENCIA`. Cada slot usa una conexión del pool solo mientras consulta (no
+  mientras espera a OpenAI), así que 4 conviven bien con `DB_POOL_MAX=10`; si lo subís mucho,
+  subí también el pool (sin pasarte del límite del pooler de Supabase dividido por procesos).
+- Los 3 schedulers usan un **lease de liderazgo** nuevo (tabla `wa_lideres`,
   `src/red/liderazgo.ts`) para que, con N réplicas `worker`, solo UNA haga el trabajo real de
   cada tick — las demás lo ven en los logs como "en espera: otro proceso tiene el liderazgo
   este tick" (no es un error).

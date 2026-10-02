@@ -28,11 +28,17 @@ export interface EnviadoWa {
   raw: any;
 }
 
-/** Un turno programado del "LLM": texto final, una tool call, o escalada a humano. */
+/**
+ * Un turno programado del "LLM": texto final, una tool call, escalada a humano, o un
+ * error HTTP de OpenAI (E7: 429/503 transitorios, 400 permanente). El error va con
+ * `x-should-retry: false` para que el SDK NO lo reintente por su cuenta: cada turno
+ * programado = exactamente un intento, y el reintento que se prueba es el de la cola.
+ */
 export type TurnoLLM =
   | { texto: string }
   | { tool: string; args?: Record<string, unknown> }
-  | { escalar: string };
+  | { escalar: string }
+  | { errorHttp: number };
 
 interface Escenario {
   enviados: EnviadoWa[];
@@ -51,7 +57,7 @@ function jsonRes(obj: unknown, status = 200): Response {
   });
 }
 
-function turnoAChatCompletion(turno: TurnoLLM): { message: any; finish_reason: string } {
+function turnoAChatCompletion(turno: Exclude<TurnoLLM, { errorHttp: number }>): { message: any; finish_reason: string } {
   if ("texto" in turno) {
     return { message: { role: "assistant", content: turno.texto }, finish_reason: "stop" };
   }
@@ -83,6 +89,12 @@ async function dispatcher(input: any, init?: any): Promise<Response> {
     escenario.solicitudesLLM.push(init?.body ? JSON.parse(String(init.body)) : null);
     const turno = escenario.colaLLM.shift();
     if (!turno) throw new Error("mock LLM: llamada a OpenAI sin turno programado (programá con programarLLM)");
+    if ("errorHttp" in turno) {
+      return new Response(JSON.stringify({ error: { message: `mock ${turno.errorHttp}`, type: "server_error" } }), {
+        status: turno.errorHttp,
+        headers: { "content-type": "application/json", "x-should-retry": "false" },
+      });
+    }
     const { message, finish_reason } = turnoAChatCompletion(turno);
     return jsonRes({
       id: "chatcmpl-test",

@@ -497,6 +497,26 @@ function statusEsTransitorio(status: number): boolean {
 // limit), 131000 («algo salió mal»), 131016 (servicio no disponible), 133016.
 const CODIGOS_META_TRANSITORIOS = new Set([1, 2, 4, 80007, 130429, 131000, 131016, 133016]);
 
+/**
+ * Error de la Graph API que lleva la marca de si vale la pena reintentar más tarde
+ * (E7): `postMensaje` ya reintenta en caliente, pero si el hipo dura más que esos
+ * segundos la COLA durable reintenta el job entero con backoff — y para eso tiene que
+ * poder distinguir "Meta caído un rato" (transitorio) de "token inválido / número
+ * bloqueado" (permanente: reintentar no cambia nada). Mismo texto de siempre en
+ * `message`; la marca va aparte (ver `esErrorTransitorio` en src/red/transitorio.ts).
+ */
+export class ErrorGraph extends Error {
+  constructor(
+    mensaje: string,
+    readonly status: number | undefined,
+    readonly transitorio: boolean,
+    opciones?: { cause?: unknown },
+  ) {
+    super(mensaje, opciones);
+    this.name = "ErrorGraph";
+  }
+}
+
 function cuerpoEsTransitorio(detalle: string): boolean {
   try {
     const err = JSON.parse(detalle)?.error;
@@ -534,7 +554,7 @@ async function postMensaje(
       });
     } catch (e) {
       // fetch lanzó (DNS/red/timeout): siempre transitorio.
-      ultimoError = e instanceof Error ? e : new Error(String(e));
+      ultimoError = new ErrorGraph(e instanceof Error ? e.message : String(e), undefined, true, { cause: e });
       if (intento < MAX_INTENTOS_ENVIO) {
         console.warn(`[whatsapp] red falló (intento ${intento}/${MAX_INTENTOS_ENVIO}), reintento: ${ultimoError.message}`);
         await dormir(retardoMs(intento));
@@ -555,8 +575,8 @@ async function postMensaje(
     // plataforma (whatsapp/estadoToken.ts). Solo observa: el flujo de abajo
     // (reintento o throw) queda idéntico.
     registrarRespuestaGraph(tenant.id, false, res.status, detalle);
-    ultimoError = new Error(`Error ${etiqueta} (${res.status}): ${detalle}`);
     const transitorio = statusEsTransitorio(res.status) || cuerpoEsTransitorio(detalle);
+    ultimoError = new ErrorGraph(`Error ${etiqueta} (${res.status}): ${detalle}`, res.status, transitorio);
     if (transitorio && intento < MAX_INTENTOS_ENVIO) {
       console.warn(`[whatsapp] envío transitorio falló (intento ${intento}/${MAX_INTENTOS_ENVIO}), reintento: ${detalle.slice(0, 140)}`);
       await dormir(retardoMs(intento));
@@ -675,24 +695,46 @@ export async function descargarMedia(
 ): Promise<{ buffer: Buffer; mimeType: string }> {
   const token = tokenDeTenant(tenant);
 
-  const metaRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${mediaId}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    signal: conTimeout(TIMEOUT_GRAPH_MS),
-  });
+  // Los fallos se lanzan como ErrorGraph (E7): un 5xx/429 o un corte de red al bajar
+  // la foto/el audio es transitorio y la cola puede reintentar el job más tarde.
+  let metaRes: Response;
+  try {
+    metaRes = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${mediaId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: conTimeout(TIMEOUT_GRAPH_MS),
+    });
+  } catch (e) {
+    throw new ErrorGraph(e instanceof Error ? e.message : String(e), undefined, true, { cause: e });
+  }
   if (!metaRes.ok) {
     const detalle = await metaRes.text();
     registrarRespuestaGraph(tenant.id, false, metaRes.status, detalle); // ver postMensaje
-    throw new Error(`Error obteniendo URL de media ${mediaId} (${metaRes.status}): ${detalle.slice(0, 140)}`);
+    throw new ErrorGraph(
+      `Error obteniendo URL de media ${mediaId} (${metaRes.status}): ${detalle.slice(0, 140)}`,
+      metaRes.status,
+      statusEsTransitorio(metaRes.status) || cuerpoEsTransitorio(detalle),
+    );
   }
   registrarRespuestaGraph(tenant.id, true, metaRes.status);
   const { url, mime_type } = (await metaRes.json()) as { url: string; mime_type: string };
 
   // Timeout más holgado que el resto de Graph: acá viajan bytes (audio/foto), no JSON.
-  const archivoRes = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-    signal: conTimeout(TIMEOUT_MEDIA_MS),
-  });
-  if (!archivoRes.ok) throw new Error(`Error descargando media (${archivoRes.status})`);
+  let archivoRes: Response;
+  try {
+    archivoRes = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: conTimeout(TIMEOUT_MEDIA_MS),
+    });
+  } catch (e) {
+    throw new ErrorGraph(e instanceof Error ? e.message : String(e), undefined, true, { cause: e });
+  }
+  if (!archivoRes.ok) {
+    throw new ErrorGraph(
+      `Error descargando media (${archivoRes.status})`,
+      archivoRes.status,
+      statusEsTransitorio(archivoRes.status),
+    );
+  }
   const buffer = Buffer.from(await archivoRes.arrayBuffer());
   return { buffer, mimeType: mime_type ?? "application/octet-stream" };
 }
