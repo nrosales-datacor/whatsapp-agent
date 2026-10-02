@@ -526,7 +526,20 @@ real del piloto).
    0 3 * * * cd ~/lavacar-whatsapp-bot && /usr/bin/npx tsx scripts/backupDb.ts >> backups/backup.log 2>&1
    ```
    El script mismo poda los `.sql.gz` de más de `BACKUP_RETENCION_DIAS` (default 14
-   días) — no hace falta limpiar a mano.
+   días) — no hace falta limpiar a mano. La poda **solo corre si el backup de hoy
+   salió bien** y siempre conserva los `BACKUP_MINIMO` más recientes (default 3). Un
+   `pg_dump` a medias no se guarda (se escribe a `.parcial` y se verifica la marca de
+   cierre del volcado).
+5. **Alertas:** si falla, el script sale con código 1 y lo reporta a Sentry (si hay
+   `SENTRY_DSN` en el `.env`). Sin Sentry, nadie se entera: revisá `backups/backup.log`.
+6. **Copia fuera del droplet (recomendado):** si el droplet muere, se pierden los
+   backups con él. Con `BACKUP_COMANDO_COPIA` el script corre ese comando tras cada
+   backup bueno, con `{archivo}` reemplazado por la ruta del `.sql.gz`. Ejemplo con
+   `rclone` (configurado aparte con `rclone config`) y cifrado con `gpg`:
+   ```bash
+   # BACKUP_COMANDO_COPIA=gpg --batch --yes --passphrase-file ~/.backup-pass -c {archivo} && rclone copy {archivo}.gpg remoto:wa-backups && rm {archivo}.gpg
+   ```
+   Si la copia falla, también alerta (el backup local igual queda).
 
 ### 19.2 Probar el restore (lo que realmente importa)
 
