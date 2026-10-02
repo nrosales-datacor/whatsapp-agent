@@ -3,7 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   cambiarEstadoConversacion,
   cambiarModo,
+  me,
   obtenerConversacion,
+  pedirConsentimiento,
   reabrirConversacion,
   responder,
   type ResumenConversacion,
@@ -70,6 +72,19 @@ export default function Chat({
     mutationFn: () => reabrirConversacion(id!),
     onSuccess: () => { invalidar(); flash("Plantilla de reapertura enviada"); },
     onError: (e) => flash(e instanceof Error ? e.message : "No se pudo reabrir la conversación"),
+  });
+
+  // Permiso de promociones (consentimiento de marketing): solo tiene sentido si el
+  // plan del negocio incluye campañas. La sesión ya está en caché (App.tsx).
+  const sesion = useQuery({ queryKey: ["me"], queryFn: me });
+  const puedeCampanias = !!sesion.data?.features.campanias;
+  const permisoPromos = useMutation({
+    mutationFn: () => pedirConsentimiento(id!),
+    onSuccess: () => { invalidar(); flash("Le preguntamos si quiere recibir promociones"); },
+    onError: (e) => {
+      const msg = e instanceof Error ? e.message : "No se pudo enviar el pedido de permiso";
+      flash(msg === "ventana_cerrada" ? "La ventana de 24h se cerró — no se puede preguntar ahora" : msg);
+    },
   });
 
   // El borrador es por conversación: si se cambia de chat sin enviar, no debe
@@ -228,6 +243,21 @@ export default function Chat({
             <Icono id="check2" size={14} sw={2.2} />
             {atendida ? "Reabrir" : "Atendido"}
           </button>
+          {puedeCampanias && conv.ventanaAbierta && (
+            <button
+              type="button"
+              className="accion accion-outline"
+              onClick={() => {
+                if (window.confirm("Se le va a preguntar al cliente, con botones Sí/No, si quiere recibir promociones. ¿Enviar?")) {
+                  permisoPromos.mutate();
+                }
+              }}
+              disabled={permisoPromos.isPending}
+              title="Las campañas solo llegan a clientes que dieron permiso"
+            >
+              Pedir permiso promos
+            </button>
+          )}
         </div>
       )}
 

@@ -19,6 +19,14 @@ import {
 import type { MensajeInteractivo } from "./types";
 import { transcribirAudio } from "./whatsapp/transcribir";
 import { pideHumano, modoHumanoVencido } from "./whatsapp/traspasoHumano";
+import {
+  ACK_BAJA,
+  almacenConsentimiento,
+  esPedidoDeBaja,
+  pedirConsentimientoMarketing,
+  procesarRespuestaConsentimiento,
+  respuestaConsentimiento,
+} from "./campaigns/consentimiento";
 import { correrAgente } from "./agent/runAgent";
 import { notificarOperador } from "./panel/notificaciones";
 import { registrarMensaje } from "./observabilidad/metricas";
@@ -831,19 +839,45 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
     } catch (e) {
       console.error(`[post-servicio] no se pudo procesar la respuesta de la cita ${citaId}:`, e);
     }
+    // Consentimiento de marketing: el punto menos invasivo para preguntarlo es acá,
+    // tras una buena experiencia con una cita ya hecha (ver campaigns/consentimiento.ts).
+    // Una sola vez por cliente; best-effort (nunca rompe el seguimiento).
+    if (sentimiento !== "negativo") {
+      await pedirConsentimientoMarketing(tenant, repo, conv, { manual: false, almacen: almacenConsentimiento(db) }).catch(
+        (e) => console.error(`[consentimiento] no se pudo ofrecer a ${entrante.clienteWa}:`, e),
+      );
+    }
     return;
   }
 
-  // OPT-OUT DE CAMPAÑAS (C3.2): comando exacto "BAJA" (no una palabra suelta en una
-  // frase, para evitar falsos positivos). Es acción directa: no pasa por el agente
-  // ni depende del modo (humano/bot) — un cliente puede pedir baja aunque lo esté
-  // atendiendo una persona. Detiene SOLO campañas de marketing; los recordatorios y
-  // el seguimiento post-servicio siguen llegando (son mensajes de servicio, no
-  // marketing, ligados a una cita que el cliente ya agendó).
-  if (entrante.texto.trim().toLowerCase() === "baja") {
+  // CONSENTIMIENTO DE MARKETING: el cliente tocó "Sí, avísenme" / "No, gracias".
+  // Acción directa (no pasa por el agente ni depende del modo humano/bot).
+  const consentimiento = respuestaConsentimiento(entrante.interactiveId);
+  if (consentimiento) {
+    try {
+      await procesarRespuestaConsentimiento(tenant, repo, conv, consentimiento, almacenConsentimiento(db));
+    } catch (e) {
+      console.error(`[consentimiento] no se pudo registrar la respuesta de ${entrante.clienteWa}:`, e);
+    }
+    return;
+  }
+
+  // OPT-OUT DE CAMPAÑAS (C3.2): el mensaje COMPLETO es un pedido de baja ("baja",
+  // "BAJA.", "stop", "cancelar suscripción", "no me manden más"… normalizado, ver
+  // esPedidoDeBaja); una palabra suelta dentro de una frase no cuenta ("quiero
+  // cancelar mi cita" no es baja). Es acción directa: no pasa por el agente ni
+  // depende del modo (humano/bot) — un cliente puede pedir baja aunque lo esté
+  // atendiendo una persona. Marca la baja Y retira el consentimiento de marketing.
+  // Detiene SOLO campañas de marketing; los recordatorios y el seguimiento
+  // post-servicio siguen llegando (son mensajes de servicio, no marketing, ligados
+  // a una cita que el cliente ya agendó).
+  if (esPedidoDeBaja(entrante.texto)) {
     try {
       await repo.marcarOptOut(tenant.id, conv.id);
-      const ack = "Listo, no vas a recibir más promociones de nuestra parte. Si necesitás algo más, escribinos por acá 🙂";
+      await almacenConsentimiento(db)
+        .revocar(tenant.id, entrante.clienteWa)
+        .catch((e) => console.error(`[opt-out] no se pudo retirar el consentimiento de ${entrante.clienteWa}:`, e));
+      const ack = ACK_BAJA;
       await enviarTexto(tenant, entrante.clienteWa, ack);
       await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
       console.log(`[opt-out] ${entrante.clienteWa} pidió baja de campañas`);

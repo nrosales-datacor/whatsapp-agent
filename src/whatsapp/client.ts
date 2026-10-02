@@ -467,6 +467,10 @@ function decodificarRespuestaInteractiva(id: string, titulo: string): string {
   if (tipo === "postexcelente") return "Excelente el servicio 😃";
   if (tipo === "postok") return "Bien el servicio 🙂";
   if (tipo === "postmal") return "Tuve un problema con el servicio 😕";
+  // Consentimiento de marketing (campaigns/consentimiento.ts): acción directa en
+  // handleWebhook; el texto queda en el historial como constancia de lo que tocó.
+  if (tipo === "mktsi") return "Sí, quiero recibir promociones ✅";
+  if (tipo === "mktno") return "No quiero recibir promociones";
   return titulo;
 }
 

@@ -61,21 +61,15 @@
           <span class="hero-etiqueta-punto"></span>
           Plataforma de agentes de IA
         </div>
-        <h1 class="hero-titulo" data-reveal>El equipo de IA que<br class="solo-desktop">atiende tu negocio,<br class="solo-desktop"><span class="hero-titulo-gradiente">día y noche.</span></h1>
+        <h1 class="hero-titulo" data-reveal>El equipo de IA que <br class="solo-desktop">atiende tu negocio, <br class="solo-desktop"><span class="hero-titulo-gradiente">día y noche.</span></h1>
         <p class="hero-sub" data-reveal>Selyon crea agentes de inteligencia artificial que responden, cotizan, agendan y venden por vos. Empezá con el agente de WhatsApp que ya atiende a clientes reales.</p>
         <div class="hero-ctas" data-reveal>
           <a class="boton boton-amarillo" href="https://wa.me/50683658231?text=Hola%2C%20quiero%20ver%20la%20demo%20de%20Selyon" target="_blank" rel="noopener">Probá la demo en vivo <span>→</span></a>
           <a class="boton boton-fantasma" href="#productos">Ver productos</a>
         </div>
+        <!-- Sin logos ni nombres de clientes que no existen: hoy hay UN piloto real. -->
         <div class="hero-confianza" data-reveal>
-          <div class="hero-avatares">
-            <div class="avatar-grupo">
-              <span class="avatar avatar--lr">LR</span>
-              <span class="avatar avatar--mc">MC</span>
-              <span class="avatar avatar--mas">+</span>
-            </div>
-            <span class="hero-confianza-texto">Negocios que ya atienden con Selyon</span>
-          </div>
+          <span class="hero-confianza-texto">En producción con un lavacar piloto en San José · pensado para negocios que agendan citas</span>
         </div>
       </div>
 
@@ -115,42 +109,46 @@
           </div>
         </div>
         <div class="telefono-chip telefono-chip--2">
-          <span class="telefono-chip-numero">69%</span>
+          <span class="telefono-chip-numero">24/7</span>
           <div>
-            <div class="telefono-chip-titulo">conversión</div>
-            <div class="telefono-chip-sub">chat → cita</div>
+            <div class="telefono-chip-titulo">atención</div>
+            <div class="telefono-chip-sub">también de noche</div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Nombres de ejemplo; reemplazar por clientes reales o quitar la franja. -->
-    <div class="marquesina">
+    <!-- Rubros OBJETIVO, no clientes: no poner nombres de negocios que no usan Selyon.
+         Cuando haya clientes reales con permiso escrito, se pueden sumar sus nombres. -->
+    <div class="marquesina" aria-label="Rubros para los que está pensado">
       <div class="marquesina-pista">
-        <span>Lavacar Rosales</span><span>·</span><span>Clínica Dental Vega</span><span>·</span><span>Estética Mare</span><span>·</span><span>Barbería Nómada</span><span>·</span><span>Taller Motorsport CR</span><span>·</span><span>Spa Aurora</span><span>·</span>
-        <span>Lavacar Rosales</span><span>·</span><span>Clínica Dental Vega</span><span>·</span><span>Estética Mare</span><span>·</span><span>Barbería Nómada</span><span>·</span><span>Taller Motorsport CR</span><span>·</span><span>Spa Aurora</span><span>·</span>
+        <span>Pensado para</span><span>·</span><span>Lavacares</span><span>·</span><span>Talleres</span><span>·</span><span>Clínicas dentales</span><span>·</span><span>Barberías</span><span>·</span><span>Salones de belleza</span><span>·</span><span>Spas</span><span>·</span><span>Veterinarias</span><span>·</span>
+        <span>Pensado para</span><span>·</span><span>Lavacares</span><span>·</span><span>Talleres</span><span>·</span><span>Clínicas dentales</span><span>·</span><span>Barberías</span><span>·</span><span>Salones de belleza</span><span>·</span><span>Spas</span><span>·</span><span>Veterinarias</span><span>·</span>
       </div>
     </div>
   </section>
 
-  <!-- PENDIENTE-NATHAN: verificar las 4 métricas (24/7, <10s, 69%, 0) antes de publicar; 69% sale del dashboard de Lavacar Rosales, no es un agregado. -->
+  <!-- Solo datos que el código cumple (no métricas de un solo piloto ni tiempos sin medir):
+       24/7 (el bot responde a cualquier hora), notas de voz + fotos (transcribir.ts + visión C1.5),
+       2 recordatorios por cita (día antes + horas antes, reminders/scheduler.ts), 1 toque para
+       tomar la conversación ("Atender yo" en el panel). -->
   <section class="metricas">
     <div class="contenedor contenedor--ancha metricas-grid">
       <div class="metrica" data-reveal>
         <div class="metrica-valor metrica-valor--blanco">24/7</div>
-        <div class="metrica-etiqueta">Atención sin pausas</div>
+        <div class="metrica-etiqueta">Responde a cualquier hora</div>
       </div>
       <div class="metrica" data-reveal>
-        <div class="metrica-valor metrica-valor--cian">&lt;10s</div>
-        <div class="metrica-etiqueta">Tiempo de respuesta</div>
+        <div class="metrica-valor metrica-valor--cian">Voz + foto</div>
+        <div class="metrica-etiqueta">Entiende audios y cotiza por foto</div>
       </div>
       <div class="metrica" data-reveal>
-        <div class="metrica-valor metrica-valor--amarillo">69%</div>
-        <div class="metrica-etiqueta">Chats que terminan en cita</div>
+        <div class="metrica-valor metrica-valor--amarillo">2</div>
+        <div class="metrica-etiqueta">Recordatorios por cita, con botón para confirmar</div>
       </div>
       <div class="metrica" data-reveal>
-        <div class="metrica-valor metrica-valor--celeste">0</div>
-        <div class="metrica-etiqueta">Clientes sin responder</div>
+        <div class="metrica-valor metrica-valor--celeste">1 toque</div>
+        <div class="metrica-etiqueta">Para tomar vos la conversación</div>
       </div>
     </div>
   </section>
@@ -201,7 +199,7 @@
               <span class="tarjeta-producto-icono tarjeta-producto-icono--azul">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3.5" width="16" height="17" rx="3"/><path d="M8 8.5h8M8 12h6M8 15.5h4" stroke-linecap="round"/></svg>
               </span>
-              <span class="tarjeta-producto-badge tarjeta-producto-badge--proximamente">Próximamente</span>
+              <span class="tarjeta-producto-badge tarjeta-producto-badge--proximamente">En desarrollo</span>
             </div>
             <div class="tarjeta-producto-preview tarjeta-producto-preview--menu" aria-hidden="true">
               <div class="preview-plato">
@@ -214,13 +212,13 @@
           </div>
           <div class="tarjeta-producto-body">
             <h3>Menú Digital IA</h3>
-            <p>Menú con video de cada plato, calorías y detalles sobre la imagen, y un mesero de IA que recomienda, resuelve dudas y toma el pedido.</p>
+            <p>Todavía no disponible. Estamos desarrollando un menú digital con video de cada plato y un mesero de IA que recomienda y resuelve dudas.</p>
             <div class="tarjeta-producto-chips">
               <span class="chip chip--azul">Videos de platos</span>
               <span class="chip chip--azul">Mesero IA</span>
               <span class="chip chip--azul">Calorías</span>
             </div>
-            <span class="boton boton-azul boton-disabled" role="button" aria-disabled="true" title="Disponible próximamente">Próximamente <span>→</span></span>
+            <span class="boton boton-azul boton-disabled" role="button" aria-disabled="true" title="Todavía no disponible">En desarrollo</span>
           </div>
         </article>
       </div>
@@ -232,7 +230,7 @@
       <div class="encabezado-seccion" data-reveal>
         <span class="ojo-seccion ojo-seccion--verde">Producto destacado · Recepcionista IA</span>
         <h2>Todo lo que hoy hacés a mano por WhatsApp, ahora lo hace el agente.</h2>
-        <p>Nada de esto es promesa a futuro: son funciones corriendo hoy con clientes reales.</p>
+        <p>Nada de esto es promesa a futuro: son funciones que ya corren en producción.</p>
       </div>
 
       <div class="features-grid">
@@ -240,7 +238,7 @@
           <span class="feature-icono feature-icono--verde">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a9 9 0 0 0-7.7 13.6L3 21l4.6-1.2A9 9 0 1 0 12 3Z" stroke-linejoin="round"/><path d="M8.5 12h.01M12 12h.01M15.5 12h.01" stroke-linecap="round"/></svg>
           </span>
-          <h3>Responde al instante, 24/7</h3>
+          <h3>Responde a cualquier hora</h3>
           <p>Dudas, precios y horarios contestados con IA — entendiendo la pregunta, no un menú de opciones.</p>
         </article>
 
@@ -249,7 +247,7 @@
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 9.5h17M8 3v4M16 3v4" stroke-linecap="round"/><path d="M8.5 13.5l1.8 1.8 3.7-3.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </span>
           <h3>Agenda, reprograma y cancela sola</h3>
-          <p>Sincronizada con Google Calendar: el agente maneja los cambios de cita sin que intervengas.</p>
+          <p>Respeta tu horario real y, si lo conectás, se sincroniza con tu Google Calendar. Los cambios de cita los maneja el agente.</p>
         </article>
 
         <article class="feature" data-reveal>
@@ -265,7 +263,7 @@
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8.5a6 6 0 0 0-12 0c0 6-2.5 7.5-2.5 7.5h17S18 14.5 18 8.5Z" stroke-linejoin="round"/><path d="M10 19.5a2 2 0 0 0 4 0" stroke-linecap="round"/></svg>
           </span>
           <h3>Recordatorios con confirmación</h3>
-          <p>Un día antes y el mismo día, pidiendo confirmar — así los no-shows dejan de comerte la agenda.</p>
+          <p>Un día antes y unas horas antes, con botón para confirmar o reprogramar — para que los no-shows no te coman la agenda.</p>
         </article>
 
         <article class="feature" data-reveal>
@@ -301,7 +299,7 @@
           <span class="navegador-punto navegador-punto--rojo"></span>
           <span class="navegador-punto navegador-punto--amarillo"></span>
           <span class="navegador-punto navegador-punto--verde"></span>
-          <span class="navegador-url">panel.selyon.app/lavacar-rosales</span>
+          <span class="navegador-url">tu-negocio · panel Selyon</span>
         </div>
         <img src="/landing/panel-dashboard-oscuro.webp" alt="Dashboard del panel Selyon: conversaciones, citas agendadas, conversión e ingresos estimados" width="1600" height="960" loading="lazy">
       </div>
@@ -338,7 +336,7 @@
         <div class="paso" data-reveal>
           <div class="paso-numero">2</div>
           <h3>Conectamos tu WhatsApp</h3>
-          <p>Tu mismo número, sin cambios para tus clientes.</p>
+          <p>A la plataforma oficial de Meta: con un número nuevo o pasando el tuyo desde la app de WhatsApp Business.</p>
         </div>
         <div class="paso" data-reveal>
           <div class="paso-numero">3</div>
@@ -349,18 +347,17 @@
     </div>
   </section>
 
-  <!-- PENDIENTE-NATHAN: testimonio de ejemplo — reemplazar por una cita real de Lavacar Rosales. -->
+  <!-- Caso real descrito con hechos, SIN cita inventada. PENDIENTE: si el piloto da una cita
+       textual con permiso escrito, se puede volver al formato testimonio (comilla + estrellas). -->
   <section class="testimonio">
     <div class="contenedor contenedor--media">
       <div class="testimonio-tarjeta" data-reveal>
-        <div class="testimonio-comilla" aria-hidden="true">”</div>
         <div class="testimonio-contenido">
-          <div class="testimonio-estrellas" aria-hidden="true">★★★★★</div>
-          <p class="testimonio-texto">"Antes perdíamos clientes por no contestar a tiempo. Ahora el agente responde al instante y llena la agenda solo. Dejé de vivir pegado al teléfono."</p>
+          <p class="testimonio-texto">Caso piloto: un lavacar en San José atiende su WhatsApp con Selyon. El agente responde consultas, cotiza, agenda y recuerda las citas; el dueño supervisa y toma las conversaciones que hacen falta desde el panel.</p>
           <div class="testimonio-autor">
-            <span class="testimonio-avatar">LR</span>
+            <span class="testimonio-avatar">CR</span>
             <div>
-              <div class="testimonio-nombre">Lavacar Rosales</div>
+              <div class="testimonio-nombre">Lavacar piloto</div>
               <div class="testimonio-ubicacion">San José, Costa Rica · en producción con Selyon</div>
             </div>
           </div>
@@ -382,9 +379,10 @@
           <p class="plan-tagline">Para empezar a atender solo.</p>
           <ul class="plan-lista">
             <li>Agente de WhatsApp con IA</li>
-            <li>Agenda con Google Calendar</li>
+            <li>Agenda (con Google Calendar opcional)</li>
             <li>Recordatorios con confirmación</li>
             <li>Panel de bandeja y CRM</li>
+            <li>Hasta 500 conversaciones al mes</li>
           </ul>
           <a class="boton boton-linea" href="https://wa.me/50683658231?text=Hola%2C%20quiero%20consultar%20el%20precio%20del%20plan%20B%C3%A1sico" target="_blank" rel="noopener">Consultar precio</a>
         </div>
@@ -393,10 +391,11 @@
           <div class="plan-nombre">Pro</div>
           <p class="plan-tagline">Para equipos y marca propia.</p>
           <ul class="plan-lista">
-            <li>Todo lo del plan Básico</li>
-            <li>Campañas por WhatsApp</li>
+            <li>Todo lo del plan Básico, sin tope mensual</li>
+            <li>Campañas a clientes que aceptan promociones</li>
             <li>Multi-usuario para tu equipo</li>
-            <li>Marca propia en panel y agente</li>
+            <li>Marca propia en el panel</li>
+            <li>Seguimiento de cotizaciones y reseñas de Google</li>
           </ul>
           <a class="boton boton-amarillo" href="https://wa.me/50683658231?text=Hola%2C%20quiero%20consultar%20el%20precio%20del%20plan%20Pro" target="_blank" rel="noopener">Consultar precio</a>
         </div>
@@ -411,11 +410,11 @@
       <div class="faq-lista" data-reveal>
         <details>
           <summary><span>¿Necesito cambiar mi número de WhatsApp?</span><span>+</span></summary>
-          <p>No. Conectamos el agente a tu número actual; tus clientes siguen escribiendo al mismo lugar de siempre.</p>
+          <p>Depende. El agente funciona sobre la plataforma oficial de WhatsApp de Meta, y un número conectado ahí deja de poder usarse en la app de WhatsApp Business del celular. Podés usar un número nuevo, o pasar tu número actual desde la app: tus clientes te siguen escribiendo al mismo número, pero tu equipo lo atiende desde el panel y el historial de la app no se traslada. Te ayudamos a elegir.</p>
         </details>
         <details>
           <summary><span>¿Y si el agente no sabe algo?</span><span>+</span></summary>
-          <p>Te avisa y pasa la conversación a un humano — nunca inventa una respuesta.</p>
+          <p>Está configurado para no inventar: responde con la información que cargaste y, si no sabe, pasa la conversación a una persona de tu equipo y te avisa. Como toda IA puede equivocarse, así que lo importante conviene confirmarlo.</p>
         </details>
         <details>
           <summary><span>¿Puedo responder yo directamente?</span><span>+</span></summary>
@@ -423,15 +422,15 @@
         </details>
         <details>
           <summary><span>¿Qué pasa con los datos de mis clientes?</span><span>+</span></summary>
-          <p>Se usan solo para atender su consulta y su cita. Los detalles están en la <a href="/privacidad">política de privacidad</a>.</p>
+          <p>Vos sos el responsable de esos datos y Selyon los trata por encargo tuyo, solo para atender consultas y citas. Se procesan con proveedores como Meta y OpenAI (EE. UU.), y solo reciben promociones los clientes que aceptan expresamente. Los detalles están en la <a href="/privacidad">política de privacidad</a> y el <a href="/contrato">contrato para negocios</a>.</p>
         </details>
         <details>
           <summary><span>¿Cuánto tarda en estar funcionando?</span><span>+</span></summary>
-          <p>Días, no meses — la configuración inicial es cargar tus servicios, precios y horarios.</p>
+          <p>Días, no meses: la configuración es cargar tus servicios, precios y horarios. Lo que más puede demorar son los trámites que pide Meta para el número (verificación y plantillas).</p>
         </details>
         <details>
           <summary><span>¿Sirve para mi tipo de negocio?</span><span>+</span></summary>
-          <p>Sirve para cualquier negocio que agenda citas o atiende pedidos: lavacares, talleres, clínicas, salones, restaurantes y similares.</p>
+          <p>Sirve para negocios que trabajan con citas: lavacares, talleres, clínicas, barberías, salones, spas y similares. Hoy no toma pedidos de comida ni cobra pagos dentro del chat.</p>
         </details>
       </div>
     </div>
@@ -472,7 +471,7 @@
       <div class="pie-titulo-col">Productos</div>
       <nav class="pie-enlaces">
         <a href="#agente">Recepcionista IA</a>
-        <span class="pie-enlace-proximamente" title="Disponible próximamente">Menú Digital IA (pronto)</span>
+        <span class="pie-enlace-proximamente" title="Todavía no disponible">Menú Digital IA (en desarrollo)</span>
         <a href="#precios">Precios</a>
       </nav>
     </div>
@@ -481,6 +480,7 @@
       <nav class="pie-enlaces">
         <a href="/privacidad">Política de privacidad</a>
         <a href="/terminos">Términos del servicio</a>
+        <a href="/contrato">Contrato para negocios</a>
         <a href="https://wa.me/50683658231?text=Hola%2C%20quiero%20hablar%20de%20Selyon%20para%20mi%20negocio" target="_blank" rel="noopener">Contacto</a>
       </nav>
     </div>

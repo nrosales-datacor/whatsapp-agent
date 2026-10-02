@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Landing pública de venta (ROADMAP C4.4). Sirve `/`, `/privacidad`, `/terminos`,
+// Landing pública de venta (ROADMAP C4.4). Sirve `/`, `/privacidad`, `/terminos`, `/contrato`,
 // los assets estáticos bajo `/landing/*`, `/robots.txt` y `/favicon.svg`.
 // Mismo patrón de caché/allowlist que los estáticos del panel (src/panel/router.ts).
 // Devuelve true si atendió la request; false para que server.ts siga con sus rutas.
@@ -122,6 +122,9 @@ export function manejarLanding(req: IncomingMessage, res: ServerResponse, pathna
     "/privacidad.html": "privacidad.html",
     "/terminos": "terminos.html",
     "/terminos.html": "terminos.html",
+    // Modelo de contrato B2B + acuerdo de tratamiento de datos (revisión pre-venta 2026-10).
+    "/contrato": "contrato.html",
+    "/contrato.html": "contrato.html",
   };
   const archivo = PAGINAS[pathname];
   if (!archivo) return false;

@@ -235,6 +235,11 @@ export async function reabrirConversacion(id: string): Promise<void> {
   await pedir(`/conversaciones/${encodeURIComponent(id)}/reabrir`, { method: "POST" });
 }
 
+/** Le manda al cliente el pedido de permiso de promociones (botones Sí/No). Requiere ventana de 24h abierta. */
+export async function pedirConsentimiento(id: string): Promise<void> {
+  await pedir(`/conversaciones/${encodeURIComponent(id)}/pedir-consentimiento`, { method: "POST" });
+}
+
 /** Cola de trabajo (C2.3): marcar una conversación como atendida, o reabrirla. */
 export async function cambiarEstadoConversacion(id: string, estado: EstadoConversacion): Promise<void> {
   await pedir(`/conversaciones/${encodeURIComponent(id)}/estado`, {
@@ -634,8 +639,24 @@ export interface NuevaCampania {
 }
 
 export interface PreviewSegmento {
+  /** Destinatarios reales: califican, dieron consentimiento de marketing y no pidieron la baja. */
   total: number;
   muestra: ClienteSegmento[];
+  /** Califican por el filtro pero nunca dieron permiso de promociones (no reciben la campaña). */
+  sinConsentimiento: number;
+  /** Califican por el filtro pero pidieron la baja (no reciben la campaña). */
+  conBaja: number;
+}
+
+/** Consentimiento de marketing del negocio: cuántos clientes dieron permiso de promociones. */
+export interface ResumenConsentimiento {
+  clientes: number;
+  conConsentimiento: number;
+  conBaja: number;
+}
+
+export function obtenerResumenConsentimiento(): Promise<ResumenConsentimiento> {
+  return pedir<ResumenConsentimiento>("/campanias/consentimiento");
 }
 
 export function listarCampanias(): Promise<Campania[]> {

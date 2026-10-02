@@ -1,0 +1,2 @@
+ALTER TABLE "wa_conversaciones" ADD COLUMN "marketing_consentimiento_en" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "wa_conversaciones" ADD COLUMN "marketing_consentimiento_pedido_en" timestamp with time zone;

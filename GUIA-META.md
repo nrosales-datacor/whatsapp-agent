@@ -165,8 +165,14 @@ de cuenta* → *Plantillas de mensaje* → **Crear plantilla**:
 
 - **Ejemplos de variables**: `{{1}}` = "María", `{{2}}` = "Tenemos 20% de descuento en pulido de
   parabrisas esta semana 🚗✨".
-- **Sin botones**: el opt-out es por palabra clave ("BAJA", que el bot ya detecta como comando
-  exacto — ver `handleWebhook.ts`), no por botón — más simple de aprobar y de mantener.
+- **Sin botones**: el opt-out es por palabra clave ("BAJA", que el bot detecta normalizado junto
+  con variantes cortas como "stop", "cancelar suscripción" o "no me manden más" — ver
+  `src/campaigns/consentimiento.ts`), no por botón — más simple de aprobar y de mantener.
+- **A quién le llega**: la plantilla SOLO se envía a clientes que dieron **consentimiento
+  explícito** de marketing (tocaron "Sí, avísenme" en el mensaje que lo pregunta: el bot lo
+  ofrece una vez tras una cita en la que el cliente respondió que le fue bien, o el negocio lo
+  pide desde el chat del panel). Escribir alguna vez al negocio NO es consentimiento. Esto es lo
+  que exige la política de mensajes de WhatsApp Business para Marketing.
 
 ### Cómo verificar la aprobación y activarla
 
