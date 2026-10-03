@@ -187,9 +187,9 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
               )}
             </div>
           )}
-          {vista === "panel" && <Dashboard nombre={sesion.nombre} />}
-          {vista === "agenda" && <Agenda servicios={sesion.servicios} empleados={sesion.empleados ?? []} />}
-          {vista === "config" && sesion.rol === "dueno" && <MiNegocio features={sesion.features} />}
+          {vista === "panel" && <Dashboard nombre={sesion.nombre} moneda={sesion.moneda} />}
+          {vista === "agenda" && <Agenda servicios={sesion.servicios} empleados={sesion.empleados ?? []} moneda={sesion.moneda} />}
+          {vista === "config" && sesion.rol === "dueno" && <MiNegocio features={sesion.features} moneda={sesion.moneda} />}
           {vista === "usuarios" && sesion.rol === "dueno" && sesion.features.multiUsuario && (
             <Usuarios usuarioActualId={sesion.usuarioId} />
           )}

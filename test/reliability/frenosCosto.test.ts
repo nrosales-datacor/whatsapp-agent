@@ -10,7 +10,8 @@ import { ingerirEntrante, responderEntrante, type Pendiente } from "../../src/ha
 import { _registrarTenantParaTests } from "../../src/config/tenantStore";
 import { incrementarUso, anioMesActual } from "../../src/observabilidad/uso";
 import { _resetParaTests as _resetRateLimitParaTests } from "../../src/red/limiteIngesta";
-import { MENSAJE_LIMITE_CLIENTE, PREFIJO_AVISO_LIMITE } from "../../src/red/limiteCliente";
+import { PREFIJO_AVISO_LIMITE } from "../../src/red/limiteCliente";
+import { textoCliente } from "../../src/config/textos";
 import type { Conversacion, Repositorio, Tenant } from "../../src/types";
 import { crearTenant } from "../helpers/fixtures";
 import { cuerpoTextoEntrante, desactivarMockWebhook, instalarMockWebhook } from "../helpers/webhookMock";
@@ -62,7 +63,7 @@ test("límite por cliente: con 30 respuestas del bot en la última hora NO llama
     await responderEntrante(pendiente(tenant, conv, "50600000001", "hola otra vez", "wamid.freno.1"), repo, db);
     assert.equal(mock.llamadasLLM(), 0, "pasado el límite no se llama al LLM");
     assert.equal(mock.enviados.length, 1, "el cliente recibe el aviso");
-    assert.equal(mock.enviados[0].texto, MENSAJE_LIMITE_CLIENTE);
+    assert.equal(mock.enviados[0].texto, textoCliente(tenant, "limiteCliente"));
     assert.equal(await repo.obtenerModo(tenant.id, conv.id), "bot", "el límite no pasa la conversación a humano");
 
     // Siguiente mensaje dentro de la misma hora: silencio total (ni LLM ni segundo aviso).
@@ -142,7 +143,7 @@ test("límite por cliente: sin DB (repositorio en memoria) aplica igual", async 
   await responderEntrante(pendiente(tenant, conv, "50600000005", "hola?", "wamid.freno.mem.2"), repo);
   assert.equal(mock.llamadasLLM(), 0);
   assert.equal(mock.enviados.length, 1);
-  assert.equal(mock.enviados[0].texto, MENSAJE_LIMITE_CLIENTE);
+  assert.equal(mock.enviados[0].texto, textoCliente(tenant, "limiteCliente"));
 });
 
 test("bucle bot-a-bot: la misma respuesta automática 5 veces pausa el bot (modo humano) SIN contestarle al otro bot", async () => {

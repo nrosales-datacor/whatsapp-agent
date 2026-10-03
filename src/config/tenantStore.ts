@@ -1,6 +1,17 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import type { Bloqueo, Empleado, EstadoFacturacion, HorarioDia, KnowledgeBase, Plan, Rol, Service, Tenant } from "../types";
+import type {
+  Bloqueo,
+  Empleado,
+  EstadoFacturacion,
+  HorarioDia,
+  KnowledgeBase,
+  Plan,
+  Rol,
+  Service,
+  Tenant,
+  TextosCliente,
+} from "../types";
 import { obtenerDb } from "../db/client";
 import { schema, waPushSubs, waTenants, waUsuarios } from "../db/schema";
 import { cifrar, descifrar } from "./secretos";
@@ -197,6 +208,7 @@ function filaATenant(f: typeof waTenants.$inferSelect): Tenant {
     instrucciones: f.instrucciones ?? undefined,
     topeConversacionesDesactivado: f.topeConversacionesDesactivado,
     mensajeTopeExcedido: f.mensajeTopeExcedido ?? undefined,
+    textosCliente: f.textosCliente ?? undefined,
   };
 }
 
@@ -425,6 +437,7 @@ export async function crearTenant(tenant: Tenant, u: NuevoUsuario): Promise<void
       googleCalendarId: tenant.googleCalendarId ?? null,
       topeConversacionesDesactivado: tenant.topeConversacionesDesactivado ?? false,
       mensajeTopeExcedido: tenant.mensajeTopeExcedido ?? null,
+      textosCliente: tenant.textosCliente ?? null,
     });
     // El usuario del alta es, por definición, el dueño del negocio recién creado.
     await tx.insert(waUsuarios).values({ usuario: u.usuario, passwordHash: u.passwordHash, tenantId: tenant.id, rol: "dueno" });
@@ -464,6 +477,13 @@ export interface ConfigTenantPatch {
   tono: string | null;
   instrucciones: string | null;
   mensajeTopeExcedido: string | null;
+  /**
+   * Override de textos al cliente final (E11). OPCIONAL a propósito: `undefined` = no
+   * se toca la columna. Así los snapshots de historial anteriores a E11 (que no lo
+   * traen) se restauran sin borrar los overrides vigentes, y el /config del panel
+   * sigue funcionando igual mientras no exponga este campo.
+   */
+  textosCliente?: TextosCliente | null;
 }
 
 /**
@@ -517,6 +537,7 @@ export async function actualizarConfigTenant(
         tono: patch.tono,
         instrucciones: patch.instrucciones,
         mensajeTopeExcedido: patch.mensajeTopeExcedido,
+        ...(patch.textosCliente !== undefined && { textosCliente: patch.textosCliente }),
         actualizadoEn: new Date(),
       })
       .where(eq(waTenants.id, tenantId));

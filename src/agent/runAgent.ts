@@ -18,6 +18,7 @@ import { registrarUsoLlm } from "../observabilidad/uso";
 import { calcularCostoMillonesimos } from "../observabilidad/costoLlm";
 import { tenantPuede } from "../billing/planes";
 import { OPENAI_MAX_REINTENTOS, TIMEOUT_OPENAI_MS } from "../red/timeouts";
+import { esRespuestaFueraDeAlcance, textoCliente } from "../config/textos";
 
 const MODELO = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 const MAX_PASOS = 4; // tope de iteraciones de tool-calling por mensaje
@@ -251,10 +252,12 @@ export async function ejecutarTool(
     const servicioId = String(args.servicioId);
     const fecha = String(args.fecha);
     const hora = String(args.hora);
-    // Texto libre acotado (revisión pre-venta 2026-10): el nombre y la placa se
-    // guardan en la cita y se muestran en panel, CRM y Calendar.
+    // Texto libre acotado (revisión pre-venta 2026-10): el nombre y la referencia se
+    // guardan en la cita y se muestran en panel, CRM y Calendar. La referencia (placa,
+    // expediente…; E11) llega como `referencia`; `placa` es el nombre viejo del
+    // argumento y se acepta igual por si el modelo lo sigue usando.
     const nombreCliente = textoLibre(args.nombre, MAX_LARGO_NOMBRE);
-    const placa = textoLibre(args.placa, MAX_LARGO_PLACA) || undefined;
+    const placa = textoLibre(args.referencia || args.placa, MAX_LARGO_PLACA) || undefined;
     if (!nombreCliente) {
       return JSON.stringify({ ok: false, motivo: "falta el nombre del cliente: pedíselo antes de agendar." });
     }
@@ -653,17 +656,22 @@ export function confirmacionDeAccion(nombreTool: string, resultado: string, tena
   }
   if (r?.ok !== true) return null;
   const nombreServicio = (id: string) => tenant.servicios.find((s) => s.id === id)?.nombre ?? id;
+  // Textos por registro del negocio (E11, src/config/textos.ts).
   if (nombreTool === "agendar_cita" && r.cita) {
     const c = r.cita;
-    return `✅ Tu cita quedó agendada: ${nombreServicio(c.servicioId)}, ${fechaLegible(c.fecha, tenant.timezone)} a las ${c.hora}.`;
+    return textoCliente(tenant, "citaAgendada", {
+      servicio: nombreServicio(c.servicioId),
+      fecha: fechaLegible(c.fecha, tenant.timezone),
+      hora: c.hora,
+    });
   }
   if (nombreTool === "reprogramar_cita" && r.cita) {
     const c = r.cita;
-    return `✅ Tu cita quedó cambiada: ${c.servicio}, ${fechaLegible(c.fecha, tenant.timezone)} a las ${c.hora}.`;
+    return textoCliente(tenant, "citaReprogramada", { servicio: c.servicio, fecha: fechaLegible(c.fecha, tenant.timezone), hora: c.hora });
   }
   if (nombreTool === "cancelar_cita" && r.cancelada) {
     const c = r.cancelada;
-    return `Tu cita de ${c.servicio} del ${fechaLegible(c.fecha, tenant.timezone)} quedó cancelada.`;
+    return textoCliente(tenant, "citaCancelada", { servicio: c.servicio, fecha: fechaLegible(c.fecha, tenant.timezone) });
   }
   return null;
 }
@@ -775,8 +783,8 @@ async function correrAgenteInterno(
       mensajes.push(msg);
 
       if (!msg.tool_calls?.length) {
-        const respuesta = msg.content ?? "Disculpá, no entendí. ¿Me lo repetís?";
-        const fueraDeAlcance = /solo puedo ayudarte con/i.test(respuesta);
+        const respuesta = msg.content ?? textoCliente(ctx.tenant, "noEntendi");
+        const fueraDeAlcance = esRespuestaFueraDeAlcance(respuesta);
         return { respuesta, fueraDeAlcance, escalar: false, interactivo: capturas.interactivo, confirmacion: confirmacion() };
       }
 

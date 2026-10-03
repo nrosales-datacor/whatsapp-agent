@@ -3,6 +3,7 @@ import type { MensajeInteractivo, OpcionInteractiva, Sentimiento, Tenant } from 
 import { registrarMensajeSaliente } from "../observabilidad/uso";
 import { conTimeout, TIMEOUT_GRAPH_MS, TIMEOUT_MEDIA_MS } from "../red/timeouts";
 import { registrarRespuestaGraph } from "./estadoToken";
+import { BOTONES } from "../config/textos";
 
 // ⚠️ La versión del Graph API cambia con el tiempo. Confirmá la vigente en la
 // documentación de Meta antes de producción. Se deja configurable por .env.
@@ -379,8 +380,8 @@ export function opcionEmpleado(servicioId: string, empleadoId: string, nombre: s
 /** Botones del recordatorio de cita (C1.3): confirmar o pedir reprogramación. */
 export function botonesRecordatorio(citaId: string): OpcionInteractiva[] {
   return [
-    { id: `confirmar|${citaId}`, titulo: "Confirmo ✅" },
-    { id: `mover|${citaId}`, titulo: "Reprogramar" },
+    { id: `confirmar|${citaId}`, titulo: BOTONES.confirmarCita },
+    { id: `mover|${citaId}`, titulo: BOTONES.reprogramarCita },
   ];
 }
 
@@ -398,8 +399,8 @@ export function esConfirmacionCita(interactiveId: string | undefined): string | 
  */
 export function botonesPostServicio(citaId: string): OpcionInteractiva[] {
   return [
-    { id: `postbien|${citaId}`, titulo: "Todo bien 👍" },
-    { id: `postmal|${citaId}`, titulo: "Tuve un problema" },
+    { id: `postbien|${citaId}`, titulo: BOTONES.postTodoBien },
+    { id: `postmal|${citaId}`, titulo: BOTONES.postProblema },
   ];
 }
 
@@ -410,9 +411,9 @@ export function botonesPostServicio(citaId: string): OpcionInteractiva[] {
  */
 export function botonesPostServicioPro(citaId: string): OpcionInteractiva[] {
   return [
-    { id: `postexcelente|${citaId}`, titulo: "Excelente 😃" },
-    { id: `postok|${citaId}`, titulo: "Bien 🙂" },
-    { id: `postmal|${citaId}`, titulo: "Mal 😞" },
+    { id: `postexcelente|${citaId}`, titulo: BOTONES.postExcelente },
+    { id: `postok|${citaId}`, titulo: BOTONES.postBien },
+    { id: `postmal|${citaId}`, titulo: BOTONES.postMal },
   ];
 }
 
@@ -684,7 +685,7 @@ export async function enviarInteractivo(
   if (msg.tipo === "botones") {
     await enviarBotones(tenant, paraWa, msg.cuerpo, msg.opciones);
   } else {
-    await enviarLista(tenant, paraWa, msg.cuerpo, msg.textoBoton ?? "Ver opciones", msg.opciones);
+    await enviarLista(tenant, paraWa, msg.cuerpo, msg.textoBoton ?? BOTONES.verOpciones, msg.opciones);
   }
 }
 

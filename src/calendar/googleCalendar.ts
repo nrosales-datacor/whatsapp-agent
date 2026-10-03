@@ -123,8 +123,8 @@ function sumarMinutos(hhmm: string, min: number): string {
 /**
  * Crea el evento de la cita en el Google Calendar del negocio.
  * Devuelve el id del evento, o null si la integración no está configurada.
- * El evento guarda NOMBRE y TELÉFONO del cliente, servicio y placa, y trae
- * alertas para el negocio (1 día antes y 2 horas antes).
+ * El evento guarda NOMBRE y TELÉFONO del cliente, servicio y referencia (placa,
+ * expediente…), y trae alertas para el negocio (1 día antes y 2 horas antes).
  */
 export async function crearEventoCita(tenant: Tenant, cita: Cita): Promise<string | null> {
   const calendario = calendarioDeTenant(tenant);
@@ -140,7 +140,7 @@ export async function crearEventoCita(tenant: Tenant, cita: Cita): Promise<strin
       `Cliente: ${cita.clienteNombre}`,
       `Teléfono (WhatsApp): +${cita.clienteWa}`,
       `Servicio: ${servicio?.nombre ?? cita.servicioId}`,
-      cita.placa ? `Placa: ${cita.placa}` : null,
+      cita.placa ? `Referencia: ${cita.placa}` : null,
       ``,
       `Cita #${cita.id} · agendada por el agente de WhatsApp de ${tenant.nombre}.`,
     ]

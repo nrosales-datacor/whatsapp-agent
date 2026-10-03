@@ -66,7 +66,7 @@ test("construirSystemPrompt: con upsell (plan Pro) lista el add-on con su id; si
     { id: "fluor", nombre: "Aplicación de flúor", precio: 9000, duracionMin: 15 },
   ];
   const pro = construirSystemPrompt(crearTenant({ plan: "pro", servicios }));
-  assert.match(pro, /add-on al agendarlo: Aplicación de flúor \(addonId: fluor, CRC8/);
+  assert.match(pro, /add-on al agendarlo: Aplicación de flúor \(addonId: fluor, ₡8/); // moneda "CRC" se formatea con su símbolo (E11)
   const basico = construirSystemPrompt(crearTenant({ plan: "basico", servicios }));
   assert.doesNotMatch(basico, /addonId: fluor/);
 });

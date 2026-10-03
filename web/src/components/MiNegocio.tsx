@@ -17,6 +17,7 @@ import ErrorState from "./ErrorState";
 import EstadoVacio from "./EstadoVacio";
 import Icono, { type IconoId } from "./Iconos";
 import { useToast } from "./Toast";
+import { simboloMoneda } from "../lib/formato";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // "Mi negocio" (ROADMAP C2.2): el dueño edita servicios/precios, horario, feriados
@@ -153,7 +154,7 @@ function bloqueosAForm(bloqueos: Bloqueo[]): BloqueoForm[] {
   return bloqueos.map((b) => ({ desde: b.desde, hasta: b.hasta, motivo: b.motivo ?? "" }));
 }
 
-export default function MiNegocio({ features }: { features: Features }) {
+export default function MiNegocio({ features, moneda }: { features: Features; moneda?: string }) {
   const qc = useQueryClient();
   const { flash } = useToast();
   const q = useQuery({ queryKey: ["config"], queryFn: obtenerConfig });
@@ -800,7 +801,7 @@ export default function MiNegocio({ features }: { features: Features }) {
                               Precio base
                             </label>
                             <div className="svc-input-money">
-                              <span>₡</span>
+                              <span>{simboloMoneda(moneda)}</span>
                               <input
                                 id={`svcPrecio${i}`}
                                 inputMode="numeric"
@@ -906,7 +907,7 @@ export default function MiNegocio({ features }: { features: Features }) {
                                 Precio promo
                               </label>
                               <div className="svc-input-money">
-                                <span>₡</span>
+                                <span>{simboloMoneda(moneda)}</span>
                                 <input
                                   id={`svcAddonPrecio${i}`}
                                   inputMode="numeric"
@@ -1279,7 +1280,7 @@ export default function MiNegocio({ features }: { features: Features }) {
                 <>
                   <p className="campo-ayuda">
                     Cuando el bot cotiza un servicio y el cliente no agenda, le manda un seguimiento automático (máx. 2
-                    toques) si no vuelve a escribir. La tarjeta "₡ recuperados" del dashboard muestra el resultado.
+                    toques) si no vuelve a escribir. La tarjeta de dinero rescatado del dashboard muestra el resultado.
                   </p>
                   <div className="campo">
                     <label htmlFor="cRescateHoras">Horas de espera antes del primer toque</label>

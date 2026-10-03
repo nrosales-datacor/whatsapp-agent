@@ -5,6 +5,7 @@ import type { Cita, Repositorio, Tenant, TipoRecordatorio } from "../types";
 import { listarTenants } from "../config/tenantStore";
 import { botonesPostServicio, botonesPostServicioPro, botonesRecordatorio, enviarBotones, enviarPlantilla } from "../whatsapp/client";
 import { tenantPuede } from "../billing/planes";
+import { textoCliente } from "../config/textos";
 import { capturarError } from "../observabilidad/sentry";
 import { mapConLimite } from "../red/concurrencia";
 import { iniciarCicloSinSolape } from "../red/programador";
@@ -169,9 +170,12 @@ async function enviarRecordatorio(tenant: Tenant, cita: Cita, tipo: TipoRecordat
   // Texto libre CON BOTONES interactivos (C1.3, anti no-show): el cliente confirma
   // con un toque o pide reprogramar. La respuesta llega como mensaje `interactive`
   // y la maneja handleWebhook (confirmar = acción directa; reprogramar = va al agente).
-  const cuerpo =
-    `¡Hola ${cita.clienteNombre}! 👋 Te recordamos tu cita en ${tenant.nombre} ` +
-    `${cuando}: ${nombreServicio}. ¿Nos confirmás?`;
+  const cuerpo = textoCliente(tenant, "recordatorioCita", {
+    cliente: cita.clienteNombre,
+    negocio: tenant.nombre,
+    cuando,
+    servicio: nombreServicio,
+  });
   await enviarBotones(tenant, cita.clienteWa, cuerpo, botonesRecordatorio(cita.id));
 }
 
@@ -189,7 +193,11 @@ async function enviarRecordatorio(tenant: Tenant, cita: Cita, tipo: TipoRecordat
 async function enviarPostServicio(tenant: Tenant, cita: Cita, repo: Repositorio): Promise<void> {
   const servicio = tenant.servicios.find((s) => s.id === cita.servicioId);
   const nombreServicio = servicio?.nombre ?? cita.servicioId;
-  const cuerpo = `¡Hola ${cita.clienteNombre}! 👋 ¿Cómo te fue con tu ${nombreServicio} en ${tenant.nombre}? 🚗`;
+  const cuerpo = textoCliente(tenant, "postServicioPregunta", {
+    cliente: cita.clienteNombre,
+    servicio: nombreServicio,
+    negocio: tenant.nombre,
+  });
   const esPro = tenantPuede(tenant, "resenasPro");
   await enviarBotones(tenant, cita.clienteWa, cuerpo, esPro ? botonesPostServicioPro(cita.id) : botonesPostServicio(cita.id));
   if (esPro) await repo.crearSeguimiento(tenant.id, cita.id);
