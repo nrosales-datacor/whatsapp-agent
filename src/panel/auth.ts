@@ -136,31 +136,82 @@ export function verificarSesion(token: string | undefined): SesionOperador | nul
 // ─────────────────────────────────────────────────────────────────────────────
 // Sesión del SUPERADMIN (onboarding en /panel/admin). Es APARTE de la del operador:
 // cookie distinta (panel_admin_sesion) y un marcador fijo en el payload (no es un
-// tenantId). Reusa el mismo HMAC/SECRET/duración/versión. El superadmin se valida
-// por .env (PANEL_SUPERADMIN_*), no vive en la base. (ROADMAP B3)
+// tenantId). Reusa el mismo HMAC/SECRET. El superadmin se valida por .env
+// (PANEL_SUPERADMIN_*), no vive en la base. (ROADMAP B3)
+//
+// Endurecida en la revisión de seguridad pre-venta 2026-10 (es la llave de TODOS los
+// negocios: alta, baja con export, reset de claves, tokens de WhatsApp):
+//   • Duración CORTA y configurable (`PANEL_ADMIN_SESSION_HORAS`, default 8 h, tope 12 h),
+//     en vez de los 7 días de la sesión de operador.
+//   • Versión PROPIA (`PANEL_ADMIN_SESSION_VERSION`): subirla echa solo al superadmin, sin
+//     desloguear a todos los negocios (la global `PANEL_SESSION_VERSION` sigue aplicando).
+//   • Marca de 2FA: si `PANEL_SUPERADMIN_TOTP_SECRET` está configurado, solo valen las
+//     sesiones abiertas CON código TOTP — una cookie emitida antes de activar el 2FA deja
+//     de servir en el acto.
 // ─────────────────────────────────────────────────────────────────────────────
 const ADMIN_MARCA = "__superadmin__";
+const HORAS_ADMIN_MAX = 12;
 
-/** Crea el token de sesión del superadmin (va en la cookie panel_admin_sesion). */
-export function crearSesionAdmin(): string {
-  const payload = `${ADMIN_MARCA}.${Date.now() + DURACION_MS}.${SESSION_VERSION}`;
-  const firma = crypto.createHmac("sha256", SECRET).update(payload).digest("hex");
-  return Buffer.from(`${payload}.${firma}`).toString("base64url");
+function versionAdmin(): string {
+  return process.env.PANEL_ADMIN_SESSION_VERSION ?? "1";
+}
+
+/** Duración de la sesión del superadmin, en segundos (también es el Max-Age de la cookie). */
+export function duracionSesionAdminSeg(): number {
+  const horas = Number(process.env.PANEL_ADMIN_SESSION_HORAS ?? 8);
+  const h = Number.isFinite(horas) && horas > 0 ? Math.min(horas, HORAS_ADMIN_MAX) : 8;
+  return Math.round(h * 60 * 60);
+}
+
+/** true si el superadmin tiene el segundo factor (TOTP) configurado: pasa a ser obligatorio. */
+export function totpAdminConfigurado(): boolean {
+  return !!process.env.PANEL_SUPERADMIN_TOTP_SECRET?.trim();
+}
+
+if (process.env.PANEL_SUPERADMIN_HASH && !totpAdminConfigurado() && process.env.NODE_ENV === "production") {
+  console.warn(
+    "[auth] El superadmin NO tiene segundo factor: configurá PANEL_SUPERADMIN_TOTP_SECRET (npx tsx scripts/generarTotp.ts).",
+  );
+}
+
+function firmarAdmin(payload: string): string {
+  return crypto.createHmac("sha256", SECRET).update(payload).digest("hex");
+}
+
+/** Crea el token de sesión del superadmin (va en la cookie panel_admin_sesion).
+ *  `conTotp` = la sesión se abrió validando el segundo factor. */
+export function crearSesionAdmin(conTotp = false): string {
+  const exp = Date.now() + duracionSesionAdminSeg() * 1000;
+  const payload = `${ADMIN_MARCA}.${exp}.${SESSION_VERSION}.${versionAdmin()}.${conTotp ? 1 : 0}`;
+  return Buffer.from(`${payload}.${firmarAdmin(payload)}`).toString("base64url");
 }
 
 /** true si el token es una sesión de superadmin válida y vigente. */
 export function verificarSesionAdmin(token: string | undefined): boolean {
   if (!token) return false;
   try {
-    const [marca, exp, ver, firma] = Buffer.from(token, "base64url").toString().split(".");
-    if (marca !== ADMIN_MARCA || !exp || !ver || !firma) return false;
-    if (ver !== SESSION_VERSION) return false;
-    const esperada = crypto.createHmac("sha256", SECRET).update(`${marca}.${exp}.${ver}`).digest("hex");
+    const partes = Buffer.from(token, "base64url").toString().split(".");
+    if (partes.length !== 6) return false;
+    const [marca, exp, ver, verAdmin, mfa, firma] = partes;
+    if (marca !== ADMIN_MARCA || !exp || !firma) return false;
+    if (ver !== SESSION_VERSION || verAdmin !== versionAdmin()) return false;
     const a = Buffer.from(firma);
-    const b = Buffer.from(esperada);
+    const b = Buffer.from(firmarAdmin(`${marca}.${exp}.${ver}.${verAdmin}.${mfa}`));
     if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
-    return Date.now() <= Number(exp);
+    if (totpAdminConfigurado() && mfa !== "1") return false; // abierta sin 2FA → ya no vale
+    // Defensa extra: aunque la firma sea válida, nunca más de 12 h hacia adelante.
+    const expNum = Number(exp);
+    return Date.now() <= expNum && expNum - Date.now() <= HORAS_ADMIN_MAX * 60 * 60 * 1000;
   } catch {
     return false;
   }
+}
+
+/**
+ * Huella NO reversible de una IP (HMAC con el secreto de sesión, recortada) para el rastro
+ * de auditoría: permite ver "este login vino del mismo lugar que el anterior / de uno
+ * nuevo" sin guardar la IP en claro (wa_auditoria no guarda datos personales).
+ */
+export function huellaOrigen(ip: string): string {
+  return crypto.createHmac("sha256", SECRET).update(`origen:${ip}`).digest("hex").slice(0, 12);
 }

@@ -525,6 +525,13 @@ export interface PushSub {
   endpoint: string;
   p256dh: string;
   auth: string;
+  /** Usuario del panel dueño de este dispositivo (revisión de seguridad 2026-10). Las
+   * suscripciones viejas, de antes de asociarlas a un usuario, vienen sin él (null) y ya
+   * no reciben notificaciones (ver enviarPushATenant en src/panel/push.ts). */
+  usuarioId?: string | null;
+  /** sessionEpoch de la cuenta al suscribirse: si después sube (clave/rol/estado), la
+   * suscripción queda revocada igual que las sesiones abiertas (E13/ALTO-06). */
+  sessionEpoch?: number | null;
 }
 
 /** Métricas del negocio para el dashboard del panel. */
@@ -982,8 +989,18 @@ export interface Repositorio {
   historicoReputacion(tenantId: string, limite: number): Promise<SnapshotReputacion[]>;
 
   // ── Notificaciones push (Web Push) ──
-  guardarPushSub(tenantId: string, sub: PushSub): Promise<void>;
+  /**
+   * Guarda (o re-asocia) la suscripción de un navegador. Si el mismo endpoint ya existía
+   * (el navegador se re-suscribe, u otro usuario se loguea en ese mismo navegador), la
+   * fila pasa a ser del negocio/usuario de ESTA llamada — el dispositivo es de quien está
+   * logueado ahora. Con `maxPorUsuario`, además poda las suscripciones más viejas de ese
+   * usuario por encima del tope (revisión de seguridad 2026-10).
+   */
+  guardarPushSub(tenantId: string, sub: PushSub, opciones?: { maxPorUsuario?: number }): Promise<void>;
   listarPushSubs(tenantId: string): Promise<PushSub[]>;
-  /** Scopeada por tenantId (F4): el `endpoint` llega del body del operador (router.ts), no confiable por sí solo. */
-  borrarPushSub(tenantId: string, endpoint: string): Promise<void>;
+  /** Scopeada por tenantId (F4): el `endpoint` llega del body del operador (router.ts), no confiable por sí solo.
+   * Con `usuarioId`, además solo borra si la suscripción es de ese usuario. */
+  borrarPushSub(tenantId: string, endpoint: string, usuarioId?: string): Promise<void>;
+  /** Borra TODAS las suscripciones de un usuario (desactivación, cambio de clave/rol, reset). */
+  borrarPushSubsDeUsuario(tenantId: string, usuarioId: string): Promise<void>;
 }

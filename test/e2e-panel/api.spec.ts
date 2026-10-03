@@ -43,12 +43,14 @@ function fechaFutura(diasHabiles: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-// Mintea una cookie de superadmin (onboarding), igual que auth.ts::crearSesionAdmin.
-// verificarSesionAdmin solo valida firma+versión+vencimiento (no depende del .env), así
-// que con el mismo secreto podemos ejercer las rutas /api/panel/admin/*.
+// Mintea una cookie de superadmin (onboarding), igual que auth.ts::crearSesionAdmin:
+// `__superadmin__.<exp>.<PANEL_SESSION_VERSION>.<PANEL_ADMIN_SESSION_VERSION>.<2FA>`.
+// verificarSesionAdmin valida firma+versiones+vencimiento (+2FA solo si el server tiene
+// PANEL_SUPERADMIN_TOTP_SECRET, que el E2E no configura), así que con el mismo secreto
+// podemos ejercer las rutas /api/panel/admin/*.
 function mintAdmin(): string {
   const exp = Date.now() + 60 * 60 * 1000;
-  const payload = `__superadmin__.${exp}.1`;
+  const payload = `__superadmin__.${exp}.1.1.0`;
   const firma = crypto.createHmac("sha256", E2E.secret).update(payload).digest("hex");
   return `panel_admin_sesion=${Buffer.from(`${payload}.${firma}`).toString("base64url")}`;
 }

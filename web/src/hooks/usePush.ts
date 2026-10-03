@@ -76,10 +76,20 @@ export function usePush(vapidPublica: string | null): EstadoPush {
   }, [disponible, subActual]);
 
   // Al montar (con push disponible), registramos el SW y pintamos el estado inicial.
+  // Si este navegador ya tenía una suscripción con permiso concedido, se la volvemos a
+  // mandar al backend (idempotente): desde la revisión de seguridad 2026-10 cada
+  // suscripción es del USUARIO logueado y se revoca al cambiar su clave/rol, así que
+  // re-registrarla la asocia a quien está usando el panel ahora (y migra las viejas,
+  // que no tenían usuario y ya no reciben avisos).
   useEffect(() => {
     if (!disponible) return;
-    void registrarSW().then(refrescarEstado);
-  }, [disponible, registrarSW, refrescarEstado]);
+    void registrarSW()
+      .then(subActual)
+      .then(async (sub) => {
+        if (sub && Notification.permission === "granted") await suscribirPush(sub.toJSON()).catch(() => {});
+      })
+      .then(refrescarEstado);
+  }, [disponible, registrarSW, subActual, refrescarEstado]);
 
   const activar = useCallback(async () => {
     if (!disponible || !vapidPublica) return;
@@ -104,8 +114,10 @@ export function usePush(vapidPublica: string | null): EstadoPush {
           userVisibleOnly: true,
           applicationServerKey: urlB64ToUint8(vapidPublica),
         });
-        await suscribirPush(sub.toJSON());
       }
+      // Siempre (también si ya existía): asegura que el backend la tenga a nombre de
+      // este usuario antes de mandar la prueba.
+      await suscribirPush(sub.toJSON());
       // Reenvía una notificación de prueba (confirma al operador que quedó activo).
       await probarPush().catch(() => {});
       await refrescarEstado();

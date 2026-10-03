@@ -23,7 +23,19 @@ export type AccionAuditoria =
   | "reconectar_whatsapp"
   | "borrar_cliente"
   | "baja_tenant"
-  | "baja_storage_pendiente";
+  | "baja_storage_pendiente"
+  // Revisión de seguridad pre-venta 2026-10: rastro de lo que hace el superadmin.
+  | "login_admin" // login correcto del superadmin (tenant_id = TENANT_PLATAFORMA)
+  | "login_admin_rechazado" // clave correcta pero código TOTP inválido o reusado
+  | "export_tenant" // export completo de un negocio (hoy: el que acompaña a la baja)
+  | "reset_clave"; // reset de la clave de un usuario de panel desde el admin
+
+/**
+ * `tenant_id` de las entradas que no son de un negocio sino de la plataforma (login del
+ * superadmin). Empieza con "_", que un slug de negocio no puede tener (RE_SLUG del alta),
+ * así que nunca choca con un negocio real. Se consulta con `listarAuditoriaTenant`.
+ */
+export const TENANT_PLATAFORMA = "_plataforma";
 
 export interface EntradaAuditoria {
   id: string;

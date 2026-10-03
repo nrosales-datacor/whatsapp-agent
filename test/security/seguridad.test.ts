@@ -31,6 +31,9 @@ process.env.PANEL_LOGIN_RATE_LIMIT_VENTANA_MS = "200";
 process.env.PANEL_LOGIN_LOCKOUT_UMBRAL = "3";
 process.env.PANEL_LOGIN_LOCKOUT_BASE_MS = "80";
 process.env.PANEL_LOGIN_LOCKOUT_TOPE_MS = "500";
+// Freno global por usuario (fuerza bruta distribuida): umbral más alto que el del par.
+process.env.PANEL_LOGIN_LOCKOUT_GLOBAL_UMBRAL = "6";
+process.env.PANEL_LOGIN_LOCKOUT_GLOBAL_BASE_MS = "80";
 
 const {
   crearSesion,
@@ -157,7 +160,7 @@ test("sesión admin: firma alterada → false", () => {
 
 test("sesión admin: token vencido → false", () => {
   const exp = Date.now() - 1000;
-  const payload = `__superadmin__.${exp}.1`;
+  const payload = `__superadmin__.${exp}.1.1.0`;
   const firma = crypto.createHmac("sha256", process.env.PANEL_SESSION_SECRET!).update(payload).digest("hex");
   assert.equal(verificarSesionAdmin(Buffer.from(`${payload}.${firma}`).toString("base64url")), false);
 });
@@ -239,11 +242,11 @@ test("rate limit por IP: corta tras el tope de intentos y libera pasada la venta
   assert.equal(chequearLimiteLogin(ip, "login", "cualquiera").permitido, true);
 });
 
-test("lockout por usuario: fallos consecutivos bloquean SOLO a ese usuario, no a otros", async () => {
+test("lockout por par (IP, usuario): bloquea a quien falla, no a otros usuarios ni al mismo usuario desde otra IP", async () => {
   _resetParaTests();
   const ip = "203.0.113.20"; // distinta del test de arriba: no queremos que el límite de IP interfiera acá
 
-  for (let i = 0; i < 3; i++) registrarFalloLogin("login", "usuario-atacado");
+  for (let i = 0; i < 3; i++) registrarFalloLogin(ip, "login", "usuario-atacado");
 
   const bloqueado = chequearLimiteLogin(ip, "login", "usuario-atacado");
   assert.equal(bloqueado.permitido, false);
@@ -251,12 +254,15 @@ test("lockout por usuario: fallos consecutivos bloquean SOLO a ese usuario, no a
 
   // Un usuario DISTINTO, mismo IP, no hereda el lockout (aislamiento por cuenta).
   assert.equal(chequearLimiteLogin(ip, "login", "otro-usuario").permitido, true);
+  // El MISMO usuario desde otra IP (el dueño real) tampoco: antes 5 fallos de un
+  // atacante dejaban afuera al dueño de ese negocio desde cualquier lado.
+  assert.equal(chequearLimiteLogin("198.51.100.7", "login", "usuario-atacado").permitido, true);
 });
 
-test("lockout por usuario: no es un baneo permanente — se libera pasado el backoff", async () => {
+test("lockout por par: no es un baneo permanente — se libera pasado el backoff", async () => {
   _resetParaTests();
   const ip = "203.0.113.30";
-  for (let i = 0; i < 3; i++) registrarFalloLogin("login", "dueno-con-typo");
+  for (let i = 0; i < 3; i++) registrarFalloLogin(ip, "login", "dueno-con-typo");
   assert.equal(chequearLimiteLogin(ip, "login", "dueno-con-typo").permitido, false);
 
   // BASE_MS=80 fijado arriba: pasado ese tiempo, el dueño que se equivocó de clave
@@ -265,29 +271,29 @@ test("lockout por usuario: no es un baneo permanente — se libera pasado el bac
   assert.equal(chequearLimiteLogin(ip, "login", "dueno-con-typo").permitido, true);
 });
 
-test("login correcto perdona los fallos previos de ese usuario", async () => {
+test("login correcto perdona los fallos previos de ese par", async () => {
   _resetParaTests();
   const ip = "203.0.113.40";
   // Dos fallos (por debajo del umbral de 3) y un login correcto en el medio.
-  registrarFalloLogin("login", "usuario-normal");
-  registrarFalloLogin("login", "usuario-normal");
-  registrarExitoLogin("login", "usuario-normal");
+  registrarFalloLogin(ip, "login", "usuario-normal");
+  registrarFalloLogin(ip, "login", "usuario-normal");
+  registrarExitoLogin(ip, "login", "usuario-normal");
 
   // Si el éxito no hubiera reseteado el contador, UN fallo más alcanzaría el umbral (3)
   // y bloquearía. Como sí resetea, hace falta volver a acumular 3 fallos desde cero.
-  registrarFalloLogin("login", "usuario-normal");
+  registrarFalloLogin(ip, "login", "usuario-normal");
   assert.equal(chequearLimiteLogin(ip, "login", "usuario-normal").permitido, true, "1 fallo tras el reset no debería bloquear");
 });
 
-test("lockout por usuario: el 429 no distingue cuenta real de inventada (no es oráculo de existencia)", async () => {
+test("lockout: el 429 no distingue cuenta real de inventada (no es oráculo de existencia)", async () => {
   // Punto central de E6: si esta capa SOLO trackeara usuarios que existen de verdad,
   // el propio 429 filtraría qué usuarios son válidos (justo lo que HASH_DUMMY existe
   // para evitar en el chequeo de contraseña). La clave del mapa es el string crudo,
   // sin consultar el tenantStore, así que "existe" e "inventado" se comportan IGUAL.
   _resetParaTests();
   const ip = "203.0.113.50";
-  for (let i = 0; i < 3; i++) registrarFalloLogin("login", "cuenta-real-que-existe");
-  for (let i = 0; i < 3; i++) registrarFalloLogin("login", "cuenta-que-nunca-existio");
+  for (let i = 0; i < 3; i++) registrarFalloLogin(ip, "login", "cuenta-real-que-existe");
+  for (let i = 0; i < 3; i++) registrarFalloLogin(ip, "login", "cuenta-que-nunca-existio");
 
   const real = chequearLimiteLogin(ip, "login", "cuenta-real-que-existe");
   const inventada = chequearLimiteLogin(ip, "login", "cuenta-que-nunca-existio");
@@ -298,10 +304,24 @@ test("lockout por usuario: el 429 no distingue cuenta real de inventada (no es o
 test("rate limit: los ámbitos 'login' y 'admin' no comparten lockout de usuario", async () => {
   _resetParaTests();
   const ip = "203.0.113.60";
-  for (let i = 0; i < 3; i++) registrarFalloLogin("login", "mismo-nombre");
+  for (let i = 0; i < 3; i++) registrarFalloLogin(ip, "login", "mismo-nombre");
   assert.equal(chequearLimiteLogin(ip, "login", "mismo-nombre").permitido, false);
   // El superadmin usa el ámbito "admin": aunque coincida el string, es un namespace distinto.
   assert.equal(chequearLimiteLogin(ip, "admin", "mismo-nombre").permitido, true);
+});
+
+test("freno global por usuario: fuerza bruta DISTRIBUIDA (muchas IPs) se corta, pero no a una IP conocida del dueño", async () => {
+  _resetParaTests();
+  // El dueño ya entró bien desde su IP de siempre.
+  registrarExitoLogin("192.0.2.1", "login", "cuenta-codiciada");
+  // Un atacante reparte 6 fallos (umbral global) entre 6 IPs, 1 por IP: ninguna llega al
+  // umbral por par (3), pero el total sí dispara el freno global.
+  for (let i = 0; i < 6; i++) registrarFalloLogin(`198.51.100.${10 + i}`, "login", "cuenta-codiciada");
+  assert.equal(chequearLimiteLogin("198.51.100.99", "login", "cuenta-codiciada").permitido, false, "IP nueva: frenada");
+  assert.equal(chequearLimiteLogin("192.0.2.1", "login", "cuenta-codiciada").permitido, true, "IP conocida del dueño: pasa");
+  // Y no es permanente: pasado el backoff (BASE 80ms) se libera.
+  await esperar(120);
+  assert.equal(chequearLimiteLogin("198.51.100.99", "login", "cuenta-codiciada").permitido, true);
 });
 
 // ─── Firma del webhook de Meta (HMAC-SHA256, tiempo constante) ──────────────

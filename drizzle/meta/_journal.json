@@ -246,6 +246,13 @@
       "when": 1790915070526,
       "tag": "0034_consentimiento_marketing",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1790977434857,
+      "tag": "0035_push_subs_por_usuario",
+      "breakpoints": true
     }
   ]
 }
