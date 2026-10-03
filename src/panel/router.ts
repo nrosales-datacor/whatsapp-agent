@@ -1352,6 +1352,9 @@ export async function manejarPanel(
       debeCambiarClave: obtenerUsuarioPorId(usuarioId)?.debeCambiarClave ?? false,
       vapidPublica: clavePublicaVapid(),
       servicios: tenant.servicios.filter((s) => s.agendable),
+      // Moneda del negocio (E11): el panel formatea montos con ella en vez de "₡" fijo
+      // (ver web/src/lib/formato.ts). Texto libre: símbolo ("₡") o código ISO ("USD").
+      moneda: tenant.moneda,
       // Equipo para los carriles y el selector de la Agenda (ALTO-07). Se mandan también
       // los inactivos: una cita vieja puede estar asignada a alguien que ya no atiende y
       // la Agenda igual tiene que poder mostrar su nombre.

@@ -5,6 +5,7 @@ import type { Conversacion, Repositorio, Tenant } from "../types";
 import { enviarTexto } from "../whatsapp/client";
 import { notificarOperador } from "../panel/notificaciones";
 import { log } from "../observabilidad/log";
+import { textoCliente } from "../config/textos";
 
 type DB = PostgresJsDatabase<typeof schema>;
 
@@ -53,9 +54,8 @@ type DB = PostgresJsDatabase<typeof schema>;
 /** Prefijo del `waMessageId` sintético del aviso (los de Meta empiezan con "wamid."). */
 export const PREFIJO_AVISO_LIMITE = "freno-cliente:";
 
-/** Texto neutro al cliente al pasar el límite por hora (no menciona límites ni costos). */
-export const MENSAJE_LIMITE_CLIENTE =
-  "Recibimos varios mensajes tuyos seguidos 🙏 Una persona del equipo va a revisar la conversación y te responde por acá en cuanto pueda.";
+// El texto neutro al cliente al pasar el límite por hora (no menciona límites ni
+// costos) es la clave "limiteCliente" de src/config/textos.ts (E11: por registro).
 
 const HORA_MS = 60 * 60 * 1000;
 
@@ -257,10 +257,11 @@ export async function aplicarFrenosPorCliente(a: FrenoClienteArgs): Promise<bool
   // enviarlo — al revés que una respuesta normal — porque el INSERT es el candado
   // entre réplicas; si el envío fallara, queda en el panel sin haber llegado, que
   // es preferible a mandarlo dos veces.
+  const aviso = textoCliente(tenant, "limiteCliente");
   const gano = await repo
     .guardarMensaje(tenant.id, conv.id, {
       rol: "assistant",
-      contenido: MENSAJE_LIMITE_CLIENTE,
+      contenido: aviso,
       creadoEn: new Date(ahora).toISOString(),
       waMessageId: `${PREFIJO_AVISO_LIMITE}${conv.id}:${Math.floor(ahora / HORA_MS)}`,
     })
@@ -271,7 +272,7 @@ export async function aplicarFrenosPorCliente(a: FrenoClienteArgs): Promise<bool
   if (!gano) return true;
 
   log.warn("limite_cliente_alcanzado", { tenantId: tenant.id, conversacionId: conv.id, turnos: actividad.turnosBotUltimaHora, limite });
-  await enviarTexto(tenant, clienteWa, MENSAJE_LIMITE_CLIENTE).catch((e) =>
+  await enviarTexto(tenant, clienteWa, aviso).catch((e) =>
     console.error("[freno-cliente] no se pudo avisar al cliente:", e),
   );
   await notificarOperador(

@@ -141,6 +141,8 @@ export interface Sesion {
   vapidPublica: string | null;
   /** Catálogo de servicios agendables del negocio (para la Agenda, C2.1). */
   servicios: Service[];
+  /** Moneda del negocio (E11): símbolo ("₡") o código ISO ("USD"). Opcional: un backend viejo no la manda. */
+  moneda?: string;
   /**
    * Quiénes atienden (ALTO-07), para los carriles y el selector de la Agenda. Incluye
    * los inactivos: una cita vieja puede estar asignada a alguien que ya no atiende y

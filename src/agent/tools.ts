@@ -86,7 +86,11 @@ export const TOOLS: ChatCompletionTool[] = [
             description:
               "id de la persona que atiende, si el cliente eligió una. Omitir si le da igual: el sistema le asigna solo a alguien que esté libre.",
           },
-          placa: { type: "string", description: "Dato identificador opcional del cliente (ej: placa del vehículo). Omitir si no aplica." },
+          referencia: {
+            type: "string",
+            description:
+              "Dato de referencia opcional que el negocio use para identificar el caso (placa, número de expediente, de pedido…). Pedirlo solo si las instrucciones del negocio lo piden; si no, omitir.",
+          },
           precio: {
             type: "number",
             description:

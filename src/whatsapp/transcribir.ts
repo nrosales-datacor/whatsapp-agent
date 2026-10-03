@@ -49,10 +49,14 @@ export async function transcribirAudio(tenant: Tenant, mediaId: string): Promise
   // transcribe, que este bot no usa), así que no hay tokens que sumar. "verbose_json" es
   // el único response_format que trae `duration` (segundos), y es lo único que permite
   // ESTIMAR el costo real: Whisper cobra por minuto, no por token (ver costoLlm.ts).
+  //
+  // Idioma (E11): SIN `language` fijo — Whisper lo autodetecta. Antes iba "es" para
+  // todos, y una nota de voz en inglés (turista, negocio en otro país) salía
+  // "traducida" o deformada; el agente ahora responde en el idioma del cliente, así
+  // que la transcripción tiene que respetarlo también.
   const resultado = await getOpenAI().audio.transcriptions.create({
     file: archivo,
     model: "whisper-1",
-    language: "es",
     response_format: "verbose_json",
   });
   // Fire-and-forget, mismo criterio que el resto de observabilidad/uso.ts: nunca debe

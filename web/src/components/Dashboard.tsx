@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { obtenerMetricas, type Metricas } from "../api";
-import { colones } from "../lib/formato";
+import { monto } from "../lib/formato";
 import ErrorState from "./ErrorState";
 import Icono, { type IconoId } from "./Iconos";
 
@@ -53,14 +53,14 @@ function GrupoTitulo({ children }: { children: string }) {
 
 // ── Hero "Dinero rescatado por el bot" ────────────────────────────────────────
 
-function HeroRescate({ m }: { m: Metricas }) {
+function HeroRescate({ m, moneda }: { m: Metricas; moneda?: string }) {
   return (
     <div className="hero-rescate">
       <div className="hero-eyebrow">
         <Icono id="shield" size={15} sw={2} />
         Dinero rescatado por el bot
       </div>
-      <div className="hero-monto tnum">{colones(m.rescateMontoRecuperado)}</div>
+      <div className="hero-monto tnum">{monto(m.rescateMontoRecuperado, moneda)}</div>
       {m.rescateRecuperados > 0 ? (
         <p className="hero-texto">
           El bot recuperó <b>{m.rescateRecuperados}</b>{" "}
@@ -237,7 +237,7 @@ function HorasPico({ items }: { items: { hora: string; cantidad: number }[] }) {
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
-export default function Dashboard({ nombre }: { nombre: string }) {
+export default function Dashboard({ nombre, moneda }: { nombre: string; moneda?: string }) {
   const q = useQuery({ queryKey: ["metricas"], queryFn: obtenerMetricas });
   const m = q.data;
 
@@ -254,16 +254,16 @@ export default function Dashboard({ nombre }: { nombre: string }) {
   const dinero: KPIProps[] = [
     {
       icono: "money", label: "Ingresos estimados",
-      valor: colones(m?.ingresosEstimados ?? 0),
+      valor: monto(m?.ingresosEstimados ?? 0, moneda),
       delta: m?.deltas?.ingresos, deltaTono: deltaTonoDeSigno(m?.deltas?.ingresos),
     },
     {
       icono: "money", label: "Ticket promedio",
-      valor: colones(m?.ticketPromedio ?? 0),
+      valor: monto(m?.ticketPromedio ?? 0, moneda),
     },
     {
       icono: "money", label: "Extra por add-ons (upsell)",
-      valor: colones(m?.upsellMontoExtra ?? 0),
+      valor: monto(m?.upsellMontoExtra ?? 0, moneda),
     },
   ];
 
@@ -313,7 +313,7 @@ export default function Dashboard({ nombre }: { nombre: string }) {
           <p>Resumen de los últimos 7 días</p>
         </div>
 
-        {m && <HeroRescate m={m} />}
+        {m && <HeroRescate m={m} moneda={moneda} />}
 
         <GrupoTitulo>Dinero</GrupoTitulo>
         <div className="kpis">

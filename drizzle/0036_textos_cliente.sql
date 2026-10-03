@@ -1,0 +1,1 @@
+ALTER TABLE "wa_tenants" ADD COLUMN "textos_cliente" jsonb;

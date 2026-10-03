@@ -5,6 +5,8 @@ import { enviarLista, enviarPlantilla, opcionHorario } from "../whatsapp/client"
 import { espaciosDisponibles } from "../booking/availability";
 import { hoyEnTz } from "../booking/gestionCitas";
 import { capturarError } from "../observabilidad/sentry";
+import { interpolar, textoCliente, BOTONES } from "../config/textos";
+import { formatearMonto } from "../config/moneda";
 import { obtenerDb } from "./db";
 import { enmascararTelefono } from "../observabilidad/privacidad";
 import {
@@ -89,16 +91,17 @@ function nombreServicio(tenant: Tenant, servicioId: string): string {
   return tenant.servicios.find((s) => s.id === servicioId)?.nombre ?? servicioId;
 }
 
-/** Texto del toque1 (o el editado por el dueño en "Mi negocio" + placeholders). */
+/**
+ * Texto del toque1: el editado por el dueño en "Mi negocio", o el default por registro
+ * (E11, src/config/textos.ts). Mismos placeholders en los dos casos.
+ */
 function construirTextoToque1(tenant: Tenant, cand: CandidatoToque, libresQueSeMuestran: number): string {
-  const servicio = nombreServicio(tenant, cand.servicioId);
-  const plantilla =
-    tenant.rescateToque1Texto ||
-    `¡Hola! 👋 ¿Te guardo el espacio para el ${"{servicio}"} (${"{monto}"})? Me quedan ${"{n}"} horarios libres.`;
-  return plantilla
-    .replaceAll("{servicio}", servicio)
-    .replaceAll("{monto}", `${tenant.moneda}${cand.monto.toLocaleString("es-CR")}`)
-    .replaceAll("{n}", String(libresQueSeMuestran));
+  const vars = {
+    servicio: nombreServicio(tenant, cand.servicioId),
+    monto: formatearMonto(cand.monto, tenant.moneda),
+    n: libresQueSeMuestran,
+  };
+  return tenant.rescateToque1Texto ? interpolar(tenant.rescateToque1Texto, vars) : textoCliente(tenant, "rescateToque1", vars);
 }
 
 /** Intenta procesar UN candidato al toque1 de un tenant. Devuelve false si no había ninguno. */
@@ -128,7 +131,7 @@ async function procesarToque1(tenant: Tenant): Promise<boolean> {
       tenant,
       cand.clienteWa,
       cuerpo,
-      "Ver horarios",
+      BOTONES.verHorarios,
       mostrados.map((h) => opcionHorario(info.fecha, h)),
     );
     console.log(`[rescate] toque1 → ${enmascararTelefono(cand.clienteWa)} (tenant ${tenant.id}, cotización ${cand.id})`);
@@ -159,7 +162,7 @@ async function procesarToque2(tenant: Tenant): Promise<boolean> {
     }
     const nombre = await nombreClienteAprox(db, tenant.id, cand.clienteWa);
     const servicio = nombreServicio(tenant, cand.servicioId);
-    const monto = `${tenant.moneda}${cand.monto.toLocaleString("es-CR")}`;
+    const monto = formatearMonto(cand.monto, tenant.moneda);
     const variable = tenant.rescateToque2Texto || servicio;
     // Idioma por tenant (E8/BLOQ-06): un cliente puede aprobar sus plantillas en
     // "es_MX" y otro en "es" — no es fail-closed (no es un secreto), solo un

@@ -1,6 +1,8 @@
 import type { Tenant } from "../types";
 import { inferirPaisRegistro } from "../config/validadores";
 import { tenantPuede } from "../billing/planes";
+import { textoCliente } from "../config/textos";
+import { formatearMonto } from "../config/moneda";
 
 const DIAS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
 
@@ -60,7 +62,7 @@ export function construirSystemPrompt(tenant: Tenant): string {
     const addon = tenant.servicios.find((a) => a.id === s.addonSugeridoId);
     if (!addon) return "";
     const precioAddon = s.addonPrecioPromo ?? addon.precio;
-    const precioTexto = precioAddon != null ? `, ${tenant.moneda}${precioAddon.toLocaleString("es-CR")}` : "";
+    const precioTexto = precioAddon != null ? `, ${formatearMonto(precioAddon, tenant.moneda)}` : "";
     return ` [add-on al agendarlo: ${addon.nombre} (addonId: ${addon.id}${precioTexto})]`;
   };
   const serviciosAgenda = agendables.length
@@ -70,7 +72,7 @@ export function construirSystemPrompt(tenant: Tenant): string {
             ? s.precioNota
             : s.precioVariable || s.precio == null
               ? "se cotiza"
-              : `${tenant.moneda}${s.precio.toLocaleString("es-CR")}`;
+              : formatearMonto(s.precio, tenant.moneda);
           return `- ${s.nombre} (id: ${s.id}): ${precio}, ~${s.duracionMin} min${s.descripcion ? ` — ${s.descripcion}` : ""}${lineaAddon(s)}`;
         })
         .join("\n")
@@ -129,9 +131,9 @@ export function construirSystemPrompt(tenant: Tenant): string {
 Atender a clientes de ESTE negocio: responder sus dudas sobre servicios, precios, horarios y ubicación${trabajoAgenda}. Nada más.
 
 # REGLAS ESTRICTAS
-- Hablá en español${FRASE_REGISTRO[registro]}, ${tono}. Es WhatsApp: respuestas cortas.
+- IDIOMA: respondé SIEMPRE en el idioma en que te escribe el cliente (si escribe en inglés, en inglés; si no queda claro, en español). En español, hablá${FRASE_REGISTRO[registro]}. En cualquier idioma, ${tono}. Es WhatsApp: respuestas cortas.
 - Respondé SOLO con la información de abajo. NUNCA inventés precios, horarios ni promociones. Si te preguntan algo SOBRE EL NEGOCIO que no está en tu información (un caso especial, un reclamo, un dato que no tenés, algo que requiere a un encargado), NO improvises ni des una respuesta vaga: usá la herramienta \`escalar_a_humano\` con un motivo breve y una persona del equipo sigue la conversación. (Esto es distinto del "fuera de alcance": lo que NO es de ${tenant.nombre} se responde con amabilidad y NO se escala.)
-- Si te piden algo que NO tiene que ver con ${tenant.nombre} (consejos generales, escribir textos, código, tareas, opiniones, otros negocios, etc.), NO lo hagás. Respondé algo como: "Disculpá, solo puedo ayudarte con cosas de ${tenant.nombre} 🙂 ¿En qué te puedo ayudar?".
+- Si te piden algo que NO tiene que ver con ${tenant.nombre} (consejos generales, escribir textos, código, tareas, opiniones, otros negocios, etc.), NO lo hagás. Respondé algo como (en el idioma del cliente): "${textoCliente(tenant, "fueraDeAlcance", { negocio: tenant.nombre })}".
 - Seguí al pie de la letra las INSTRUCCIONES DEL NEGOCIO de más abajo (si las hay): son las reglas propias de este negocio y mandan sobre cualquier suposición tuya.${reglasAgenda}
 - FOTOS: si el cliente manda una foto, MIRALA antes de responder. Si podés ayudar con confianza con lo que muestra (según la info del negocio), hacelo, aclarando cuando corresponda que el detalle final se confirma en persona. Si la foto no es clara o no podés determinar con confianza qué aplica, NO inventes: pedile que aclare por texto o usá \`escalar_a_humano\` para que una persona la revise.${bloqueInstrucciones}
 

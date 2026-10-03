@@ -6,6 +6,7 @@ import { tenantPuede } from "../billing/planes";
 import { enviarBotones, enviarTexto } from "../whatsapp/client";
 import type { Conversacion, OpcionInteractiva, Repositorio, Tenant } from "../types";
 import { enmascararTelefono } from "../observabilidad/privacidad";
+import { BOTONES, textoCliente } from "../config/textos";
 
 type DB = PostgresJsDatabase<typeof schema>;
 
@@ -91,8 +92,9 @@ export function esPedidoDeBaja(texto: string): boolean {
   return PEDIDOS_BAJA.some((re) => re.test(nucleo));
 }
 
-export const ACK_BAJA =
-  "Listo, no vas a recibir más promociones de nuestra parte. Si tenés una cita agendada, igual te van a llegar sus recordatorios. Si necesitás algo más, escribinos por acá 🙂";
+// Los textos al cliente (pedido, acuses del Sí/No y de la baja) son claves de
+// src/config/textos.ts (E11): "consentimientoPedido", "consentimientoSi",
+// "consentimientoNo" y "bajaAck", por registro del negocio.
 
 // ── 2) Protocolo de los botones Sí/No ────────────────────────────────────────
 
@@ -102,8 +104,8 @@ const ID_NO = "mktno";
 /** Botones del pedido de consentimiento (≤20 chars por título, límite de Meta). */
 export function botonesConsentimiento(): OpcionInteractiva[] {
   return [
-    { id: ID_SI, titulo: "Sí, avísenme" },
-    { id: ID_NO, titulo: "No, gracias" },
+    { id: ID_SI, titulo: BOTONES.consentimientoSi },
+    { id: ID_NO, titulo: BOTONES.consentimientoNo },
   ];
 }
 
@@ -117,16 +119,9 @@ export function respuestaConsentimiento(interactiveId: string | undefined): "si"
 }
 
 /** Texto del pedido: dice QUIÉN escribe, QUÉ se va a mandar y CÓMO darse de baja. */
-export function textoPedidoConsentimiento(nombreNegocio: string): string {
-  return (
-    `¿Te gustaría que ${nombreNegocio} te avise por WhatsApp de promociones y novedades de vez en cuando? ` +
-    "Es opcional y podés darte de baja cuando quieras escribiendo BAJA."
-  );
+export function textoPedidoConsentimiento(tenant: Tenant): string {
+  return textoCliente(tenant, "consentimientoPedido", { negocio: tenant.nombre });
 }
-
-export const ACK_SI =
-  "¡Listo! 🙌 Te vamos a avisar de promociones de vez en cuando. Si en algún momento no querés recibir más, escribí BAJA.";
-export const ACK_NO = "Entendido, no te vamos a enviar promociones. ¡Gracias! 🙂";
 
 // ── 3) Almacén del consentimiento ─────────────────────────────────────────────
 
@@ -270,12 +265,12 @@ export async function pedirConsentimientoMarketing(
   const motivo = decidirPedido(tenant, conv, estado, opciones.manual);
   if (motivo) return motivo;
 
-  const cuerpo = textoPedidoConsentimiento(tenant.nombre);
+  const cuerpo = textoPedidoConsentimiento(tenant);
   await enviarBotones(tenant, conv.clienteWa, cuerpo, botonesConsentimiento());
   await almacen.marcarPedido(tenant.id, conv.clienteWa);
   await repo.guardarMensaje(tenant.id, conv.id, {
     rol: "assistant",
-    contenido: `${cuerpo} [Sí, avísenme / No, gracias]`,
+    contenido: `${cuerpo} [${BOTONES.consentimientoSi} / ${BOTONES.consentimientoNo}]`,
     creadoEn: new Date().toISOString(),
     ...(opciones.manual ? { porHumano: true } : {}),
   });
@@ -297,7 +292,7 @@ export async function procesarRespuestaConsentimiento(
 ): Promise<void> {
   if (respuesta === "si") await almacen.otorgar(tenant.id, conv.clienteWa);
   else await almacen.revocar(tenant.id, conv.clienteWa);
-  const ack = respuesta === "si" ? ACK_SI : ACK_NO;
+  const ack = textoCliente(tenant, respuesta === "si" ? "consentimientoSi" : "consentimientoNo");
   await enviarTexto(tenant, conv.clienteWa, ack);
   await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
   console.log(`[consentimiento] ${enmascararTelefono(conv.clienteWa)} (tenant ${tenant.id}) respondió "${respuesta}"`); // log-pii-ok: respuesta es el enum "si" | "no"

@@ -1,7 +1,18 @@
 import { pgTable, text, timestamp, integer, boolean, jsonb, index, uniqueIndex, numeric, bigint } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import type { AddonCita, Bloqueo, Empleado, HorarioDia, KnowledgeBase, PendienteSerializado, RechazoAddon, SegmentoFiltro, Service } from "../types";
+import type {
+  AddonCita,
+  Bloqueo,
+  Empleado,
+  HorarioDia,
+  KnowledgeBase,
+  PendienteSerializado,
+  RechazoAddon,
+  SegmentoFiltro,
+  Service,
+  TextosCliente,
+} from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Esquema Drizzle del agente de WhatsApp.
@@ -322,6 +333,10 @@ export const waTenants = pgTable(
     // mensual (F10). null = usa el default razonable de handleWebhook.ts. Self-service
     // del dueño, mismo patrón que rescateToque1Texto/rescateToque2Texto.
     mensajeTopeExcedido: text("mensaje_tope_excedido"),
+    // Override por negocio de los textos del SISTEMA al cliente final (E11): clave del
+    // catálogo de src/config/textos.ts → plantilla propia (mismas `{variables}`).
+    // null/{} = se usan las plantillas por registro (vos/tú/usted) del catálogo.
+    textosCliente: jsonb("textos_cliente").$type<TextosCliente>(),
   },
   (t) => ({
     uqPnid: uniqueIndex("wa_tenants_pnid_uq").on(t.phoneNumberId),

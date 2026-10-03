@@ -253,6 +253,13 @@
       "when": 1790977434857,
       "tag": "0035_push_subs_por_usuario",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1790996873389,
+      "tag": "0036_textos_cliente",
+      "breakpoints": true
     }
   ]
 }

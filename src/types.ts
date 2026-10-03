@@ -1,3 +1,5 @@
+import type { ClaveTexto } from "./config/textos";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos del dominio del agente de WhatsApp.
 // Pensados para multi-tenant: un solo código atiende muchos negocios.
@@ -241,7 +243,7 @@ export interface Tenant {
   /** Formas de pago (texto libre). undefined/"" = no se menciona en el prompt. */
   formasPago?: string;
   /** Registro del trato al cliente. undefined = se infiere del país. */
-  registro?: "vos" | "tu" | "usted";
+  registro?: Registro;
   /** Tono/estilo del bot (texto corto). undefined = default "cordial y breve". */
   tono?: string;
   /** Instrucciones libres del dueño para el bot (reglas particulares del negocio). undefined = ninguna. */
@@ -255,10 +257,22 @@ export interface Tenant {
   topeConversacionesDesactivado?: boolean;
   /**
    * Mensaje que recibe el cliente final al llegar al 100% del tope mensual (F10).
-   * undefined = usa el default razonable (ver MENSAJE_TOPE_EXCEDIDO en handleWebhook.ts).
+   * undefined = usa el default por registro (clave "topeExcedido" de src/config/textos.ts).
    */
   mensajeTopeExcedido?: string;
+  /**
+   * Override por negocio de los textos del SISTEMA al cliente final (E11): clave del
+   * catálogo de src/config/textos.ts → plantilla propia (con las mismas `{variables}`).
+   * undefined/{} = se usan las plantillas por registro (vos/tú/usted) del catálogo.
+   */
+  textosCliente?: TextosCliente;
 }
+
+/** Registro del trato al cliente final (B7/E11). */
+export type Registro = "vos" | "tu" | "usted";
+
+/** Override de textos del sistema al cliente final, por clave del catálogo (E11). */
+export type TextosCliente = Partial<Record<ClaveTexto, string>>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mensajes interactivos de WhatsApp (botones y listas nativas). El agente decide

@@ -14,7 +14,7 @@ import {
   type Empleado,
   type Service,
 } from "../api";
-import { colones, fmtNum } from "../lib/formato";
+import { fmtNum, monto } from "../lib/formato";
 import ErrorState from "./ErrorState";
 import EstadoVacio from "./EstadoVacio";
 import Icono from "./Iconos";
@@ -127,9 +127,11 @@ function carrilesDelDia(empleados: Empleado[], citasDia: CitaAgenda[]): { id: st
 interface Props {
   servicios: Service[];
   empleados: Empleado[];
+  /** Moneda del negocio (E11) para los montos; undefined = colones (backend viejo). */
+  moneda?: string;
 }
 
-export default function Agenda({ servicios, empleados }: Props) {
+export default function Agenda({ servicios, empleados, moneda }: Props) {
   const qc = useQueryClient();
   const { flash } = useToast();
   const [vista, setVista] = useState<Vista>("dia");
@@ -378,7 +380,7 @@ export default function Agenda({ servicios, empleados }: Props) {
                 </div>
                 <div className="agenda-resumen-fila">
                   <span>Ingreso estimado</span>
-                  <b className="tnum agenda-resumen-monto">{colones(ingresoEstimado)}</b>
+                  <b className="tnum agenda-resumen-monto">{monto(ingresoEstimado, moneda)}</b>
                 </div>
                 <div className="agenda-resumen-fila">
                   <span>Sin confirmar</span>
@@ -464,6 +466,7 @@ export default function Agenda({ servicios, empleados }: Props) {
       {detalle && (
         <ModalDetalleCita
           cita={detalle}
+          moneda={moneda}
           servicios={servicios}
           empleados={empleados}
           pendiente={pendiente}
@@ -516,6 +519,7 @@ export default function Agenda({ servicios, empleados }: Props) {
 
 interface DetalleProps {
   cita: CitaAgenda;
+  moneda?: string;
   servicios: Service[];
   empleados: Empleado[];
   pendiente: boolean;
@@ -530,6 +534,7 @@ interface DetalleProps {
 
 function ModalDetalleCita({
   cita,
+  moneda,
   servicios,
   empleados,
   pendiente,
@@ -615,7 +620,7 @@ function ModalDetalleCita({
             <div className="dato">
               <span>Total</span>
               <b className="tnum">
-                {colones(total)}
+                {monto(total, moneda)}
                 {addons.length > 0 &&
                   ` (incluye ${addons
                     .map((a) => servicios.find((s) => s.id === a.servicioId)?.nombre ?? a.servicioId)

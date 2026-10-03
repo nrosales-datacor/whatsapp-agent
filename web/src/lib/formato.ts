@@ -1,4 +1,4 @@
-// Helpers de formato del panel (es-CR). React escapa el texto solo, así que acá
+// Helpers de formato del panel (es-CR; los montos, en la moneda del negocio). React escapa el texto solo, así que acá
 // NO hace falta el `esc()` que tenía el inbox.html (concatenaba HTML a mano).
 
 /** Hora local "HH:mm" a partir de un ISO; "" si no hay fecha. */
@@ -39,9 +39,89 @@ export function fmtNum(wa: string): string {
   return "+" + wa;
 }
 
-/** Monto en colones para el dashboard. */
-export function colones(n: number): string {
-  return "₡" + (n || 0).toLocaleString("es-CR");
+// ── Montos en la moneda del negocio (E11) ──
+// ⚠️ Copia gemela de src/config/moneda.ts (el panel es otro paquete y no importa de
+// src/). test/unit/moneda.test.ts verifica que las dos den exactamente lo mismo; si
+// cambiás una, cambiá la otra.
+
+/** Símbolos comunes → código ISO 4217. "$" solo es ambiguo: se toma como USD. */
+const CODIGO_POR_SIMBOLO: Record<string, string> = {
+  "₡": "CRC",
+  "$": "USD",
+  "US$": "USD",
+  "USD$": "USD",
+  Q: "GTQ",
+  "C$": "NIO",
+  L: "HNL",
+  "B/.": "PAB",
+  "S/": "PEN",
+  "S/.": "PEN",
+  "RD$": "DOP",
+  "€": "EUR",
+  "MX$": "MXN",
+  "COL$": "COP",
+};
+
+/** Locale con el que se formatea cada moneda (el del país que la usa). */
+const LOCALE_POR_CODIGO: Record<string, string> = {
+  CRC: "es-CR",
+  USD: "es-US",
+  MXN: "es-MX",
+  GTQ: "es-GT",
+  NIO: "es-NI",
+  HNL: "es-HN",
+  PAB: "es-PA",
+  PEN: "es-PE",
+  DOP: "es-DO",
+  COP: "es-CO",
+  CLP: "es-CL",
+  ARS: "es-AR",
+  UYU: "es-UY",
+  PYG: "es-PY",
+  BOB: "es-BO",
+  VES: "es-VE",
+  EUR: "es-ES",
+};
+
+/** Código ISO 4217 de la moneda del negocio ("₡" → "CRC", "usd" → "USD"), o null si no se reconoce. */
+export function codigoMoneda(moneda: string | null | undefined): string | null {
+  const m = String(moneda ?? "").trim();
+  if (!m) return null;
+  if (/^[A-Za-z]{3}$/.test(m)) return m.toUpperCase();
+  return CODIGO_POR_SIMBOLO[m] ?? null;
+}
+
+function formateador(codigo: string, entero: boolean): Intl.NumberFormat | null {
+  try {
+    return new Intl.NumberFormat(LOCALE_POR_CODIGO[codigo] ?? "es", {
+      style: "currency",
+      currency: codigo,
+      minimumFractionDigits: entero ? 0 : 2,
+      maximumFractionDigits: entero ? 0 : 2,
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Monto en la moneda del negocio ("₡15 000", "$1,500"…). Sin moneda (backend viejo
+ * que no la manda en /me) cae a colones, el comportamiento previo del panel.
+ */
+export function monto(n: number, moneda: string | null | undefined = "₡"): string {
+  const v = Number.isFinite(n) ? n : 0;
+  const codigo = codigoMoneda(moneda);
+  const fmt = codigo ? formateador(codigo, Number.isInteger(v)) : null;
+  if (fmt) return fmt.format(v);
+  return `${String(moneda ?? "").trim()}${v.toLocaleString("es")}`;
+}
+
+/** Símbolo de la moneda para el prefijo de los inputs de precio ("₡", "$", "Q"…). */
+export function simboloMoneda(moneda: string | null | undefined = "₡"): string {
+  const codigo = codigoMoneda(moneda);
+  const fmt = codigo ? formateador(codigo, true) : null;
+  const simbolo = fmt?.formatToParts(0).find((p) => p.type === "currency")?.value;
+  return simbolo ?? (String(moneda ?? "").trim() || "₡");
 }
 
 /** Tiempo restante hasta un ISO futuro, "Xh Ym" o "Ym" (ventana de 24h, Carril D 0.3). "" si no hay fecha. */
