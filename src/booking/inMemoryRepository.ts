@@ -22,6 +22,7 @@ import type {
 import { calcularMetricas } from "../panel/metricas";
 import { calcularVentana } from "../whatsapp/ventana";
 import { HorarioOcupadoError } from "./errores";
+import { describirTexto, sanearCamposLog } from "../observabilidad/privacidad";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Repositorio EN MEMORIA. Sirve para probar el agente YA, sin base de datos.
@@ -395,7 +396,7 @@ export class RepositorioEnMemoria implements Repositorio {
     detalle?: string;
   }): Promise<void> {
     // En memoria solo lo mostramos por consola. En prod se guarda en tabla.
-    console.log("[calidad]", JSON.stringify(evento));
+    console.log("[calidad]", JSON.stringify(sanearCamposLog({ ...evento, detalle: evento.detalle && describirTexto(evento.detalle) })));
   }
 
   // ── Panel / bandeja humana ──

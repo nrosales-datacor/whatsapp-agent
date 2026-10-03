@@ -6,6 +6,7 @@ import { espaciosDisponibles } from "../booking/availability";
 import { hoyEnTz } from "../booking/gestionCitas";
 import { capturarError } from "../observabilidad/sentry";
 import { obtenerDb } from "./db";
+import { enmascararTelefono } from "../observabilidad/privacidad";
 import {
   citasDelDia,
   enModoHumano,
@@ -130,7 +131,7 @@ async function procesarToque1(tenant: Tenant): Promise<boolean> {
       "Ver horarios",
       mostrados.map((h) => opcionHorario(info.fecha, h)),
     );
-    console.log(`[rescate] toque1 → ${cand.clienteWa} (tenant ${tenant.id}, cotización ${cand.id})`);
+    console.log(`[rescate] toque1 → ${enmascararTelefono(cand.clienteWa)} (tenant ${tenant.id}, cotización ${cand.id})`);
   } catch (e) {
     console.error(`[rescate] error en toque1 (cotización ${cand.id}):`, e);
     await revertirToque1(db, cand.id);
@@ -165,7 +166,7 @@ async function procesarToque2(tenant: Tenant): Promise<boolean> {
     // default en cascada: tenant → env global → "es".
     const idioma = tenant.plantillaIdioma ?? process.env.WHATSAPP_TEMPLATE_IDIOMA ?? "es";
     await enviarPlantilla(tenant, cand.clienteWa, tenant.rescatePlantilla, idioma, [nombre, variable, monto], "marketing");
-    console.log(`[rescate] toque2 → ${cand.clienteWa} (tenant ${tenant.id}, cotización ${cand.id})`);
+    console.log(`[rescate] toque2 → ${enmascararTelefono(cand.clienteWa)} (tenant ${tenant.id}, cotización ${cand.id})`);
   } catch (e) {
     console.error(`[rescate] error en toque2 (cotización ${cand.id}):`, e);
     await revertirToque2(db, cand.id);

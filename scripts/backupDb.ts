@@ -30,7 +30,7 @@ import { capturarError, iniciarSentry, vaciarSentry } from "../src/observabilida
 //     también alerta. Sin copia externa, un droplet perdido = base y backups perdidos.
 //
 //   Ejecutar a mano:  npx tsx scripts/backupDb.ts
-//   Cron (diario):    0 3 * * * cd ~/lavacar-whatsapp-bot && npx tsx scripts/backupDb.ts >> backups/backup.log 2>&1
+//   Cron (diario):    0 3 * * * cd ~/lavacar-whatsapp-bot && /usr/bin/node --import tsx scripts/backupDb.ts >> backups/backup.log 2>&1
 // ─────────────────────────────────────────────────────────────────────────────
 
 iniciarSentry();

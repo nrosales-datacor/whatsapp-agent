@@ -4,14 +4,19 @@
   "private": true,
   "type": "module",
   "description": "Agente de WhatsApp con IA (soporte + agenda). Proyecto individual ejecutable.",
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "start": "tsx src/server.ts",
+    "start": "node --import tsx src/server.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/unit/*.test.ts test/tenant/*.test.ts test/e2e-webhook/*.test.ts test/reliability/*.test.ts test/security/*.test.ts",
     "test:e2e": "npm run web:build && playwright test",
     "eval": "tsx eval/correrEval.ts",
     "db:check": "tsx scripts/verificarMigraciones.ts",
+    "ci:versiones": "node scripts/ci/verificarVersionesExactas.mjs",
+    "ci:env": "node scripts/ci/verificarEnvExample.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "seed:tenants": "tsx scripts/seedTenants.ts",
@@ -22,20 +27,20 @@
   },
   "dependencies": {
     "@sentry/node": "10.54.0",
-    "dotenv": "^16.4.0",
-    "drizzle-orm": "^0.45.2",
-    "openai": "^6.0.0",
-    "postgres": "^3.4.5",
+    "dotenv": "16.6.1",
+    "drizzle-orm": "0.45.2",
+    "openai": "6.42.0",
+    "postgres": "3.4.9",
     "stripe": "22.2.0",
-    "web-push": "^3.6.7"
+    "tsx": "4.22.4",
+    "web-push": "3.6.7"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.2",
     "@playwright/test": "1.60.0",
-    "@types/node": "^20.0.0",
-    "@types/web-push": "^3.6.4",
-    "drizzle-kit": "^0.30.0",
-    "tsx": "^4.19.0",
-    "typescript": "^5.6.0"
+    "@types/node": "20.19.43",
+    "@types/web-push": "3.6.4",
+    "drizzle-kit": "0.30.6",
+    "typescript": "5.9.3"
   }
 }

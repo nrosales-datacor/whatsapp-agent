@@ -12,6 +12,8 @@
 // un mensaje donde interesa poder buscar por `correlationId`.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { sanearCamposLog } from "./privacidad";
+
 type Nivel = "info" | "warn" | "error";
 type Campos = Record<string, unknown>;
 
@@ -19,7 +21,9 @@ function emitir(nivel: Nivel, evento: string, campos: Campos): void {
   const ts = new Date().toISOString();
   let linea: string;
   try {
-    linea = JSON.stringify({ ts, nivel, evento, ...campos });
+    // Red de seguridad de datos personales (ver ./privacidad.ts): clienteWa/telefono
+    // salen enmascarados y texto/contenido/respuesta solo con su longitud.
+    linea = JSON.stringify({ ts, nivel, evento, ...sanearCamposLog(campos) });
   } catch (e) {
     // `campos` con algo no serializable (referencia circular, BigInt, etc.) no
     // debe tumbar el hot path del webhook por un error de logging.

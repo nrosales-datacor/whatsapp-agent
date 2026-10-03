@@ -26,7 +26,16 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: "20"
+          node-version-file: ".nvmrc"
+
+      # Política de dependencias (CLAUDE.md): versiones EXACTAS, sin ^/~. Sin deps, va primero.
+      - name: Guardrail de versiones exactas (package.json raíz y web)
+        run: npm run ci:versiones
+
+      # Toda process.env leída en src/ o scripts/ debe estar en .env.example (o como
+      # excepción explícita `# env-check: ignorar NOMBRE — motivo`). Sin deps.
+      - name: Guardrail de .env.example (variables documentadas)
+        run: npm run ci:env
 
       - name: Instalar dependencias (backend)
         run: npm ci
@@ -58,7 +67,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: "20"
+          node-version-file: ".nvmrc"
 
       - name: Instalar dependencias (backend, incluye Playwright y tsx)
         run: npm ci
@@ -129,6 +138,8 @@ jobs:
       # en vez de `npm run web:build` para que también sea reproducible; el `--include=dev`
       # es necesario porque el droplet corre con `NODE_ENV=production`, que por defecto
       # omite las devDependencies (ahí vive `vite`, ver DEPLOY.md § "Si algo falla").
+      # Los scripts .ts se corren con `node --import tsx` (tsx vive en `dependencies` con
+      # versión exacta): usa el tsx del lockfile, nunca `npx` bajando una versión del registry.
       - name: Actualizar código y reiniciar el bot
         run: |
           ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "
@@ -143,10 +154,10 @@ jobs:
             # corta el deploy sin tocar la base.
             if [ -n \"\$(git diff --name-only \$antes HEAD -- drizzle/)\" ]; then
               echo 'Migraciones nuevas: backup previo de la base…'
-              npx tsx scripts/backupDb.ts
+              node --import tsx scripts/backupDb.ts
             fi
-            npx tsx scripts/migrar.ts
-            npx tsx scripts/seedTenants.ts
+            node --import tsx scripts/migrar.ts
+            node --import tsx scripts/seedTenants.ts
             npm ci --prefix web --include=dev
             npm run build --prefix web
             pm2 restart $DEPLOY_PM2_APP
