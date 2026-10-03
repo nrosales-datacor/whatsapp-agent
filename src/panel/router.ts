@@ -25,7 +25,15 @@ import {
   restaurarVersionConfigTenant,
 } from "../config/tenantStore";
 import { darDeBajaTenant } from "../config/offboarding";
-import { actorSuperadmin, actorUsuario, listarAuditoriaTenant, ultimaPausaPorTenant } from "../config/auditoria";
+import {
+  actorSuperadmin,
+  actorUsuario,
+  listarAuditoriaTenant,
+  registrarAuditoria,
+  TENANT_PLATAFORMA,
+  ultimaPausaPorTenant,
+  type AccionAuditoria,
+} from "../config/auditoria";
 import { borrarDatosCliente, normalizarTelefono, type ResultadoSupresion } from "../config/supresionCliente";
 import {
   limpiarLineas,
@@ -88,14 +96,18 @@ import {
 import {
   crearSesion,
   crearSesionAdmin,
+  duracionSesionAdminSeg,
   generarClaveTemporal,
   hashearPassword,
   HASH_DUMMY,
+  huellaOrigen,
+  totpAdminConfigurado,
   verificarPassword,
   verificarSesion,
   verificarSesionAdmin,
 } from "./auth";
-import { clavePublicaVapid, enviarPushATenant } from "./push";
+import { consumirTotp } from "./totp";
+import { clavePublicaVapid, enviarPushATenant, MAX_PUSH_SUBS_POR_USUARIO, validarSuscripcionPush } from "./push";
 import {
   chequearLimiteLogin,
   ipDelRequest,
@@ -580,6 +592,44 @@ function mensajeConflicto(e: unknown): string {
   return "Ya existe un registro con esos datos (id, phone_number_id o usuario duplicado)";
 }
 
+/**
+ * Rastro en wa_auditoria de una acción del superadmin que NO tiene su propia transacción
+ * (login, reset de clave). Best-effort: sin base, o si el INSERT falla, la acción sigue
+ * (no se le niega el login al admin porque la auditoría no respondió) y queda en el log.
+ */
+async function auditarPlataforma(
+  tenantId: string,
+  accion: AccionAuditoria,
+  detalle: Record<string, unknown> = {},
+): Promise<void> {
+  if (!hayBaseDeDatos()) return;
+  try {
+    await registrarAuditoria(obtenerDb(), tenantId, accion, actorSuperadmin(), detalle);
+  } catch (e) {
+    console.error(`[auditoria] no se pudo registrar ${accion}:`, e);
+  }
+}
+
+// Freno a la enumeración de usuarios al crear cuentas (revisión de seguridad 2026-10):
+// los nombres de usuario son únicos en TODO el sistema, así que el 409 "ya existe" le
+// dice a un dueño que ese usuario existe en ALGÚN negocio. No se puede evitar sin cambiar
+// el login (el usuario no lleva el negocio), pero sí acotar el ritmo: pocos choques por
+// negocio por hora; pasado eso, 429. En memoria, por proceso (alcanza para el volumen).
+const MAX_CHOQUES_USUARIO_HORA = 10;
+const choquesAltaUsuario = new Map<string, number[]>();
+function demasiadosChoquesDeUsuario(tenantId: string): boolean {
+  const ahora = Date.now();
+  const recientes = (choquesAltaUsuario.get(tenantId) ?? []).filter((t) => ahora - t < 60 * 60 * 1000);
+  if (recientes.length) choquesAltaUsuario.set(tenantId, recientes);
+  else choquesAltaUsuario.delete(tenantId);
+  return recientes.length >= MAX_CHOQUES_USUARIO_HORA;
+}
+function registrarChoqueDeUsuario(tenantId: string): void {
+  const lista = choquesAltaUsuario.get(tenantId) ?? [];
+  lista.push(Date.now());
+  choquesAltaUsuario.set(tenantId, lista);
+}
+
 export async function manejarPanel(
   req: IncomingMessage,
   res: ServerResponse,
@@ -690,13 +740,31 @@ export async function manejarPanel(
     const usuarioOk = !!process.env.PANEL_SUPERADMIN_USUARIO && body?.usuario === process.env.PANEL_SUPERADMIN_USUARIO;
     // scrypt SIEMPRE (HASH_DUMMY si falta config/usuario) → no filtra por timing.
     const passOk = await verificarPassword(String(body?.password ?? ""), process.env.PANEL_SUPERADMIN_HASH ?? HASH_DUMMY);
-    if (!usuarioOk || !passOk) {
-      registrarFalloLogin("admin", usuarioInput);
-      json(res, 401, { ok: false, error: "Usuario o contraseña incorrectos" });
+    // Segundo factor (revisión de seguridad 2026-10): si hay PANEL_SUPERADMIN_TOTP_SECRET,
+    // el código TOTP es obligatorio. Se chequea SOLO con usuario+clave correctos (así no
+    // gasta el anti-replay con intentos ciegos) y el 401 es el mismo en todos los casos:
+    // desde afuera no se distingue "clave mala" de "código malo".
+    const conTotp = totpAdminConfigurado();
+    let totp: "ok" | "invalido" | "reusado" | "no_requerido" = "no_requerido";
+    if (usuarioOk && passOk && conTotp) {
+      totp = consumirTotp(process.env.PANEL_SUPERADMIN_TOTP_SECRET ?? "", String(body?.codigo ?? ""));
+    }
+    if (!usuarioOk || !passOk || totp === "invalido" || totp === "reusado") {
+      registrarFalloLogin(ip, "admin", usuarioInput);
+      if (usuarioOk && passOk) {
+        // La clave del superadmin es correcta pero el código no: señal fuerte de que la
+        // clave se filtró. Queda en el rastro (sin la IP en claro, ver huellaOrigen).
+        await auditarPlataforma(TENANT_PLATAFORMA, "login_admin_rechazado", {
+          motivo: totp === "reusado" ? "codigo_reusado" : "codigo_invalido",
+          origen: huellaOrigen(ip),
+        });
+      }
+      json(res, 401, { ok: false, error: conTotp ? "Usuario, contraseña o código incorrectos" : "Usuario o contraseña incorrectos" });
       return true;
     }
-    registrarExitoLogin("admin", usuarioInput);
-    const cookie = `${COOKIE_ADMIN}=${crearSesionAdmin()}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${7 * 24 * 60 * 60}`;
+    registrarExitoLogin(ip, "admin", usuarioInput);
+    await auditarPlataforma(TENANT_PLATAFORMA, "login_admin", { totp: totp === "ok", origen: huellaOrigen(ip) });
+    const cookie = `${COOKIE_ADMIN}=${crearSesionAdmin(totp === "ok")}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${duracionSesionAdminSeg()}`;
     res.writeHead(200, { "content-type": "application/json; charset=utf-8", "set-cookie": cookie });
     res.end(JSON.stringify({ ok: true }));
     return true;
@@ -705,7 +773,7 @@ export async function manejarPanel(
   if (ruta === "admin/logout" && metodo === "POST") {
     res.writeHead(200, {
       "content-type": "application/json; charset=utf-8",
-      "set-cookie": `${COOKIE_ADMIN}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`,
+      "set-cookie": `${COOKIE_ADMIN}=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0`,
     });
     res.end(JSON.stringify({ ok: true }));
     return true;
@@ -1180,6 +1248,9 @@ export async function manejarPanel(
         return json(res, 500, { ok: false, error: "No se pudo resetear la clave." }), true;
       }
       if (!usuario) return json(res, 404, { ok: false, error: "Usuario no encontrado" }), true;
+      // Rastro del reset (revisión de seguridad 2026-10): a qué cuenta y de qué negocio.
+      const cuentaReseteada = obtenerUsuarioPorId(usuarioId);
+      await auditarPlataforma(cuentaReseteada?.tenantId ?? TENANT_PLATAFORMA, "reset_clave", { usuarioId });
       // E13/ALTO-06: sin este recargar(), el caché seguiría sirviendo el sessionEpoch
       // (y el passwordHash) viejos hasta el refresco periódico — la sesión que se está
       // revocando con este reset seguiría pasando sesionDeOperador mientras tanto.
@@ -1216,18 +1287,18 @@ export async function manejarPanel(
     // entra (en vez del "usuario o contraseña incorrectos" de antes). Sin la clave correcta
     // sigue el 401 genérico de abajo — no es un oráculo de qué negocios están pausados.
     if (cuenta && ok && !tenant && !claveVencida && obtenerTenantPausadoPorId(cuenta.tenantId)) {
-      registrarExitoLogin("login", usuarioInput);
+      registrarExitoLogin(ip, "login", usuarioInput);
       return jsonCuentaPausada(res), true;
     }
     if (!cuenta || !ok || !tenant || claveVencida) {
-      registrarFalloLogin("login", usuarioInput);
+      registrarFalloLogin(ip, "login", usuarioInput);
       const error = claveVencida
         ? "La clave temporal venció. Pedile a tu administrador que te la resetee de nuevo."
         : "Usuario o contraseña incorrectos";
       json(res, 401, { ok: false, error });
       return true;
     }
-    registrarExitoLogin("login", usuarioInput);
+    registrarExitoLogin(ip, "login", usuarioInput);
     // El login NO sube el epoch (E13/ALTO-06): firma con el epoch VIGENTE de la cuenta,
     // así que loguearse desde un dispositivo nuevo no invalida las sesiones ya abiertas
     // en otros dispositivos — solo cambiar clave/rol/estado revoca sesiones.
@@ -1238,6 +1309,17 @@ export async function manejarPanel(
   }
 
   if (ruta === "logout" && metodo === "POST") {
+    // Notificaciones push del dispositivo que cierra sesión (revisión de seguridad 2026-10):
+    // el panel manda el `endpoint` de ESTE navegador y se borra esa suscripción — un
+    // teléfono o tablet compartido deja de recibir los mensajes de los clientes al salir.
+    // Solo se borra si la sesión es válida y la suscripción es de ese mismo usuario.
+    const sesionSaliente = sesionDeOperador(req);
+    const body = await leerBody(req);
+    if (sesionSaliente && body && typeof body.endpoint === "string" && body.endpoint) {
+      await repo
+        .borrarPushSub(sesionSaliente.tenant.id, body.endpoint.slice(0, 2048), sesionSaliente.usuarioId)
+        .catch((e) => console.error("[push] borrar suscripción en logout:", e));
+    }
     res.writeHead(200, {
       "content-type": "application/json; charset=utf-8",
       "set-cookie": `${COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`,
@@ -1370,16 +1452,25 @@ export async function manejarPanel(
       if (!RE_USUARIO.test(usuario)) {
         return json(res, 400, { ok: false, error: "Usuario inválido (3 a 40 caracteres: letras, números, . _ -)" }), true;
       }
-      if (usuario === process.env.PANEL_SUPERADMIN_USUARIO) {
-        return json(res, 400, { ok: false, error: "Ese usuario está reservado" }), true;
-      }
       const password = String(body?.password ?? "");
       if (password.length < 8) return json(res, 400, { ok: false, error: "La contraseña debe tener al menos 8 caracteres" }), true;
+      if (demasiadosChoquesDeUsuario(tenant.id)) {
+        return json(res, 429, { ok: false, error: "Demasiados intentos con usuarios que ya existen. Probá de nuevo más tarde." }), true;
+      }
+      // El usuario del superadmin responde IGUAL que uno que ya existe: antes decía "está
+      // reservado" y así cualquier dueño podía descubrir el usuario del superadmin probando.
+      if (usuario === process.env.PANEL_SUPERADMIN_USUARIO) {
+        registrarChoqueDeUsuario(tenant.id);
+        return json(res, 409, { ok: false, error: "Ese usuario de panel ya existe" }), true;
+      }
       const nuevoRol: Rol = body?.rol === "dueno" ? "dueno" : "operador";
       try {
         await crearUsuarioTenant(tenant.id, { usuario, passwordHash: await hashearPassword(password), rol: nuevoRol });
       } catch (e) {
-        if (esChoqueUnico(e)) return json(res, 409, { ok: false, error: "Ese usuario de panel ya existe" }), true;
+        if (esChoqueUnico(e)) {
+          registrarChoqueDeUsuario(tenant.id);
+          return json(res, 409, { ok: false, error: "Ese usuario de panel ya existe" }), true;
+        }
         if (e instanceof Error && e.message === "SIN_DB") {
           return json(res, 503, { ok: false, error: "La gestión de usuarios requiere base de datos." }), true;
         }
@@ -1670,7 +1761,7 @@ export async function manejarPanel(
     if (colorHeader === null) return json(res, 400, { ok: false, error: "Color de encabezado inválido (formato #rrggbb)" }), true;
 
     const logoUrl = validarLogoUrl(body?.logoUrl);
-    if (logoUrl === null) return json(res, 400, { ok: false, error: "URL del logo inválida (debe ser una URL http o https)" }), true;
+    if (logoUrl === null) return json(res, 400, { ok: false, error: "URL del logo inválida (debe ser una URL https)" }), true;
 
     // White-label (C4.1) es Pro (Carril D, 0.1): un Básico no puede setear marca aunque
     // mande el POST directo, aunque sí puede guardar el resto de "Mi negocio" sin tocarla.
@@ -1837,31 +1928,47 @@ export async function manejarPanel(
   }
 
   // ── Notificaciones push ──
+  // Revisión de seguridad 2026-10: la suscripción es del USUARIO (no solo del negocio) y
+  // lleva su sessionEpoch — desactivarlo, cambiarle la clave/rol o hacer logout corta sus
+  // notificaciones. El endpoint se valida contra la allowlist de servicios de push reales
+  // (https), porque es una URL a la que el servidor le hace POST (antes: SSRF ciego).
   if (ruta === "push/suscribir" && metodo === "POST") {
     const body = await leerBody(req);
     if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
-    const endpoint = body?.endpoint;
-    const p256dh = body?.keys?.p256dh;
-    const auth = body?.keys?.auth;
-    if (!endpoint || !p256dh || !auth) return json(res, 400, { ok: false, error: "Suscripción inválida" }), true;
-    await repo.guardarPushSub(tenant.id, { endpoint: String(endpoint), p256dh: String(p256dh), auth: String(auth) });
+    const v = validarSuscripcionPush(body);
+    if (!v.ok) return json(res, 400, { ok: false, error: v.error }), true;
+    const cuenta = obtenerUsuarioPorId(usuarioId);
+    if (!cuenta) return json(res, 401, { ok: false, error: "No autenticado" }), true;
+    await repo.guardarPushSub(
+      tenant.id,
+      { ...v.sub, usuarioId, sessionEpoch: cuenta.sessionEpoch },
+      { maxPorUsuario: MAX_PUSH_SUBS_POR_USUARIO },
+    );
     return json(res, 200, { ok: true }), true;
   }
 
   if (ruta === "push/desuscribir" && metodo === "POST") {
     const body = await leerBody(req);
     if (body === null) return json(res, 413, { ok: false, error: "Cuerpo demasiado grande" }), true;
-    if (body?.endpoint) await repo.borrarPushSub(tenant.id, String(body.endpoint));
+    if (typeof body?.endpoint === "string" && body.endpoint) {
+      await repo.borrarPushSub(tenant.id, body.endpoint.slice(0, 2048), usuarioId);
+    }
     return json(res, 200, { ok: true }), true;
   }
 
   if (ruta === "push/probar" && metodo === "POST") {
-    const r = await enviarPushATenant(repo, tenant.id, {
-      title: "✅ Notificaciones activas",
-      body: "Te avisaremos por acá cuando un cliente necesite atención.",
-      url: "/panel/",
-      tag: "prueba",
-    });
+    // Solo a los dispositivos de quien la pide (antes: a todo el equipo del negocio).
+    const r = await enviarPushATenant(
+      repo,
+      tenant.id,
+      {
+        title: "✅ Notificaciones activas",
+        body: "Te avisaremos por acá cuando un cliente necesite atención.",
+        url: "/panel/",
+        tag: "prueba",
+      },
+      { soloUsuarioId: usuarioId },
+    );
     return json(res, 200, { ok: true, ...r }), true;
   }
 

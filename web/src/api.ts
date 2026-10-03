@@ -28,6 +28,7 @@ import type {
   SegmentoFiltro,
   Service,
 } from "../../src/types";
+import { desuscribirPushLocal, endpointPushLocal } from "./lib/pushLocal";
 
 export type {
   Bloqueo,
@@ -193,7 +194,14 @@ export function login(usuario: string, password: string) {
 }
 
 export async function logout(): Promise<void> {
-  await pedir("/logout", { method: "POST" });
+  // Revisión de seguridad 2026-10: al salir, este dispositivo deja de recibir los avisos
+  // push (el backend borra su suscripción y acá se da de baja en el navegador).
+  const endpoint = await endpointPushLocal();
+  try {
+    await pedir("/logout", { method: "POST", body: JSON.stringify(endpoint ? { endpoint } : {}) });
+  } finally {
+    if (endpoint) await desuscribirPushLocal();
+  }
 }
 
 export function me(): Promise<Sesion> {
@@ -531,8 +539,9 @@ export function adminConectarWhatsapp(datos: {
   return pedir("/admin/embedded-signup/conectar", { method: "POST", body: JSON.stringify(datos) });
 }
 
-export function adminLogin(usuario: string, password: string) {
-  return pedir("/admin/login", { method: "POST", body: JSON.stringify({ usuario, password }) });
+/** `codigo`: los 6 dígitos de la app autenticadora (obligatorio si el server tiene TOTP configurado). */
+export function adminLogin(usuario: string, password: string, codigo: string) {
+  return pedir("/admin/login", { method: "POST", body: JSON.stringify({ usuario, password, codigo }) });
 }
 
 export async function adminLogout(): Promise<void> {

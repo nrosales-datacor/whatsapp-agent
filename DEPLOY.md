@@ -122,6 +122,11 @@ sudo systemctl reload caddy
 
 Caddy saca el certificado HTTPS solo. Listo, salteá al paso 9.
 
+> 🔒 **IP real del cliente (`TRUST_PROXY`)**: Caddy le pasa a Node la IP del visitante en
+> `X-Forwarded-For` (y por defecto **pisa** la que mande el cliente, así que no se puede
+> falsificar desde afuera). Para que el rate limit del login la use, en el `.env` poné
+> `TRUST_PROXY=loopback` (Caddy habla con Node desde `127.0.0.1`). Ver §23.
+
 ### Caso B: el 80/443 YA los usa nginx (porque selyon ya tiene web)
 
 No instales Caddy. Hay que agregarle un "sitio" a nginx + sacar el certificado.
@@ -135,7 +140,15 @@ sudo nano /etc/nginx/sites-available/whatsapp-bot
 server {
     listen 80;
     server_name rosalescarwash-bot.duckdns.org;
-    location / { proxy_pass http://localhost:3001; proxy_set_header Host $host; }
+    location / {
+        proxy_pass http://localhost:3001;
+        proxy_set_header Host $host;
+        # IP real del cliente + esquema (https) para el rate limit del login y el HSTS (§23).
+        # $proxy_add_x_forwarded_for AGREGA la IP real al final de lo que mandó el cliente;
+        # Node solo cree el último salto agregado por un proxy de confianza (TRUST_PROXY).
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
 }
 ```
 ```bash
@@ -293,7 +306,30 @@ nano .env
 ```
 PANEL_SUPERADMIN_USUARIO=admin          # usuario DISTINTO de los de panel
 PANEL_SUPERADMIN_HASH=salt:hash         # el hash recién generado
+PANEL_SUPERADMIN_TOTP_SECRET=...        # segundo factor (MUY recomendado, ver abajo)
 ```
+
+**Segundo factor (TOTP) del superadmin** — es la llave de TODOS los negocios (alta, baja
+con export, reset de claves, tokens de WhatsApp), así que en producción va con 2FA:
+
+```bash
+npx tsx scripts/generarTotp.ts admin
+```
+
+Imprime `PANEL_SUPERADMIN_TOTP_SECRET=...` (pegalo en el `.env`) y una URI `otpauth://...`:
+cargala en la app autenticadora del celular (Google Authenticator, Authy, 1Password,
+Bitwarden) — convertida en QR con un generador **offline**, o a mano con "Ingresar clave de
+configuración" (tipo "basada en tiempo") usando el secreto. Comprobá que el "código vigente"
+que imprime el script coincide con la app. Desde el `pm2 restart`, el login de
+`/panel/admin` pide usuario + clave + **código de 6 dígitos**; un código ya usado no se
+acepta dos veces, y las sesiones de admin abiertas antes de activar el 2FA dejan de valer.
+La sesión del admin dura 8 h (`PANEL_ADMIN_SESSION_HORAS`, tope 12) y se puede revocar sola
+subiendo `PANEL_ADMIN_SESSION_VERSION`. Los logins del admin (y los rechazados por código
+inválido — señal de que la clave se filtró), los resets de clave y los exports quedan en
+`wa_auditoria` (los logins con `tenant_id = '_plataforma'`).
+
+> Si perdés el celular: entrá al droplet, generá un secreto nuevo con el mismo script,
+> reemplazalo en el `.env` y `pm2 restart whatsapp-bot`.
 ```bash
 pm2 restart whatsapp-bot
 ```
@@ -728,6 +764,47 @@ Con procesos separados (paso 21), la marca de "token inválido" vive en el proce
 
 Para el botón "Mejorar plan" del aviso de cuota del panel, definí
 `PLATAFORMA_CONTACTO_WHATSAPP` (solo dígitos) o `PLATAFORMA_CONTACTO_EMAIL`.
+
+## 23. Endurecimiento de seguridad (revisión pre-venta 2026-10)
+
+Lo que hay que **setear a mano** en el `.env` del droplet (el resto es automático):
+
+```
+TRUST_PROXY=loopback                    # OBLIGATORIO detrás de Caddy/nginx (ver abajo)
+PANEL_SUPERADMIN_TOTP_SECRET=...        # §14 (npx tsx scripts/generarTotp.ts)
+```
+
+- **`TRUST_PROXY`** — el rate limit del login (por IP, por par IP+usuario y un freno
+  global por usuario) necesita la IP real del cliente. `X-Forwarded-For` lo puede inventar
+  cualquiera, así que solo se cree el salto que agregó un proxy de confianza. Sin la env se
+  usa la IP del socket: detrás de Caddy/nginx eso es `127.0.0.1` **para todos los
+  visitantes** → un solo límite compartido (10 intentos fallidos de cualquiera frenan el
+  login de todos 5 min). El log avisa (`[red] Llegan requests con X-Forwarded-For…`) si
+  detecta esa situación. Valores: `loopback` (proxy en el mismo servidor), un número `N` de
+  proxies delante, o una lista `IP,CIDR` (p. ej. si algún día va detrás de Cloudflare con
+  proxy naranja: sus rangos + loopback). Con nginx hace falta además el
+  `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` de §8.
+- **Cabeceras de seguridad** — todas las respuestas llevan CSP (estricta en `/panel`, sin
+  scripts inline; la de `/panel/admin` permite además el SDK de Meta del Embedded Signup),
+  `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`,
+  `X-Frame-Options: DENY` / `frame-ancestors 'none'` y HSTS (1 año) cuando la request llegó
+  por https (`X-Forwarded-Proto: https`, que Caddy manda solo y nginx con la línea de §8).
+  `SEGURIDAD_HSTS=0` lo apaga, `=1` lo fuerza. Comprobar:
+  `curl -sI https://wabotlavacar.selyon.app/panel | grep -iE 'content-security|strict-transport'`.
+- **Logo del negocio (white-label)** — ahora solo se acepta `https://`. Un logo viejo en
+  `http://` se deja de ver (el navegador ya lo bloqueaba por contenido mixto): que el dueño
+  lo vuelva a cargar con https desde "Mi negocio".
+- **Notificaciones push** — cada suscripción es ahora de un usuario (migración
+  `0035_push_subs_por_usuario`, aditiva). Desactivar a alguien, cambiarle la clave o el
+  rol, resetearle la clave o que haga logout corta sus avisos. Las suscripciones viejas (sin
+  usuario) dejan de recibir y se borran solas en el próximo envío; el panel las vuelve a
+  registrar a nombre de quien esté logueado la próxima vez que se abra en ese dispositivo
+  (si no, basta tocar la 🔔 de nuevo). Solo se aceptan endpoints https de los servicios de
+  push de los navegadores (FCM, Apple, Mozilla, Windows) y hasta
+  `PANEL_PUSH_MAX_POR_USUARIO` (5) dispositivos por usuario.
+- **Anti-replay del TOTP en memoria** — con una sola réplica `web` (el deploy actual) es
+  exacto. Si algún día hay varias réplicas `web` (§21), un mismo código podría usarse una
+  vez en cada una dentro de sus ~90 s de validez: aceptable, pero tenelo presente.
 
 ## Mantenimiento rápido
 

@@ -180,12 +180,27 @@ export const waEventosCalidad = pgTable(
   }),
 ).enableRLS();
 
-// Suscripciones de notificaciones push del panel (Web Push), por negocio.
+// Suscripciones de notificaciones push del panel (Web Push), por negocio Y por usuario.
+//
+// `usuario_id` + `session_epoch` (revisión de seguridad pre-venta 2026-10): antes la
+// suscripción solo sabía de qué negocio era, así que desactivar a un empleado, resetearle
+// la clave o hacer logout NO cortaba las notificaciones de su teléfono ("+506… quiere
+// hablar" + 120 caracteres del mensaje). Ahora cada suscripción es de UN usuario y lleva
+// el sessionEpoch con el que se registró: si la cuenta se desactiva o su epoch sube
+// (cambio de clave/rol/estado, ver wa_usuarios.session_epoch), la suscripción deja de
+// recibir (ver enviarPushATenant en src/panel/push.ts) y se borra.
+//
+// Nullable a propósito (migración aditiva): las filas viejas quedan con NULL y NO reciben
+// más notificaciones — se purgan solas en el próximo envío del negocio, y el navegador las
+// vuelve a registrar (ya asociadas al usuario logueado) al abrir el panel.
 export const waPushSubs = pgTable(
   "wa_push_subs",
   {
     id: id(),
     tenantId: text("tenant_id").notNull(),
+    // ON DELETE CASCADE: si la cuenta se borra (baja del negocio), sus dispositivos también.
+    usuarioId: text("usuario_id").references(() => waUsuarios.id, { onDelete: "cascade" }),
+    sessionEpoch: integer("session_epoch"),
     endpoint: text("endpoint").notNull(),
     p256dh: text("p256dh").notNull(),
     auth: text("auth").notNull(),
@@ -194,6 +209,7 @@ export const waPushSubs = pgTable(
   (t) => ({
     uq: uniqueIndex("wa_push_endpoint_uq").on(t.endpoint),
     idxTenant: index("wa_push_tenant_idx").on(t.tenantId),
+    idxUsuario: index("wa_push_usuario_idx").on(t.usuarioId),
   }),
 ).enableRLS();
 
@@ -670,6 +686,8 @@ export const waAuditoria = pgTable(
     id: id(),
     tenantId: text("tenant_id").notNull(),
     // "pausar" | "reactivar" | "reconectar_whatsapp" | "borrar_cliente" | "baja_tenant" | "baja_storage_pendiente"
+    // | "login_admin" | "login_admin_rechazado" | "export_tenant" | "reset_clave" (ver src/config/auditoria.ts).
+    // Las entradas de plataforma (login del superadmin) usan tenant_id = "_plataforma".
     accion: text("accion").notNull(),
     // Quién lo hizo: "superadmin:<usuario>" o "usuario:<id de wa_usuarios>".
     actor: text("actor").notNull(),

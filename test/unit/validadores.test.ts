@@ -169,9 +169,11 @@ test("validarColorHex: acepta hex válido y normaliza a minúsculas", () => {
   assert.equal(validarColorHex(""), "");
 });
 
-test("validarLogoUrl: exige http(s) cuando no está vacío", () => {
+test("validarLogoUrl: exige https cuando no está vacío (revisión de seguridad 2026-10)", () => {
   assert.equal(validarLogoUrl(""), "");
-  assert.equal(validarLogoUrl("http://cdn.example.com/logo.png"), "http://cdn.example.com/logo.png");
+  assert.equal(validarLogoUrl("https://cdn.example.com/logo.png"), "https://cdn.example.com/logo.png");
+  assert.equal(validarLogoUrl("http://cdn.example.com/logo.png"), null, "http ya no: contenido mixto/MITM");
+  assert.equal(validarLogoUrl("https://usuario:clave@cdn.example.com/logo.png"), null);
   assert.equal(validarLogoUrl("javascript:alert(1)"), null);
 });
 

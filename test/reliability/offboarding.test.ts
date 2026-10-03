@@ -252,8 +252,9 @@ test("la baja borra (y exporta) los wa_webhooks_crudos de SU phone_number_id, no
     const restantes = await db.select().from(waWebhooksCrudos);
     assert.deepEqual(restantes.map((r) => r.phoneNumberId), ["pnid-de-otro"]);
 
-    const [aud] = await db.select().from(waAuditoria).where(eq(waAuditoria.tenantId, tenantId));
-    assert.equal(aud.accion, "baja_tenant", "queda el rastro de la baja (wa_auditoria no se borra)");
+    const acciones = (await db.select().from(waAuditoria).where(eq(waAuditoria.tenantId, tenantId))).map((a) => a.accion).sort();
+    // Queda el rastro de la baja y del export que la acompaña (wa_auditoria no se borra).
+    assert.deepEqual(acciones, ["baja_tenant", "export_tenant"]);
   } finally {
     await cerrar();
   }
@@ -288,7 +289,7 @@ test("la baja borra el prefijo del tenant en Supabase Storage; si Storage falla,
     await darDeBajaTenant("tenant-f16-8", "Otro negocio", db);
     assert.equal((await db.select().from(waTenants).where(eq(waTenants.id, "tenant-f16-8"))).length, 0);
     const acciones = (await db.select().from(waAuditoria).where(eq(waAuditoria.tenantId, "tenant-f16-8"))).map((a) => a.accion).sort();
-    assert.deepEqual(acciones, ["baja_storage_pendiente", "baja_tenant"]);
+    assert.deepEqual(acciones, ["baja_storage_pendiente", "baja_tenant", "export_tenant"]);
   } finally {
     globalThis.fetch = fetchOriginal;
     delete process.env.SUPABASE_URL;

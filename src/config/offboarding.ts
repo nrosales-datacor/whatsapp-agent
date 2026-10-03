@@ -73,15 +73,24 @@ const TABLAS_TENANT_ID = {
   waSnapshotReputacion,
 } as const;
 
-/** Forma exacta del respaldo que se le entrega al superadmin antes de borrar (paso a). */
+/**
+ * Forma exacta del respaldo que se le entrega al superadmin antes de borrar (paso a).
+ *
+ * SIN secretos (revisión de seguridad pre-venta 2026-10): el export viaja al navegador del
+ * superadmin y de ahí a un archivo que se guarda/manda por ahí, así que NO lleva los
+ * `password_hash` de los usuarios (crackeables offline: muchos dueños reusan la clave),
+ * ni el `access_token` de WhatsApp (aunque esté cifrado), ni el endpoint + llaves de las
+ * suscripciones push (con eso se le pueden mandar notificaciones al teléfono del equipo).
+ * Nada de eso es "dato del negocio" que el cliente necesite llevarse.
+ */
 export interface ExportTenant {
-  waTenants: typeof waTenants.$inferSelect;
-  waUsuarios: (typeof waUsuarios.$inferSelect)[];
+  waTenants: Omit<typeof waTenants.$inferSelect, "accessToken">;
+  waUsuarios: Omit<typeof waUsuarios.$inferSelect, "passwordHash">[];
   waConversaciones: (typeof waConversaciones.$inferSelect)[];
   waMensajes: (typeof waMensajes.$inferSelect)[];
   waCitas: (typeof waCitas.$inferSelect)[];
   waEventosCalidad: (typeof waEventosCalidad.$inferSelect)[];
-  waPushSubs: (typeof waPushSubs.$inferSelect)[];
+  waPushSubs: Omit<typeof waPushSubs.$inferSelect, "endpoint" | "p256dh" | "auth">[];
   waTenantsHistorial: (typeof waTenantsHistorial.$inferSelect)[];
   waJobs: (typeof waJobs.$inferSelect)[];
   waCampanias: (typeof waCampanias.$inferSelect)[];
@@ -129,9 +138,11 @@ export async function darDeBajaTenant(tenantId: string, confirmarNombre: string,
 
     const crudos = await tx.select().from(waWebhooksCrudos).where(eq(waWebhooksCrudos.phoneNumberId, tenant.phoneNumberId));
 
+    // Sin secretos (ver ExportTenant): se arman copias sin esos campos.
+    const { accessToken: _token, ...tenantSinSecretos } = tenant;
     const exportado = {
-      waTenants: tenant,
-      waUsuarios: usuarios,
+      waTenants: tenantSinSecretos,
+      waUsuarios: usuarios.map(({ passwordHash: _hash, ...u }) => u),
       waConversaciones: conversaciones,
       waMensajes: mensajes,
       waWebhooksCrudos: crudos,
@@ -141,6 +152,9 @@ export async function darDeBajaTenant(tenantId: string, confirmarNombre: string,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- filas de forma distinta por tabla, ver ExportTenant
       (exportado as any)[clave] = await tx.select().from(tabla as any).where(eq((tabla as any).tenantId, tenantId));
     }
+    exportado.waPushSubs = (exportado.waPushSubs as (typeof waPushSubs.$inferSelect)[]).map(
+      ({ endpoint: _e, p256dh: _p, auth: _a, ...s }) => s,
+    );
 
     // ── (b) Borrado en orden de dependencia ──
     // wa_mensajes primero (cuelga de wa_conversaciones vía conversacion_id, no tiene
@@ -161,7 +175,14 @@ export async function darDeBajaTenant(tenantId: string, confirmarNombre: string,
     await tx.delete(waUsuarios).where(eq(waUsuarios.tenantId, tenantId));
     await tx.delete(waTenants).where(eq(waTenants.id, tenantId));
 
-    // Rastro de la baja (sin datos personales: solo conteos), dentro de la MISMA transacción.
+    // Rastro del export y de la baja (sin datos personales: solo conteos), dentro de la
+    // MISMA transacción — o quedan la baja y su rastro, o ninguno de los dos.
+    await registrarAuditoria(tx, tenantId, "export_tenant", actorSuperadmin(), {
+      motivo: "baja",
+      conversaciones: conversaciones.length,
+      mensajes: mensajes.length,
+      citas: (exportado.waCitas ?? []).length,
+    });
     await registrarAuditoria(tx, tenantId, "baja_tenant", actorSuperadmin(), {
       conversaciones: conversaciones.length,
       mensajes: mensajes.length,

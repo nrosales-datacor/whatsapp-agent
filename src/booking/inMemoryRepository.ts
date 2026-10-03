@@ -594,18 +594,35 @@ export class RepositorioEnMemoria implements Repositorio {
   }
 
   // ── Notificaciones push ──
-  async guardarPushSub(tenantId: string, sub: PushSub): Promise<void> {
-    this.pushSubs.set(sub.endpoint, { ...sub, tenantId });
+  async guardarPushSub(tenantId: string, sub: PushSub, opciones?: { maxPorUsuario?: number }): Promise<void> {
+    // Mismo contrato que el repo de Drizzle: upsert por endpoint (re-asocia el dispositivo)
+    // y poda de las más viejas del usuario por encima del tope. El Map preserva el orden de
+    // inserción: borrar y volver a insertar deja a este endpoint como el más reciente.
+    this.pushSubs.delete(sub.endpoint);
+    this.pushSubs.set(sub.endpoint, { ...sub, usuarioId: sub.usuarioId ?? null, sessionEpoch: sub.sessionEpoch ?? null, tenantId });
+    const max = opciones?.maxPorUsuario;
+    if (sub.usuarioId && max && max > 0) {
+      const delUsuario = [...this.pushSubs.values()].filter((s) => s.tenantId === tenantId && s.usuarioId === sub.usuarioId);
+      for (const s of delUsuario.slice(0, Math.max(0, delUsuario.length - max))) this.pushSubs.delete(s.endpoint);
+    }
   }
 
   async listarPushSubs(tenantId: string): Promise<PushSub[]> {
     return [...this.pushSubs.values()]
       .filter((s) => s.tenantId === tenantId)
-      .map(({ endpoint, p256dh, auth }) => ({ endpoint, p256dh, auth }));
+      .map(({ endpoint, p256dh, auth, usuarioId, sessionEpoch }) => ({ endpoint, p256dh, auth, usuarioId, sessionEpoch }));
   }
 
-  async borrarPushSub(tenantId: string, endpoint: string): Promise<void> {
+  async borrarPushSub(tenantId: string, endpoint: string, usuarioId?: string): Promise<void> {
     const sub = this.pushSubs.get(endpoint);
-    if (sub && sub.tenantId === tenantId) this.pushSubs.delete(endpoint);
+    if (!sub || sub.tenantId !== tenantId) return;
+    if (usuarioId !== undefined && sub.usuarioId !== usuarioId) return;
+    this.pushSubs.delete(endpoint);
+  }
+
+  async borrarPushSubsDeUsuario(tenantId: string, usuarioId: string): Promise<void> {
+    for (const [endpoint, s] of this.pushSubs) {
+      if (s.tenantId === tenantId && s.usuarioId === usuarioId) this.pushSubs.delete(endpoint);
+    }
   }
 }

@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { cspLanding, hashesScriptsInline } from "../red/cabeceras";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Landing pública de venta (ROADMAP C4.4). Sirve `/`, `/privacidad`, `/terminos`, `/contrato`,
@@ -63,8 +64,27 @@ function leerAsset(archivo: string): { buf: Buffer; tipo: string } | null {
   }
 }
 
+// CSP de cada página con los hashes de SUS scripts inline (revisión de seguridad 2026-10):
+// así el script del menú/animaciones de index.html corre sin habilitar 'unsafe-inline'.
+// Se calcula sobre el HTML exacto que se sirve (si alguien edita el script, el hash se
+// recalcula solo al recargar la página del disco). Cacheado por contenido.
+const cspCache = new Map<string, string>();
+function cspDePagina(html: string): string {
+  let csp = cspCache.get(html);
+  if (!csp) {
+    csp = cspLanding(hashesScriptsInline(html));
+    if (cspCache.size > 50) cspCache.clear(); // en dev (SEED_DEMO) el HTML se relee en cada request
+    cspCache.set(html, csp);
+  }
+  return csp;
+}
+
 function servirHtml(res: ServerResponse, html: string) {
-  res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" });
+  res.writeHead(200, {
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-cache",
+    "content-security-policy": cspDePagina(html),
+  });
   res.end(html);
 }
 

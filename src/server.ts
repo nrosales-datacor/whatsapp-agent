@@ -23,6 +23,7 @@ import { iniciarVigilancia } from "./observabilidad/vigilancia";
 import { canalesDeAlertaConfigurados } from "./observabilidad/alertas";
 import { chequearSalud, codigoHttpSalud } from "./salud";
 import { leerCuerpoConTope, MAX_BODY_WEBHOOK, conRedDeSeguridad } from "./red/http";
+import { conCabecerasSeguridad } from "./red/cabeceras";
 import type { Repositorio } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -134,8 +135,9 @@ function reportarErrorHttp(e: unknown): void {
 }
 
 // Servidor HTTP completo: webhook + panel + landing + /salud. Lo usan `ROL=web`
-// y `ROL=todo` (default, comportamiento idéntico al de siempre).
-const servidorCompleto = http.createServer(conRedDeSeguridad(async (req, res) => {
+// y `ROL=todo` (default, comportamiento idéntico al de siempre). Todas las respuestas
+// salen con las cabeceras de seguridad (CSP, HSTS, nosniff…, ver src/red/cabeceras.ts).
+const servidorCompleto = http.createServer(conRedDeSeguridad(conCabecerasSeguridad(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
   if (url.pathname === "/salud") {
@@ -230,7 +232,7 @@ const servidorCompleto = http.createServer(conRedDeSeguridad(async (req, res) =>
 
   res.writeHead(405);
   res.end("Method not allowed");
-}, reportarErrorHttp));
+}), reportarErrorHttp));
 
 // Servidor HTTP mínimo para `ROL=worker`: SOLO `/salud` (health check del
 // propio proceso, para el monitor de uptime/orquestador). Sin webhook, sin
@@ -238,7 +240,7 @@ const servidorCompleto = http.createServer(conRedDeSeguridad(async (req, res) =>
 // consume wa_jobs y corre los schedulers (ver el `if (SIRVE_TRABAJO_DE_FONDO)`
 // más abajo). Reusa `chequearSalud`/`codigoHttpSalud` (src/salud.ts) igual que
 // el servidor completo: mismo criterio de "algo crítico falló → 503".
-const servidorMinimo = http.createServer(conRedDeSeguridad(async (req, res) => {
+const servidorMinimo = http.createServer(conRedDeSeguridad(conCabecerasSeguridad(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
   if (url.pathname === "/salud") {
     await responderSalud(res, url);
@@ -246,7 +248,7 @@ const servidorMinimo = http.createServer(conRedDeSeguridad(async (req, res) => {
   }
   res.writeHead(404);
   res.end("Not found");
-}, reportarErrorHttp));
+}), reportarErrorHttp));
 
 const server = SIRVE_WEB ? servidorCompleto : servidorMinimo;
 

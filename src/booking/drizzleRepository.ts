@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import {
   schema,
@@ -1043,21 +1043,56 @@ export class RepositorioDrizzle implements Repositorio {
   }
 
   // ── Notificaciones push ──
-  async guardarPushSub(tenantId: string, sub: PushSub): Promise<void> {
+  async guardarPushSub(tenantId: string, sub: PushSub, opciones?: { maxPorUsuario?: number }): Promise<void> {
+    const usuarioId = sub.usuarioId ?? null;
+    const sessionEpoch = sub.sessionEpoch ?? null;
+    // Upsert por endpoint: el dispositivo pasa a ser de quien se suscribe AHORA (otro
+    // usuario logueado en el mismo navegador, o el mismo tras un cambio de clave). Se
+    // renueva `creada_en` para que la poda de abajo lo trate como el más reciente.
     await this.db
       .insert(waPushSubs)
-      .values({ tenantId, endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth })
-      .onConflictDoNothing();
+      .values({ tenantId, usuarioId, sessionEpoch, endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth })
+      .onConflictDoUpdate({
+        target: waPushSubs.endpoint,
+        set: { tenantId, usuarioId, sessionEpoch, p256dh: sub.p256dh, auth: sub.auth, creadaEn: new Date() },
+      });
+    const max = opciones?.maxPorUsuario;
+    if (usuarioId && max && max > 0) {
+      // Tope por usuario: se quedan las `max` más recientes; el resto se borra.
+      const filas = await this.db
+        .select({ id: waPushSubs.id })
+        .from(waPushSubs)
+        .where(and(eq(waPushSubs.tenantId, tenantId), eq(waPushSubs.usuarioId, usuarioId)))
+        .orderBy(desc(waPushSubs.creadaEn));
+      const sobrantes = filas.slice(max).map((f) => f.id);
+      if (sobrantes.length) await this.db.delete(waPushSubs).where(inArray(waPushSubs.id, sobrantes));
+    }
   }
 
   async listarPushSubs(tenantId: string): Promise<PushSub[]> {
     const rows = await this.db.select().from(waPushSubs).where(eq(waPushSubs.tenantId, tenantId));
-    return rows.map((r) => ({ endpoint: r.endpoint, p256dh: r.p256dh, auth: r.auth }));
+    return rows.map((r) => ({
+      endpoint: r.endpoint,
+      p256dh: r.p256dh,
+      auth: r.auth,
+      usuarioId: r.usuarioId,
+      sessionEpoch: r.sessionEpoch,
+    }));
   }
 
-  async borrarPushSub(tenantId: string, endpoint: string): Promise<void> {
+  async borrarPushSub(tenantId: string, endpoint: string, usuarioId?: string): Promise<void> {
     await this.db
       .delete(waPushSubs)
-      .where(and(eq(waPushSubs.endpoint, endpoint), eq(waPushSubs.tenantId, tenantId)));
+      .where(
+        and(
+          eq(waPushSubs.endpoint, endpoint),
+          eq(waPushSubs.tenantId, tenantId),
+          usuarioId !== undefined ? eq(waPushSubs.usuarioId, usuarioId) : undefined,
+        ),
+      );
+  }
+
+  async borrarPushSubsDeUsuario(tenantId: string, usuarioId: string): Promise<void> {
+    await this.db.delete(waPushSubs).where(and(eq(waPushSubs.tenantId, tenantId), eq(waPushSubs.usuarioId, usuarioId)));
   }
 }

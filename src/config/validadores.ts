@@ -482,13 +482,28 @@ export function validarColorHex(v: unknown): string | null {
 
 /**
  * Valida la URL del logo del negocio (white-label, ROADMAP C4.1). Vacío = sin
- * configurar (el panel muestra las iniciales del nombre). Mismo criterio que
- * validarLinkResenas: solo URLs http(s) (no hay upload de archivos en el repo).
+ * configurar (el panel muestra las iniciales del nombre). No hay upload de archivos
+ * en el repo, así que es una URL externa.
+ *
+ * Revisión de seguridad 2026-10: SOLO https (antes también http) y sin usuario:clave
+ * en la URL. El panel se sirve por https con CSP `img-src 'self' data: blob: https:`
+ * (src/red/cabeceras.ts): un logo http se bloquearía igual (contenido mixto) y abriría
+ * la puerta a que alguien en el medio lo cambie. No se restringe a una allowlist de
+ * hosts porque el logo lo elige cada negocio (su web, su CDN) y una imagen no ejecuta
+ * código: con `script-src 'self'` y `connect-src 'self'`, lo peor que puede hacer un
+ * logo externo es contarle a su dueño qué IPs abren el panel — y ese dueño es el mismo
+ * negocio que lo configuró.
  */
 export function validarLogoUrl(v: unknown): string | null {
   const s = String(v ?? "").trim();
   if (!s) return "";
-  if (s.length > 500 || !RE_URL_HTTP.test(s)) return null;
+  if (s.length > 500 || !/^https:\/\/.+/i.test(s)) return null;
+  try {
+    const u = new URL(s);
+    if (u.protocol !== "https:" || u.username || u.password) return null;
+  } catch {
+    return null;
+  }
   return s;
 }
 

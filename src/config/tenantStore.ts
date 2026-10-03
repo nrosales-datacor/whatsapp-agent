@@ -2,7 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { Bloqueo, Empleado, EstadoFacturacion, HorarioDia, KnowledgeBase, Plan, Rol, Service, Tenant } from "../types";
 import { obtenerDb } from "../db/client";
-import { schema, waTenants, waUsuarios } from "../db/schema";
+import { schema, waPushSubs, waTenants, waUsuarios } from "../db/schema";
 import { cifrar, descifrar } from "./secretos";
 import { TENANT_FALLBACK_SELYON } from "./tenants";
 import { normalizarKb } from "./validadores";
@@ -717,10 +717,33 @@ export async function actualizarUsuarioTenant(
   if (!hayDb) throw new Error("SIN_DB");
   const subeEpoch = patch.rol !== undefined || patch.activo === false;
   const d = obtenerDb();
-  await d
-    .update(waUsuarios)
-    .set({ ...patch, ...(subeEpoch ? { sessionEpoch: sql`${waUsuarios.sessionEpoch} + 1` } : {}) })
-    .where(and(eq(waUsuarios.id, usuarioId), eq(waUsuarios.tenantId, tenantId)));
+  await d.transaction(async (tx) => {
+    await tx
+      .update(waUsuarios)
+      .set({ ...patch, ...(subeEpoch ? { sessionEpoch: sql`${waUsuarios.sessionEpoch} + 1` } : {}) })
+      .where(and(eq(waUsuarios.id, usuarioId), eq(waUsuarios.tenantId, tenantId)));
+    // Mismo criterio para sus notificaciones push: un empleado desactivado (o con el rol
+    // cambiado) deja de recibir avisos de clientes en su teléfono YA, no "cuando expire".
+    if (subeEpoch) await borrarPushSubsDeUsuario(tx, usuarioId, tenantId);
+  });
+}
+
+/**
+ * Revocación de dispositivos push (revisión de seguridad 2026-10): cada vez que sube el
+ * `sessionEpoch` de una cuenta (desactivación, cambio de rol, cambio o reset de clave) se
+ * borran sus suscripciones push, en la MISMA transacción que el UPDATE. Es la contracara
+ * de la revocación de sesiones de E13/ALTO-06 — sin esto, la sesión moría pero el
+ * teléfono seguía recibiendo los mensajes de los clientes. (Además, enviarPushATenant
+ * descarta cualquier suscripción cuyo epoch ya no coincida: defensa en profundidad.)
+ */
+async function borrarPushSubsDeUsuario(
+  tx: Parameters<Parameters<DB["transaction"]>[0]>[0],
+  usuarioId: string,
+  tenantId?: string,
+): Promise<void> {
+  await tx
+    .delete(waPushSubs)
+    .where(tenantId ? and(eq(waPushSubs.usuarioId, usuarioId), eq(waPushSubs.tenantId, tenantId)) : eq(waPushSubs.usuarioId, usuarioId));
 }
 
 // ── Reset de contraseña desde el admin (Carril D, 0.5) ──
@@ -741,11 +764,15 @@ export async function actualizarUsuarioTenant(
 export async function resetearClaveUsuario(usuarioId: string, passwordHash: string, expiraEn: Date): Promise<UsuarioTenant | null> {
   if (!hayDb) throw new Error("SIN_DB");
   const d = obtenerDb();
-  const filas = await d
-    .update(waUsuarios)
-    .set({ passwordHash, debeCambiarClave: true, claveTemporalExpira: expiraEn, sessionEpoch: sql`${waUsuarios.sessionEpoch} + 1` })
-    .where(eq(waUsuarios.id, usuarioId))
-    .returning();
+  const filas = await d.transaction(async (tx) => {
+    const r = await tx
+      .update(waUsuarios)
+      .set({ passwordHash, debeCambiarClave: true, claveTemporalExpira: expiraEn, sessionEpoch: sql`${waUsuarios.sessionEpoch} + 1` })
+      .where(eq(waUsuarios.id, usuarioId))
+      .returning();
+    if (r[0]) await borrarPushSubsDeUsuario(tx, usuarioId);
+    return r;
+  });
   const f = filas[0];
   if (!f) return null;
   return { id: f.id, usuario: f.usuario, rol: f.rol as Rol, activo: f.activo, creadoEn: f.creadoEn.toISOString(), debeCambiarClave: f.debeCambiarClave };
@@ -765,15 +792,18 @@ export async function resetearClaveUsuario(usuarioId: string, passwordHash: stri
 export async function cambiarClavePropia(tenantId: string, usuarioId: string, nuevoHash: string): Promise<void> {
   if (!hayDb) throw new Error("SIN_DB");
   const d = obtenerDb();
-  await d
-    .update(waUsuarios)
-    .set({
-      passwordHash: nuevoHash,
-      debeCambiarClave: false,
-      claveTemporalExpira: null,
-      sessionEpoch: sql`${waUsuarios.sessionEpoch} + 1`,
-    })
-    .where(and(eq(waUsuarios.id, usuarioId), eq(waUsuarios.tenantId, tenantId)));
+  await d.transaction(async (tx) => {
+    await tx
+      .update(waUsuarios)
+      .set({
+        passwordHash: nuevoHash,
+        debeCambiarClave: false,
+        claveTemporalExpira: null,
+        sessionEpoch: sql`${waUsuarios.sessionEpoch} + 1`,
+      })
+      .where(and(eq(waUsuarios.id, usuarioId), eq(waUsuarios.tenantId, tenantId)));
+    await borrarPushSubsDeUsuario(tx, usuarioId, tenantId);
+  });
 }
 
 // ── Facturación (C4.3, Stripe) — escritas por src/billing/webhook.ts ──
