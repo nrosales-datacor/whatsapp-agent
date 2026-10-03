@@ -9,6 +9,7 @@ import { capturarError } from "../observabilidad/sentry";
 import { mapConLimite } from "../red/concurrencia";
 import { iniciarCicloSinSolape } from "../red/programador";
 import { intentarLiderazgo } from "../red/liderazgo";
+import { enmascararTelefono } from "../observabilidad/privacidad";
 
 type DB = PostgresJsDatabase<typeof schema>;
 
@@ -213,7 +214,7 @@ async function procesarTenant(tenant: Tenant, repo: Repositorio): Promise<void> 
       if (!(await repo.reclamarRecordatorio(tenant.id, cita.id, "dia_antes"))) continue;
       try {
         await enviarRecordatorio(tenant, cita, "dia_antes");
-        console.log(`[recordatorios] día antes → cita ${cita.id} (${cita.clienteWa})`);
+        console.log(`[recordatorios] día antes → cita ${cita.id} (${enmascararTelefono(cita.clienteWa)})`);
       } catch (e) {
         // El envío falló: revertir el claim para que el próximo tick reintente.
         await repo.revertirRecordatorio(tenant.id, cita.id, "dia_antes");
@@ -232,7 +233,7 @@ async function procesarTenant(tenant: Tenant, repo: Repositorio): Promise<void> 
     if (!(await repo.reclamarRecordatorio(tenant.id, cita.id, "mismo_dia"))) continue;
     try {
       await enviarRecordatorio(tenant, cita, "mismo_dia");
-      console.log(`[recordatorios] mismo día → cita ${cita.id} (${cita.clienteWa})`);
+      console.log(`[recordatorios] mismo día → cita ${cita.id} (${enmascararTelefono(cita.clienteWa)})`);
     } catch (e) {
       await repo.revertirRecordatorio(tenant.id, cita.id, "mismo_dia");
       console.error(`[recordatorios] error (mismo día, cita ${cita.id}):`, e);
@@ -252,7 +253,7 @@ async function procesarTenant(tenant: Tenant, repo: Repositorio): Promise<void> 
       if (!(await repo.reclamarRecordatorio(tenant.id, cita.id, "post_servicio"))) continue;
       try {
         await enviarPostServicio(tenant, cita, repo);
-        console.log(`[recordatorios] post-servicio → cita ${cita.id} (${cita.clienteWa})`);
+        console.log(`[recordatorios] post-servicio → cita ${cita.id} (${enmascararTelefono(cita.clienteWa)})`);
       } catch (e) {
         await repo.revertirRecordatorio(tenant.id, cita.id, "post_servicio");
         console.error(`[recordatorios] error (post-servicio, cita ${cita.id}):`, e);

@@ -32,6 +32,7 @@ import { HISTORIAL_MAX_MENSAJES, recortarHistorial } from "./agent/historial";
 import { notificarOperador } from "./panel/notificaciones";
 import { registrarMensaje } from "./observabilidad/metricas";
 import { log } from "./observabilidad/log";
+import { enmascararTelefono } from "./observabilidad/privacidad";
 import { registrarMensajeEntrante } from "./observabilidad/uso";
 import { estadoCuotasDelMes } from "./observabilidad/cuotas";
 import { aplicarFrenosPorCliente } from "./red/limiteCliente";
@@ -311,7 +312,7 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio, db?: DB)
     return { clase: "no-texto", tenant, entrante, conv, correlationId };
   }
 
-  console.log(`[entrante] ${entrante.clienteWa}: "${entrante.texto.slice(0, 80)}"`);
+  log.info("entrante", { correlationId, tenantId: tenant.id, cliente: enmascararTelefono(entrante.clienteWa), largo: entrante.texto.length });
 
   const conv = await repo.obtenerOConversacion(tenant.id, entrante.clienteWa);
   const primerContacto = !conv.optInEn;
@@ -605,7 +606,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
 
       const modoActual = await repo.obtenerModo(tenant.id, conv.id);
       if (modoActual === "humano") {
-        console.log(`[imagen] respuesta descartada: un humano tomó ${entrante.clienteWa} durante el proceso`);
+        log.info("respuesta_descartada", { tenantId: tenant.id, conversacionId: conv.id, clase: "imagen", motivo: "humano_tomo_la_conversacion" });
         return;
       }
 
@@ -638,7 +639,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
       reintentable = false;
       if (primerContacto) await repo.marcarOptIn(tenant.id, conv.id);
       await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: respuesta, creadoEn: new Date().toISOString() });
-      console.log(`[imagen→saliente] → ${entrante.clienteWa}: "${respuesta.slice(0, 80)}"`);
+      log.info("respuesta_enviada", { tenantId: tenant.id, conversacionId: conv.id, clase: "imagen", largo: respuesta.length });
       await repo.registrarCalidad({
         tenantId: tenant.id,
         clienteWa: entrante.clienteWa,
@@ -677,7 +678,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
     let textoTranscrito: string;
     try {
       textoTranscrito = await transcribirAudio(tenant, entrante.audioId!);
-      console.log(`[audio] ${entrante.clienteWa}: "${textoTranscrito.slice(0, 80)}"`);
+      log.info("audio_transcrito", { tenantId: tenant.id, conversacionId: conv.id, largo: textoTranscrito.length });
     } catch (e) {
       if (reintentarMasTarde(e, intento)) throw e;
       console.error("[audio] transcripción fallida:", e);
@@ -727,7 +728,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
 
       const modoActual = await repo.obtenerModo(tenant.id, conv.id);
       if (modoActual === "humano") {
-        console.log(`[audio] respuesta descartada: un humano tomó ${entrante.clienteWa} durante el proceso`);
+        log.info("respuesta_descartada", { tenantId: tenant.id, conversacionId: conv.id, clase: "audio", motivo: "humano_tomo_la_conversacion" });
         return;
       }
 
@@ -760,7 +761,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
       reintentable = false;
       if (primerContacto) await repo.marcarOptIn(tenant.id, conv.id);
       await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: respuesta, creadoEn: new Date().toISOString() });
-      console.log(`[audio→saliente] → ${entrante.clienteWa}: "${respuesta.slice(0, 80)}"`);
+      log.info("respuesta_enviada", { tenantId: tenant.id, conversacionId: conv.id, clase: "audio", largo: respuesta.length });
       await repo.registrarCalidad({
         tenantId: tenant.id,
         clienteWa: entrante.clienteWa,
@@ -802,7 +803,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
         : "¡Gracias! Si necesitás algo más, escribinos por acá. 🙂";
       await enviarTexto(tenant, entrante.clienteWa, ack);
       await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
-      console.log(`[confirmacion] cita ${citaAConfirmar} ${confirmada ? "confirmada" : "no encontrada"} (${entrante.clienteWa})`);
+      log.info("cita_confirmacion", { tenantId: tenant.id, conversacionId: conv.id, citaId: citaAConfirmar, confirmada });
     } catch (e) {
       console.error(`[confirmacion] no se pudo confirmar la cita ${citaAConfirmar}:`, e);
     }
@@ -843,7 +844,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
         );
       }
       await repo.registrarRespuestaSeguimiento(tenant.id, citaId, sentimiento, sentimiento === "positivo", entrante.texto);
-      console.log(`[post-servicio] cita ${citaId} → ${sentimiento} (${entrante.clienteWa})`);
+      log.info("post_servicio_respuesta", { tenantId: tenant.id, conversacionId: conv.id, citaId, sentimiento });
     } catch (e) {
       console.error(`[post-servicio] no se pudo procesar la respuesta de la cita ${citaId}:`, e);
     }
@@ -852,7 +853,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
     // Una sola vez por cliente; best-effort (nunca rompe el seguimiento).
     if (sentimiento !== "negativo") {
       await pedirConsentimientoMarketing(tenant, repo, conv, { manual: false, almacen: almacenConsentimiento(db) }).catch(
-        (e) => console.error(`[consentimiento] no se pudo ofrecer a ${entrante.clienteWa}:`, e),
+        (e) => console.error(`[consentimiento] no se pudo ofrecer a ${enmascararTelefono(entrante.clienteWa)} (tenant ${tenant.id}):`, e),
       );
     }
     return;
@@ -865,7 +866,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
     try {
       await procesarRespuestaConsentimiento(tenant, repo, conv, consentimiento, almacenConsentimiento(db));
     } catch (e) {
-      console.error(`[consentimiento] no se pudo registrar la respuesta de ${entrante.clienteWa}:`, e);
+      console.error(`[consentimiento] no se pudo registrar la respuesta de ${enmascararTelefono(entrante.clienteWa)} (tenant ${tenant.id}):`, e);
     }
     return;
   }
@@ -884,13 +885,13 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
       await repo.marcarOptOut(tenant.id, conv.id);
       await almacenConsentimiento(db)
         .revocar(tenant.id, entrante.clienteWa)
-        .catch((e) => console.error(`[opt-out] no se pudo retirar el consentimiento de ${entrante.clienteWa}:`, e));
+        .catch((e) => console.error(`[opt-out] no se pudo retirar el consentimiento de ${enmascararTelefono(entrante.clienteWa)} (tenant ${tenant.id}):`, e));
       const ack = ACK_BAJA;
       await enviarTexto(tenant, entrante.clienteWa, ack);
       await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
-      console.log(`[opt-out] ${entrante.clienteWa} pidió baja de campañas`);
+      log.info("opt_out_campanias", { tenantId: tenant.id, conversacionId: conv.id });
     } catch (e) {
-      console.error(`[opt-out] no se pudo procesar la baja de ${entrante.clienteWa}:`, e);
+      console.error(`[opt-out] no se pudo procesar la baja de ${enmascararTelefono(entrante.clienteWa)} (tenant ${tenant.id}):`, e);
     }
     return;
   }
@@ -900,7 +901,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
   // que el traspaso haya vencido sin respuesta del equipo (vuelve al bot).
   await reactivarBotSiVencio(repo, tenant, conv, historialSnapshot);
   if (conv.modo === "humano") {
-    console.log(`[humano] ${entrante.clienteWa}: bot en pausa, atiende una persona`);
+    log.info("entrante_en_modo_humano", { tenantId: tenant.id, conversacionId: conv.id });
     await notificarOperador(repo, tenant, conv, entrante.texto).catch((e) =>
       console.error("[humano] notificarOperador:", e),
     );
@@ -963,7 +964,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
     // Revalidamos el modo (lectura liviana) ANTES de hablar para no pisar a la persona.
     const modoActual = await repo.obtenerModo(tenant.id, conv.id);
     if (modoActual === "humano") {
-      console.log(`[bot] respuesta descartada: un humano tomó ${entrante.clienteWa} durante el proceso`);
+      log.info("respuesta_descartada", { tenantId: tenant.id, conversacionId: conv.id, clase: "texto", motivo: "humano_tomo_la_conversacion" });
       return;
     }
 
@@ -988,7 +989,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
         tipo: "fuera_de_alcance",
         detalle: motivo ? `escalado: ${motivo}` : "escalado a humano",
       });
-      console.log(`[escalado] → ${entrante.clienteWa}: el bot pasó a humano${motivo ? ` (${motivo})` : ""}`);
+      log.info("escalado_a_humano", { tenantId: tenant.id, conversacionId: conv.id, conMotivo: !!motivo });
       return;
     }
 
@@ -1007,8 +1008,7 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
       contenido: respuesta,
       creadoEn: new Date().toISOString(),
     });
-    console.log(`[saliente] → ${entrante.clienteWa}: "${respuesta.slice(0, 80)}"${fueraDeAlcance ? " [fuera de alcance]" : ""}`);
-    log.info("respuesta_enviada", { correlationId, tenantId: tenant.id, conversacionId: conv.id, fueraDeAlcance });
+    log.info("respuesta_enviada", { correlationId, tenantId: tenant.id, conversacionId: conv.id, fueraDeAlcance, largo: respuesta.length });
 
     await repo.registrarCalidad({
       tenantId: tenant.id,

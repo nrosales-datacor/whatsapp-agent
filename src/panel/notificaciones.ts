@@ -1,5 +1,6 @@
 import type { Conversacion, Repositorio, Tenant } from "../types";
 import { enviarPushATenant, pushConfigurado } from "./push";
+import { describirTexto, enmascararTelefono } from "../observabilidad/privacidad";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Aviso al operador de que un cliente necesita atención humana.
@@ -14,7 +15,7 @@ export async function notificarOperador(
   texto: string,
 ): Promise<void> {
   console.log(
-    `[panel] 🔔 ${tenant.nombre}: +${conv.clienteWa} necesita atención humana — "${texto.slice(0, 60)}"`,
+    `[panel] 🔔 ${tenant.id}: +${enmascararTelefono(conv.clienteWa)} necesita atención humana — aviso ${describirTexto(texto)}`,
   );
 
   if (!pushConfigurado()) return; // sin VAPID configurado, solo queda el log + badge

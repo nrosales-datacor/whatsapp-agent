@@ -28,18 +28,57 @@ ssh usuario@IP_DEL_DROPLET
 ## 2. Revisar qué hay instalado (para no chocar con selyon)
 
 ```bash
-node -v                                  # ¿Node 20 o superior? (si no, ver paso 2b)
+node -v                                  # ¿Node 24.x? (si no, ver paso 2b)
 sudo ss -tlnp | grep -E ':(80|443|3000|3001)'   # ¿qué puertos están ocupados?
 ```
 
 Anotá qué puerto usa selyon (típicamente 3000). Nosotros usaremos **otro** (ej. 3001).
 Anotá también si el **80/443** ya los usa algo (nginx, caddy…): lo necesitamos en el paso 6.
 
-### 2b. (Solo si Node es viejo o no está) Instalar Node 20
+### 2b. (Solo si Node no es 24 o no está) Instalar Node 24 LTS
+
+El proyecto fija **Node 24 LTS** (`.nvmrc` y `engines` en `package.json`; el CI usa la
+misma versión). Node 20 quedó fuera de soporte en abril 2026 — no lo uses en producción.
 
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
 sudo apt-get install -y nodejs
+node -v          # debe decir v24.x
+```
+
+> Usamos **NodeSource** (Node del sistema en `/usr/bin/node`) y no `nvm` a propósito: el
+> `pm2 startup` (systemd) y el `cron` del backup (§19) corren sin tu shell interactiva y
+> no ven el Node de `nvm`. Si el droplet ya usa `nvm`, ver "Actualizar Node en el droplet".
+
+### 2c. Actualizar Node en el droplet (paso MANUAL, una vez por versión mayor)
+
+El pipeline **no** actualiza Node (es infraestructura del droplet, compartida con selyon).
+Cuando el repo sube de versión mayor (p. ej. de 20 a 24), hacelo a mano por SSH, en una
+ventana tranquila (el bot queda caído ~1 min):
+
+```bash
+node -v                                   # versión actual
+# ⚠️ selyon comparte este Node: confirmá con quien la mantiene que soporta la versión nueva.
+
+# Opción A — NodeSource (recomendada, la que usa el paso 2b):
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+sudo apt-get install -y nodejs
+#   (si apt no sube la versión: sudo apt-get remove -y nodejs && sudo apt-get install -y nodejs)
+
+# Opción B — si el droplet usa nvm:
+#   nvm install 24 && nvm alias default 24
+#   (y en el cron del §19 usá la ruta absoluta que imprime `which node`)
+
+node -v                                   # v24.x
+sudo npm install -g pm2                   # PM2 global queda atado al Node viejo: reinstalalo
+pm2 update                                # recarga el daemon de PM2 con el Node nuevo
+pm2 unstartup systemd && pm2 startup      # ejecutá el comando que imprime (actualiza la ruta de Node en systemd)
+cd ~/lavacar-whatsapp-bot
+npm ci                                    # recompila lo nativo contra el Node nuevo
+npm ci --prefix web --include=dev && npm run build --prefix web
+pm2 restart whatsapp-bot && pm2 save
+pm2 logs whatsapp-bot                     # debe decir "Agente escuchando..."
+curl -s https://wabotlavacar.selyon.app/salud
 ```
 
 ## 3. Bajar el código
@@ -48,7 +87,7 @@ sudo apt-get install -y nodejs
 cd ~
 git clone https://github.com/nrosales-datacor/whatsapp-agent.git
 cd whatsapp-agent
-npm install
+npm ci
 ```
 
 ## 4. Crear el archivo `.env`
@@ -65,7 +104,7 @@ selyon). Ese puerto lo usamos en el paso 6.
 ## 5. Crear las tablas en la base (Supabase)
 
 ```bash
-npx tsx scripts/migrar.ts
+node --import tsx scripts/migrar.ts
 ```
 
 Debe decir "Migración aplicada" y listar las tablas `wa_*`. (Si ya existían de las
@@ -81,8 +120,45 @@ pm2 startup        # ejecutá el comando que te imprime, para que arranque solo 
 pm2 logs whatsapp-bot   # para ver que diga "Agente escuchando..." (Ctrl+C para salir)
 ```
 
+> 🔒 **Cómo corre el TypeScript en producción.** `npm start` = `node --import tsx src/server.ts`:
+> Node carga el loader de `tsx` en el mismo proceso (sin proceso hijo, así las señales de PM2
+> llegan directo). `tsx` está en **`dependencies`** con versión exacta, así que `npm ci` lo
+> instala aunque el droplet tenga `NODE_ENV=production` (que omite las devDependencies).
+> Los scripts (`migrar.ts`, `seedTenants.ts`, `backupDb.ts`, …) se corren igual:
+> `node --import tsx scripts/X.ts`, que usa el `tsx` del `node_modules` local. **No uses
+> `npx tsx` en el droplet**: si `tsx` no estuviera instalado, `npx` bajaría la última versión
+> del registry sin pasar por la política de dependencias (CLAUDE.md). No compilamos a JS
+> porque el código usa imports sin extensión (`moduleResolution: Bundler`), que Node ESM no
+> resuelve sin un bundler.
+
 El bot ya corre en `localhost:3001`, pero todavía NO es accesible desde internet.
 Para eso necesitamos un dominio con HTTPS (paso 7 y 8).
+
+### 6b. Rotación de logs con retención corta (pm2-logrotate)
+
+Sin esto, `~/.pm2/logs/*.log` crece sin límite (hasta llenar el disco) y guarda el
+historial completo para siempre. Aunque los logs ya **no** llevan datos personales del
+cliente final (teléfonos enmascarados tipo `506***7777`, y del contenido de los mensajes
+solo su longitud — ver `src/observabilidad/privacidad.ts`), la retención corta es parte
+de la minimización de datos (Ley 8968): lo que no se guarda no se filtra. Para depurar
+una conversación concreta está el panel, no los logs.
+
+Paso manual, una vez por droplet (versión fija, ver política de dependencias en CLAUDE.md:
+`pm2-logrotate@3.0.0` es del 2025-09-02, publicado por el equipo de PM2):
+
+```bash
+pm2 install pm2-logrotate@3.0.0
+pm2 set pm2-logrotate:max_size 10M              # rota un archivo al pasar 10 MB…
+pm2 set pm2-logrotate:rotateInterval '0 0 * * *' # …y además todos los días a medianoche
+pm2 set pm2-logrotate:retain 7                  # conserva solo 7 archivos rotados (~1 semana)
+pm2 set pm2-logrotate:compress true             # gzip de los rotados
+pm2 save
+pm2 conf pm2-logrotate                          # verificar la config
+```
+
+> ⚠️ `pm2-logrotate` es global al usuario de PM2: también rota los logs de **selyon** si
+> corre bajo el mismo usuario. Coordiná la retención con quien la mantiene. Si alguna vez
+> hace falta guardar más días (p. ej. investigando un incidente), subí `retain` temporalmente.
 
 ## 7. Dominio gratis con DuckDNS
 
@@ -178,7 +254,7 @@ Debe decir: **"Agente de WhatsApp corriendo ✅"**
 En la carpeta del proyecto, en el Droplet:
 
 ```bash
-npx tsx scripts/configurarWebhook.ts https://rosalescarwash-bot.duckdns.org/webhook
+node --import tsx scripts/configurarWebhook.ts https://rosalescarwash-bot.duckdns.org/webhook
 ```
 
 Debe decir "✅ Webhook apuntado a …". (La cuenta de WhatsApp ya está suscrita a la
@@ -250,9 +326,9 @@ Luego, en el droplet:
 cd ~/lavacar-whatsapp-bot
 nano .env        # pegá las líneas de arriba. Guardá: Ctrl+O, Enter, Ctrl+X.
 git pull
-npm install
-npx tsx scripts/migrar.ts        # crea/actualiza las tablas (idempotente)
-npx tsx scripts/seedTenants.ts   # siembra el negocio + usuario del panel en la base (idempotente, ver nota 🆕 tenants)
+npm ci
+node --import tsx scripts/migrar.ts        # crea/actualiza las tablas (idempotente)
+node --import tsx scripts/seedTenants.ts   # siembra el negocio + usuario del panel en la base (idempotente, ver nota 🆕 tenants)
 npm run web:build                # compila el panel React (web/) → web/dist (ver nota abajo)
 pm2 restart whatsapp-bot
 pm2 logs whatsapp-bot            # debe decir "Agente escuchando" + "Notificaciones push: configuradas ✅"
@@ -300,7 +376,7 @@ El panel tiene un área protegida en **`/panel/admin`** para dar de alta un nego
 el dueño del SaaS (no es público). Para habilitarlo, agregá al `.env` un superadmin:
 
 ```bash
-npx tsx scripts/hashPassword.ts "UNA_CLAVE_FUERTE"   # copiá el salt:hash que imprime
+node --import tsx scripts/hashPassword.ts "UNA_CLAVE_FUERTE"   # copiá el salt:hash que imprime
 nano .env
 ```
 ```
@@ -346,7 +422,7 @@ vacíos, el área existe pero nadie puede entrar.
 > `/panel`; **si `web/dist` no existe, cae automáticamente al panel viejo (`inbox.html`)**,
 > así que un deploy sin el build no rompe nada — solo no trae la versión nueva del panel.
 > El `pm2 restart` del final hace que el bot tome el build recién generado. Necesita
-> Node 18+ (el droplet ya tiene Node 20). El service worker, el manifest y los íconos de
+> Node 24 (ver paso 2b/2c). El service worker, el manifest y los íconos de
 > la PWA salen de ese mismo build.
 
 Probá en el navegador (PC o celular): **https://wabotlavacar.selyon.app/panel**
@@ -406,6 +482,9 @@ de abajo sigue funcionando igual que siempre.
 > día después. Como contrapartida, `npm ci` **exige que el lockfile exista y esté sincronizado con
 > el `package.json`** (falla si no lo está) — si alguna vez ves el deploy romperse ahí, corré
 > `npm install` local, commiteá el lockfile actualizado, y volvé a pushear.
+> Además, los `package.json` (raíz y `web/`) fijan **versiones exactas** (sin `^`/`~`), y el CI
+> lo verifica con `npm run ci:versiones` (`scripts/ci/verificarVersionesExactas.mjs`): un rango
+> nuevo rompe el job "Typecheck + build".
 
 ### Rollback — revertir el CÓDIGO de un deploy fallido (ROADMAP F17)
 
@@ -439,7 +518,7 @@ verdad de "qué era lo último que funcionaba".
 
 ### Protocolo expand/contract — migraciones que no son puramente aditivas (ROADMAP F17)
 
-`npx tsx scripts/migrar.ts` corre **antes** del `pm2 restart`, así que hay una ventana (breve, pero
+`node --import tsx scripts/migrar.ts` corre **antes** del `pm2 restart`, así que hay una ventana (breve, pero
 real) en la que el código **viejo** sigue respondiendo pedidos contra el esquema **ya migrado**. Una
 migración puramente aditiva (agregar una tabla, o una columna **nullable** o con **default**) es
 segura en esa ventana: el código viejo simplemente no la usa. Una migración que **no** es aditiva —
@@ -557,7 +636,7 @@ real del piloto).
    ```
 3. Probar a mano:
    ```bash
-   cd ~/lavacar-whatsapp-bot && npx tsx scripts/backupDb.ts
+   cd ~/lavacar-whatsapp-bot && node --import tsx scripts/backupDb.ts
    ls -la backups/          # debe aparecer wa_bot_YYYY-MM-DD.sql.gz
    ```
 4. Programarlo con cron (todos los días a las 3 am, hora del servidor):
@@ -566,7 +645,7 @@ real del piloto).
    ```
    Agregar la línea (ajustá la ruta si tu carpeta es otra):
    ```
-   0 3 * * * cd ~/lavacar-whatsapp-bot && /usr/bin/npx tsx scripts/backupDb.ts >> backups/backup.log 2>&1
+   0 3 * * * cd ~/lavacar-whatsapp-bot && /usr/bin/node --import tsx scripts/backupDb.ts >> backups/backup.log 2>&1
    ```
    El script mismo poda los `.sql.gz` de más de `BACKUP_RETENCION_DIAS` (default 14
    días) — no hace falta limpiar a mano. La poda **solo corre si el backup de hoy
@@ -632,7 +711,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 haga falta, no vuelve a tocar lo ya cifrado):
 
 ```bash
-npx tsx scripts/cifrarTokens.ts
+node --import tsx scripts/cifrarTokens.ts
 ```
 
 ### Rotar la clave
@@ -645,7 +724,7 @@ con la nueva — no hay atajo porque el algoritmo es simétrico:
    - lea cada `wa_tenants.access_token` no nulo,
    - lo descifre con `descifrar()` (clave vieja),
    - lo vuelva a cifrar con `cifrar()` pero apuntando `TOKENS_ENCRYPTION_KEY` a la clave NUEVA
-     (podés setear la env var solo para esa corrida: `TOKENS_ENCRYPTION_KEY=nueva npx tsx ...`),
+     (podés setear la env var solo para esa corrida: `TOKENS_ENCRYPTION_KEY=nueva node --import tsx ...`),
    - guarde el resultado.
 3. Recién ahí actualizá `TOKENS_ENCRYPTION_KEY` en el `.env` del droplet con la clave nueva y
    hacé `pm2 restart whatsapp-bot`.
@@ -727,7 +806,7 @@ pm2 save
 Migrá **antes** de arrancar la app `worker` (crea `wa_lideres`, la tabla del lease):
 
 ```bash
-npx tsx scripts/migrar.ts
+node --import tsx scripts/migrar.ts
 ```
 
 Con esto, el resto del deploy (CI/CD, paso 15) sigue igual: `pm2 restart whatsapp-bot-web` y
@@ -813,7 +892,7 @@ PANEL_SUPERADMIN_TOTP_SECRET=...        # §14 (npx tsx scripts/generarTotp.ts)
 | Ver estado | `pm2 status` |
 | Ver registros | `pm2 logs whatsapp-bot` |
 | Reiniciar | `pm2 restart whatsapp-bot` |
-| Actualizar el código (manual, red de seguridad — lo normal es el push a `main`) | `cd ~/lavacar-whatsapp-bot && git checkout main && git pull && npm ci && npx tsx scripts/migrar.ts && npx tsx scripts/seedTenants.ts && npm ci --prefix web --include=dev && npm run build --prefix web && pm2 restart whatsapp-bot` |
+| Actualizar el código (manual, red de seguridad — lo normal es el push a `main`) | `cd ~/lavacar-whatsapp-bot && git checkout main && git pull && npm ci && node --import tsx scripts/migrar.ts && node --import tsx scripts/seedTenants.ts && npm ci --prefix web --include=dev && npm run build --prefix web && pm2 restart whatsapp-bot` |
 | Revertir un deploy malo (solo código, ver **Rollback** arriba) | Actions → CI/CD → **Run workflow**, con `sha` vacío o el commit al que volver |
 
 **Landing de venta (ROADMAP C4.4):** vive en `landing/` (HTML/CSS estático, sin build) y la sirve

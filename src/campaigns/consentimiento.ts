@@ -5,6 +5,7 @@ import { obtenerDb } from "../db/client";
 import { tenantPuede } from "../billing/planes";
 import { enviarBotones, enviarTexto } from "../whatsapp/client";
 import type { Conversacion, OpcionInteractiva, Repositorio, Tenant } from "../types";
+import { enmascararTelefono } from "../observabilidad/privacidad";
 
 type DB = PostgresJsDatabase<typeof schema>;
 
@@ -278,7 +279,7 @@ export async function pedirConsentimientoMarketing(
     creadoEn: new Date().toISOString(),
     ...(opciones.manual ? { porHumano: true } : {}),
   });
-  console.log(`[consentimiento] pedido enviado a ${conv.clienteWa} (${opciones.manual ? "panel" : "bot"})`);
+  console.log(`[consentimiento] pedido enviado a ${enmascararTelefono(conv.clienteWa)} (tenant ${tenant.id}, ${opciones.manual ? "panel" : "bot"})`);
   return "enviado";
 }
 
@@ -299,5 +300,5 @@ export async function procesarRespuestaConsentimiento(
   const ack = respuesta === "si" ? ACK_SI : ACK_NO;
   await enviarTexto(tenant, conv.clienteWa, ack);
   await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
-  console.log(`[consentimiento] ${conv.clienteWa} respondió "${respuesta}"`);
+  console.log(`[consentimiento] ${enmascararTelefono(conv.clienteWa)} (tenant ${tenant.id}) respondió "${respuesta}"`); // log-pii-ok: respuesta es el enum "si" | "no"
 }

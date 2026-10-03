@@ -5,6 +5,7 @@ import { obtenerTenantPorId } from "../config/tenantStore";
 import { enviarPlantilla } from "../whatsapp/client";
 import { capturarError } from "../observabilidad/sentry";
 import { obtenerDb } from "./db";
+import { enmascararTelefono } from "../observabilidad/privacidad";
 import {
   marcarEnviado,
   marcarFalloOReintentar,
@@ -137,7 +138,7 @@ async function procesarUno(): Promise<boolean> {
       await marcarEnviado(d, envio.id);
     }
   } catch (e) {
-    console.error(`[campanias] error enviando a ${envio.clienteWa} (campaña ${envio.campaniaId}):`, e);
+    console.error(`[campanias] error enviando a ${enmascararTelefono(envio.clienteWa)} (campaña ${envio.campaniaId}):`, e);
     await marcarFalloOReintentar(d, envio.id, String(e), envio.intentos);
   }
 

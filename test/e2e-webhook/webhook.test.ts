@@ -1,4 +1,5 @@
 import "../helpers/setupEnv"; // PRIMERO: fija OPENAI_API_KEY antes de importar el server
+import { capturarPushes, registrarOperadorDePrueba, SUSCRIPCION_PRUEBA } from "../helpers/pushDePrueba"; // activa Web Push (VAPID efímero) antes del server
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import { RepositorioEnMemoria } from "../../src/booking/inMemoryRepository";
@@ -455,6 +456,9 @@ test("documento recibido: mensaje específico al cliente (no el genérico) + pus
   const repo = new RepositorioEnMemoria();
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant);
+  await registrarOperadorDePrueba(tenant.id);
+  await repo.guardarPushSub(tenant.id, SUSCRIPCION_PRUEBA);
+  const pushes = capturarPushes();
   const logs: string[] = [];
   const logOriginal = console.log;
   console.log = (...args: unknown[]) => logs.push(args.map(String).join(" "));
@@ -479,13 +483,15 @@ test("documento recibido: mensaje específico al cliente (no el genérico) + pus
     );
   } finally {
     console.log = logOriginal;
+    pushes.restaurar();
   }
 
   assert.equal(mock.llamadasLLM(), 0, "un documento no debe invocar al agente");
   assert.equal(mock.enviados.length, 1);
   assert.match(mock.enviados[0].texto ?? "", /documento/i);
   assert.ok(!/stickers/i.test(mock.enviados[0].texto ?? ""), "no debe ser el mensaje genérico de stickers/video");
-  assert.ok(logs.some((l) => l.includes("cedula.pdf")), "el push al operador debe mencionar el nombre del archivo");
+  assert.ok(pushes.payloads.some((p) => p.includes("cedula.pdf")), "el push al operador debe mencionar el nombre del archivo");
+  assert.ok(!logs.some((l) => l.includes("cedula.pdf")), "el nombre del archivo (dato del cliente) no va a los logs");
 });
 
 test("contacto compartido: mensaje específico al cliente (no el genérico) + push con el nombre del contacto", async () => {
@@ -493,6 +499,9 @@ test("contacto compartido: mensaje específico al cliente (no el genérico) + pu
   const repo = new RepositorioEnMemoria();
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant);
+  await registrarOperadorDePrueba(tenant.id);
+  await repo.guardarPushSub(tenant.id, SUSCRIPCION_PRUEBA);
+  const pushes = capturarPushes();
   const logs: string[] = [];
   const logOriginal = console.log;
   console.log = (...args: unknown[]) => logs.push(args.map(String).join(" "));
@@ -516,13 +525,15 @@ test("contacto compartido: mensaje específico al cliente (no el genérico) + pu
     );
   } finally {
     console.log = logOriginal;
+    pushes.restaurar();
   }
 
   assert.equal(mock.llamadasLLM(), 0, "un contacto no debe invocar al agente");
   assert.equal(mock.enviados.length, 1);
   assert.match(mock.enviados[0].texto ?? "", /contacto/i);
   assert.ok(!/stickers/i.test(mock.enviados[0].texto ?? ""), "no debe ser el mensaje genérico de stickers/video");
-  assert.ok(logs.some((l) => l.includes("María Pérez")), "el push al operador debe mencionar el nombre del contacto");
+  assert.ok(pushes.payloads.some((p) => p.includes("María Pérez")), "el push al operador debe mencionar el nombre del contacto");
+  assert.ok(!logs.some((l) => l.includes("María Pérez")), "el nombre del contacto (dato personal) no va a los logs");
 });
 
 test("video/sticker (sin tipar): sigue cayendo en el genérico de 'no puedo ver stickers ni videos'", async () => {
