@@ -1,7 +1,6 @@
 import { sql } from "drizzle-orm";
-import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import { schema } from "../db/schema";
 import { filasDe } from "../db/filas";
+import { conSistema, conTenant, type DB } from "../db/alcance";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mini-cola del rescate de cotizaciones abandonadas (ROADMAP Carril D, 1.1), sobre
@@ -16,7 +15,6 @@ import { filasDe } from "../db/filas";
 // [[patron-colas-independientes]].
 // ─────────────────────────────────────────────────────────────────────────────
 
-type DB = PostgresJsDatabase<typeof schema>;
 
 export interface CandidatoToque {
   id: string;
@@ -27,7 +25,7 @@ export interface CandidatoToque {
 
 /** Reclama UNA cotización "pendiente" (sin toques) más vieja que `antesDe`, y la pasa a "toque1". */
 export async function reclamarToque1(db: DB, tenantId: string, antesDe: Date): Promise<CandidatoToque | null> {
-  return db.transaction(async (tx) => {
+  return conTenant(db, tenantId, async (tx) => {
     const rows = filasDe<{ id: string; cliente_wa: string; servicio_id: string; monto: number }>(
       await tx.execute(sql`
       SELECT id, cliente_wa, servicio_id, monto
@@ -47,7 +45,7 @@ export async function reclamarToque1(db: DB, tenantId: string, antesDe: Date): P
 
 /** Reclama UNA cotización en "toque1" cuyo toque1 ya pasó `antesDe`, y la pasa a "toque2" (el último). */
 export async function reclamarToque2(db: DB, tenantId: string, antesDe: Date): Promise<CandidatoToque | null> {
-  return db.transaction(async (tx) => {
+  return conTenant(db, tenantId, async (tx) => {
     const rows = filasDe<{ id: string; cliente_wa: string; servicio_id: string; monto: number }>(
       await tx.execute(sql`
       SELECT id, cliente_wa, servicio_id, monto
@@ -67,51 +65,51 @@ export async function reclamarToque2(db: DB, tenantId: string, antesDe: Date): P
 
 /** El envío del toque1 falló (o no correspondía): revierte a "pendiente" para reintentar en el próximo tick. */
 export async function revertirToque1(db: DB, id: string): Promise<void> {
-  await db.execute(sql`UPDATE wa_cotizaciones SET estado = 'pendiente', toque1_en = NULL WHERE id = ${id}`);
+  await conSistema(db, (tx) => tx.execute(sql`UPDATE wa_cotizaciones SET estado = 'pendiente', toque1_en = NULL WHERE id = ${id}`));
 }
 
 /** El envío del toque2 falló (o no correspondía): revierte a "toque1" para reintentar en el próximo tick. */
 export async function revertirToque2(db: DB, id: string): Promise<void> {
-  await db.execute(sql`UPDATE wa_cotizaciones SET estado = 'toque1', toque2_en = NULL WHERE id = ${id}`);
+  await conSistema(db, (tx) => tx.execute(sql`UPDATE wa_cotizaciones SET estado = 'toque1', toque2_en = NULL WHERE id = ${id}`));
 }
 
 /** El cliente pidió baja ("BAJA") entre que se cotizó y que le tocaba el turno: se detiene el rescate. */
 export async function marcarOptOut(db: DB, id: string): Promise<void> {
-  await db.execute(sql`UPDATE wa_cotizaciones SET estado = 'opt_out' WHERE id = ${id}`);
+  await conSistema(db, (tx) => tx.execute(sql`UPDATE wa_cotizaciones SET estado = 'opt_out' WHERE id = ${id}`));
 }
 
 /** true si el cliente pidió baja de campañas (mismo flag que C3.2 — es la única señal de opt-out que existe hoy). */
 export async function siguioOptOut(db: DB, tenantId: string, clienteWa: string): Promise<boolean> {
   const rows = filasDe(
-    await db.execute(sql`
+    await conTenant(db, tenantId, (tx) => tx.execute(sql`
     SELECT 1 FROM wa_conversaciones
      WHERE tenant_id = ${tenantId} AND cliente_wa = ${clienteWa} AND opt_out_en IS NOT NULL
      LIMIT 1
   `),
-  );
+  ));
   return rows.length > 0;
 }
 
 /** true si un humano está atendiendo esa conversación ahora mismo (no interrumpir con un toque automático). */
 export async function enModoHumano(db: DB, tenantId: string, clienteWa: string): Promise<boolean> {
   const rows = filasDe<{ modo: string }>(
-    await db.execute(sql`
+    await conTenant(db, tenantId, (tx) => tx.execute(sql`
     SELECT modo FROM wa_conversaciones WHERE tenant_id = ${tenantId} AND cliente_wa = ${clienteWa} LIMIT 1
   `),
-  );
+  ));
   return rows[0]?.modo === "humano";
 }
 
 /** Nombre del cliente aproximado por su cita más reciente (mismo criterio que segmentos.ts). "estimado cliente" si no hay ninguna. */
 export async function nombreClienteAprox(db: DB, tenantId: string, clienteWa: string): Promise<string> {
   const rows = filasDe<{ cliente_nombre: string }>(
-    await db.execute(sql`
+    await conTenant(db, tenantId, (tx) => tx.execute(sql`
     SELECT cliente_nombre FROM wa_citas
      WHERE tenant_id = ${tenantId} AND cliente_wa = ${clienteWa}
      ORDER BY creada_en DESC
      LIMIT 1
   `),
-  );
+  ));
   return rows[0]?.cliente_nombre ?? "estimado cliente";
 }
 
@@ -143,7 +141,7 @@ export async function purgarCotizacionesFinalizadas(db: DB, retencionDias = 7, t
   let total = 0;
   for (;;) {
     const rows = filasDe<{ id: string }>(
-      await db.execute(sql`
+      await conSistema(db, (tx) => tx.execute(sql`
       DELETE FROM wa_cotizaciones
        WHERE id IN (
          SELECT id FROM wa_cotizaciones
@@ -154,7 +152,7 @@ export async function purgarCotizacionesFinalizadas(db: DB, retencionDias = 7, t
        )
       RETURNING id
     `),
-    );
+    ));
     total += rows.length;
     if (rows.length < tamanoLote) break;
   }
@@ -168,9 +166,9 @@ export async function citasDelDia(
   fecha: string,
 ): Promise<{ estado: string; hora: string; servicioId: string }[]> {
   const rows = filasDe<{ estado: string; hora: string; servicio_id: string }>(
-    await db.execute(sql`
+    await conTenant(db, tenantId, (tx) => tx.execute(sql`
     SELECT estado, hora, servicio_id FROM wa_citas WHERE tenant_id = ${tenantId} AND fecha = ${fecha}
   `),
-  );
+  ));
   return rows.map((r) => ({ estado: r.estado, hora: r.hora, servicioId: r.servicio_id }));
 }

@@ -42,6 +42,11 @@ test("validarHorario: hora con formato inválido rechaza todo", () => {
   assert.equal(validarHorario({ 1: { abre: "25:00", cierra: "17:00" } }), null);
 });
 
+test("validarHorario: un día que cierra antes de (o justo cuando) abre se rechaza", () => {
+  assert.equal(validarHorario({ 2: { abre: "18:00", cierra: "08:00" } }), null);
+  assert.equal(validarHorario({ 2: { abre: "09:00", cierra: "09:00" } }), null);
+});
+
 test("validarServicios: acepta un servicio válido con precio", () => {
   const r = validarServicios([{ id: "lavado-basico", nombre: "Lavado básico", duracionMin: 30, precio: 5000 }]);
   assert.equal(r.ok, true);
@@ -244,4 +249,11 @@ test("validarTamanoKb: justo en el límite pasa; uno más allá del límite rebo
 
   const kbUnoMas: KnowledgeBase = { ...kbVacia, datos: ["x".repeat(MAX_KB_CARACTERES + 1)] };
   assert.notEqual(validarTamanoKb(kbUnoMas), null);
+});
+
+test("validarHorario: un valor que no es objeto es inválido (no se reemplaza el horario por el default)", () => {
+  assert.equal(validarHorario("no-es-un-horario"), null);
+  assert.equal(validarHorario(42), null);
+  assert.equal(validarHorario([]), null);
+  assert.ok(validarHorario(undefined), "ausente sigue dando los defaults (alta sin horario)");
 });

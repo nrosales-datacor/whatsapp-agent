@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { eq } from "drizzle-orm";
 import { crearDbEfimera } from "../helpers/pgliteDb";
@@ -7,8 +7,11 @@ import { RepositorioDrizzle } from "../../src/booking/drizzleRepository";
 import {
   resolverMediaAPersistir,
   resolverMediaParaPanel,
+  _resetCacheUrlsParaTests,
   _resetearAvisoParaTests,
 } from "../../src/storage/supabaseStorage";
+
+beforeEach(() => _resetCacheUrlsParaTests());
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ROADMAP F9 — "fotos fuera de Postgres" contra Postgres efímero (PGlite), mismo
@@ -253,6 +256,22 @@ test("resolverMediaParaPanel: null/undefined no genera llamadas ni rompe", async
       assert.equal(await resolverMediaParaPanel(null), undefined);
       assert.equal(await resolverMediaParaPanel(undefined), undefined);
       assert.equal(mock.llamadas.length, 0);
+    });
+  } finally {
+    mock.restaurar();
+  }
+});
+
+test("URLs firmadas: el refresco del chat reusa la URL (una sola firma por foto) hasta que esté por vencer", async () => {
+  const mock = instalarMockStorage();
+  try {
+    await conCredencialesStorage(async () => {
+      const ruta = `${TENANT}/conv-cache/wamid.cache.jpg`;
+      const primera = await resolverMediaParaPanel(ruta);
+      const segunda = await resolverMediaParaPanel(ruta);
+      assert.ok(primera);
+      assert.equal(segunda, primera, "misma URL: el navegador no vuelve a descargar la foto");
+      assert.equal(mock.llamadas.filter((l) => l.url.includes("/object/sign/")).length, 1, "una sola llamada de firma");
     });
   } finally {
     mock.restaurar();

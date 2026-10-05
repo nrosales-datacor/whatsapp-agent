@@ -111,10 +111,10 @@ test.describe("Guards de rol (no basta con esconder la pestaña)", () => {
     const op = await request.get("/api/panel/usuarios", { headers: { cookie: cookie("operador") } });
     expect(op.status()).toBe(403);
 
-    // El dueño PASA el guard de rol; en modo memoria cae en el check de base de datos
-    // (503). Códigos distintos ⇒ el 403 del operador es por ROL, no por falta de DB.
+    // El dueño PASA el guard de rol (el negocio de demo es Pro): códigos distintos ⇒ el
+    // 403 del operador es por ROL.
     const dueno = await request.get("/api/panel/usuarios", { headers: { cookie: cookie("dueno") } });
-    expect(dueno.status()).toBe(503);
+    expect(dueno.status()).toBe(200);
   });
 
   test("operador recibe 403 en POST /config; dueño pasa el guard de rol", async ({ request }) => {
@@ -124,11 +124,13 @@ test.describe("Guards de rol (no basta con esconder la pestaña)", () => {
     });
     expect(op.status()).toBe(403);
 
+    // El dueño pasa el guard de rol y cae en la VALIDACIÓN (400): el body es inválido a
+    // propósito, así no se pisa la config del negocio de demo que usan los demás specs.
     const dueno = await request.post("/api/panel/config", {
       headers: { cookie: cookie("dueno"), origin: E2E.baseURL },
-      data: { horario: {}, servicios: [] },
+      data: { horario: "no-es-un-horario", servicios: [] },
     });
-    expect(dueno.status()).toBe(503);
+    expect(dueno.status()).toBe(400);
   });
 
   test("una cookie de sesión minteada es aceptada por /me", async ({ request }) => {
@@ -183,22 +185,17 @@ test.describe("Google Calendar por negocio (BLOQ-05)", () => {
     expect(typeof cfg.calendarioServiceAccount).toBe("string");
   });
 
-  // La validación del valor (rechazar "primary" y cualquier cosa que no tenga forma de
-  // correo) NO se puede probar acá: `POST /config` corta con 503 "requiere base de datos"
-  // ANTES de llegar a los validadores, y el server E2E corre en memoria. Ese caso vive en
-  // test/unit/validadores.test.ts → "validarGoogleCalendarId", que es su nivel correcto.
-  test("POST config sin base de datos no persiste nada (503, no 200)", async ({ request }) => {
+  // El detalle de qué acepta `validarGoogleCalendarId` vive en test/unit/validadores.test.ts;
+  // acá se prueba que el endpoint lo aplica ANTES de guardar (y que no guarda nada).
+  test('POST config rechaza un googleCalendarId "primary" (400) y no toca la config', async ({ request }) => {
+    const cfg = await (await request.get("/api/panel/config", { headers: { cookie: cookie("dueno") } })).json();
     const res = await request.post("/api/panel/config", {
       headers: { cookie: cookie("dueno"), origin: E2E.baseURL }, // el POST valida el Origin (CSRF)
-      data: {
-        horario: {},
-        servicios: [],
-        kb: { faq: [], datos: [], politicas: [], secciones: [] },
-        bloqueos: [],
-        googleCalendarId: "negocio@gmail.com",
-      },
+      data: { ...cfg, googleCalendarId: "primary" },
     });
-    expect(res.status()).toBe(503);
+    expect(res.status()).toBe(400);
+    const despues = await (await request.get("/api/panel/config", { headers: { cookie: cookie("dueno") } })).json();
+    expect(despues.googleCalendarId).toBe(cfg.googleCalendarId);
   });
 });
 

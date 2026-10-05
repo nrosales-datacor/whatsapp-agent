@@ -59,7 +59,7 @@ async function sembrarTenant(db: DbEfimera["db"], tenantId: string, nombre: stri
     .insert(waConversaciones)
     .values({ tenantId, clienteWa: `506${sufijo}` })
     .returning();
-  await db.insert(waMensajes).values({ conversacionId: conv.id, rol: "user", contenido: `hola ${sufijo}` });
+  await db.insert(waMensajes).values({ tenantId, conversacionId: conv.id, rol: "user", contenido: `hola ${sufijo}` });
 
   const [cita] = await db
     .insert(waCitas)

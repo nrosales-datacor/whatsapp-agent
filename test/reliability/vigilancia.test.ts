@@ -170,8 +170,8 @@ test("tenant sin entrantes: alerta solo si está abierto y lleva N horas HÁBILE
     // "historico": nada en wa_jobs (fuera de la retención), pero un mensaje del cliente el viernes anterior.
     const [conv] = await db.insert(waConversaciones).values({ tenantId: "historico", clienteWa: "50611112222" }).returning();
     await db.insert(waMensajes).values([
-      { conversacionId: conv.id, rol: "user", contenido: "hola", creadoEn: new Date("2026-09-25T15:00:00Z") },
-      { conversacionId: conv.id, rol: "assistant", contenido: "¡hola!", creadoEn: new Date("2026-09-29T16:00:00Z") },
+      { tenantId: "historico", conversacionId: conv.id, rol: "user", contenido: "hola", creadoEn: new Date("2026-09-25T15:00:00Z") },
+      { tenantId: "historico", conversacionId: conv.id, rol: "assistant", contenido: "¡hola!", creadoEn: new Date("2026-09-29T16:00:00Z") },
     ]);
 
     const tenants = [callado, activo, nuevo, soloHistorico, cancelado];

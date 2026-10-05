@@ -202,8 +202,40 @@ export async function resolverMediaAPersistir(
 export async function resolverMediaParaPanel(mediaUrl: string | null | undefined): Promise<string | undefined> {
   if (!mediaUrl) return undefined;
   if (esDataUrlLegado(mediaUrl)) return mediaUrl;
+  const enCache = urlsFirmadas.get(mediaUrl);
+  if (enCache && enCache.venceEn - Date.now() > MARGEN_CACHE_MS) return enCache.url;
   const firmada = await firmarUrlImagen(mediaUrl);
-  return firmada ?? undefined;
+  if (!firmada) return undefined;
+  guardarEnCache(mediaUrl, firmada);
+  return firmada;
+}
+
+// Caché de URLs firmadas. El chat del panel se refresca cada pocos segundos: sin esto,
+// cada refresco firmaba de nuevo TODAS las fotos (una llamada a Storage por foto) y, como
+// la URL cambiaba, el navegador las volvía a descargar. Se reusa la misma URL hasta que
+// le quede menos de MARGEN_CACHE_MS de vida. Acotado en tamaño (se descarta lo más viejo).
+const urlsFirmadas = new Map<string, { url: string; venceEn: number }>();
+const MAX_URLS_EN_CACHE = 5000;
+const MARGEN_CACHE_MS = 60_000;
+
+function guardarEnCache(ruta: string, url: string): void {
+  urlsFirmadas.delete(ruta); // reinsertar = queda como la más nueva
+  urlsFirmadas.set(ruta, { url, venceEn: Date.now() + EXPIRACION_URL_FIRMADA_SEG * 1000 });
+  while (urlsFirmadas.size > MAX_URLS_EN_CACHE) {
+    const masVieja = urlsFirmadas.keys().next().value;
+    if (masVieja === undefined) break;
+    urlsFirmadas.delete(masVieja);
+  }
+}
+
+/** Saca del caché las URLs de objetos borrados (supresión de un cliente, baja). */
+function olvidarUrls(prefijo: string): void {
+  for (const ruta of urlsFirmadas.keys()) if (ruta === prefijo || ruta.startsWith(`${prefijo}/`)) urlsFirmadas.delete(ruta);
+}
+
+/** Solo para tests. */
+export function _resetCacheUrlsParaTests(): void {
+  urlsFirmadas.clear();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -281,6 +313,7 @@ export async function borrarObjetos(rutas: string[]): Promise<number> {
       throw new Error(`Supabase Storage borrar (${res.status}): ${detalle.slice(0, 200)}`);
     }
     borrados += lote.length;
+    for (const r of lote) olvidarUrls(r);
   }
   return borrados;
 }
@@ -295,7 +328,9 @@ export async function borrarPrefijo(prefijo: string): Promise<{ configurado: boo
   validarPrefijo(prefijo);
   if (!credencialesConfiguradas()) return { configurado: false, borrados: 0 };
   const rutas = await listarRutas(prefijo, 2);
-  return { configurado: true, borrados: await borrarObjetos(rutas) };
+  const borrados = await borrarObjetos(rutas);
+  olvidarUrls(prefijo);
+  return { configurado: true, borrados };
 }
 
 // Solo para tests: permite resetear el flag del aviso único entre casos.

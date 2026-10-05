@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
-import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import { waAuditoria, schema } from "../db/schema";
+import { waAuditoria } from "../db/schema";
+import { conSistema, conTenant, type Ejecutor } from "../db/alcance";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Acceso a datos de `wa_auditoria` (revisión pre-venta 2026-10): log append-only
@@ -14,8 +14,6 @@ import { waAuditoria, schema } from "../db/schema";
 // comentario de `waAuditoria` en schema.ts).
 // ─────────────────────────────────────────────────────────────────────────────
 
-type DB = PostgresJsDatabase<typeof schema>;
-type Ejecutor = DB | Parameters<Parameters<DB["transaction"]>[0]>[0];
 
 export type AccionAuditoria =
   | "pausar"
@@ -63,17 +61,17 @@ export async function registrarAuditoria(
   actor: string,
   detalle: Record<string, unknown> = {},
 ): Promise<void> {
-  await db.insert(waAuditoria).values({ tenantId, accion, actor, detalle });
+  await conTenant(db, tenantId, (tx) => tx.insert(waAuditoria).values({ tenantId, accion, actor, detalle }));
 }
 
 /** Rastro de un negocio, MÁS RECIENTE PRIMERO. */
 export async function listarAuditoriaTenant(db: Ejecutor, tenantId: string, limite = 100): Promise<EntradaAuditoria[]> {
-  const filas = await db
+  const filas = await conTenant(db, tenantId, (tx) => tx
     .select()
     .from(waAuditoria)
     .where(eq(waAuditoria.tenantId, tenantId))
     .orderBy(desc(waAuditoria.creadoEn))
-    .limit(limite);
+    .limit(limite));
   return filas.map((f) => ({
     id: f.id,
     tenantId: f.tenantId,
@@ -96,11 +94,11 @@ export async function ultimaPausaPorTenant(
 ): Promise<Map<string, { desde: string; motivo: string | null }>> {
   const out = new Map<string, { desde: string; motivo: string | null }>();
   if (!tenantIds.length) return out;
-  const filas = await db
+  const filas = await conSistema(db, (tx) => tx
     .select()
     .from(waAuditoria)
     .where(and(inArray(waAuditoria.tenantId, tenantIds), eq(waAuditoria.accion, "pausar")))
-    .orderBy(desc(waAuditoria.creadoEn));
+    .orderBy(desc(waAuditoria.creadoEn)));
   for (const f of filas) {
     if (out.has(f.tenantId)) continue;
     const motivo = typeof f.detalle?.motivo === "string" ? f.detalle.motivo : null;

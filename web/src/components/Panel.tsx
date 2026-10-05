@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listarConversaciones, logout, me, type Features, type Sesion, type ResumenConversacion } from "../api";
 import { useTema } from "../lib/tema";
 import { aplicarMarca, resetMarca } from "../lib/marca";
@@ -37,6 +37,9 @@ const TABS: { id: Vista; icono: IconoId; label: string; soloDueno?: boolean; fea
   { id: "campanias", icono: "send", label: "Campañas", soloDueno: true, feature: "campanias" },
 ];
 
+/** Conversaciones por página de la bandeja (el backend topea en 500). */
+const PAGINA_BANDEJA = 100;
+
 export default function Panel({ sesion }: { sesion: Sesion }) {
   const qc = useQueryClient();
   const { tema, alternar } = useTema();
@@ -53,10 +56,16 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
   const cuota = sesionViva.data?.cuotaMensual ?? sesion.cuotaMensual;
   const gastoIaExcedido = (sesionViva.data?.gastoLlmMensual ?? sesion.gastoLlmMensual)?.excedido ?? false;
 
+  // Bandeja paginada: las PAGINA_BANDEJA más recientes, "Ver más" agranda la ventana y la
+  // búsqueda (debounced en Lista) va al servidor para encontrar también las no cargadas.
+  const [limite, setLimite] = useState(PAGINA_BANDEJA);
+  const [buscar, setBuscar] = useState("");
   const convs = useQuery({
-    queryKey: ["conversaciones"],
-    queryFn: listarConversaciones,
+    queryKey: ["conversaciones", limite, buscar],
+    // Con los valores por defecto la URL queda igual que siempre (/conversaciones, sin query).
+    queryFn: () => listarConversaciones({ limite: limite === PAGINA_BANDEJA ? undefined : limite, buscar: buscar || undefined }),
     refetchInterval: 4000,
+    placeholderData: keepPreviousData,
   });
 
   // White-label (C4.1): pinta el panel con la marca de este tenant; al desmontar
@@ -85,7 +94,7 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
     setFichaAbierta(false);
   }
 
-  const conversaciones = convs.data ?? [];
+  const conversaciones = convs.data?.conversaciones ?? [];
   const convActiva: ResumenConversacion | null =
     conversaciones.find((c) => c.id === abiertaId) ?? null;
   const totalSinLeer = conversaciones.reduce((s, c) => s + c.sinLeer, 0);
@@ -172,6 +181,9 @@ export default function Panel({ sesion }: { sesion: Sesion }) {
                     abiertaId={abiertaId}
                     escondida={mostrarChatMovil}
                     onAbrir={abrir}
+                    hayMas={convs.data?.hayMas ?? false}
+                    onVerMas={() => setLimite((l) => l + PAGINA_BANDEJA)}
+                    onBuscar={setBuscar}
                   />
                   <Chat
                     id={abiertaId}

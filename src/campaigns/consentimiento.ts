@@ -1,7 +1,8 @@
 import { and, eq } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { waConversaciones, type schema } from "../db/schema";
-import { obtenerDb } from "../db/client";
+import { hayBaseDeDatos, obtenerDb } from "../db/client";
+import { conTenant } from "../db/alcance";
 import { tenantPuede } from "../billing/planes";
 import { enviarBotones, enviarTexto } from "../whatsapp/client";
 import type { Conversacion, OpcionInteractiva, Repositorio, Tenant } from "../types";
@@ -145,33 +146,33 @@ function almacenDb(db: DB): AlmacenConsentimiento {
     and(eq(waConversaciones.tenantId, tenantId), eq(waConversaciones.clienteWa, clienteWa));
   return {
     async leer(tenantId, clienteWa) {
-      const [fila] = await db
+      const [fila] = await conTenant(db, tenantId, (tx) => tx
         .select({
           consentimientoEn: waConversaciones.marketingConsentimientoEn,
           pedidoEn: waConversaciones.marketingConsentimientoPedidoEn,
         })
         .from(waConversaciones)
         .where(donde(tenantId, clienteWa))
-        .limit(1);
+        .limit(1));
       return { consentimientoEn: fila?.consentimientoEn ?? null, pedidoEn: fila?.pedidoEn ?? null };
     },
     async marcarPedido(tenantId, clienteWa) {
-      await db
+      await conTenant(db, tenantId, (tx) => tx
         .update(waConversaciones)
         .set({ marketingConsentimientoPedidoEn: new Date() })
-        .where(donde(tenantId, clienteWa));
+        .where(donde(tenantId, clienteWa)));
     },
     async otorgar(tenantId, clienteWa) {
-      await db
+      await conTenant(db, tenantId, (tx) => tx
         .update(waConversaciones)
         .set({ marketingConsentimientoEn: new Date(), optOutEn: null })
-        .where(donde(tenantId, clienteWa));
+        .where(donde(tenantId, clienteWa)));
     },
     async revocar(tenantId, clienteWa) {
-      await db
+      await conTenant(db, tenantId, (tx) => tx
         .update(waConversaciones)
         .set({ marketingConsentimientoEn: null })
-        .where(donde(tenantId, clienteWa));
+        .where(donde(tenantId, clienteWa)));
     },
   };
 }
@@ -209,7 +210,7 @@ export function _resetConsentimientoMemoriaParaTests(): void {
  */
 export function almacenConsentimiento(db?: DB): AlmacenConsentimiento {
   if (db) return almacenDb(db);
-  if (process.env.DATABASE_URL) return almacenDb(obtenerDb());
+  if (hayBaseDeDatos()) return almacenDb(obtenerDb());
   return almacenMemoria;
 }
 

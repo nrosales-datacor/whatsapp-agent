@@ -47,3 +47,32 @@ test("RLS: un rol sin BYPASSRLS (como anon de Supabase) no ve filas aunque tenga
     await cerrar();
   }
 });
+
+test("RLS (F1): toda tabla tiene una política para el rol de la app y los permisos que necesita", async () => {
+  const { db, cerrar } = await crearDbEfimera();
+  try {
+    const tablas = filasDe<{ relname: string }>(
+      await db.execute(sql`
+        SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relname LIKE 'wa_%'
+      `),
+    ).map((f) => f.relname);
+    const conPolitica = new Set(
+      filasDe<{ tablename: string }>(
+        await db.execute(sql`SELECT tablename FROM pg_policies WHERE schemaname = 'public' AND 'app_wa' = ANY(roles)`),
+      ).map((f) => f.tablename),
+    );
+    const sinPolitica = tablas.filter((t) => !conPolitica.has(t));
+    assert.deepEqual(sinPolitica, [], `tablas sin política para app_wa (usá politicaTenant/politicaSoloSistema en schema.ts): ${sinPolitica.join(", ")}`);
+    const sinGrant = [];
+    for (const t of tablas) {
+      const [f] = filasDe<{ ok: boolean }>(await db.execute(sql`SELECT has_table_privilege('app_wa', ${t}, 'SELECT,INSERT,UPDATE,DELETE') AS ok`));
+      if (!f.ok) sinGrant.push(t);
+    }
+    assert.deepEqual(sinGrant, [], `tablas sin GRANT para app_wa (agregalas al GRANT de la migración): ${sinGrant.join(", ")}`);
+    const [rol] = filasDe<{ bypass: boolean }>(await db.execute(sql`SELECT rolbypassrls AS bypass FROM pg_roles WHERE rolname = 'app_wa'`));
+    assert.equal(rol.bypass, false, "app_wa no puede tener BYPASSRLS");
+  } finally {
+    await cerrar();
+  }
+});

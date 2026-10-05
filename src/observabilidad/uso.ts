@@ -1,6 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import { obtenerDb as obtenerPoolGlobal } from "../db/client";
+import { hayBaseDeDatos, obtenerDb as obtenerPoolGlobal } from "../db/client";
+import { conSistema, conTenant } from "../db/alcance";
 import { schema, waUsoMensual } from "../db/schema";
 
 type DB = PostgresJsDatabase<typeof schema>;
@@ -15,11 +16,9 @@ type DB = PostgresJsDatabase<typeof schema>;
 // el hot path del webhook ni el envío de mensajes.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Gateado por DATABASE_URL (no-op sin DB, ver comentario de arriba). El pool en sí
-// es el singleton compartido de todo el proceso (ROADMAP F7): antes este módulo
-// mantenía su propio pool aparte del de `tenantStore`/`server`/campañas/rescate.
+// No-op sin base (tests unitarios sin PGlite). El pool es el singleton del proceso (F7).
 function obtenerDb(): ReturnType<typeof obtenerPoolGlobal> | null {
-  if (!process.env.DATABASE_URL) return null;
+  if (!hayBaseDeDatos()) return null;
   return obtenerPoolGlobal();
 }
 
@@ -52,7 +51,7 @@ export interface Incremento {
  * lo hace el caller (`incrementar`, fire-and-forget) para no romper el hot path del webhook.
  */
 export async function incrementarUso(db: DB, tenantId: string, anioMes: string, delta: Incremento): Promise<void> {
-  await db
+  await conTenant(db, tenantId, (tx) => tx
     .insert(waUsoMensual)
     .values({
       tenantId,
@@ -90,7 +89,7 @@ export async function incrementarUso(db: DB, tenantId: string, anioMes: string, 
           ? { costoEstimadoMillonesimos: sql`${waUsoMensual.costoEstimadoMillonesimos} + ${delta.costoEstimadoMillonesimos}` }
           : {}),
       },
-    });
+    }));
 }
 
 async function incrementar(tenantId: string, delta: Incremento): Promise<void> {
@@ -168,11 +167,11 @@ export interface UsoMensualTenant {
  * a PGlite).
  */
 export async function obtenerUsoMensualDb(db: DB, tenantId: string, anioMes: string): Promise<UsoMensualTenant | null> {
-  const filas = await db
+  const filas = await conTenant(db, tenantId, (tx) => tx
     .select()
     .from(waUsoMensual)
     .where(and(eq(waUsoMensual.tenantId, tenantId), eq(waUsoMensual.anioMes, anioMes)))
-    .limit(1);
+    .limit(1));
   const f = filas[0];
   if (!f) return null;
   return {
@@ -203,7 +202,8 @@ export async function listarUsoMensualActual(): Promise<Map<string, UsoMensualTe
   const mapa = new Map<string, UsoMensualTenant>();
   const d = obtenerDb();
   if (!d) return mapa;
-  const filas = await d.select().from(waUsoMensual).where(eq(waUsoMensual.anioMes, anioMesActual()));
+  // Sistema: el admin ve el uso de todos los negocios en una sola consulta.
+  const filas = await conSistema(d, (tx) => tx.select().from(waUsoMensual).where(eq(waUsoMensual.anioMes, anioMesActual())));
   for (const f of filas) {
     mapa.set(f.tenantId, {
       conversacionesIniciadas: f.conversacionesIniciadas,

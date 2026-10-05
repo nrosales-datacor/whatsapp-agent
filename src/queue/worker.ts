@@ -7,6 +7,7 @@ import { capturarError } from "../observabilidad/sentry";
 import { marcarFalloOReintentar, marcarHecho, purgarJobsHechos, reencolarVencidos, reclamarUno, type Job } from "./cola";
 import { purgarWebhooksCrudos } from "../db/webhooksCrudos";
 import { log } from "../observabilidad/log";
+import { apagando, enCurso } from "../red/apagado";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Worker de la cola durable (ROADMAP B1).
@@ -102,9 +103,19 @@ export async function procesarJob(job: Job, repo: Repositorio, db: DB): Promise<
     return;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const pendiente = { ...job.payload, tenant } as any;
   try {
+    // El modo (bot/humano) del payload es de la ingesta; el job pudo esperar (rate limit,
+    // reintentos) y el operador pudo tomar o soltar la conversación. Se relee. null = la
+    // conversación ya no existe (derecho de supresión): no hay a quién responder.
+    const conv = job.payload.conv;
+    const modoActual = await repo.obtenerModo(tenant.id, conv.id);
+    if (!modoActual) {
+      await marcarHecho(db, job.id);
+      log.warn("job_sin_conversacion", { correlationId, tenantId: job.tenantId, jobId: job.id, conversacionId });
+      return;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pendiente = { ...job.payload, tenant, conv: { ...conv, modo: modoActual } } as any;
     await responderEntrante(pendiente, repo, db, { numero: job.intentos, max: job.maxIntentos });
     await marcarHecho(db, job.id);
     log.info("job_completado", { correlationId, tenantId: job.tenantId, jobId: job.id, conversacionId });
@@ -134,14 +145,15 @@ export function iniciarWorker(repo: Repositorio, db: DB, concurrencia = concurre
     // Arranque escalonado: que los N slots no le peguen a la base todos en el mismo
     // milisegundo de cada poll cuando la cola está vacía.
     await dormir(Math.floor((POLL_MS * slot) / concurrencia));
-    while (true) {
+    // Al apagar (src/red/apagado.ts) se deja de reclamar; el job en curso termina.
+    while (!apagando()) {
       try {
         const job = await reclamarUno(db);
         if (!job) {
           await dormir(POLL_MS);
           continue;
         }
-        await procesarJob(job, repo, db);
+        await enCurso(procesarJob(job, repo, db));
       } catch (e) {
         console.error(`[worker] error en loop de trabajo (slot ${slot}):`, e);
         capturarError(e, { loop: "trabajo", slot });

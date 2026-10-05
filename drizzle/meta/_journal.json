@@ -260,6 +260,27 @@
       "when": 1790996873389,
       "tag": "0036_textos_cliente",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1791067380528,
+      "tag": "0037_f1_rls_y_cola",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1791067424962,
+      "tag": "0038_mensajes_tenant_not_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1791099717092,
+      "tag": "0039_bandeja_paginada",
+      "breakpoints": true
     }
   ]
 }

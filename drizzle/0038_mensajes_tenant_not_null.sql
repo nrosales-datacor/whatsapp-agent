@@ -1,0 +1,1 @@
+ALTER TABLE "wa_mensajes" ALTER COLUMN "tenant_id" SET NOT NULL;

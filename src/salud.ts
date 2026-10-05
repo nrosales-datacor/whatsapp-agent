@@ -2,7 +2,8 @@ import { sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { schema } from "./db/schema";
 import { filasDe } from "./db/filas";
-import { fuenteCacheTenants, hayBaseDeDatos, listarTenants } from "./config/tenantStore";
+import { conSistema } from "./db/alcance";
+import { fuenteCacheTenants, listarTenants } from "./config/tenantStore";
 import { dependeDelTokenGlobal } from "./whatsapp/client";
 import { listarTokensInvalidos } from "./whatsapp/estadoToken";
 import { evaluarVigilancia, type ResumenVigilancia } from "./observabilidad/vigilancia";
@@ -117,12 +118,14 @@ async function pingDb(db: DB): Promise<{ ok: boolean; latenciaMs: number | null;
 async function contarCola(db: DB): Promise<SaludCola> {
   try {
     const filas = filasDe<{ estado: string; n: number }>(
-      await db.execute(sql`
-        SELECT estado, count(*)::int AS n
-          FROM wa_jobs
-         WHERE estado IN ('pendiente', 'error')
-         GROUP BY estado
-      `),
+      await conSistema(db, (tx) =>
+        tx.execute(sql`
+          SELECT estado, count(*)::int AS n
+            FROM wa_jobs
+           WHERE estado IN ('pendiente', 'error')
+           GROUP BY estado
+        `),
+      ),
     );
     const porEstado = new Map(filas.map((f) => [f.estado, f.n]));
     return { pendientes: porEstado.get("pendiente") ?? 0, enError: porEstado.get("error") ?? 0 };
@@ -155,9 +158,10 @@ export async function chequearSalud(db: DB | null, opciones: OpcionesSalud = {})
   //  2) hay DATABASE_URL configurada pero el caché de tenants sigue en el
   //     fallback hardcodeado — el escenario exacto de BLOQUEANTE-11: el bot
   //     puede estar atendiendo con la config de OTRO negocio.
-  // Sin DATABASE_URL (dev/demo en memoria) el fallback es el modo NORMAL, no una
-  // falla: por eso ambos chequeos van condicionados a `hayBaseDeDatos()`.
-  const conDb = hayBaseDeDatos();
+  // Sin DATABASE_URL (desarrollo/demo con la base local PGlite, sin negocios sembrados)
+  // el fallback es el modo NORMAL, no una falla: por eso ambos chequeos van
+  // condicionados a que haya una base CONFIGURADA, no a que haya base a secas.
+  const conDb = !!process.env.DATABASE_URL;
   const critico = conDb && (!dbEstado.ok || fuente === "fallback");
 
   const detalle: SaludDetalle = {

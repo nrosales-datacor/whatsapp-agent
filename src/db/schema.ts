@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, integer, boolean, jsonb, index, uniqueIndex, numeric, bigint } from "drizzle-orm/pg-core";
+import { pgTable, pgPolicy, pgRole, text, timestamp, integer, boolean, jsonb, index, uniqueIndex, numeric, bigint } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type {
@@ -23,15 +23,35 @@ import type {
 //   2. Como son multi-tenant (columna tenant_id), agregá políticas RLS en tu
 //      flujo `rls/apply.ts`, igual que tus otras tablas.
 //
-// RLS (revisión pre-venta 2026-10, G2): TODAS las tablas llevan `.enableRLS()` y,
-// por ahora, NINGUNA política. Supabase expone `public` por su Data API (PostgREST)
-// con la anon key —que es pública— y le da grants por defecto a `anon`/
-// `authenticated`: sin RLS, cualquiera leía/escribía todas las tablas de todos los
-// tenants. Con RLS activo y sin políticas, esos roles no ven ni una fila; la app no
-// cambia porque conecta como `postgres` (BYPASSRLS). Las políticas por tenant y el
-// rol sin BYPASSRLS son F1. Toda tabla NUEVA debe llevar `.enableRLS()` (lo exige
-// `test/security/rls.test.ts`).
+// RLS (F1): todas las tablas tienen RLS activo y una política para el rol de la app
+// (`app_wa`, sin BYPASSRLS). Cada operación de la app corre en una transacción que fija
+// UNO de estos dos contextos (ver src/db/alcance.ts):
+//   • `app.tenant_id` (conTenant): solo ve/escribe filas de ese negocio.
+//   • `app.sistema = on` (conSistema): procesos cross-tenant explícitos (claim de las
+//     colas, caché de tenants, schedulers, superadmin).
+// Sin ninguno de los dos, el rol de la app no ve ni una fila. `anon`/`authenticated`
+// (Data API de Supabase) no tienen política: no ven nada. El rol `postgres` tiene
+// BYPASSRLS: las políticas solo aplican una vez que DATABASE_URL apunta a `app_wa`
+// (scripts/rls/01-rol-aplicacion.sql). Toda tabla NUEVA debe llevar una de las dos
+// políticas de abajo (lo exige `test/security/rls.test.ts`).
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** Rol de la app sin BYPASSRLS. Lo crea (NOLOGIN) la migración 0037; el login se le da a mano. */
+export const rolApp = pgRole("app_wa").existing();
+
+const ES_SISTEMA = "current_setting('app.sistema', true) = 'on'";
+
+/** Política estándar: filas del negocio de la transacción, o contexto de sistema. */
+function politicaTenant(columna = "tenant_id") {
+  const cond = sql.raw(`${columna} = current_setting('app.tenant_id', true) OR ${ES_SISTEMA}`);
+  return pgPolicy("aislamiento_tenant", { for: "all", to: rolApp, using: cond, withCheck: cond });
+}
+
+/** Tablas sin dueño (infraestructura): solo procesos de sistema. */
+function politicaSoloSistema() {
+  const cond = sql.raw(ES_SISTEMA);
+  return pgPolicy("solo_sistema", { for: "all", to: rolApp, using: cond, withCheck: cond });
+}
 
 const id = () => text("id").primaryKey().$defaultFn(() => randomUUID());
 
@@ -77,10 +97,16 @@ export const waConversaciones = pgTable(
     // no volver a ofrecérselos antes de 60 días. Vive en la conversación (preferencia del
     // cliente), no en la cita puntual.
     upsellsRechazados: jsonb("upsells_rechazados").$type<RechazoAddon[]>().notNull().default([]),
+    // Momento del último mensaje (de cualquiera de los dos lados). Lo mantiene un trigger
+    // sobre wa_mensajes (migración 0039): la bandeja ordena y pagina por esta columna con
+    // índice, en vez de calcular el último mensaje de TODAS las conversaciones.
+    ultimaActividadEn: timestamp("ultima_actividad_en", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     uq: uniqueIndex("wa_conv_tenant_cliente_uq").on(t.tenantId, t.clienteWa),
     idxTenant: index("wa_conv_tenant_idx").on(t.tenantId),
+    idxActividad: index("wa_conv_tenant_actividad_idx").on(t.tenantId, t.ultimaActividadEn),
+    politica: politicaTenant(),
   }),
 ).enableRLS();
 
@@ -88,6 +114,10 @@ export const waMensajes = pgTable(
   "wa_mensajes",
   {
     id: id(),
+    // F1: copia del tenant de la conversación, para que la política RLS no necesite un
+    // JOIN. La migración 0037 la rellena y agrega un trigger que la completa si un
+    // INSERT viejo no la manda (ventana del deploy).
+    tenantId: text("tenant_id").notNull(),
     conversacionId: text("conversacion_id")
       .notNull()
       .references(() => waConversaciones.id, { onDelete: "cascade" }),
@@ -111,8 +141,10 @@ export const waMensajes = pgTable(
     mediaTipo: text("media_tipo"), // "imagen" | null
   },
   (t) => ({
-    idxConv: index("wa_msg_conv_idx").on(t.conversacionId),
+    // Historial de una conversación, más recientes primero (agente y panel).
+    idxConvCreado: index("wa_msg_conv_creado_idx").on(t.conversacionId, t.creadoEn),
     uqWaId: uniqueIndex("wa_msg_waid_uq").on(t.waMessageId),
+    politica: politicaTenant(),
   }),
 ).enableRLS();
 
@@ -155,6 +187,8 @@ export const waCitas = pgTable(
   },
   (t) => ({
     idxTenantFecha: index("wa_citas_tenant_fecha_idx").on(t.tenantId, t.fecha),
+    // Citas de un cliente (bandeja, ficha, agente): antes se recorrían todas las del negocio.
+    idxTenantCliente: index("wa_citas_tenant_cliente_idx").on(t.tenantId, t.clienteWa),
     // Red de último recurso contra la doble reserva de UNA MISMA persona (ALTO-07): dos
     // clientes tocando el mismo horario en el mismo instante ganan la carrera contra el
     // chequeo de `espaciosDisponibles`, que lee y decide fuera de la transacción.
@@ -173,6 +207,7 @@ export const waCitas = pgTable(
     uqEmpleadoSlot: uniqueIndex("wa_citas_empleado_slot_uq")
       .on(t.tenantId, t.empleadoId, t.fecha, t.hora)
       .where(sql`${t.estado} = 'agendada' AND ${t.empleadoId} IS NOT NULL`),
+    politica: politicaTenant(),
   }),
 ).enableRLS();
 
@@ -188,6 +223,7 @@ export const waEventosCalidad = pgTable(
   },
   (t) => ({
     idxTenant: index("wa_eventos_tenant_idx").on(t.tenantId, t.creadoEn),
+    politica: politicaTenant(),
   }),
 ).enableRLS();
 
@@ -221,6 +257,7 @@ export const waPushSubs = pgTable(
     uq: uniqueIndex("wa_push_endpoint_uq").on(t.endpoint),
     idxTenant: index("wa_push_tenant_idx").on(t.tenantId),
     idxUsuario: index("wa_push_usuario_idx").on(t.usuarioId),
+    politica: politicaTenant(),
   }),
 ).enableRLS();
 
@@ -341,6 +378,7 @@ export const waTenants = pgTable(
   (t) => ({
     uqPnid: uniqueIndex("wa_tenants_pnid_uq").on(t.phoneNumberId),
     uqStripeCustomer: uniqueIndex("wa_tenants_stripe_customer_uq").on(t.stripeCustomerId),
+    politica: politicaTenant("id"),
   }),
 ).enableRLS();
 
@@ -374,6 +412,7 @@ export const waUsuarios = pgTable(
   (t) => ({
     uqUsuario: uniqueIndex("wa_usuarios_usuario_uq").on(t.usuario),
     idxTenant: index("wa_usuarios_tenant_idx").on(t.tenantId),
+    politica: politicaTenant(),
   }),
 ).enableRLS();
 
@@ -405,6 +444,7 @@ export const waTenantsHistorial = pgTable(
     // Listado del historial de un tenant + poda por retención (src/config/tenantsHistorial.ts):
     // ambos filtran por tenant_id y ordenan por creado_en, así que este índice cubre los dos.
     idxTenant: index("wa_tenants_historial_tenant_idx").on(t.tenantId, t.creadoEn),
+    politica: politicaTenant(),
   }),
 ).enableRLS();
 
@@ -432,11 +472,16 @@ export const waJobs = pgTable(
     // Idempotencia: 1 job por mensaje entrante. NULL permitido (múltiples NULL no
     // chocan en un índice único de Postgres).
     waMessageId: text("wa_message_id"),
+    // Conversación del job: la usa el claim para "un job en vuelo por conversación" y
+    // para agrupar ráfagas (src/queue/cola.ts). Null solo en filas legadas sin backfill.
+    conversacionId: text("conversacion_id"),
   },
   (t) => ({
     // Índice que usa el worker al reclamar: pendientes listos para correr, más viejos primero.
     idxClaim: index("wa_jobs_claim_idx").on(t.estado, t.ejecutarDespuesDe),
+    idxConv: index("wa_jobs_conv_idx").on(t.conversacionId, t.creadoEn),
     uqWaId: uniqueIndex("wa_jobs_waid_uq").on(t.waMessageId),
+    politica: politicaTenant(),
   }),
 ).enableRLS();
 
@@ -481,6 +526,7 @@ export const waWebhooksCrudos = pgTable(
     uqWaId: uniqueIndex("wa_webhooks_crudos_waid_uq").on(t.waMessageId),
     // Índice que usa el reproceso y el barrido de alertas: pendientes, más viejos primero.
     idxPendiente: index("wa_webhooks_crudos_pendiente_idx").on(t.estado, t.recibidoEn),
+    politica: politicaSoloSistema(),
   }),
 ).enableRLS();
 
@@ -514,6 +560,7 @@ export const waCampanias = pgTable(
   },
   (t) => ({
     idxTenant: index("wa_campanias_tenant_idx").on(t.tenantId, t.creadaEn),
+    politica: politicaTenant(),
   }),
 ).enableRLS();
 
@@ -538,6 +585,7 @@ export const waCampaniaEnvios = pgTable(
     // Idempotencia: el segmento no puede insertar dos veces al mismo cliente en la misma campaña.
     uqCampaniaCliente: uniqueIndex("wa_campania_envios_campania_cliente_uq").on(t.campaniaId, t.clienteWa),
     idxClaim: index("wa_campania_envios_claim_idx").on(t.estado),
+    politica: politicaTenant(),
   }),
 ).enableRLS();
 
@@ -578,6 +626,7 @@ export const waUsoMensual = pgTable(
   },
   (t) => ({
     uqTenantMes: uniqueIndex("wa_uso_mensual_tenant_mes_uq").on(t.tenantId, t.anioMes),
+    politica: politicaTenant(),
   }),
 ).enableRLS();
 
@@ -609,6 +658,7 @@ export const waCotizaciones = pgTable(
     // Índice que usa la mini-cola al reclamar: candidatos a un toque, por tenant y antigüedad.
     idxClaim: index("wa_cotizaciones_claim_idx").on(t.tenantId, t.estado, t.creadaEn),
     idxCliente: index("wa_cotizaciones_cliente_idx").on(t.tenantId, t.clienteWa),
+    politica: politicaTenant(),
   }),
 ).enableRLS();
 
@@ -639,6 +689,7 @@ export const waSeguimientos = pgTable(
     // Un seguimiento por cita: el scheduler no debe crear dos filas para la misma cita.
     uqCita: uniqueIndex("wa_seguimientos_cita_uq").on(t.citaId),
     idxTenant: index("wa_seguimientos_tenant_idx").on(t.tenantId),
+    politica: politicaTenant(),
   }),
 ).enableRLS();
 
@@ -655,6 +706,7 @@ export const waSnapshotReputacion = pgTable(
   (t) => ({
     // Idempotencia: el job diario no duplica el snapshot si corre dos veces el mismo día.
     uqTenantFecha: uniqueIndex("wa_snapshot_reputacion_tenant_fecha_uq").on(t.tenantId, t.fecha),
+    politica: politicaTenant(),
   }),
 ).enableRLS();
 
@@ -679,7 +731,9 @@ export const waLideres = pgTable("wa_lideres", {
   // Hasta cuándo es válido el lease. Vencido → cualquier otro titular puede
   // tomarlo en su próximo intento; no hace falta heartbeat ni quorum aparte.
   venceEn: timestamp("vence_en", { withTimezone: true }).notNull(),
-}).enableRLS();
+}, () => ({
+  politica: politicaSoloSistema(),
+})).enableRLS();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Registro auditable de operaciones de PLATAFORMA (revisión pre-venta 2026-10):
@@ -711,6 +765,7 @@ export const waAuditoria = pgTable(
   },
   (t) => ({
     idxTenant: index("wa_auditoria_tenant_idx").on(t.tenantId, t.creadoEn),
+    politica: politicaTenant(),
   }),
 ).enableRLS();
 

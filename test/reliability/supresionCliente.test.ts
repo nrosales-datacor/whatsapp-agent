@@ -36,8 +36,8 @@ const B = crearTenant({ id: "tenant-b", nombre: "Lavacar B", phoneNumberId: "222
 async function sembrarCliente(db: DbEfimera["db"], tenantId: string, pnid: string, tel: string, sufijo: string) {
   const [conv] = await db.insert(waConversaciones).values({ tenantId, clienteWa: tel, notas: `notas ${sufijo}` }).returning();
   await db.insert(waMensajes).values([
-    { conversacionId: conv.id, rol: "user", contenido: `hola ${sufijo}`, waMessageId: `wamid.${sufijo}` },
-    { conversacionId: conv.id, rol: "user", contenido: "[foto]", mediaUrl: `${tenantId}/${conv.id}/wamid.${sufijo}.jpg`, mediaTipo: "imagen" },
+    { tenantId, conversacionId: conv.id, rol: "user", contenido: `hola ${sufijo}`, waMessageId: `wamid.${sufijo}` },
+    { tenantId, conversacionId: conv.id, rol: "user", contenido: "[foto]", mediaUrl: `${tenantId}/${conv.id}/wamid.${sufijo}.jpg`, mediaTipo: "imagen" },
   ]);
   const [cita] = await db
     .insert(waCitas)

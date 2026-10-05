@@ -1,6 +1,8 @@
 import "dotenv/config";
 import { correrAgente } from "../src/agent/runAgent";
-import { RepositorioEnMemoria } from "../src/booking/inMemoryRepository";
+import { RepositorioDrizzle } from "../src/booking/drizzleRepository";
+import { sql } from "drizzle-orm";
+import { iniciarDbLocal } from "../src/db/client";
 import type { MensajeConversacion } from "../src/types";
 import { crearTenantEval } from "./fixtureEval";
 import { cargarCasos, evaluar, type CasoEval, type ToolObservada } from "./aserciones";
@@ -14,7 +16,7 @@ import { cargarCasos, evaluar, type CasoEval, type ToolObservada } from "./aserc
 //
 // NO corre en cada push (cuesta tokens): es `npm run eval`, manual o nocturno.
 // Necesita OPENAI_API_KEY en el entorno (o .env). NUNCA toca producción: usa un
-// tenant de fixture (eval/fixtureEval.ts) y un repo en memoria.
+// tenant de fixture (eval/fixtureEval.ts) y una base local (PGlite).
 //
 // Los tipos y las aserciones viven en `eval/aserciones.ts` (con tests deterministas
 // en `test/unit/evalHarness.test.ts`); acá queda solo la ejecución contra OpenAI.
@@ -38,7 +40,7 @@ const CLIENTE_WA = "50688887777";
 // leen estas variables PEREZOSAMENTE (dentro de las funciones de envío, no al
 // importar el módulo): al quedar sin definir, ambos módulos caen a su no-op.
 // OPENAI_API_KEY se conserva a propósito: es el servicio que se está evaluando, y
-// solo lee. La base de datos nunca entra en juego (el repo es en memoria).
+// solo lee. Nunca toca una base real: el repo corre sobre PGlite en el proceso.
 for (const clave of [
   "GOOGLE_SERVICE_ACCOUNT_EMAIL",
   "GOOGLE_PRIVATE_KEY",
@@ -91,9 +93,21 @@ function fechaEnDias(dias: number): string {
 }
 
 // ── Corrida de un caso ─────────────────────────────────────────────────────────
+// Una sola base PGlite para toda la corrida (crear una cuesta segundos y ~100 MB).
+let base: ReturnType<typeof iniciarDbLocal> | null = null;
+const baseLocal = () => (base ??= iniciarDbLocal());
+const TABLAS_WA = [
+  "wa_conversaciones", "wa_mensajes", "wa_citas", "wa_eventos_calidad", "wa_push_subs", "wa_jobs",
+  "wa_campanias", "wa_campania_envios", "wa_uso_mensual", "wa_cotizaciones", "wa_seguimientos",
+  "wa_snapshot_reputacion", "wa_auditoria",
+].join(", ");
+
 async function correrCaso(caso: CasoEval): Promise<string[]> {
   const tenant = crearTenantEval({ upsell: caso.upsell === true });
-  const repo = new RepositorioEnMemoria();
+  // Base local (PGlite) con el mismo repositorio que producción; se vacía entre casos.
+  const db = await baseLocal();
+  await db.execute(sql.raw(`TRUNCATE ${TABLAS_WA} CASCADE`));
+  const repo = new RepositorioDrizzle(db);
   for (const s of caso.seedCitas ?? []) {
     await repo.crearCita({
       tenantId: tenant.id,

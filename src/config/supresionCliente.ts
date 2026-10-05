@@ -13,6 +13,7 @@ import {
   waWebhooksCrudos,
 } from "../db/schema";
 import { obtenerDb } from "../db/client";
+import { conSistema, conTenant } from "../db/alcance";
 import type { Tenant } from "../types";
 import { eliminarEventoCita } from "../calendar/googleCalendar";
 import { hoyEnTz } from "../booking/gestionCitas";
@@ -104,30 +105,33 @@ export async function borrarDatosCliente(opts: {
 
   // ── Resolver al cliente, SIEMPRE dentro del tenant ──
   let conv: typeof waConversaciones.$inferSelect | undefined;
-  if (opts.conversacionId) {
-    [conv] = await d
-      .select()
-      .from(waConversaciones)
-      .where(and(eq(waConversaciones.id, opts.conversacionId), eq(waConversaciones.tenantId, tenant.id)));
+  const conversacionId = opts.conversacionId;
+  if (conversacionId) {
+    [conv] = await conTenant(d, tenant.id, (tx) =>
+      tx
+        .select()
+        .from(waConversaciones)
+        .where(and(eq(waConversaciones.id, conversacionId), eq(waConversaciones.tenantId, tenant.id))),
+    );
     if (!conv) throw new Error("CLIENTE_NO_ENCONTRADO");
   } else {
     const tel = normalizarTelefono(opts.clienteWa);
     if (!tel) throw new Error("CLIENTE_NO_ENCONTRADO");
-    [conv] = await d
+    [conv] = await conTenant(d, tenant.id, (tx) => tx
       .select()
       .from(waConversaciones)
-      .where(and(eq(waConversaciones.tenantId, tenant.id), eq(waConversaciones.clienteWa, tel)));
+      .where(and(eq(waConversaciones.tenantId, tenant.id), eq(waConversaciones.clienteWa, tel))));
   }
   const clienteWa = conv?.clienteWa ?? normalizarTelefono(opts.clienteWa);
 
-  const citas = await d
+  const citas = await conTenant(d, tenant.id, (tx) => tx
     .select()
     .from(waCitas)
-    .where(and(eq(waCitas.tenantId, tenant.id), eq(waCitas.clienteWa, clienteWa)));
-  const cotizaciones = await d
+    .where(and(eq(waCitas.tenantId, tenant.id), eq(waCitas.clienteWa, clienteWa))));
+  const cotizaciones = await conTenant(d, tenant.id, (tx) => tx
     .select({ id: waCotizaciones.id })
     .from(waCotizaciones)
-    .where(and(eq(waCotizaciones.tenantId, tenant.id), eq(waCotizaciones.clienteWa, clienteWa)));
+    .where(and(eq(waCotizaciones.tenantId, tenant.id), eq(waCotizaciones.clienteWa, clienteWa))));
   if (!conv && citas.length === 0 && cotizaciones.length === 0) throw new Error("CLIENTE_NO_ENCONTRADO");
 
   // ── (1) Google Calendar: eventos de citas futuras ──
@@ -143,10 +147,10 @@ export async function borrarDatosCliente(opts: {
   // ── (2) Storage: prefijo de la conversación + rutas puntuales guardadas en los mensajes ──
   let archivosStorage = 0;
   if (conv) {
-    const conMedia = await d
+    const conMedia = await conTenant(d, tenant.id, (tx) => tx
       .select({ mediaUrl: waMensajes.mediaUrl })
       .from(waMensajes)
-      .where(eq(waMensajes.conversacionId, conv.id));
+      .where(eq(waMensajes.conversacionId, conv.id)));
     const prefijo = `${tenant.id}/${conv.id}`;
     // Rutas que NO cuelgan del prefijo (no debería haber, pero una ruta guardada es la
     // fuente de verdad de dónde quedó la foto): se borran una por una.
@@ -163,7 +167,7 @@ export async function borrarDatosCliente(opts: {
 
   // ── (3) Base: todo en UNA transacción, más el registro auditable ──
   const idsCitas = citas.map((c) => c.id);
-  const conteos = await d.transaction(async (tx) => {
+  const conteos = await conTenant(d, tenant.id, async (tx) => {
     const mensajes = conv
       ? (await tx.delete(waMensajes).where(eq(waMensajes.conversacionId, conv.id)).returning({ id: waMensajes.id })).length
       : 0;
@@ -204,7 +208,7 @@ export async function borrarDatosCliente(opts: {
     const filtroCliente = conv
       ? or(
           sql`${waJobs.payload} -> 'entrante' ->> 'clienteWa' = ${clienteWa}`,
-          sql`${waJobs.payload} -> 'conv' ->> 'id' = ${conv.id}`,
+          eq(waJobs.conversacionId, conv.id),
         )
       : sql`${waJobs.payload} -> 'entrante' ->> 'clienteWa' = ${clienteWa}`;
     const jobs = (
@@ -217,16 +221,20 @@ export async function borrarDatosCliente(opts: {
     // y a payloads que contengan un mensaje de este teléfono (containment de JSONB, que
     // matchea dentro de los arreglos entry/changes/messages sin importar la posición).
     const patron = JSON.stringify({ entry: [{ changes: [{ value: { messages: [{ from: clienteWa }] } }] }] });
+    // Es tabla de infraestructura (solo sistema, F1): se toca en contexto de sistema, con
+    // el filtro explícito por el número de este negocio.
     const webhooksCrudos = (
-      await tx
-        .delete(waWebhooksCrudos)
-        .where(
-          and(
-            eq(waWebhooksCrudos.phoneNumberId, tenant.phoneNumberId),
-            sql`${waWebhooksCrudos.payload} @> ${patron}::jsonb`,
-          ),
-        )
-        .returning({ id: waWebhooksCrudos.id })
+      await conSistema(tx, (sis) =>
+        sis
+          .delete(waWebhooksCrudos)
+          .where(
+            and(
+              eq(waWebhooksCrudos.phoneNumberId, tenant.phoneNumberId),
+              sql`${waWebhooksCrudos.payload} @> ${patron}::jsonb`,
+            ),
+          )
+          .returning({ id: waWebhooksCrudos.id }),
+      )
     ).length;
     const conversaciones = conv
       ? (

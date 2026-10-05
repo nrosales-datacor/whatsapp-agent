@@ -1,7 +1,7 @@
 import { eq, sql } from "drizzle-orm";
-import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import { waCampaniaEnvios, schema } from "../db/schema";
+import { waCampaniaEnvios } from "../db/schema";
 import { filasDe } from "../db/filas";
+import { conSistema, type DB } from "../db/alcance";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mini-cola de envíos de campaña (ROADMAP C3.2), sobre wa_campania_envios.
@@ -17,8 +17,6 @@ import { filasDe } from "../db/filas";
 // en estado 'enviando' (join a wa_campanias) — si el dueño cancela a mitad de
 // camino, los envíos pendientes dejan de reclamarse solos, sin lógica aparte.
 // ─────────────────────────────────────────────────────────────────────────────
-
-type DB = PostgresJsDatabase<typeof schema>;
 
 export interface EnvioReclamado {
   id: string;
@@ -56,7 +54,7 @@ export interface EnvioReclamado {
  * ofrecen las filas candidatas.
  */
 export async function reclamarEnvio(db: DB): Promise<EnvioReclamado | null> {
-  return db.transaction(async (tx) => {
+  return conSistema(db, async (tx) => {
     const rows = filasDe<{
       id: string;
       campania_id: string;
@@ -106,15 +104,15 @@ export async function reclamarEnvio(db: DB): Promise<EnvioReclamado | null> {
 
 /** Marca el envío como completado exitosamente. */
 export async function marcarEnviado(db: DB, id: string): Promise<void> {
-  await db
+  await conSistema(db, (tx) => tx
     .update(waCampaniaEnvios)
     .set({ estado: "enviado", enviadoEn: new Date() })
-    .where(eq(waCampaniaEnvios.id, id));
+    .where(eq(waCampaniaEnvios.id, id)));
 }
 
 /** El cliente pidió baja entre que se armó el segmento y que le tocó el turno: no se envía. */
 export async function marcarOmitidoOptOut(db: DB, id: string): Promise<void> {
-  await db.update(waCampaniaEnvios).set({ estado: "omitido_opt_out" }).where(eq(waCampaniaEnvios.id, id));
+  await conSistema(db, (tx) => tx.update(waCampaniaEnvios).set({ estado: "omitido_opt_out" }).where(eq(waCampaniaEnvios.id, id)));
 }
 
 const MAX_INTENTOS_ENVIO = 3;
@@ -125,21 +123,21 @@ const MAX_INTENTOS_ENVIO = 3;
  */
 export async function marcarFalloOReintentar(db: DB, id: string, error: string, intentos: number): Promise<void> {
   if (intentos >= MAX_INTENTOS_ENVIO) {
-    await db.update(waCampaniaEnvios).set({ estado: "error", error }).where(eq(waCampaniaEnvios.id, id));
+    await conSistema(db, (tx) => tx.update(waCampaniaEnvios).set({ estado: "error", error }).where(eq(waCampaniaEnvios.id, id)));
     return;
   }
   // Sin columna de "ejecutar después de": el volumen de una campaña es chico y el
   // propio throttle del worker ya espacia los reintentos entre ticks.
-  await db.update(waCampaniaEnvios).set({ estado: "pendiente", error }).where(eq(waCampaniaEnvios.id, id));
+  await conSistema(db, (tx) => tx.update(waCampaniaEnvios).set({ estado: "pendiente", error }).where(eq(waCampaniaEnvios.id, id)));
 }
 
 /** true si ya no quedan envíos "pendiente" para esa campaña (para marcarla "completada"). */
 export async function quedanPendientes(db: DB, campaniaId: string): Promise<boolean> {
   const rows = filasDe(
-    await db.execute(sql`
+    await conSistema(db, (tx) => tx.execute(sql`
     SELECT 1 FROM wa_campania_envios WHERE campania_id = ${campaniaId} AND estado = 'pendiente' LIMIT 1
   `),
-  );
+  ));
   return rows.length > 0;
 }
 
@@ -161,7 +159,7 @@ export async function purgarEnviosFinalizados(db: DB, retencionDias = 7, tamanoL
   let total = 0;
   for (;;) {
     const rows = filasDe<{ id: string }>(
-      await db.execute(sql`
+      await conSistema(db, (tx) => tx.execute(sql`
       DELETE FROM wa_campania_envios
        WHERE id IN (
          SELECT e.id
@@ -174,7 +172,7 @@ export async function purgarEnviosFinalizados(db: DB, retencionDias = 7, tamanoL
        )
       RETURNING id
     `),
-    );
+    ));
     total += rows.length;
     if (rows.length < tamanoLote) break;
   }

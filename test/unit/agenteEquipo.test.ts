@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ejecutarTool } from "../../src/agent/runAgent";
-import { RepositorioEnMemoria } from "../../src/booking/inMemoryRepository";
+import { repoDePrueba } from "../helpers/repoDePrueba";
 import type { MensajeInteractivo, Tenant } from "../../src/types";
 import { crearTenant } from "../helpers/fixtures";
 
@@ -38,13 +38,13 @@ const EQUIPO = [
   { id: "marco", nombre: "Marco", activo: true },
 ];
 
-function contexto(tenant: Tenant) {
-  return { tenant, repo: new RepositorioEnMemoria(), clienteWa: CLIENTE };
+async function contexto(tenant: Tenant) {
+  return { tenant, repo: await repoDePrueba(), clienteWa: CLIENTE };
 }
 
 /** Corre una tool y devuelve el JSON parseado + lo que haya capturado como interactivo. */
 async function correr(
-  ctx: ReturnType<typeof contexto>,
+  ctx: Awaited<ReturnType<typeof contexto>>,
   nombre: string,
   args: Record<string, unknown>,
 ): Promise<{ r: any; interactivo?: MensajeInteractivo }> {
@@ -62,21 +62,21 @@ const agendar = (extra: Record<string, unknown> = {}) => ({
 });
 
 test("agendar_cita sin empleadoId asigna sola a alguien del equipo", async () => {
-  const ctx = contexto(crearTenant({ empleados: EQUIPO }));
+  const ctx = await contexto(crearTenant({ empleados: EQUIPO }));
   const { r } = await correr(ctx, "agendar_cita", agendar());
   assert.equal(r.ok, true);
   assert.ok(["ana", "marco"].includes(r.cita.empleadoId), `asignó a ${r.cita.empleadoId}`);
 });
 
 test("agendar_cita respeta la persona que pidió el cliente", async () => {
-  const ctx = contexto(crearTenant({ empleados: EQUIPO }));
+  const ctx = await contexto(crearTenant({ empleados: EQUIPO }));
   const { r } = await correr(ctx, "agendar_cita", agendar({ empleadoId: "marco" }));
   assert.equal(r.ok, true);
   assert.equal(r.cita.empleadoId, "marco");
 });
 
 test("dos clientes distintos SÍ pueden tener cita a la misma hora con personas distintas", async () => {
-  const ctx = contexto(crearTenant({ empleados: EQUIPO }));
+  const ctx = await contexto(crearTenant({ empleados: EQUIPO }));
   const a = await correr(ctx, "agendar_cita", agendar({ empleadoId: "ana" }));
   const b = await correr(ctx, "agendar_cita", agendar({ empleadoId: "marco" }));
   assert.equal(a.r.ok, true);
@@ -85,7 +85,7 @@ test("dos clientes distintos SÍ pueden tener cita a la misma hora con personas 
 });
 
 test("a una MISMA persona no se le puede encimar una segunda cita", async () => {
-  const ctx = contexto(crearTenant({ empleados: EQUIPO }));
+  const ctx = await contexto(crearTenant({ empleados: EQUIPO }));
   await correr(ctx, "agendar_cita", agendar({ empleadoId: "ana" }));
   const { r } = await correr(ctx, "agendar_cita", agendar({ empleadoId: "ana" }));
   assert.equal(r.ok, false);
@@ -99,7 +99,7 @@ test("a una MISMA persona no se le puede encimar una segunda cita", async () => 
 });
 
 test("cuando el equipo entero está ocupado, el horario se cae del todo", async () => {
-  const ctx = contexto(crearTenant({ empleados: EQUIPO }));
+  const ctx = await contexto(crearTenant({ empleados: EQUIPO }));
   await correr(ctx, "agendar_cita", agendar({ empleadoId: "ana" }));
   await correr(ctx, "agendar_cita", agendar({ empleadoId: "marco" }));
   const { r } = await correr(ctx, "agendar_cita", agendar());
@@ -109,21 +109,21 @@ test("cuando el equipo entero está ocupado, el horario se cae del todo", async 
 });
 
 test("agendar_cita rechaza un empleadoId que no existe", async () => {
-  const ctx = contexto(crearTenant({ empleados: EQUIPO }));
+  const ctx = await contexto(crearTenant({ empleados: EQUIPO }));
   const { r } = await correr(ctx, "agendar_cita", agendar({ empleadoId: "fulano" }));
   assert.equal(r.ok, false);
   assert.match(r.motivo, /no existe nadie/);
 });
 
 test("agendar_cita no asigna a nadie si el negocio no tiene equipo cargado", async () => {
-  const ctx = contexto(crearTenant());
+  const ctx = await contexto(crearTenant());
   const { r } = await correr(ctx, "agendar_cita", agendar());
   assert.equal(r.ok, true);
   assert.equal(r.cita.empleadoId, undefined);
 });
 
 test("ofrecer_empleados muestra al equipo más la opción 'Cualquiera'", async () => {
-  const ctx = contexto(crearTenant({ empleados: EQUIPO }));
+  const ctx = await contexto(crearTenant({ empleados: EQUIPO }));
   const { r, interactivo } = await correr(ctx, "ofrecer_empleados", { servicioId: "lavado-basico" });
   assert.equal(r.ok, true);
   assert.deepEqual(
@@ -134,7 +134,7 @@ test("ofrecer_empleados muestra al equipo más la opción 'Cualquiera'", async (
 });
 
 test("ofrecer_empleados no pregunta nada si solo puede atender una persona", async () => {
-  const ctx = contexto(
+  const ctx = await contexto(
     crearTenant({
       empleados: [
         { id: "ana", nombre: "Ana", activo: true, serviciosIds: ["lavado-basico"] },
@@ -149,14 +149,14 @@ test("ofrecer_empleados no pregunta nada si solo puede atender una persona", asy
 });
 
 test("ofrecer_empleados avisa que no aplica si el negocio no tiene equipo", async () => {
-  const ctx = contexto(crearTenant());
+  const ctx = await contexto(crearTenant());
   const { r } = await correr(ctx, "ofrecer_empleados", { servicioId: "lavado-basico" });
   assert.equal(r.ok, false);
   assert.match(r.motivo, /no tiene equipo/);
 });
 
 test("ofrecer_horarios con empleadoId solo lista los horarios de esa persona", async () => {
-  const ctx = contexto(crearTenant({ empleados: EQUIPO }));
+  const ctx = await contexto(crearTenant({ empleados: EQUIPO }));
   await correr(ctx, "agendar_cita", agendar({ empleadoId: "ana", hora: "09:00" }));
   const { interactivo } = await correr(ctx, "ofrecer_horarios", {
     fecha: LUNES,
@@ -171,7 +171,7 @@ test("ofrecer_horarios con empleadoId solo lista los horarios de esa persona", a
 });
 
 test("ofrecer_horarios sin empleadoId preasigna a alguien libre en cada horario", async () => {
-  const ctx = contexto(crearTenant({ empleados: EQUIPO }));
+  const ctx = await contexto(crearTenant({ empleados: EQUIPO }));
   await correr(ctx, "agendar_cita", agendar({ empleadoId: "ana", hora: "09:00" }));
   const { interactivo } = await correr(ctx, "ofrecer_horarios", { fecha: LUNES, servicioId: "lavado-basico" });
   const nueve = interactivo?.opciones.find((o) => o.id.startsWith(`slot|${LUNES}|09:00`));
@@ -180,7 +180,7 @@ test("ofrecer_horarios sin empleadoId preasigna a alguien libre en cada horario"
 });
 
 test("reprogramar_cita mueve la cita CON su persona y respeta sus choques", async () => {
-  const ctx = contexto(crearTenant({ empleados: EQUIPO }));
+  const ctx = await contexto(crearTenant({ empleados: EQUIPO }));
   await correr(ctx, "agendar_cita", agendar({ empleadoId: "ana", hora: "09:00" }));
   // Ana también tiene las 11:00 con otro cliente.
   await ctx.repo.crearCita({
@@ -205,7 +205,7 @@ test("reprogramar_cita mueve la cita CON su persona y respeta sus choques", asyn
 });
 
 test("no se le puede agendar a alguien un servicio que no hace", async () => {
-  const ctx = contexto(
+  const ctx = await contexto(
     crearTenant({
       empleados: [
         { id: "ana", nombre: "Ana", activo: true, serviciosIds: ["lavado-basico"] },
@@ -219,7 +219,7 @@ test("no se le puede agendar a alguien un servicio que no hace", async () => {
 });
 
 test("no se le puede agendar a alguien inactivo", async () => {
-  const ctx = contexto(
+  const ctx = await contexto(
     crearTenant({
       empleados: [
         { id: "ana", nombre: "Ana", activo: true },

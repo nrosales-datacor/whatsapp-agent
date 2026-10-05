@@ -216,8 +216,24 @@ export async function cambiarClave(claveActual: string, claveNueva: string): Pro
 }
 
 // ── Bandeja ──
-export function listarConversaciones(): Promise<ResumenConversacion[]> {
-  return pedir<{ conversaciones: ResumenConversacion[] }>("/conversaciones").then((r) => r.conversaciones);
+/** Una página de la bandeja: las conversaciones más recientes y si hay más para cargar. */
+export interface PaginaConversaciones {
+  conversaciones: ResumenConversacion[];
+  hayMas: boolean;
+}
+
+/**
+ * Bandeja paginada: `limite` conversaciones más recientes (el backend topea en 500) y, con
+ * `buscar`, filtradas por teléfono o nombre en TODAS las conversaciones del negocio.
+ */
+export function listarConversaciones(opciones: { limite?: number; buscar?: string } = {}): Promise<PaginaConversaciones> {
+  const q = new URLSearchParams();
+  if (opciones.limite) q.set("limite", String(opciones.limite));
+  if (opciones.buscar) q.set("buscar", opciones.buscar);
+  const qs = q.toString();
+  return pedir<{ conversaciones: ResumenConversacion[]; hayMas?: boolean }>(`/conversaciones${qs ? `?${qs}` : ""}`).then(
+    (r) => ({ conversaciones: r.conversaciones, hayMas: !!r.hayMas }),
+  );
 }
 
 export function obtenerConversacion(id: string): Promise<Conversacion> {

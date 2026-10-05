@@ -77,7 +77,11 @@ export function hashesScriptsInline(html: string): string[] {
   const re = /<script(\s[^>]*)?>([\s\S]*?)<\/script>/gi;
   for (const m of html.matchAll(re)) {
     if (/\ssrc\s*=/i.test(m[1] ?? "")) continue;
-    out.push(`'sha256-${createHash("sha256").update(m[2], "utf8").digest("base64")}'`);
+    // El parser HTML normaliza CRLF/CR a LF ANTES de tokenizar, y el navegador hashea el
+    // script ya normalizado. Sin esto, un landing/*.html con fin de línea CRLF (checkout
+    // en Windows con core.autocrlf) produce un hash distinto y la CSP bloquea el script.
+    const contenido = m[2].replace(/\r\n?/g, "\n");
+    out.push(`'sha256-${createHash("sha256").update(contenido, "utf8").digest("base64")}'`);
   }
   return out;
 }

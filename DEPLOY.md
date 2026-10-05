@@ -114,7 +114,7 @@ pruebas, no pasa nada: es idempotente.)
 
 ```bash
 sudo npm install -g pm2
-pm2 start npm --name whatsapp-bot -- start
+pm2 start ecosystem.config.cjs   # app "whatsapp-bot" con kill_timeout para el apagado ordenado
 pm2 save
 pm2 startup        # ejecutá el comando que te imprime, para que arranque solo al reiniciar
 pm2 logs whatsapp-bot   # para ver que diga "Agente escuchando..." (Ctrl+C para salir)
@@ -130,6 +130,16 @@ pm2 logs whatsapp-bot   # para ver que diga "Agente escuchando..." (Ctrl+C para 
 > del registry sin pasar por la política de dependencias (CLAUDE.md). No compilamos a JS
 > porque el código usa imports sin extensión (`moduleResolution: Bundler`), que Node ESM no
 > resuelve sin un bundler.
+
+> 🔁 **Deploys sin cortar turnos a la mitad.** El pipeline hace `pm2 reload whatsapp-bot`:
+> PM2 manda SIGINT, el server deja de aceptar requests y de reclamar jobs, y espera a que
+> terminen los turnos del agente en curso (`APAGADO_ESPERA_MS`, default 25 s,
+> `src/red/apagado.ts`) antes de salir. `ecosystem.config.cjs` le da a PM2 un `kill_timeout`
+> de 30 s para que no lo mate antes. **Si tu droplet todavía tiene la app creada con
+> `pm2 start npm --name whatsapp-bot -- start`**, migrala una vez:
+> `pm2 delete whatsapp-bot && pm2 start ecosystem.config.cjs && pm2 save`.
+> Mientras se reinicia (unos segundos) Meta reintenta los webhooks que fallen: no se pierde
+> nada, solo se demora.
 
 El bot ya corre en `localhost:3001`, pero todavía NO es accesible desde internet.
 Para eso necesitamos un dominio con HTTPS (paso 7 y 8).
@@ -454,6 +464,15 @@ cualquier otra rama, o un PR contra `main`, solo corre el typecheck/build (sin t
    `deploy_ci` (la privada, no la `.pub`). Borrá `deploy_ci`/`deploy_ci.pub` de tu disco después.
 4. Borrá el par de llaves local (`rm deploy_ci deploy_ci.pub`) una vez cargada — ya vive solo en
    el droplet (pública) y en GitHub (privada).
+4b. **Fijar la llave del HOST (recomendado):** sin esto el workflow confía en la llave que devuelva
+   la IP en el momento del deploy (`ssh-keyscan`), y un atacante en el medio podría hacerse pasar
+   por el droplet. Desde tu máquina (que ya confía en el droplet):
+   ```bash
+   ssh-keygen -F 157.230.190.60          # imprime la línea de known_hosts del droplet
+   ```
+   y cargá esa línea (o `ssh-keyscan -t ed25519 157.230.190.60`, verificando la huella contra la
+   del panel de DigitalOcean) como secret `DEPLOY_HOST_KEY`. Con él, el workflow usa solo esa
+   llave; sin él, sigue funcionando pero avisa con un warning.
 5. **Gate de aprobación (G9, recomendado):** repo → *Settings* → *Environments* → *New
    environment* `produccion` → marcá **Required reviewers** y agregate. Desde entonces cada push a
    `main` corre CI completo, pero el job de deploy **espera** a que lo apruebes en la pestaña
@@ -462,9 +481,15 @@ cualquier otra rama, o un PR contra `main`, solo corre el typecheck/build (sin t
    `scripts/backupDb.ts` antes de `migrar.ts`; si el backup falla, el deploy se corta **sin tocar la
    base**. Requiere lo de la §19.1 en el droplet (`postgresql-client` + `BACKUP_DATABASE_URL`).
 
-El host, usuario, carpeta y nombre del proceso PM2 están hardcodeados en el workflow (no son
-secretos: ya están documentados en este mismo archivo, que vive en un repo privado). Si el droplet
-cambia de IP o de carpeta, hay que actualizar `.github/workflows/ci-cd.yml`.
+El host y el usuario se pueden cambiar con las **variables** del repo `DEPLOY_HOST` y
+`DEPLOY_USER` (Settings → Secrets and variables → Actions → Variables); sin ellas se usan los
+valores actuales. Carpeta y nombre del proceso PM2 siguen en `.github/workflows/ci-cd.yml`.
+
+**Qué hace el deploy:** compila el panel en el runner de GitHub (el droplet ya no instala Vite ni
+compila), lo sube como `panel-<sha>.tgz`, hace `git checkout` del **commit exacto** que pasó CI,
+`npm ci --omit=dev`, backup si hay migraciones, `migrar.ts` + `seedTenants.ts`, cambia
+`web/dist` de una vez y `pm2 reload`. Si algo falla antes del reload, el proceso viejo sigue
+atendiendo.
 
 ### Si el pipeline falla
 
@@ -669,21 +694,21 @@ Tener el `.sql.gz` no sirve de nada si nunca comprobaste que se puede restaurar.
 prueba en un **proyecto Supabase nuevo y separado** (gratis) para no arriesgar el
 piloto real:
 
-1. Creá un segundo proyecto en Supabase (plan Free alcanza para esto — es temporal).
-2. Sacá su conexión directa igual que en el paso 19.1.2 (llamalo `RESTORE_TEST_URL`).
-3. Restaurá el dump más reciente ahí:
+1. Creá un segundo proyecto en Supabase (plan Free alcanza para esto — es temporal), o un
+   Postgres vacío cualquiera.
+2. Sacá su conexión directa igual que en el paso 19.1.2.
+3. En el droplet, corré el verificador (restaura el volcado más nuevo de `backups/` y compara
+   conteos tabla por tabla contra la base de origen):
    ```bash
-   gunzip -c backups/wa_bot_YYYY-MM-DD.sql.gz | psql "postgresql://postgres:...@db.yyyy.supabase.co:5432/postgres"
+   RESTORE_DATABASE_URL="postgresql://postgres:...@db.yyyy.supabase.co:5432/postgres" \
+     node --import tsx scripts/verificarRestore.ts            # o pasale un .sql.gz puntual
    ```
-4. Verificá que los datos llegaron íntegros comparando conteos contra producción
-   (mismo comando, apuntado a cada URL):
-   ```bash
-   psql "$URL" -c "select count(*) from wa_tenants;"
-   psql "$URL" -c "select count(*) from wa_citas;"
-   psql "$URL" -c "select count(*) from wa_mensajes;"
-   ```
-5. Anotá acá (y en el ROADMAP) la fecha en que se probó con éxito. Borrá el proyecto
-   de prueba después (o dejalo para la próxima verificación).
+   Se niega a escribir en la base de la app o en una que ya tenga tablas `wa_*`. Termina con
+   ✅ si el volcado se restauró completo (todas las tablas, ninguna vacía que no lo esté en el
+   origen, mismas migraciones) o con ❌ y la lista de lo que no cierra (código de salida ≠ 0,
+   así se puede programar en cron).
+4. Anotá acá (y en el ROADMAP, B5/E14) la fecha en que se probó con éxito. Borrá el proyecto
+   de prueba después (o vacialo para la próxima verificación).
 
 **Repetir este test de restore cada 2-3 meses** — un backup que nunca se restauró no
 es un backup confiable.
@@ -884,6 +909,26 @@ PANEL_SUPERADMIN_TOTP_SECRET=...        # §14 (npx tsx scripts/generarTotp.ts)
 - **Anti-replay del TOTP en memoria** — con una sola réplica `web` (el deploy actual) es
   exacto. Si algún día hay varias réplicas `web` (§21), un mismo código podría usarse una
   vez en cada una dentro de sus ~90 s de validez: aceptable, pero tenelo presente.
+
+## 24. Aislamiento entre negocios en la base (ROADMAP F1, RLS)
+
+Desde la migración `0037`, todas las tablas tienen políticas RLS por negocio y existe el rol
+`app_wa` (sin BYPASSRLS, todavía sin login). El código ya corre cada operación con el negocio
+fijado (`conTenant`) o como proceso de sistema explícito (`conSistema`), ver `src/db/alcance.ts`.
+Mientras la app siga conectada como `postgres`, las políticas no aplican (ese rol las saltea).
+
+Para que el aislamiento lo garantice la base (prerrequisito: §19.2 hecho, restore probado):
+
+1. Correr `scripts/rls/01-rol-aplicacion.sql` en el SQL Editor de Supabase (le da login con
+   clave al rol y verifica que no tenga BYPASSRLS).
+2. Probar la conexión del rol desde el droplet (comandos en el mismo archivo).
+3. En el `.env` del droplet: `DATABASE_URL_MIGRACIONES` = la URL actual (rol `postgres`, la usan
+   `migrar.ts`, `seedTenants.ts`, backups y demás scripts) y `DATABASE_URL` = la del rol `app_wa`.
+4. `pm2 reload whatsapp-bot --update-env` y verificar `/salud?detalle=1`, un mensaje de punta a
+   punta y el panel. Rollback: volver `DATABASE_URL` al rol `postgres` y recargar.
+
+`test/security/rlsAplicado.test.ts` corre toda la app con el rol `app_wa` sobre PGlite: si una
+consulta nueva se olvida del alcance, ese test falla en CI.
 
 ## Mantenimiento rápido
 

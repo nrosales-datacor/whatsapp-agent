@@ -78,7 +78,7 @@ jobs:
       - name: Instalar el navegador de Playwright (Chromium)
         run: npx playwright install --with-deps chromium
 
-      - name: Correr el E2E del panel (server en memoria + Graph mockeado)
+      - name: Correr el E2E del panel (memoria + base efímera PGlite, red mockeada)
         run: npx playwright test
 
   desplegar:
@@ -95,19 +95,41 @@ jobs:
       group: deploy-produccion
       cancel-in-progress: false
     env:
-      DEPLOY_HOST: "157.230.190.60"
-      DEPLOY_USER: "sebastian"
+      # Configurables como variables del repo (Settings → Variables); el default es el actual.
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST || '157.230.190.60' }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER || 'sebastian' }}
       DEPLOY_DIR: "~/lavacar-whatsapp-bot"
       DEPLOY_PM2_APP: "whatsapp-bot"
       BASE_URL: "https://wabotlavacar.selyon.app"
       SALUD_URL: "https://wabotlavacar.selyon.app/salud"
     steps:
+      # El panel se compila ACÁ (runner limpio, con devDependencies) y se sube armado: el
+      # droplet ya no instala Vite ni compila en producción.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: ".nvmrc"
+      - name: Build del panel (artefacto)
+        run: |
+          npm ci --prefix web
+          npm run build --prefix web
+          tar -czf panel.tgz -C web/dist .
+
+      # Llave del host FIJADA (secret DEPLOY_HOST_KEY = línea de known_hosts, ver DEPLOY.md
+      # §15): sin ella, ssh-keyscan confía en lo que conteste la IP en ese momento (MITM).
       - name: Configurar SSH
+        env:
+          DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
         run: |
           mkdir -p ~/.ssh
           printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          if [ -n "$DEPLOY_HOST_KEY" ]; then
+            printf '%s\n' "$DEPLOY_HOST_KEY" > ~/.ssh/known_hosts
+          else
+            echo "::warning::Falta el secret DEPLOY_HOST_KEY: se confía en la llave que devuelva el host ahora (ssh-keyscan). Cargalo para fijarla (DEPLOY.md §15)."
+            ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          fi
 
       # F17: antes de tocar nada, anotamos qué SHA está corriendo AHORA en el droplet.
       # Si existe ~/.ultimo-deploy-ok (el último deploy cuyo smoke test pasó) usamos ESE
@@ -127,28 +149,22 @@ jobs:
           echo "PREV_SHA_OK=$prev_sha" >> "$GITHUB_ENV"
           echo "SHA que está corriendo antes de este deploy: $prev_sha"
 
-      # F17: `npm ci` (no `npm install`) instala EXACTAMENTE lo que dice el lockfile
-      # (backend y panel) — build reproducible y sin sorpresas de supply chain por un
-      # rango de versión que resolvió distinto entre el último `npm run db:check` en CI
-      # y lo que termina corriendo en el droplet. `git checkout main` antes del `pull`
-      # es defensivo: si un rollback manual (job "rollback") dejó el droplet en detached
-      # HEAD sobre un SHA viejo, este paso lo vuelve a dejar sobre la rama antes de tirar
-      # de los cambios nuevos — sin esto, `git pull` fallaría con "you are not currently
-      # on a branch". El build del panel se hace con `npm ci --prefix web --include=dev`
-      # en vez de `npm run web:build` para que también sea reproducible; el `--include=dev`
-      # es necesario porque el droplet corre con `NODE_ENV=production`, que por defecto
-      # omite las devDependencies (ahí vive `vite`, ver DEPLOY.md § "Si algo falla").
-      # Los scripts .ts se corren con `node --import tsx` (tsx vive en `dependencies` con
-      # versión exacta): usa el tsx del lockfile, nunca `npx` bajando una versión del registry.
-      - name: Actualizar código y reiniciar el bot
+      # Deploy del commit EXACTO que pasó CI (no lo que haya en main en este momento), con
+      # `npm ci --omit=dev` (lockfile, sin devDependencies en producción) y el panel ya
+      # compilado por este job. Los scripts .ts corren con `node --import tsx` (tsx está en
+      # `dependencies` con versión exacta).
+      - name: Subir el panel compilado
+        run: scp -i ~/.ssh/deploy_key panel.tgz "$DEPLOY_USER@$DEPLOY_HOST:panel-${{ github.sha }}.tgz"
+
+      - name: Actualizar código y recargar el bot
         run: |
           ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "
             set -e
             cd $DEPLOY_DIR
-            git checkout main
             antes=\$(git rev-parse HEAD)
-            git pull
-            npm ci
+            git fetch origin
+            git checkout -B main ${{ github.sha }}
+            npm ci --omit=dev
             # G9: si este deploy trae migraciones nuevas, backup ANTES de migrar (el
             # rollback de código no revierte el esquema). Si el backup falla, set -e
             # corta el deploy sin tocar la base.
@@ -158,9 +174,15 @@ jobs:
             fi
             node --import tsx scripts/migrar.ts
             node --import tsx scripts/seedTenants.ts
-            npm ci --prefix web --include=dev
-            npm run build --prefix web
-            pm2 restart $DEPLOY_PM2_APP
+            # Panel: se reemplaza la carpeta entera de una vez (nunca queda a medio copiar).
+            rm -rf web/dist.nuevo web/dist.viejo && mkdir -p web/dist.nuevo
+            tar -xzf ~/panel-${{ github.sha }}.tgz -C web/dist.nuevo && rm -f ~/panel-${{ github.sha }}.tgz
+            if [ -d web/dist ]; then mv web/dist web/dist.viejo; fi
+            mv web/dist.nuevo web/dist
+            # reload (no restart): PM2 manda SIGINT y el server se apaga ordenado (deja de
+            # aceptar requests y de reclamar jobs y espera los turnos en curso, ver
+            # src/red/apagado.ts) dentro del kill_timeout de ecosystem.config.cjs.
+            pm2 reload $DEPLOY_PM2_APP --update-env
           "
 
       - name: Verificar que el bot responde (/salud)
@@ -254,19 +276,29 @@ jobs:
       group: deploy-produccion
       cancel-in-progress: false
     env:
-      DEPLOY_HOST: "157.230.190.60"
-      DEPLOY_USER: "sebastian"
+      # Configurables como variables del repo (Settings → Variables); el default es el actual.
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST || '157.230.190.60' }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER || 'sebastian' }}
       DEPLOY_DIR: "~/lavacar-whatsapp-bot"
       DEPLOY_PM2_APP: "whatsapp-bot"
       BASE_URL: "https://wabotlavacar.selyon.app"
       SALUD_URL: "https://wabotlavacar.selyon.app/salud"
     steps:
+      # Llave del host FIJADA (secret DEPLOY_HOST_KEY = línea de known_hosts, ver DEPLOY.md
+      # §15): sin ella, ssh-keyscan confía en lo que conteste la IP en ese momento (MITM).
       - name: Configurar SSH
+        env:
+          DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
         run: |
           mkdir -p ~/.ssh
           printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          if [ -n "$DEPLOY_HOST_KEY" ]; then
+            printf '%s\n' "$DEPLOY_HOST_KEY" > ~/.ssh/known_hosts
+          else
+            echo "::warning::Falta el secret DEPLOY_HOST_KEY: se confía en la llave que devuelva el host ahora (ssh-keyscan). Cargalo para fijarla (DEPLOY.md §15)."
+            ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          fi
 
       - name: Resolver el SHA a revertir
         run: |
@@ -285,20 +317,35 @@ jobs:
 
       - name: Advertencia — este rollback es solo de código
         run: |
-          echo "::warning::Este job revierte SOLO el código (git checkout + npm ci + pm2 restart)."
+          echo "::warning::Este job revierte SOLO el código (git checkout + npm ci + panel + pm2 reload)."
           echo "::warning::NO toca migraciones ni el esquema de la base de datos. Si la falla vino de un cambio de esquema no compatible hacia atrás, este rollback NO alcanza — se necesita juicio humano (protocolo expand/contract en DEPLOY.md)."
 
-      - name: Revertir el código y reiniciar el bot
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ env.SHA_ROLLBACK }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: ".nvmrc"
+      - name: Build del panel de ese commit (artefacto)
+        run: |
+          npm ci --prefix web
+          npm run build --prefix web
+          tar -czf panel.tgz -C web/dist .
+          scp -i ~/.ssh/deploy_key panel.tgz "$DEPLOY_USER@$DEPLOY_HOST:panel-rollback.tgz"
+
+      - name: Revertir el código y recargar el bot
         run: |
           ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "
             set -e
             cd $DEPLOY_DIR
             git fetch --all --tags
             git checkout $SHA_ROLLBACK
-            npm ci
-            npm ci --prefix web --include=dev
-            npm run build --prefix web
-            pm2 restart $DEPLOY_PM2_APP
+            npm ci --omit=dev
+            rm -rf web/dist.nuevo web/dist.viejo && mkdir -p web/dist.nuevo
+            tar -xzf ~/panel-rollback.tgz -C web/dist.nuevo && rm -f ~/panel-rollback.tgz
+            if [ -d web/dist ]; then mv web/dist web/dist.viejo; fi
+            mv web/dist.nuevo web/dist
+            pm2 reload $DEPLOY_PM2_APP --update-env
           "
 
       - name: Verificar que el bot responde (/salud)

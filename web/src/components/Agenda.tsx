@@ -136,7 +136,7 @@ export default function Agenda({ servicios, empleados, moneda }: Props) {
   const { flash } = useToast();
   const [vista, setVista] = useState<Vista>("dia");
   const [fechaBase, setFechaBase] = useState(hoyISO());
-  const [modal, setModal] = useState<null | { cita?: CitaAgenda }>(null);
+  const [modal, setModal] = useState<null | { cita?: CitaAgenda; fecha?: string }>(null);
   const [detalle, setDetalle] = useState<CitaAgenda | null>(null);
   const [resaltada, setResaltada] = useState<string | null>(null);
 
@@ -215,6 +215,10 @@ export default function Agenda({ servicios, empleados, moneda }: Props) {
 
   const diasSemana = vista === "semana" ? Array.from({ length: 7 }, (_, i) => sumarDias(desde, i)) : [];
 
+  // Fecha con la que abre el alta: el día que se está mirando (si no es pasado). Antes
+  // abría siempre en "hoy", y "Agendá la primera" de un día vacío futuro agendaba en otro día.
+  const fechaParaAlta = vista === "dia" && fechaBase >= hoyISO() ? fechaBase : hoyISO();
+
   // ── Cálculos del timeline (vista día) ──────────────────────────────────────
   let horaInicio = HORA_MIN_DEFAULT;
   let horaFin = HORA_MAX_DEFAULT;
@@ -276,7 +280,7 @@ export default function Agenda({ servicios, empleados, moneda }: Props) {
             </span>
           </div>
 
-          <button type="button" className="accion accion-primaria" onClick={() => setModal({})}>
+          <button type="button" className="accion accion-primaria" onClick={() => setModal({ fecha: fechaParaAlta })}>
             <Icono id="cal" size={14} />
             Nueva cita
           </button>
@@ -294,7 +298,7 @@ export default function Agenda({ servicios, empleados, moneda }: Props) {
               icono="cal"
               titulo="Sin citas para este día"
               ayuda="Las citas que agende el bot o que crees a mano van a aparecer acá."
-              accion={{ texto: "Agendá la primera", icono: "plus", onClick: () => setModal({}) }}
+              accion={{ texto: "Agendá la primera", icono: "plus", onClick: () => setModal({ fecha: fechaParaAlta }) }}
             />
           </div>
         )}
@@ -503,6 +507,7 @@ export default function Agenda({ servicios, empleados, moneda }: Props) {
           servicios={servicios}
           empleados={empleados}
           cita={modal.cita}
+          fechaInicial={modal.fecha}
           onCerrar={() => setModal(null)}
           onGuardado={(msg) => {
             invalidar();
@@ -662,18 +667,20 @@ interface ModalProps {
   servicios: Service[];
   empleados: Empleado[];
   cita?: CitaAgenda;
+  /** Fecha con la que abre el alta (el día que se está mirando). Default: hoy. */
+  fechaInicial?: string;
   onCerrar: () => void;
   onGuardado: (mensaje: string) => void;
 }
 
-function ModalCita({ servicios, empleados, cita, onCerrar, onGuardado }: ModalProps) {
+function ModalCita({ servicios, empleados, cita, fechaInicial, onCerrar, onGuardado }: ModalProps) {
   const { flash } = useToast();
   const modoReprogramar = !!cita;
 
   const [clienteNombre, setClienteNombre] = useState(cita?.clienteNombre ?? "");
   const [clienteWa, setClienteWa] = useState(cita?.clienteWa ?? "");
   const [servicioId, setServicioId] = useState(cita?.servicioId ?? servicios[0]?.id ?? "");
-  const [fecha, setFecha] = useState(cita?.fecha ?? hoyISO());
+  const [fecha, setFecha] = useState(cita?.fecha ?? fechaInicial ?? hoyISO());
   const [hora, setHora] = useState(cita?.hora ?? "");
   const [placa, setPlaca] = useState(cita?.placa ?? "");
   const [precio, setPrecio] = useState(cita?.precio != null ? String(cita.precio) : "");

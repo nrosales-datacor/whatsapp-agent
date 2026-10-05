@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { waCitas, waConversaciones } from "../db/schema";
 import type { ClienteSegmento, SegmentoFiltro } from "../types";
 import { obtenerDb } from "./db";
+import { conTenant, type Tx } from "../db/alcance";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Segmentación del CRM para campañas (ROADMAP C3.2). Agrega en MEMORIA (mismo
@@ -142,10 +143,14 @@ export function calcularSegmento(
 
 /** Segmento del tenant con el desglose de excluidos (sin consentimiento / con baja). */
 export async function previsualizarSegmentoDetalle(tenantId: string, filtro: SegmentoFiltro): Promise<DetalleSegmento> {
-  const d = obtenerDb();
+  return conTenant(obtenerDb(), tenantId, (tx) => segmentoEnTransaccion(tx, tenantId, filtro));
+}
+
+/** Igual que `previsualizarSegmentoDetalle`, dentro de una transacción ya acotada al negocio. */
+export async function segmentoEnTransaccion(tx: Tx, tenantId: string, filtro: SegmentoFiltro): Promise<DetalleSegmento> {
   const [citas, conversaciones] = await Promise.all([
-    d.select().from(waCitas).where(eq(waCitas.tenantId, tenantId)),
-    d.select().from(waConversaciones).where(eq(waConversaciones.tenantId, tenantId)),
+    tx.select().from(waCitas).where(eq(waCitas.tenantId, tenantId)),
+    tx.select().from(waConversaciones).where(eq(waConversaciones.tenantId, tenantId)),
   ]);
   return calcularSegmentoDetalle(citas, conversaciones, filtro);
 }
@@ -162,14 +167,15 @@ export async function previsualizarSegmento(tenantId: string, filtro: SegmentoFi
 export async function resumenConsentimiento(
   tenantId: string,
 ): Promise<{ clientes: number; conConsentimiento: number; conBaja: number }> {
-  const d = obtenerDb();
-  const filas = await d
-    .select({ optOutEn: waConversaciones.optOutEn, consentimientoEn: waConversaciones.marketingConsentimientoEn })
-    .from(waConversaciones)
-    .where(eq(waConversaciones.tenantId, tenantId));
-  return {
-    clientes: filas.length,
-    conConsentimiento: filas.filter((f) => f.consentimientoEn && !f.optOutEn).length,
-    conBaja: filas.filter((f) => f.optOutEn).length,
-  };
+  return conTenant(obtenerDb(), tenantId, async (d) => {
+    const filas = await d
+      .select({ optOutEn: waConversaciones.optOutEn, consentimientoEn: waConversaciones.marketingConsentimientoEn })
+      .from(waConversaciones)
+      .where(eq(waConversaciones.tenantId, tenantId));
+    return {
+      clientes: filas.length,
+      conConsentimiento: filas.filter((f) => f.consentimientoEn && !f.optOutEn).length,
+      conBaja: filas.filter((f) => f.optOutEn).length,
+    };
+  });
 }

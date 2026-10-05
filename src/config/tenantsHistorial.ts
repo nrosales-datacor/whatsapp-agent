@@ -1,6 +1,6 @@
 import { desc, eq, inArray } from "drizzle-orm";
-import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import { waTenantsHistorial, schema } from "../db/schema";
+import { waTenantsHistorial } from "../db/schema";
+import { conTenant, type Ejecutor } from "../db/alcance";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Acceso a datos de `wa_tenants_historial` (ROADMAP F15). Igual que
@@ -13,10 +13,6 @@ import { waTenantsHistorial, schema } from "../db/schema";
 // seguridad aparte, fire-and-forget).
 // ─────────────────────────────────────────────────────────────────────────────
 
-type DB = PostgresJsDatabase<typeof schema>;
-/** El mismo query builder sirve para el pool normal y para el `tx` de una transacción
- * (`db.transaction(async (tx) => …)`) — así esta función se puede llamar desde ambos. */
-type Ejecutor = DB | Parameters<Parameters<DB["transaction"]>[0]>[0];
 
 /**
  * Cuántas versiones se retienen por tenant. Podamos EN CADA ESCRITURA (dentro de la
@@ -47,19 +43,19 @@ export async function registrarVersionConfig(
   snapshot: unknown,
   usuarioId: string,
 ): Promise<void> {
-  await db.insert(waTenantsHistorial).values({ tenantId, snapshot, usuarioId });
+  await conTenant(db, tenantId, (tx) => tx.insert(waTenantsHistorial).values({ tenantId, snapshot, usuarioId }));
 
   // Poda: conserva las RETENCION_VERSIONES_CONFIG más recientes de este tenant y borra
   // el resto. Dos pasos (select de los ids viejos + delete) en vez de un solo DELETE
   // con subquery de ORDER BY/LIMIT: mismo resultado, sin SQL crudo.
-  const viejos = await db
+  const viejos = await conTenant(db, tenantId, (tx) => tx
     .select({ id: waTenantsHistorial.id })
     .from(waTenantsHistorial)
     .where(eq(waTenantsHistorial.tenantId, tenantId))
     .orderBy(desc(waTenantsHistorial.creadoEn))
-    .offset(RETENCION_VERSIONES_CONFIG);
+    .offset(RETENCION_VERSIONES_CONFIG));
   if (viejos.length > 0) {
-    await db.delete(waTenantsHistorial).where(inArray(waTenantsHistorial.id, viejos.map((v) => v.id)));
+    await conTenant(db, tenantId, (tx) => tx.delete(waTenantsHistorial).where(inArray(waTenantsHistorial.id, viejos.map((v) => v.id))));
   }
 }
 
@@ -70,7 +66,7 @@ export async function listarHistorialTenant(
   tenantId: string,
   limite = RETENCION_VERSIONES_CONFIG,
 ): Promise<VersionConfigTenant[]> {
-  const rows = await db
+  const rows = await conTenant(db, tenantId, (tx) => tx
     .select({
       id: waTenantsHistorial.id,
       tenantId: waTenantsHistorial.tenantId,
@@ -81,7 +77,7 @@ export async function listarHistorialTenant(
     .from(waTenantsHistorial)
     .where(eq(waTenantsHistorial.tenantId, tenantId))
     .orderBy(desc(waTenantsHistorial.creadoEn))
-    .limit(limite);
+    .limit(limite));
   return rows.map((r) => ({ ...r, creadoEn: r.creadoEn.toISOString() }));
 }
 
@@ -96,7 +92,7 @@ export async function obtenerVersionHistorial(
   tenantId: string,
   historialId: string,
 ): Promise<VersionConfigTenant | undefined> {
-  const rows = await db
+  const rows = await conTenant(db, tenantId, (tx) => tx
     .select({
       id: waTenantsHistorial.id,
       tenantId: waTenantsHistorial.tenantId,
@@ -106,7 +102,7 @@ export async function obtenerVersionHistorial(
     })
     .from(waTenantsHistorial)
     .where(eq(waTenantsHistorial.id, historialId))
-    .limit(1);
+    .limit(1));
   const fila = rows[0];
   if (!fila || fila.tenantId !== tenantId) return undefined;
   return { ...fila, creadoEn: fila.creadoEn.toISOString() };

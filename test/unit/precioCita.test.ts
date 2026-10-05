@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ejecutarTool, precioDeCita } from "../../src/agent/runAgent";
-import { RepositorioEnMemoria } from "../../src/booking/inMemoryRepository";
+import { repoDePrueba } from "../helpers/repoDePrueba";
 import { crearTenant } from "../helpers/fixtures";
 
 // Revisión pre-venta 2026-10 (ALTO-09): el precio de la cita lo decide el catálogo,
@@ -30,7 +30,7 @@ function lunesFuturo(): string {
 }
 
 test("agendar_cita: el precio inventado por el modelo no se guarda si el servicio tiene precio fijo", async () => {
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = crearTenant();
   const salida = await ejecutarTool(
     "agendar_cita",

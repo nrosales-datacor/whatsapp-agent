@@ -9,6 +9,8 @@ node_modules/
 
 # Build / salida
 dist/
+# Swap atómico del panel en el deploy (ci-cd.yml): web/dist.nuevo / web/dist.viejo
+web/dist.*/
 build/
 .next/
 .turbo/
@@ -21,6 +23,9 @@ coverage/
 
 # Backups de la base (datos reales de clientes — nunca a git)
 backups/
+
+# Base local de desarrollo (PGlite con PGLITE_DIR)
+.pglite/
 
 # Playwright (E2E del panel, ángulo 6 de TESTING.md)
 playwright-report/

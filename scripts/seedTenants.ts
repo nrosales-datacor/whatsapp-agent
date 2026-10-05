@@ -30,9 +30,11 @@ import { waTenants, waUsuarios } from "../src/db/schema";
 // perfil, marca, contraseña— es del dueño y se respeta.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const url = process.env.DATABASE_URL;
+// F1: con la app conectada como `app_wa` (sin DDL ni BYPASSRLS), los scripts de
+// operación usan la URL privilegiada. Sin ella (antes de F1, o en dev) cae a DATABASE_URL.
+const url = process.env.DATABASE_URL_MIGRACIONES ?? process.env.DATABASE_URL;
 if (!url) {
-  console.error("❌ Falta DATABASE_URL en el .env");
+  console.error("❌ Falta DATABASE_URL_MIGRACIONES (o DATABASE_URL) en el .env");
   process.exit(1);
 }
 

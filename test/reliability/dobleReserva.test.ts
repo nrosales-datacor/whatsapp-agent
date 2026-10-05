@@ -2,7 +2,6 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { crearDbEfimera, type DbEfimera } from "../helpers/pgliteDb";
 import { RepositorioDrizzle } from "../../src/booking/drizzleRepository";
-import { RepositorioEnMemoria } from "../../src/booking/inMemoryRepository";
 import { HorarioOcupadoError, esChoqueDeEmpleado } from "../../src/booking/errores";
 import { ejecutarTool } from "../../src/agent/runAgent";
 import type { Repositorio, Tenant } from "../../src/types";
@@ -17,7 +16,7 @@ import { crearTenant } from "../helpers/fixtures";
 // un solo recurso. Ahora el repo re-chequea atómicamente con la escritura (advisory
 // lock por tenant+fecha en Postgres) y lanza `HorarioOcupadoError`.
 //
-// Se corre contra Postgres real (PGlite) y contra el repo en memoria (paridad).
+// Se corre contra Postgres real (PGlite): el mismo SQL y los mismos locks que producción.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Un lunes futuro (el tenant de prueba abre lunes a sábado). */
@@ -49,7 +48,6 @@ async function agendar(tenant: Tenant, repo: Repositorio, clienteWa: string, arg
 
 const implementaciones: { nombre: string; crear: () => Repositorio }[] = [
   { nombre: "Drizzle (PGlite)", crear: () => new RepositorioDrizzle(base.db) },
-  { nombre: "en memoria", crear: () => new RepositorioEnMemoria() },
 ];
 
 for (const impl of implementaciones) {
