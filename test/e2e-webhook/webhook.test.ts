@@ -2,7 +2,8 @@ import "../helpers/setupEnv"; // PRIMERO: fija OPENAI_API_KEY antes de importar 
 import { capturarPushes, registrarOperadorDePrueba, SUSCRIPCION_PRUEBA } from "../helpers/pushDePrueba"; // activa Web Push (VAPID efímero) antes del server
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { RepositorioEnMemoria } from "../../src/booking/inMemoryRepository";
+import { repoDePrueba, type RepoDePrueba } from "../helpers/repoDePrueba";
+import { waMensajes } from "../../src/db/schema";
 import { ingerirEntrante, responderEntrante, type Pendiente } from "../../src/handleWebhook";
 import { separarPayloadWebhook } from "../../src/whatsapp/client";
 import { cargarTenants } from "../../src/config/tenantStore";
@@ -16,7 +17,7 @@ import {
 } from "../helpers/webhookMock";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Ángulo 3 de TESTING.md — E2E del webhook IN-PROCESS (sin red). Repo en memoria +
+// Ángulo 3 de TESTING.md — E2E del webhook IN-PROCESS (sin red). Repo real sobre PGlite +
 // Graph API y OpenAI mockeados (ver test/helpers/webhookMock.ts). Se simula un
 // entrante y se afirma la salida de responderEntrante: qué se le respondió al
 // cliente, qué quedó en el repo, y si el agente se invocó o no.
@@ -51,7 +52,7 @@ function fechaFutura(dias: number): string {
 
 /** Crea la conversación en el repo y devuelve un snapshot fresco (con el modo pedido). */
 async function nuevaConv(
-  repo: RepositorioEnMemoria,
+  repo: RepoDePrueba,
   tenant: Tenant,
   clienteWa = CLIENTE,
   modo: "bot" | "humano" = "bot",
@@ -90,7 +91,7 @@ afterEach(() => desactivarMockWebhook());
 
 test("BAJA (comando exacto) marca opt-out y NO invoca al agente", async () => {
   const mock = instalarMockWebhook();
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant);
 
@@ -106,7 +107,7 @@ test("BAJA (comando exacto) marca opt-out y NO invoca al agente", async () => {
 test('"baja" dentro de una frase NO es opt-out (sin falso positivo): pasa al agente', async () => {
   const mock = instalarMockWebhook();
   mock.programarLLM({ texto: "Con gusto. ¿En qué te puedo ayudar?" });
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant);
 
@@ -120,7 +121,7 @@ test('"baja" dentro de una frase NO es opt-out (sin falso positivo): pasa al age
 
 test("confirmación de cita por botón (C1.3) es acción directa: confirma sin agente", async () => {
   const mock = instalarMockWebhook();
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant);
   const cita = await repo.crearCita({ ...crearCita({ tenantId: tenant.id, clienteWa: CLIENTE, fecha: fechaFutura(3) }) });
@@ -138,7 +139,7 @@ test("confirmación de cita por botón (C1.3) es acción directa: confirma sin a
 
 test("post-servicio 'Todo bien' (C3.1) manda el link de reseñas, sin agente", async () => {
   const mock = instalarMockWebhook();
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant);
 
@@ -153,7 +154,7 @@ test("post-servicio 'Todo bien' (C3.1) manda el link de reseñas, sin agente", a
 
 test("post-servicio 'Tuve un problema' (C3.1) escala a humano, sin agente", async () => {
   const mock = instalarMockWebhook();
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant);
 
@@ -169,7 +170,7 @@ test("post-servicio 'Tuve un problema' (C3.1) escala a humano, sin agente", asyn
 
 test('pedir "agente" escala a humano por texto, sin invocar al agente', async () => {
   const mock = instalarMockWebhook();
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant);
 
@@ -182,7 +183,7 @@ test('pedir "agente" escala a humano por texto, sin invocar al agente', async ()
 
 test("conversación en modo humano: el bot NO responde ni invoca al agente", async () => {
   const mock = instalarMockWebhook();
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant, CLIENTE, "humano");
 
@@ -195,7 +196,7 @@ test("conversación en modo humano: el bot NO responde ni invoca al agente", asy
 test('"¿cuánto cuesta por persona?" NO escala: lo responde el agente (antes callaba al bot)', async () => {
   const mock = instalarMockWebhook();
   mock.programarLLM({ texto: "El precio es por vehículo, no por persona." });
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant);
 
@@ -208,7 +209,7 @@ test('"¿cuánto cuesta por persona?" NO escala: lo responde el agente (antes ca
 test("modo humano vencido (nadie del equipo respondió en 12 h): vuelve al bot y responde", async () => {
   const mock = instalarMockWebhook();
   mock.programarLLM({ texto: "¡Hola de nuevo! ¿En qué te ayudo?" });
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant, CLIENTE, "humano");
   conv.humanoDesde = new Date(Date.now() - 13 * 3_600_000).toISOString();
@@ -225,7 +226,7 @@ test("modo humano vencido (nadie del equipo respondió en 12 h): vuelve al bot y
 test("cotiza con el texto que redacta el agente (relay fiel) y guarda la respuesta", async () => {
   const mock = instalarMockWebhook();
   mock.programarLLM({ texto: "Un sedán básico cuesta ₡4.000 (incluye lavado + aspirado)." });
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant);
 
@@ -242,7 +243,7 @@ test("cotiza con el texto que redacta el agente (relay fiel) y guarda la respues
 test("cotiza una FOTO (visión, C1.5): descarga la imagen, la adjunta al LLM y la guarda", async () => {
   const mock = instalarMockWebhook();
   mock.programarLLM({ texto: "Por esa foto, el pulido de parabrisas de un sedán son ₡15.000." });
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant);
   // Simula la persistencia que hace la fase 1 para el mensaje de foto entrante.
@@ -290,7 +291,7 @@ test("agenda: el agente ofrece horarios como LISTA tocable (interactivo)", async
     { tool: "ofrecer_horarios", args: { fecha, servicioId: "pulido" } },
     { texto: "Tenemos estos horarios 👇 Elegí el que te sirva." },
   );
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant);
 
@@ -311,7 +312,7 @@ test("agenda: el tap en un horario (slot|…) crea la cita en el repo", async ()
     { tool: "agendar_cita", args: { servicioId: "pulido", fecha, hora: "09:00", nombre: "Juan Pérez" } },
     { texto: "¡Listo! Te agendé el pulido ✅" },
   );
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant);
 
@@ -342,7 +343,7 @@ test("cita agendada y luego el modelo escala: el cliente recibe la confirmación
     { tool: "agendar_cita", args: { servicioId: "pulido", fecha, hora: "09:00", nombre: "Juan Pérez" } },
     { escalar: "pregunta sobre factura" },
   );
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant);
 
@@ -359,7 +360,7 @@ test("cita agendada y luego OpenAI falla: confirmación fija, no 'tuvimos un pro
   const fecha = fechaFutura(4);
   // Solo un turno programado: la 2ª llamada al LLM lanza (simula caída de OpenAI).
   mock.programarLLM({ tool: "agendar_cita", args: { servicioId: "pulido", fecha, hora: "09:00", nombre: "Juan Pérez" } });
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant);
 
@@ -380,7 +381,7 @@ test("reprograma por el bot y REINICIA los recordatorios de la cita", async () =
     { tool: "reprogramar_cita", args: { fecha: fechaNueva, hora: "10:00" } },
     { texto: "¡Listo! Reprogramé tu cita ✅" },
   );
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant);
   const cita = await repo.crearCita({
@@ -405,7 +406,7 @@ test("reprograma por el bot y REINICIA los recordatorios de la cita", async () =
 test("el agente pide escalar (escalar_a_humano): pasa a humano con el mensaje de escalada", async () => {
   const mock = instalarMockWebhook();
   mock.programarLLM({ escalar: "el cliente pide algo fuera de alcance" });
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant);
 
@@ -419,7 +420,7 @@ test("el agente pide escalar (escalar_a_humano): pasa a humano con el mensaje de
 test("respeta la ventana humana: si un humano toma la conversación mientras el LLM piensa, se descarta la respuesta", async () => {
   const mock = instalarMockWebhook();
   mock.programarLLM({ texto: "Respuesta del bot que NO debe enviarse." });
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant); // snapshot en modo bot
   // Un humano toma la conversación DESPUÉS del snapshot (simula el traspaso durante el proceso).
@@ -436,7 +437,7 @@ test("respeta la ventana humana: si un humano toma la conversación mientras el 
 test("ubicación compartida: el texto sintético con las coordenadas llega al prompt del agente", async () => {
   const mock = instalarMockWebhook();
   mock.programarLLM({ texto: "Gracias, ya tengo tu ubicación. Te esperamos por ahí." });
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant);
   const textoUbicacion = "[ubicación compartida] lat: 9.9333, lon: -84.0833, nombre: Casa";
@@ -453,10 +454,10 @@ test("ubicación compartida: el texto sintético con las coordenadas llega al pr
 
 test("documento recibido: mensaje específico al cliente (no el genérico) + push con el nombre del archivo", async () => {
   const mock = instalarMockWebhook();
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant);
-  await registrarOperadorDePrueba(tenant.id);
+  await registrarOperadorDePrueba(tenant.id, repo.base);
   await repo.guardarPushSub(tenant.id, SUSCRIPCION_PRUEBA);
   const pushes = capturarPushes();
   const logs: string[] = [];
@@ -496,10 +497,10 @@ test("documento recibido: mensaje específico al cliente (no el genérico) + pus
 
 test("contacto compartido: mensaje específico al cliente (no el genérico) + push con el nombre del contacto", async () => {
   const mock = instalarMockWebhook();
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant);
-  await registrarOperadorDePrueba(tenant.id);
+  await registrarOperadorDePrueba(tenant.id, repo.base);
   await repo.guardarPushSub(tenant.id, SUSCRIPCION_PRUEBA);
   const pushes = capturarPushes();
   const logs: string[] = [];
@@ -538,7 +539,7 @@ test("contacto compartido: mensaje específico al cliente (no el genérico) + pu
 
 test("video/sticker (sin tipar): sigue cayendo en el genérico de 'no puedo ver stickers ni videos'", async () => {
   const mock = instalarMockWebhook();
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant);
 
@@ -567,7 +568,7 @@ test("reacción (👍) se ignora por completo: no produce Pendiente (ni job, ni 
   delete process.env.DATABASE_URL; // fuerza el fallback en memoria del tenantStore
   await cargarTenants();
   const pnid = TENANT_FALLBACK_SELYON.phoneNumberId;
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const body = {
     entry: [
       {
@@ -599,7 +600,7 @@ test("reacción (👍) se ignora por completo: no produce Pendiente (ni job, ni 
 test("E5-a: aunque el payload traiga un historialPrevio VIEJO (snapshot desactualizado), el agente ve la conversación completa", async () => {
   const mock = instalarMockWebhook();
   mock.programarLLM({ texto: "¡Listo! Te veo el viernes." });
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant);
 
@@ -653,20 +654,23 @@ test("E5-a: aunque el payload traiga un historialPrevio VIEJO (snapshot desactua
 test("historial: el agente ve a lo sumo 20 mensajes previos, los de días viejos con su fecha, y la hora va al final", async () => {
   const mock = instalarMockWebhook();
   mock.programarLLM({ texto: "¡Claro! ¿Para qué día?" });
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantDemo();
   const conv = await nuevaConv(repo, tenant);
 
   // Cliente recurrente: 30 mensajes de hace 5 días + el turno actual (ya persistido en
   // la ingesta, como en producción).
+  // Se insertan directo con su fecha: el repositorio usa el reloj de la base (now()).
   const haceCincoDias = Date.now() - 5 * 86_400_000;
-  for (let i = 0; i < 30; i++) {
-    await repo.guardarMensaje(tenant.id, conv.id, {
+  await repo.base.insert(waMensajes).values(
+    Array.from({ length: 30 }, (_, i) => ({
+      tenantId: tenant.id,
+      conversacionId: conv.id,
       rol: i % 2 ? "assistant" : "user",
       contenido: `viejo-${i}${i === 29 ? " (te espero mañana)" : ""}`,
-      creadoEn: new Date(haceCincoDias + i * 60_000).toISOString(),
-    });
-  }
+      creadoEn: new Date(haceCincoDias + i * 60_000),
+    })),
+  );
   await repo.guardarMensaje(tenant.id, conv.id, {
     rol: "user",
     contenido: "quiero otra cita",
@@ -705,7 +709,7 @@ test("historial: el agente ve a lo sumo 20 mensajes previos, los de días viejos
 test("upsell: el cliente acepta el add-on en el mensaje siguiente y el bot lo agrega sin el citaId", async () => {
   const mock = instalarMockWebhook();
   const fecha = fechaFutura(4);
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantDemo({
     plan: "pro",
     servicios: [
@@ -752,7 +756,7 @@ test("dedup por wamid: reenviar el mismo mensaje no re-procesa (ingerirEntrante)
   delete process.env.DATABASE_URL; // fuerza el fallback en memoria del tenantStore
   await cargarTenants();
   const pnid = TENANT_FALLBACK_SELYON.phoneNumberId;
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const body = cuerpoTextoEntrante({ phoneNumberId: pnid, clienteWa: "50611110000", texto: "hola", messageId: "wamid.dup.1" });
 
   const p1 = await ingerirEntrante(body, repo);
@@ -765,7 +769,7 @@ test("POST con 2 mensajes agrupados: ambos se ingieren (antes se perdía el 2º)
   delete process.env.DATABASE_URL;
   await cargarTenants();
   const pnid = TENANT_FALLBACK_SELYON.phoneNumberId;
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const a = cuerpoTextoEntrante({ phoneNumberId: pnid, clienteWa: "50611112222", texto: "hola", messageId: "wamid.lote.1" }) as any;
   const b = cuerpoTextoEntrante({ phoneNumberId: pnid, clienteWa: "50611112222", texto: "quiero cita", messageId: "wamid.lote.2" }) as any;
   a.entry[0].changes[0].value.messages.push(b.entry[0].changes[0].value.messages[0]);

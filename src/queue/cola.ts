@@ -1,7 +1,7 @@
 import { eq, sql } from "drizzle-orm";
-import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import { waJobs, schema } from "../db/schema";
+import { waJobs } from "../db/schema";
 import { filasDe } from "../db/filas";
+import { conSistema, type DB } from "../db/alcance";
 import type { PendienteSerializado } from "../types";
 import { capturarError } from "../observabilidad/sentry";
 
@@ -21,8 +21,6 @@ import { capturarError } from "../observabilidad/sentry";
 // advisory lock (exclusión por conversación, E7) es de TRANSACCIÓN.
 // ─────────────────────────────────────────────────────────────────────────────
 
-type DB = PostgresJsDatabase<typeof schema>;
-
 /** Fila de wa_jobs tal como la devuelve el SELECT crudo (snake_case). */
 export interface Job {
   id: string;
@@ -32,94 +30,58 @@ export interface Job {
   payload: PendienteSerializado;
 }
 
-// E5-b (ráfaga): coalescing/debounce por conversación. Si al reclamar un job hay
-// otro job PENDIENTE de la MISMA conversación con un `creado_en` más nuevo, este
-// job quedó obsoleto — el cliente ya escribió algo más y el mensaje más nuevo va a
-// releer el historial completo (E5-a) de todos modos, así que responder a este
-// generaría una respuesta duplicada/incoherente. Se marca "reemplazado" (no se
-// llama a `responderEntrante`) y seguimos al siguiente candidato.
+// ─────────────────────────────────────────────────────────────────────────────
+// Reglas del claim (valen igual entre slots de un proceso y entre réplicas):
 //
-// No agregamos una columna `conversacion_id` a `wa_jobs` (evitamos migración):
-// `payload.conv.id` ya viaja en el JSONB de TODOS los jobs (`Pendiente.conv` es
-// obligatorio en el tipo), así que alcanza con leerlo vía `payload->'conv'->>'id'`.
-// No se agrega índice nuevo: en operación normal la cola pendiente tiene pocas
-// filas (se procesa casi en tiempo real), así que un filtro sobre esas pocas filas
-// no cambia el plan del claim principal (que sigue usando `wa_jobs_claim_idx`).
+// 1) Como máximo UN job "procesando" por conversación (E7): sin esto, dos mensajes del
+//    mismo cliente se responderían en paralelo. El candidato se filtra con un NOT EXISTS
+//    sobre los "procesando" de su conversación; como en READ COMMITTED dos claims
+//    simultáneos no ven el UPDATE ajeno sin commit, además se toma un advisory lock de
+//    TRANSACCIÓN por conversación y se re-chequea con el lock en mano. Quien no consigue
+//    el lock no espera: devuelve "nada para mí" y reintenta en el próximo poll.
 //
-// Se usa `creado_en` (no `ejecutar_despues_de`) para decidir "más nuevo": el
-// backoff de reintentos empuja `ejecutar_despues_de` al futuro sin tocar
-// `creado_en`, que refleja el orden real de llegada de los mensajes.
+// 2) Reparto por tenant: entre los candidatos listos, primero el tenant con MENOS jobs en
+//    vuelo y después el más viejo. Un negocio con 500 mensajes encolados no monopoliza
+//    los slots.
 //
-// Atomicidad: la comparación pasa DENTRO de la misma transacción que reclama el
-// job (antes de marcarlo "procesando"), bajo el lock de `FOR UPDATE SKIP LOCKED`
-// del job reclamado. Como la condición es estrictamente "más nuevo que YO", dos
-// jobs de la misma conversación no pueden reemplazarse mutuamente: el más viejo
-// puede ceder ante el más nuevo, pero el más nuevo nunca encuentra algo "más nuevo
-// que él mismo" en ese chequeo.
-//
-// "reemplazado" es un estado nuevo (columna `estado` es texto libre, sin check
-// constraint) que significa "no se respondió a propósito, superseded por un
-// mensaje más nuevo de la misma conversación" — distinto de "hecho" (se respondió
-// bien) y de "error" (falló). No lo cuenta `profundidadCola` (solo mira
-// 'pendiente'), así que no ensucia esa métrica.
-//
-// E7 (reintentos): un job que vuelve de un fallo transitorio (`intentos > 0`, con
-// backoff) también cede ante un mensaje más nuevo de su conversación que YA se
-// respondió ("hecho"): ese turno releyó el historial con este mensaje adentro, así
-// que contestarlo ahora llegaría tarde y fuera de orden. Un job fresco o reencolado
-// a mano desde el DLQ (`intentos = 0`) no entra en esta regla.
+// 3) Ráfagas (E5-b): si el cliente mandó varios mensajes seguidos, un turno del agente
+//    más nuevo relee el historial completo, así que responder a cada mensaje viejo por
+//    separado duplicaría respuestas. Un job viejo se marca "reemplazado" (no se procesa)
+//    SOLO si las dos puntas lo permiten:
+//      • el viejo es `agrupable`: un texto que el agente contesta y nada más. NO lo son
+//        la foto y el audio (hay que descargarlos/transcribirlos), las acciones directas
+//        (BAJA, "Confirmo", consentimiento, post-servicio, pedir una persona) ni el
+//        documento/contacto: tienen efectos propios que se perderían.
+//      • el nuevo `releeHistorial`: un turno del agente (texto, audio o foto) que va a
+//        leer el mensaje viejo como contexto. Una acción directa no lo relee.
+//    Los flags los calcula la ingesta (handleWebhook.ts). Un payload sin flags (encolado
+//    por una versión anterior) nunca se reemplaza.
+//    También cede un `agrupable` que vuelve de un fallo transitorio (`intentos > 0`) ante
+//    un turno más nuevo ya respondido ("hecho"): contestarlo ahora llegaría fuera de orden.
+// ─────────────────────────────────────────────────────────────────────────────
 const ESTADO_REEMPLAZADO = "reemplazado";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// E7 — worker concurrente: N slots (y N réplicas) reclaman en paralelo, con dos
-// garantías que viven ACÁ, en el claim, y no en el worker (así valen igual con
-// varias réplicas que con varios slots del mismo proceso):
-//
-// 1) Como máximo UN job "procesando" por conversación. Sin esto, dos mensajes del
-//    mismo cliente se responderían en paralelo (respuestas cruzadas, el agente sin
-//    ver el turno anterior). El candidato se filtra con un NOT EXISTS sobre los
-//    "procesando" de su conversación — pero eso solo no alcanza: en READ COMMITTED,
-//    dos claims simultáneos no ven el UPDATE a "procesando" del otro (todavía sin
-//    commit) y cada uno puede tomar un job distinto de la MISMA conversación. Por eso
-//    además se toma un advisory lock de TRANSACCIÓN por conversación
-//    (`pg_try_advisory_xact_lock`, pooler-safe: se suelta solo al terminar la
-//    transacción) y, con el lock en mano, se re-chequea en una sentencia nueva (que
-//    ya ve lo que el otro commiteó antes de soltar el lock). Quien no consigue el
-//    lock no espera: devuelve "nada para mí" y reintenta en el próximo poll.
-//    Contracara aceptada: un job zombi (proceso caído) bloquea SU conversación hasta
-//    que el reaper lo rescata (QUEUE_REAPER_UMBRAL_SEG); las demás no se enteran.
-//
-// 2) Reparto por tenant (mismo espíritu que F8 en campañas/rescate): entre los
-//    candidatos listos, primero el tenant con MENOS jobs en vuelo, y recién después
-//    el más viejo. Un negocio con 500 mensajes encolados (campaña que generó
-//    respuestas, un bot de spam) ya no monopoliza los slots: el tenant que llega con
-//    1 mensaje pasa delante en cuanto se libera un slot. Los "procesando" son pocos
-//    (≤ slots × réplicas), así que el GROUP BY es barato.
-// ─────────────────────────────────────────────────────────────────────────────
-
 /**
- * Reclama un job pendiente (FOR UPDATE SKIP LOCKED) y lo pone en "procesando".
- * Devuelve null si no hay ninguno listo. Toda la lógica va en una transacción
- * corta para que el lock quede liberado antes de llamar al LLM.
- *
- * Internamente puede reclamar y descartar (marcar "reemplazado") varios jobs
- * obsoletos de una ráfaga antes de devolver el que corresponde procesar (el más
- * nuevo de cada conversación) — ver comentario de E5-b arriba. Nunca devuelve un
- * job de una conversación que ya tiene otro "procesando" (E7, ver arriba).
+ * Reclama un job pendiente (FOR UPDATE SKIP LOCKED) y lo pone en "procesando". Devuelve
+ * null si no hay ninguno listo. Transacción corta: el lock se suelta antes del LLM.
+ * Puede marcar "reemplazado" uno o más jobs viejos de una ráfaga antes de devolver el
+ * que corresponde procesar (regla 3).
  */
 export async function reclamarUno(db: DB): Promise<Job | null> {
   while (true) {
-    const resultado = await db.transaction(async (tx) => {
+    // Contexto de sistema: el claim elige entre los jobs de TODOS los negocios.
+    const resultado = await conSistema(db, async (tx) => {
       const rows = filasDe<{
         id: string;
         tenant_id: string;
+        conversacion_id: string | null;
         intentos: number;
         max_intentos: number;
         payload: PendienteSerializado;
         creado_en: Date;
       }>(
         await tx.execute(sql`
-        SELECT j.id, j.tenant_id, j.intentos, j.max_intentos, j.payload, j.creado_en
+        SELECT j.id, j.tenant_id, j.conversacion_id, j.intentos, j.max_intentos, j.payload, j.creado_en
           FROM wa_jobs j
           LEFT JOIN (
             SELECT tenant_id, count(*) AS en_vuelo
@@ -130,8 +92,7 @@ export async function reclamarUno(db: DB): Promise<Job | null> {
          WHERE j.estado = 'pendiente' AND j.ejecutar_despues_de <= now()
            AND NOT EXISTS (
              SELECT 1 FROM wa_jobs p
-              WHERE p.estado = 'procesando'
-                AND p.payload->'conv'->>'id' = j.payload->'conv'->>'id'
+              WHERE p.estado = 'procesando' AND p.conversacion_id = j.conversacion_id
            )
          ORDER BY COALESCE(v.en_vuelo, 0) ASC, j.ejecutar_despues_de ASC
          FOR UPDATE OF j SKIP LOCKED
@@ -142,9 +103,9 @@ export async function reclamarUno(db: DB): Promise<Job | null> {
       if (rows.length === 0) return { tipo: "vacio" as const };
       const r = rows[0];
 
-      const conversacionId = r.payload?.conv?.id;
+      const conversacionId = r.conversacion_id;
       if (conversacionId) {
-        // E7: exclusión por conversación entre claims simultáneos (ver arriba).
+        // Regla 1: exclusión por conversación entre claims simultáneos.
         const [lock] = filasDe<{ ok: boolean }>(
           await tx.execute(
             sql`SELECT pg_try_advisory_xact_lock(hashtextextended(${"wa_jobs:conv:" + conversacionId}, 0)) AS ok`,
@@ -154,28 +115,32 @@ export async function reclamarUno(db: DB): Promise<Job | null> {
         const enCurso = filasDe<{ id: string }>(
           await tx.execute(sql`
           SELECT id FROM wa_jobs
-           WHERE estado = 'procesando' AND payload->'conv'->>'id' = ${conversacionId}
+           WHERE conversacion_id = ${conversacionId} AND estado = 'procesando'
            LIMIT 1
         `),
         );
         if (enCurso.length > 0) return { tipo: "conversacion_ocupada" as const };
 
-        const masNuevo = filasDe<{ id: string }>(
-          await tx.execute(sql`
-          SELECT id FROM wa_jobs
-           WHERE payload->'conv'->>'id' = ${conversacionId}
-             AND creado_en > ${r.creado_en}
-             AND (estado = 'pendiente' OR (${r.intentos} > 0 AND estado = 'hecho'))
-           LIMIT 1
-        `),
-        );
-        if (masNuevo.length > 0) {
-          await tx.execute(sql`
-            UPDATE wa_jobs
-               SET estado = ${ESTADO_REEMPLAZADO}, locked_at = NULL, finalizado_en = now()
-             WHERE id = ${r.id}
-          `);
-          return { tipo: "reemplazado" as const };
+        // Regla 3: ¿lo absorbe un turno más nuevo de la misma conversación?
+        if (r.payload?.agrupable === true) {
+          const masNuevo = filasDe<{ id: string }>(
+            await tx.execute(sql`
+            SELECT id FROM wa_jobs
+             WHERE conversacion_id = ${conversacionId}
+               AND creado_en > ${r.creado_en}
+               AND payload->>'releeHistorial' = 'true'
+               AND (estado = 'pendiente' OR (${r.intentos} > 0 AND estado = 'hecho'))
+             LIMIT 1
+          `),
+          );
+          if (masNuevo.length > 0) {
+            await tx.execute(sql`
+              UPDATE wa_jobs
+                 SET estado = ${ESTADO_REEMPLAZADO}, locked_at = NULL, finalizado_en = now()
+               WHERE id = ${r.id}
+            `);
+            return { tipo: "reemplazado" as const };
+          }
         }
       }
 
@@ -197,9 +162,8 @@ export async function reclamarUno(db: DB): Promise<Job | null> {
       };
     });
 
-    // "conversacion_ocupada": otro claim simultáneo ganó esa conversación (carrera de
-    // milisegundos). No se insiste en caliente: el slot vuelve en el próximo poll y
-    // para entonces el NOT EXISTS ya ve el "procesando" ajeno y elige otro candidato.
+    // "conversacion_ocupada": otro claim simultáneo ganó esa conversación. No se insiste en
+    // caliente: el slot vuelve en el próximo poll y el NOT EXISTS ya ve el "procesando".
     if (resultado.tipo === "vacio" || resultado.tipo === "conversacion_ocupada") return null;
     if (resultado.tipo === "reemplazado") continue; // sigue buscando el siguiente candidato
     return resultado.job;
@@ -208,10 +172,9 @@ export async function reclamarUno(db: DB): Promise<Job | null> {
 
 /** Marca el job como completado exitosamente. */
 export async function marcarHecho(db: DB, id: string): Promise<void> {
-  await db
-    .update(waJobs)
-    .set({ estado: "hecho", finalizadoEn: new Date(), lockedAt: null })
-    .where(eq(waJobs.id, id));
+  await conSistema(db, (tx) =>
+    tx.update(waJobs).set({ estado: "hecho", finalizadoEn: new Date(), lockedAt: null }).where(eq(waJobs.id, id)),
+  );
 }
 
 /** true si ya no quedan reintentos (se marca "error" definitivo). */
@@ -241,22 +204,24 @@ export async function marcarFalloOReintentar(
   tenantId: string,
 ): Promise<void> {
   if (agotoIntentos(intentos, maxIntentos)) {
-    await db
-      .update(waJobs)
-      .set({ estado: "error", ultimoError: error, finalizadoEn: new Date(), lockedAt: null })
-      .where(eq(waJobs.id, id));
+    await conSistema(db, (tx) =>
+      tx
+        .update(waJobs)
+        .set({ estado: "error", ultimoError: error, finalizadoEn: new Date(), lockedAt: null })
+        .where(eq(waJobs.id, id)),
+    );
     registrarErrorDefinitivoParaAlerta(tenantId, error);
     return;
   }
   const retrasoSeg = calcularBackoffSeg(intentos);
-  await db.execute(sql`
+  await conSistema(db, (tx) => tx.execute(sql`
     UPDATE wa_jobs
        SET estado = 'pendiente',
            ultimo_error = ${error},
            locked_at = NULL,
            ejecutar_despues_de = now() + ${retrasoSeg} * interval '1 second'
      WHERE id = ${id}
-  `);
+  `));
 }
 
 /**
@@ -266,13 +231,13 @@ export async function marcarFalloOReintentar(
  */
 export async function reencolarVencidos(db: DB, umbralSeg = 180): Promise<number> {
   const rows = filasDe<{ id: string }>(
-    await db.execute(sql`
+    await conSistema(db, (tx) => tx.execute(sql`
     UPDATE wa_jobs
        SET estado = 'pendiente', locked_at = NULL
      WHERE estado = 'procesando'
        AND locked_at < now() - ${umbralSeg} * interval '1 second'
     RETURNING id
-  `),
+  `)),
   );
   return rows.length;
 }
@@ -298,7 +263,7 @@ export async function purgarJobsHechos(db: DB, retencionDias = 7, tamanoLote = 5
   let total = 0;
   for (;;) {
     const rows = filasDe<{ id: string }>(
-      await db.execute(sql`
+      await conSistema(db, (tx) => tx.execute(sql`
       DELETE FROM wa_jobs
        WHERE id IN (
          SELECT id FROM wa_jobs
@@ -307,7 +272,7 @@ export async function purgarJobsHechos(db: DB, retencionDias = 7, tamanoLote = 5
           LIMIT ${tamanoLote}
        )
       RETURNING id
-    `),
+    `)),
     );
     total += rows.length;
     // Lote incompleto = ya no queda nada más viejo que el corte: se terminó.
@@ -360,14 +325,14 @@ export async function listarJobsEnError(db: DB, limite = 500): Promise<JobEnErro
     finalizado_en: Date | null;
     extracto: string | null;
   }>(
-    await db.execute(sql`
+    await conSistema(db, (tx) => tx.execute(sql`
     SELECT id, tenant_id, intentos, max_intentos, ultimo_error, creado_en, finalizado_en,
            LEFT(payload -> 'entrante' ->> 'texto', 200) AS extracto
       FROM wa_jobs
      WHERE estado = 'error'
      ORDER BY tenant_id ASC, finalizado_en DESC NULLS LAST
      LIMIT ${limite}
-  `),
+  `)),
   );
   return rows.map((r) => ({
     id: r.id,
@@ -403,7 +368,7 @@ export async function listarJobsEnError(db: DB, limite = 500): Promise<JobEnErro
  */
 export async function reencolarJobError(db: DB, id: string): Promise<boolean> {
   const rows = filasDe<{ id: string }>(
-    await db.execute(sql`
+    await conSistema(db, (tx) => tx.execute(sql`
     UPDATE wa_jobs
        SET estado = 'pendiente',
            intentos = 0,
@@ -413,7 +378,7 @@ export async function reencolarJobError(db: DB, id: string): Promise<boolean> {
            ejecutar_despues_de = now()
      WHERE id = ${id} AND estado = 'error'
     RETURNING id
-  `),
+  `)),
   );
   return rows.length > 0;
 }

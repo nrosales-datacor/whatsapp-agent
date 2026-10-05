@@ -73,7 +73,7 @@ const [duenoB] = await db.insert(waUsuarios).values({ usuario: "dueno-b", passwo
 
 async function sembrarConversacion(tenantId: string, tel: string, texto: string) {
   const [conv] = await db.insert(waConversaciones).values({ tenantId, clienteWa: tel }).returning();
-  await db.insert(waMensajes).values({ conversacionId: conv.id, rol: "user", contenido: texto });
+  await db.insert(waMensajes).values({ tenantId, conversacionId: conv.id, rol: "user", contenido: texto });
   return conv.id;
 }
 const convA = await sembrarConversacion("negocio-a", TEL, "hola desde A");

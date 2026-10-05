@@ -26,8 +26,34 @@ export const SUSCRIPCION_PRUEBA = {
   sessionEpoch: 0,
 };
 
-/** Registra en el caché del tenantStore al operador dueño de SUSCRIPCION_PRUEBA. */
-export async function registrarOperadorDePrueba(tenantId: string): Promise<void> {
+/**
+ * Registra en el caché del tenantStore al operador dueño de SUSCRIPCION_PRUEBA. Con `db`,
+ * además lo crea en la base (y a su negocio): wa_push_subs.usuario_id es FK a wa_usuarios.
+ */
+export async function registrarOperadorDePrueba(tenantId: string, db?: { insert: Function }): Promise<void> {
+  if (db) {
+    const { waTenants, waUsuarios } = await import("../../src/db/schema");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const d = db as any;
+    await d
+      .insert(waTenants)
+      .values({
+        id: tenantId,
+        nombre: `Negocio ${tenantId}`,
+        phoneNumberId: `pnid-push-${tenantId}`,
+        timezone: "America/Costa_Rica",
+        moneda: "CRC",
+        ubicacion: "San José",
+        horario: {},
+        servicios: [],
+        kb: { faq: [], datos: [], politicas: [] },
+      })
+      .onConflictDoNothing();
+    await d
+      .insert(waUsuarios)
+      .values({ id: SUSCRIPCION_PRUEBA.usuarioId, usuario: "operador-push-prueba", passwordHash: "x", tenantId, rol: "operador" })
+      .onConflictDoNothing();
+  }
   const { _registrarUsuarioParaTests } = await import("../../src/config/tenantStore");
   _registrarUsuarioParaTests("operador-push-prueba", {
     id: SUSCRIPCION_PRUEBA.usuarioId,

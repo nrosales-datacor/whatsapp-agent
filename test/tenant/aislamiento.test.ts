@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { RepositorioEnMemoria } from "../../src/booking/inMemoryRepository";
 import { RepositorioDrizzle } from "../../src/booking/drizzleRepository";
 import { crearDbEfimera } from "../helpers/pgliteDb";
 import type { Cita, PushSub, Repositorio } from "../../src/types";
@@ -9,7 +8,7 @@ import type { Cita, PushSub, Repositorio } from "../../src/types";
 // Ángulo 2 de TESTING.md — INVARIANTE MULTI-TENANT (seguridad, no cosmético).
 //
 // F4: esta batería corre IDÉNTICA contra las DOS implementaciones del
-// Repositorio — RepositorioEnMemoria (dev/tests rápidos) y RepositorioDrizzle
+// Repositorio — RepositorioDrizzle
 // sobre Postgres efímero (PGlite: el SQL real de producción) — porque antes
 // solo se probaba la de memoria (`test/tenant/aislamiento.test.ts:3` original),
 // y esa NO es la que corre en producción. Un test en verde contra el repo
@@ -45,10 +44,6 @@ interface Implementacion {
 
 const IMPLEMENTACIONES: Implementacion[] = [
   {
-    nombre: "RepositorioEnMemoria",
-    crear: async () => ({ repo: new RepositorioEnMemoria(), cerrar: async () => {} }),
-  },
-  {
     nombre: "RepositorioDrizzle (PGlite)",
     crear: async () => {
       const { db, cerrar } = await crearDbEfimera();
@@ -59,9 +54,7 @@ const IMPLEMENTACIONES: Implementacion[] = [
 
 /**
  * Siembra una conversación + un mensaje + una cita futura + una push sub por
- * tenant. Devuelve los ids REALES que asignó el repo (no asumir el formato de
- * ningún repo en particular: en memoria el id de conversación es
- * `tenantId:clienteWa`, en Drizzle es un UUID).
+ * tenant. Devuelve los ids REALES que asignó el repo (UUIDs generados por la base).
  */
 async function sembrarTenant(
   repo: Repositorio,
@@ -262,8 +255,7 @@ for (const impl of IMPLEMENTACIONES) {
       // La interfaz no expone un "obtenerCotizacion", así que afirmamos por el efecto
       // observable disponible: registrar una SEGUNDA cotización para el MISMO servicio
       // solo se permite si la anterior ya no está activa (el guard "no dos rescates
-      // activos" lee el estado real, no un objeto en memoria — así el assert vale
-      // igual para RepositorioEnMemoria y para RepositorioDrizzle).
+      // activos" lee el estado real de la base).
       await repo.actualizarCotizacionPorCita(A, CLIENTE, "pulido-a", "cita-a", 15000);
       const segundaA = await repo.registrarCotizacion(A, CLIENTE, "pulido-a", 15000);
       assert.notEqual(segundaA, null, "la cotización de A ya se cerró (agendada), se puede abrir una nueva");

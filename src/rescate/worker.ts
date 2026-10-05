@@ -9,6 +9,7 @@ import { interpolar, textoCliente, BOTONES } from "../config/textos";
 import { formatearMonto } from "../config/moneda";
 import { obtenerDb } from "./db";
 import { enmascararTelefono } from "../observabilidad/privacidad";
+import { apagando, enCurso } from "../red/apagado";
 import {
   citasDelDia,
   enModoHumano,
@@ -210,7 +211,7 @@ async function procesarTenant(tenant: Tenant): Promise<void> {
 /** Arranca el worker de rescate. Llamar UNA vez al iniciar el servidor (solo si hay DB). */
 export function iniciarRescate(): void {
   const loop = async () => {
-    while (true) {
+    while (!apagando()) {
       try {
         // Serie, no mapConLimite (F8, punto 4): con el tope por tick de arriba,
         // el `for` ya avanza de tenant en tenant sin que uno drene al resto —
@@ -220,7 +221,8 @@ export function iniciarRescate(): void {
         // F8; se deja para cuando el volumen real lo justifique.
         for (const tenant of listarTenants()) {
           if (!tenant.rescateActivo || !tenantPuede(tenant, "rescateCotizaciones")) continue;
-          await procesarTenant(tenant);
+          if (apagando()) break;
+          await enCurso(procesarTenant(tenant));
         }
       } catch (e) {
         console.error("[rescate] error en el loop:", e);

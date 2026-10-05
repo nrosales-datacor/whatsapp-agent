@@ -11,7 +11,8 @@ import type {
   SegmentoTipo,
 } from "../types";
 import { obtenerDb } from "./db";
-import { previsualizarSegmento } from "./segmentos";
+import { conTenant, type Tx } from "../db/alcance";
+import { segmentoEnTransaccion } from "./segmentos";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CRUD de campañas (ROADMAP C3.2), DB-directo — mismo precedente que "Usuarios"
@@ -54,28 +55,30 @@ export async function crearCampania(
   tenantId: string,
   datos: { nombre: string; mensaje: string; segmentoTipo: SegmentoTipo; segmentoParametros: SegmentoFiltro },
 ): Promise<Campania> {
-  const d = obtenerDb();
-  const [fila] = await d
-    .insert(waCampanias)
-    .values({
-      tenantId,
-      nombre: datos.nombre,
-      mensaje: datos.mensaje,
-      segmentoTipo: datos.segmentoTipo,
-      segmentoParametros: datos.segmentoParametros,
-    })
-    .returning();
-  return filaACampania(fila);
+  return conTenant(obtenerDb(), tenantId, async (d) => {
+    const [fila] = await d
+      .insert(waCampanias)
+      .values({
+        tenantId,
+        nombre: datos.nombre,
+        mensaje: datos.mensaje,
+        segmentoTipo: datos.segmentoTipo,
+        segmentoParametros: datos.segmentoParametros,
+      })
+      .returning();
+    return filaACampania(fila);
+  });
 }
 
 export async function listarCampanias(tenantId: string): Promise<Campania[]> {
-  const d = obtenerDb();
-  const filas = await d
-    .select()
-    .from(waCampanias)
-    .where(eq(waCampanias.tenantId, tenantId))
-    .orderBy(desc(waCampanias.creadaEn));
-  return filas.map(filaACampania);
+  return conTenant(obtenerDb(), tenantId, async (d) => {
+    const filas = await d
+      .select()
+      .from(waCampanias)
+      .where(eq(waCampanias.tenantId, tenantId))
+      .orderBy(desc(waCampanias.creadaEn));
+    return filas.map(filaACampania);
+  });
 }
 
 /**
@@ -84,7 +87,7 @@ export async function listarCampanias(tenantId: string): Promise<Campania[]> {
  * citas nuevas de esos clientes creadas después de su envío. No depende de webhooks
  * de estado de Meta (hoy no se parsean) — es un proxy suficiente para el MVP.
  */
-async function calcularMetricas(tenantId: string, envios: CampaniaEnvio[]): Promise<MetricasCampania> {
+async function calcularMetricas(d: Tx, tenantId: string, envios: CampaniaEnvio[]): Promise<MetricasCampania> {
   const destinatarios = envios.length;
   const fallidos = envios.filter((e) => e.estado === "error").length;
   const omitidosOptOut = envios.filter((e) => e.estado === "omitido_opt_out").length;
@@ -94,7 +97,6 @@ async function calcularMetricas(tenantId: string, envios: CampaniaEnvio[]): Prom
     return { destinatarios, enviados: 0, fallidos, omitidosOptOut, respuestas: 0, citasGeneradas: 0 };
   }
 
-  const d = obtenerDb();
   const clientesWa = new Set(enviados.map((e) => e.clienteWa));
   const enviadoEnPorCliente = new Map(enviados.map((e) => [e.clienteWa, e.enviadoEn as string]));
 
@@ -140,23 +142,24 @@ async function calcularMetricas(tenantId: string, envios: CampaniaEnvio[]): Prom
 }
 
 export async function obtenerCampania(tenantId: string, id: string): Promise<CampaniaConDetalle | null> {
-  const d = obtenerDb();
-  const [fila] = await d
-    .select()
-    .from(waCampanias)
-    .where(and(eq(waCampanias.id, id), eq(waCampanias.tenantId, tenantId)))
-    .limit(1);
-  if (!fila) return null;
+  return conTenant(obtenerDb(), tenantId, async (d) => {
+    const [fila] = await d
+      .select()
+      .from(waCampanias)
+      .where(and(eq(waCampanias.id, id), eq(waCampanias.tenantId, tenantId)))
+      .limit(1);
+    if (!fila) return null;
 
-  const enviosFilas = await d
-    .select()
-    .from(waCampaniaEnvios)
-    .where(eq(waCampaniaEnvios.campaniaId, id))
-    .orderBy(waCampaniaEnvios.creadoEn);
-  const envios = enviosFilas.map(filaAEnvio);
-  const metricas = await calcularMetricas(tenantId, envios);
+    const enviosFilas = await d
+      .select()
+      .from(waCampaniaEnvios)
+      .where(eq(waCampaniaEnvios.campaniaId, id))
+      .orderBy(waCampaniaEnvios.creadoEn);
+    const envios = enviosFilas.map(filaAEnvio);
+    const metricas = await calcularMetricas(d, tenantId, envios);
 
-  return { ...filaACampania(fila), metricas, envios };
+    return { ...filaACampania(fila), metricas, envios };
+  });
 }
 
 /**
@@ -170,23 +173,23 @@ export async function confirmarEnvioCampania(
   id: string,
   programadaPara: string | null,
 ): Promise<Campania> {
-  const d = obtenerDb();
-  const [fila] = await d
-    .select()
-    .from(waCampanias)
-    .where(and(eq(waCampanias.id, id), eq(waCampanias.tenantId, tenantId)))
-    .limit(1);
-  if (!fila) throw new Error("NO_ENCONTRADA");
-  if (fila.estado !== "borrador") throw new Error("YA_ENVIADA");
+  return conTenant(obtenerDb(), tenantId, async (d) => {
+    const [fila] = await d
+      .select()
+      .from(waCampanias)
+      .where(and(eq(waCampanias.id, id), eq(waCampanias.tenantId, tenantId)))
+      .limit(1);
+    if (!fila) throw new Error("NO_ENCONTRADA");
+    if (fila.estado !== "borrador") throw new Error("YA_ENVIADA");
 
-  const destinatarios = await previsualizarSegmento(tenantId, fila.segmentoParametros);
-  if (destinatarios.length === 0) throw new Error("SIN_DESTINATARIOS");
+    const { destinatarios } = await segmentoEnTransaccion(d, tenantId, fila.segmentoParametros);
+    if (destinatarios.length === 0) throw new Error("SIN_DESTINATARIOS");
 
-  const esFuturo = !!programadaPara && new Date(programadaPara).getTime() > Date.now();
-  const ahora = new Date();
+    const esFuturo = !!programadaPara && new Date(programadaPara).getTime() > Date.now();
+    const ahora = new Date();
 
-  await d.transaction(async (tx) => {
-    await tx.insert(waCampaniaEnvios).values(
+    // Misma transacción: la materialización del segmento y el cambio de estado van juntos.
+    await d.insert(waCampaniaEnvios).values(
       destinatarios.map((c) => ({
         campaniaId: id,
         tenantId,
@@ -194,7 +197,7 @@ export async function confirmarEnvioCampania(
         clienteNombre: c.nombre,
       })),
     );
-    await tx
+    await d
       .update(waCampanias)
       .set({
         estado: esFuturo ? "programada" : "enviando",
@@ -203,32 +206,33 @@ export async function confirmarEnvioCampania(
         iniciadaEn: esFuturo ? null : ahora,
       })
       .where(eq(waCampanias.id, id));
-  });
 
-  const [actualizada] = await d.select().from(waCampanias).where(eq(waCampanias.id, id)).limit(1);
-  return filaACampania(actualizada);
+    const [actualizada] = await d.select().from(waCampanias).where(eq(waCampanias.id, id)).limit(1);
+    return filaACampania(actualizada);
+  });
 }
 
 /** Cancela una campaña que no haya terminado. Los envíos aún "pendiente" quedan en "error". */
 export async function cancelarCampania(tenantId: string, id: string): Promise<Campania | null> {
-  const d = obtenerDb();
-  const [fila] = await d
-    .update(waCampanias)
-    .set({ estado: "cancelada" })
-    .where(
-      and(
-        eq(waCampanias.id, id),
-        eq(waCampanias.tenantId, tenantId),
-        sql`${waCampanias.estado} IN ('borrador', 'programada', 'enviando')`,
-      ),
-    )
-    .returning();
-  if (!fila) return null;
+  return conTenant(obtenerDb(), tenantId, async (d) => {
+    const [fila] = await d
+      .update(waCampanias)
+      .set({ estado: "cancelada" })
+      .where(
+        and(
+          eq(waCampanias.id, id),
+          eq(waCampanias.tenantId, tenantId),
+          sql`${waCampanias.estado} IN ('borrador', 'programada', 'enviando')`,
+        ),
+      )
+      .returning();
+    if (!fila) return null;
 
-  await d
-    .update(waCampaniaEnvios)
-    .set({ estado: "error", error: "cancelado por el dueño" })
-    .where(and(eq(waCampaniaEnvios.campaniaId, id), eq(waCampaniaEnvios.estado, "pendiente")));
+    await d
+      .update(waCampaniaEnvios)
+      .set({ estado: "error", error: "cancelado por el dueño" })
+      .where(and(eq(waCampaniaEnvios.campaniaId, id), eq(waCampaniaEnvios.estado, "pendiente")));
 
-  return filaACampania(fila);
+    return filaACampania(fila);
+  });
 }

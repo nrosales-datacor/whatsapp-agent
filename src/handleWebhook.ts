@@ -180,6 +180,20 @@ async function guardarEntranteDePausado(repo: Repositorio, tenant: Tenant, entra
 }
 
 /**
+ * true si el texto entrante dispara una acción directa de `responderEntrante` (no pasa
+ * por el agente). Tiene que coincidir con las ramas de acción de la rama de texto.
+ */
+export function esAccionDirecta(entrante: Pick<MensajeEntrante, "texto" | "interactiveId">): boolean {
+  return (
+    !!esConfirmacionCita(entrante.interactiveId) ||
+    !!respuestaPostServicio(entrante.interactiveId) ||
+    !!respuestaConsentimiento(entrante.interactiveId) ||
+    esPedidoDeBaja(entrante.texto) ||
+    pideHumano(entrante.texto)
+  );
+}
+
+/**
  * FASE 1 — rápida, se ejecuta ANTES de responder 200 a Meta.
  * Valida el evento, persiste el mensaje entrante y deduplica reintentos. Si esto
  * lanza, el server NO responde 200 y Meta reintrega; como guardamos por waMessageId,
@@ -289,9 +303,13 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio, db?: DB)
       clase,
       tenantId: tenant.id,
       entrante,
-      conv,
+      conv: { ...conv, mensajes: [] },
       correlationId,
       ...(esAudio || esImagen ? { primerContacto, historialPrevio } : {}),
+      // La foto y el audio tienen efectos propios (descarga/transcripción): nunca ceden
+      // ante otro mensaje, pero sí releen el historial y absorben textos anteriores.
+      agrupable: false,
+      releeHistorial: esAudio || esImagen,
     };
     const esNuevo = await repo.guardarEntranteYEncolar(conv.id, msg, payload, ejecutarDespuesDe);
     if (!esNuevo) return null;
@@ -320,14 +338,19 @@ export async function ingerirEntrante(body: unknown, repo: Repositorio, db?: DB)
     creadoEn: new Date().toISOString(),
     waMessageId: entrante.messageId,
   };
+  // Una acción directa (BAJA, "Confirmo", consentimiento, post-servicio, pedir una
+  // persona) no pasa por el agente: no puede cederse ante otro mensaje ni absorberlo.
+  const esTurnoDelAgente = !esAccionDirecta(entrante);
   const payload: PendienteSerializado = {
     clase: "texto",
     tenantId: tenant.id,
     entrante,
-    conv,
+    conv: { ...conv, mensajes: [] },
     primerContacto,
     historialPrevio,
     correlationId,
+    agrupable: esTurnoDelAgente,
+    releeHistorial: esTurnoDelAgente,
   };
   const esNuevo = await repo.guardarEntranteYEncolar(conv.id, msg, payload, ejecutarDespuesDe);
   if (!esNuevo) {
@@ -466,351 +489,247 @@ function reintentarMasTarde(e: unknown, intento: IntentoJob | undefined): boolea
  * de responder 200. El mensaje entrante ya quedó guardado en la fase 1, así que
  * aunque esto falle no se pierde.
  *
- * `db` opcional (F10): solo lo necesitan los tests de fiabilidad (PGlite) para el
- * enforcement del tope mensual (ver estadoCuotasDelMes) — en producción no hace
- * falta pasarlo, el pool singleton ya resuelve solo con DATABASE_URL.
+ * `db` opcional (F10): lo necesitan los tests de fiabilidad (PGlite) para el
+ * enforcement del tope mensual (ver estadoCuotasDelMes); en producción el worker lo pasa.
  *
  * `intento` (E7): lo pasa el worker de la cola. Con él, un error transitorio en el
  * turno del agente LANZA (la cola reintenta) mientras queden intentos — salvo que el
- * turno ya haya tenido efectos que un reintento duplicaría (ver `reintentable`).
+ * turno ya haya tenido efectos que un reintento duplicaría (ver `turnoDelAgente`).
  */
 export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB, intento?: IntentoJob): Promise<void> {
-  if (p.clase === "no-texto") {
-    // Lo que queda sin tipar tras E12: video y sticker (las fotos las procesa la
-    // rama "imagen" de abajo, C1.5; documento/contacto/reacción/ubicación tienen su
-    // propio manejo — ver las ramas de abajo y parsearEntrante). Le pedimos al
-    // cliente que escriba en qué ayudarle Y avisamos a un humano: el adjunto puede
-    // ser importante y no queremos ignorarlo.
-    await enviarTexto(
-      p.tenant,
-      p.entrante.clienteWa,
-      textoCliente(p.tenant, "multimediaNoSoportada"),
-    ).catch((e) => console.error("[no-texto] no se pudo responder al cliente:", e));
-    await notificarOperador(
-      repo,
-      p.tenant,
-      p.conv,
-      "📎 Llegó un mensaje multimedia que el bot no puede leer (sticker/video).",
-    ).catch((e) => console.error("[no-texto] notificarOperador:", e));
-    return;
-  }
-
-  if (p.clase === "documento") {
-    // El bot no procesa documentos todavía (E12): a diferencia del genérico de
-    // stickers/video, acá SÍ reconocemos que llegó un documento (no un adjunto
-    // ilegible cualquiera) y le pasamos el nombre de archivo al operador para que
-    // sepa qué llegó sin tener que adivinar.
-    const nombreArchivo = p.entrante.documentoNombre ?? "sin nombre";
-    await enviarTexto(
-      p.tenant,
-      p.entrante.clienteWa,
-      textoCliente(p.tenant, "documentoNoSoportado"),
-    ).catch((e) => console.error("[documento] no se pudo responder al cliente:", e));
-    await notificarOperador(
-      repo,
-      p.tenant,
-      p.conv,
-      `📄 Llegó un documento que el bot no puede leer: "${nombreArchivo}".`,
-    ).catch((e) => console.error("[documento] notificarOperador:", e));
-    return;
-  }
-
-  if (p.clase === "contacto") {
-    // Mismo criterio que "documento": mensaje específico (no el genérico) + push
-    // con el nombre del contacto compartido, para que el operador no tenga que adivinar.
-    const nombreContacto = p.entrante.contactoNombre ?? "sin nombre";
-    await enviarTexto(
-      p.tenant,
-      p.entrante.clienteWa,
-      textoCliente(p.tenant, "contactoNoSoportado"),
-    ).catch((e) => console.error("[contacto] no se pudo responder al cliente:", e));
-    await notificarOperador(
-      repo,
-      p.tenant,
-      p.conv,
-      `👤 El cliente compartió un contacto: "${nombreContacto}".`,
-    ).catch((e) => console.error("[contacto] notificarOperador:", e));
-    return;
-  }
-
-  if (p.clase === "imagen") {
-    const { tenant, entrante, conv, primerContacto, historialPrevio: historialSnapshot } = p;
-    await reactivarBotSiVencio(repo, tenant, conv, historialSnapshot);
-
-    // Descargamos la foto YA (antes de mirar el modo): así el operador la ve en el
-    // panel tanto si la atiende el bot como si la atiende una persona.
-    //
-    // `imagenDataUrl` (en memoria, NUNCA persistido así) sigue viajando completo a
-    // la visión de OpenAI (C1.5) — eso no cambia (F9). Lo que SÍ cambia es qué se
-    // guarda en `wa_mensajes.media_url`: si Supabase Storage está configurado, el
-    // binario se sube ahí y en la columna queda solo la ruta corta del objeto; si
-    // no, cae al comportamiento previo (persistir el data URL completo), ver
-    // `storage/supabaseStorage.ts`.
-    let imagenDataUrl: string | undefined;
-    try {
-      const { buffer, mimeType } = await descargarMedia(tenant, entrante.imagenId!);
-      imagenDataUrl = `data:${mimeType};base64,${buffer.toString("base64")}`;
-      if (entrante.messageId) {
-        const mediaAPersistir = await resolverMediaAPersistir(
-          tenant.id,
-          conv.id,
-          entrante.messageId,
-          buffer,
-          mimeType,
-          imagenDataUrl,
-        );
-        await repo
-          .actualizarMediaMensaje(tenant.id, conv.id, entrante.messageId, mediaAPersistir, "imagen")
-          .catch((e) => console.error("[imagen] no se pudo guardar la media en el mensaje:", e));
-      }
-    } catch (e) {
-      if (reintentarMasTarde(e, intento)) throw e;
-      console.error("[imagen] no se pudo descargar la foto:", e);
-    }
-
-    if (conv.modo === "humano") {
-      await notificarOperador(repo, tenant, conv, "📷 Foto recibida.").catch((e) =>
-        console.error("[imagen] notificarOperador:", e),
-      );
-      return;
-    }
-
-    if (!imagenDataUrl) {
-      // No pudimos bajar la foto: no dejamos al cliente en silencio ni al bot "adivinar" sin verla.
-      await enviarTexto(tenant, entrante.clienteWa, textoCliente(tenant, "fotoNoDescargada")).catch(() => {});
-      await notificarOperador(repo, tenant, conv, "📷 Foto recibida — no se pudo procesar.").catch(() => {});
-      return;
-    }
-
-    if (await aplicarFrenosPorCliente({ tenant, repo, conv, clienteWa: entrante.clienteWa, db })) return;
-    if (await aplicarTopeMensualSiCorresponde(tenant, repo, entrante, conv, primerContacto, db)) return;
-
-    // E7: mismo criterio que la rama de texto (ver el comentario de `reintentable` ahí).
-    let reintentable = true;
-    try {
-      const historialPrevio = await historialFresco(repo, tenant, conv, entrante.messageId, historialSnapshot);
-      const { respuesta, fueraDeAlcance, escalar, motivo, interactivo, confirmacion } = await correrAgente(
-        { tenant, repo, clienteWa: entrante.clienteWa },
-        entrante.imagenCaption?.trim() || TURNO_FOTO_SIN_COMENTARIO,
-        historialPrevio,
-        imagenDataUrl,
-      );
-      if (confirmacion) reintentable = false;
-
-      const modoActual = await repo.obtenerModo(tenant.id, conv.id);
-      if (modoActual === "humano") {
-        log.info("respuesta_descartada", { tenantId: tenant.id, conversacionId: conv.id, clase: "imagen", motivo: "humano_tomo_la_conversacion" });
-        return;
-      }
-
-      if (escalar) {
-        reintentable = false;
-        await repo.setModoConversacion(tenant.id, conv.id, "humano");
-        let salida = textoEscalada(tenant, confirmacion);
-        if (primerContacto) salida = `${avisoBot(tenant)}\n\n${salida}`;
-        await enviarTexto(tenant, entrante.clienteWa, salida);
-        if (primerContacto) await repo.marcarOptIn(tenant.id, conv.id);
-        await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: textoEscalada(tenant, confirmacion), creadoEn: new Date().toISOString() });
-        await notificarOperador(
-          repo,
-          tenant,
-          conv,
-          motivo ? `🙋 El bot pasó este caso (foto): ${motivo}` : "📷 Foto recibida.",
-        );
-        await repo.registrarCalidad({
-          tenantId: tenant.id,
-          clienteWa: entrante.clienteWa,
-          tipo: "fuera_de_alcance",
-          detalle: motivo ? `escalado: ${motivo}` : "escalado a humano (foto)",
-        });
-        return;
-      }
-
-      let salida = respuesta;
-      if (primerContacto) salida = `${avisoBot(tenant)}\n\n${respuesta}`;
-      await enviarRespuestaBot(tenant, entrante.clienteWa, salida, interactivo);
-      reintentable = false;
-      if (primerContacto) await repo.marcarOptIn(tenant.id, conv.id);
-      await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: respuesta, creadoEn: new Date().toISOString() });
-      log.info("respuesta_enviada", { tenantId: tenant.id, conversacionId: conv.id, clase: "imagen", largo: respuesta.length });
-      await repo.registrarCalidad({
-        tenantId: tenant.id,
-        clienteWa: entrante.clienteWa,
-        tipo: fueraDeAlcance ? "fuera_de_alcance" : "mensaje_ok",
-      });
-    } catch (e) {
-      if (reintentable && reintentarMasTarde(e, intento)) throw e;
-      console.error("[imagen] error procesando:", e);
-      await repo
-        .registrarCalidad({ tenantId: tenant.id, clienteWa: entrante.clienteWa, tipo: "error", detalle: String(e) })
-        .catch(() => {});
-      await enviarTexto(tenant, entrante.clienteWa, textoCliente(tenant, "errorFoto")).catch(() => {});
-      await notificarOperador(repo, tenant, conv, "⚠️ El bot no pudo responder a una foto recibida.").catch(() => {});
-    }
-    return;
-  }
-
-  if (p.clase === "audio") {
-    const { tenant, entrante, conv, primerContacto, historialPrevio: historialSnapshot } = p;
-    await reactivarBotSiVencio(repo, tenant, conv, historialSnapshot);
-
-    if (conv.modo === "humano") {
-      await notificarOperador(repo, tenant, conv, "🎤 Nota de voz recibida.").catch((e) =>
-        console.error("[audio] notificarOperador:", e),
-      );
-      return;
-    }
-
-    // Frenos por cliente ANTES de transcribir: Whisper también se paga.
-    if (await aplicarFrenosPorCliente({ tenant, repo, conv, clienteWa: entrante.clienteWa, db })) return;
-
-    let textoTranscrito: string;
-    try {
-      textoTranscrito = await transcribirAudio(tenant, entrante.audioId!);
-      log.info("audio_transcrito", { tenantId: tenant.id, conversacionId: conv.id, largo: textoTranscrito.length });
-    } catch (e) {
-      if (reintentarMasTarde(e, intento)) throw e;
-      console.error("[audio] transcripción fallida:", e);
-      await enviarTexto(tenant, entrante.clienteWa, textoCliente(tenant, "audioFallido")).catch(() => {});
-      await notificarOperador(repo, tenant, conv, "🎤 Nota de voz recibida — transcripción falló.").catch(() => {});
-      return;
-    }
-
-    // Escotilla de salida: si el audio pide hablar con una persona, escalamos.
-    if (pideHumano(textoTranscrito)) {
-      try {
-        await repo.setModoConversacion(tenant.id, conv.id, "humano");
-        await enviarTexto(tenant, entrante.clienteWa, textoCliente(tenant, "traspasoHumano"));
-        await notificarOperador(repo, tenant, conv, `🎤 ${textoTranscrito}`);
-        await repo.registrarCalidad({
-          tenantId: tenant.id,
-          clienteWa: entrante.clienteWa,
-          tipo: "fuera_de_alcance",
-          detalle: "pidió humano (audio)",
-        });
-      } catch (e) {
-        console.error("[audio/humano] no se pudo completar el traspaso:", e);
-      }
-      return;
-    }
-
-    if (await aplicarTopeMensualSiCorresponde(tenant, repo, entrante, conv, primerContacto, db)) return;
-
-    // E7: mismo criterio que la rama de texto (ver el comentario de `reintentable` ahí).
-    let reintentable = true;
-    try {
-      const historialPrevio = await historialFresco(repo, tenant, conv, entrante.messageId, historialSnapshot);
-      const { respuesta, fueraDeAlcance, escalar, motivo, interactivo, confirmacion } = await correrAgente(
-        { tenant, repo, clienteWa: entrante.clienteWa },
-        textoTranscrito,
-        historialPrevio,
-      );
-      if (confirmacion) reintentable = false;
-
-      const modoActual = await repo.obtenerModo(tenant.id, conv.id);
-      if (modoActual === "humano") {
-        log.info("respuesta_descartada", { tenantId: tenant.id, conversacionId: conv.id, clase: "audio", motivo: "humano_tomo_la_conversacion" });
-        return;
-      }
-
-      if (escalar) {
-        reintentable = false;
-        await repo.setModoConversacion(tenant.id, conv.id, "humano");
-        let salida = textoEscalada(tenant, confirmacion);
-        if (primerContacto) salida = `${avisoBot(tenant)}\n\n${salida}`;
-        await enviarTexto(tenant, entrante.clienteWa, salida);
-        if (primerContacto) await repo.marcarOptIn(tenant.id, conv.id);
-        await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: textoEscalada(tenant, confirmacion), creadoEn: new Date().toISOString() });
-        await notificarOperador(
-          repo,
-          tenant,
-          conv,
-          motivo ? `🙋 El bot pasó este caso: ${motivo}` : `🎤 ${textoTranscrito}`,
-        );
-        await repo.registrarCalidad({
-          tenantId: tenant.id,
-          clienteWa: entrante.clienteWa,
-          tipo: "fuera_de_alcance",
-          detalle: motivo ? `escalado: ${motivo}` : "escalado a humano",
-        });
-        return;
-      }
-
-      let salida = respuesta;
-      if (primerContacto) salida = `${avisoBot(tenant)}\n\n${respuesta}`;
-      await enviarRespuestaBot(tenant, entrante.clienteWa, salida, interactivo);
-      reintentable = false;
-      if (primerContacto) await repo.marcarOptIn(tenant.id, conv.id);
-      await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: respuesta, creadoEn: new Date().toISOString() });
-      log.info("respuesta_enviada", { tenantId: tenant.id, conversacionId: conv.id, clase: "audio", largo: respuesta.length });
-      await repo.registrarCalidad({
-        tenantId: tenant.id,
-        clienteWa: entrante.clienteWa,
-        tipo: fueraDeAlcance ? "fuera_de_alcance" : "mensaje_ok",
-      });
-    } catch (e) {
-      if (reintentable && reintentarMasTarde(e, intento)) throw e;
-      console.error("[audio] error procesando:", e);
-      await repo
-        .registrarCalidad({ tenantId: tenant.id, clienteWa: entrante.clienteWa, tipo: "error", detalle: String(e) })
-        .catch(() => {});
-      await enviarTexto(tenant, entrante.clienteWa, textoCliente(tenant, "errorGeneral")).catch(() => {});
-      await notificarOperador(
+  switch (p.clase) {
+    case "no-texto":
+      // Lo que queda sin tipar (video, sticker): pedirle que escriba Y avisar a un humano.
+      return responderNoSoportado(p, repo, "multimediaNoSoportada", "📎 Llegó un mensaje multimedia que el bot no puede leer (sticker/video).");
+    case "documento":
+      return responderNoSoportado(
+        p,
         repo,
-        tenant,
-        conv,
-        `⚠️ El bot no pudo responder a la nota de voz: "${textoTranscrito.slice(0, 60)}".`,
-      ).catch(() => {});
+        "documentoNoSoportado",
+        `📄 Llegó un documento que el bot no puede leer: "${p.entrante.documentoNombre ?? "sin nombre"}".`,
+      );
+    case "contacto":
+      return responderNoSoportado(
+        p,
+        repo,
+        "contactoNoSoportado",
+        `👤 El cliente compartió un contacto: "${p.entrante.contactoNombre ?? "sin nombre"}".`,
+      );
+    case "imagen":
+      return responderImagen(p, repo, db, intento);
+    case "audio":
+      return responderAudio(p, repo, db, intento);
+    case "texto":
+      return responderTexto(p, repo, db, intento);
+  }
+}
+
+/** Adjunto que el bot no procesa: mensaje específico al cliente + aviso al operador con contexto. */
+async function responderNoSoportado(
+  p: Extract<Pendiente, { clase: "no-texto" | "documento" | "contacto" }>,
+  repo: Repositorio,
+  clave: "multimediaNoSoportada" | "documentoNoSoportado" | "contactoNoSoportado",
+  avisoOperador: string,
+): Promise<void> {
+  await enviarTexto(p.tenant, p.entrante.clienteWa, textoCliente(p.tenant, clave)).catch((e) =>
+    console.error(`[${p.clase}] no se pudo responder al cliente:`, e),
+  );
+  await notificarOperador(repo, p.tenant, p.conv, avisoOperador).catch((e) => console.error(`[${p.clase}] notificarOperador:`, e));
+}
+
+async function responderImagen(
+  p: Extract<Pendiente, { clase: "imagen" }>,
+  repo: Repositorio,
+  db: DB | undefined,
+  intento: IntentoJob | undefined,
+): Promise<void> {
+  const { tenant, entrante, conv, primerContacto, historialPrevio } = p;
+  await reactivarBotSiVencio(repo, tenant, conv, historialPrevio);
+
+  // La foto se descarga YA (antes de mirar el modo): el operador la ve en el panel tanto
+  // si la atiende el bot como una persona. `imagenDataUrl` va completo a la visión de
+  // OpenAI (C1.5); en la base queda la ruta de Storage (o el data URL si Storage no está
+  // configurado, ver storage/supabaseStorage.ts).
+  let imagenDataUrl: string | undefined;
+  try {
+    const { buffer, mimeType } = await descargarMedia(tenant, entrante.imagenId!);
+    imagenDataUrl = `data:${mimeType};base64,${buffer.toString("base64")}`;
+    if (entrante.messageId) {
+      const mediaAPersistir = await resolverMediaAPersistir(tenant.id, conv.id, entrante.messageId, buffer, mimeType, imagenDataUrl);
+      await repo
+        .actualizarMediaMensaje(tenant.id, conv.id, entrante.messageId, mediaAPersistir, "imagen")
+        .catch((e) => console.error("[imagen] no se pudo guardar la media en el mensaje:", e));
     }
+  } catch (e) {
+    if (reintentarMasTarde(e, intento)) throw e;
+    console.error("[imagen] no se pudo descargar la foto:", e);
+  }
+
+  if (conv.modo === "humano") {
+    await notificarOperador(repo, tenant, conv, "📷 Foto recibida.").catch((e) => console.error("[imagen] notificarOperador:", e));
+    return;
+  }
+  if (!imagenDataUrl) {
+    // No se pudo bajar la foto: ni silencio con el cliente ni el bot "adivinando" sin verla.
+    await enviarTexto(tenant, entrante.clienteWa, textoCliente(tenant, "fotoNoDescargada")).catch(() => {});
+    await notificarOperador(repo, tenant, conv, "📷 Foto recibida — no se pudo procesar.").catch(() => {});
     return;
   }
 
-  const { tenant, entrante, conv, primerContacto, historialPrevio: historialSnapshot, correlationId } = p;
+  if (await aplicarFrenosPorCliente({ tenant, repo, conv, clienteWa: entrante.clienteWa, db })) return;
+  if (await aplicarTopeMensualSiCorresponde(tenant, repo, entrante, conv, primerContacto, db)) return;
 
-  // CONFIRMACIÓN DE CITA (C1.3): el cliente tocó "Confirmo ✅" en el recordatorio.
-  // Es una acción directa (no pasa por el agente ni por la ventana de modo humano):
-  // marcamos la cita como confirmada y damos un acuse corto. La cita se identifica
-  // por el citaId que viajó en el botón que nosotros enviamos.
+  await turnoDelAgente({
+    p,
+    repo,
+    intento,
+    textoUsuario: entrante.imagenCaption?.trim() || TURNO_FOTO_SIN_COMENTARIO,
+    imagenDataUrl,
+    avisoEscalada: "📷 Foto recibida.",
+    etiquetaMotivo: " (foto)",
+    detalleEscalada: "escalado a humano (foto)",
+    textoError: "errorFoto",
+    avisoError: "⚠️ El bot no pudo responder a una foto recibida.",
+  });
+}
+
+async function responderAudio(
+  p: Extract<Pendiente, { clase: "audio" }>,
+  repo: Repositorio,
+  db: DB | undefined,
+  intento: IntentoJob | undefined,
+): Promise<void> {
+  const { tenant, entrante, conv, primerContacto, historialPrevio } = p;
+  await reactivarBotSiVencio(repo, tenant, conv, historialPrevio);
+
+  if (conv.modo === "humano") {
+    await notificarOperador(repo, tenant, conv, "🎤 Nota de voz recibida.").catch((e) => console.error("[audio] notificarOperador:", e));
+    return;
+  }
+
+  // Frenos por cliente ANTES de transcribir: Whisper también se paga.
+  if (await aplicarFrenosPorCliente({ tenant, repo, conv, clienteWa: entrante.clienteWa, db })) return;
+
+  let transcripcion: string;
+  try {
+    transcripcion = await transcribirAudio(tenant, entrante.audioId!);
+    log.info("audio_transcrito", { tenantId: tenant.id, conversacionId: conv.id, largo: transcripcion.length });
+  } catch (e) {
+    if (reintentarMasTarde(e, intento)) throw e;
+    console.error("[audio] transcripción fallida:", e);
+    await enviarTexto(tenant, entrante.clienteWa, textoCliente(tenant, "audioFallido")).catch(() => {});
+    await notificarOperador(repo, tenant, conv, "🎤 Nota de voz recibida — transcripción falló.").catch(() => {});
+    return;
+  }
+
+  // Escotilla de salida: si el audio pide hablar con una persona, se escala sin el agente.
+  if (pideHumano(transcripcion)) {
+    await traspasarPorPedido(p, repo, `🎤 ${transcripcion}`, "pidió humano (audio)");
+    return;
+  }
+  if (await aplicarTopeMensualSiCorresponde(tenant, repo, entrante, conv, primerContacto, db)) return;
+
+  await turnoDelAgente({
+    p,
+    repo,
+    intento,
+    textoUsuario: transcripcion,
+    avisoEscalada: `🎤 ${transcripcion}`,
+    etiquetaMotivo: "",
+    detalleEscalada: "escalado a humano",
+    textoError: "errorGeneral",
+    avisoError: `⚠️ El bot no pudo responder a la nota de voz: "${transcripcion.slice(0, 60)}".`,
+  });
+}
+
+async function responderTexto(
+  p: Extract<Pendiente, { clase: "texto" }>,
+  repo: Repositorio,
+  db: DB | undefined,
+  intento: IntentoJob | undefined,
+): Promise<void> {
+  const { tenant, entrante, conv, primerContacto, historialPrevio } = p;
+
+  // Acciones directas (botones, BAJA): no pasan por el agente ni dependen del modo.
+  if (await responderAccionDirecta(p, repo, db)) return;
+
+  // En modo humano el bot NO responde: el mensaje ya quedó guardado, solo se avisa al
+  // operador. Salvo que el traspaso haya vencido sin respuesta del equipo (vuelve al bot).
+  await reactivarBotSiVencio(repo, tenant, conv, historialPrevio);
+  if (conv.modo === "humano") {
+    log.info("entrante_en_modo_humano", { tenantId: tenant.id, conversacionId: conv.id });
+    await notificarOperador(repo, tenant, conv, entrante.texto).catch((e) => console.error("[humano] notificarOperador:", e));
+    return;
+  }
+
+  // Escotilla de salida humana: solo con un pedido EXPLÍCITO ("agente", "quiero hablar
+  // con una persona"); "¿cuánto es por persona?" no dispara.
+  if (pideHumano(entrante.texto)) {
+    await traspasarPorPedido(p, repo, entrante.texto, "pidió humano");
+    return;
+  }
+
+  if (await aplicarFrenosPorCliente({ tenant, repo, conv, clienteWa: entrante.clienteWa, db })) return;
+  if (await aplicarTopeMensualSiCorresponde(tenant, repo, entrante, conv, primerContacto, db)) return;
+
+  await turnoDelAgente({
+    p,
+    repo,
+    intento,
+    textoUsuario: entrante.texto,
+    avisoEscalada: entrante.texto,
+    etiquetaMotivo: "",
+    detalleEscalada: "escalado a humano",
+    textoError: "errorGeneral",
+    avisoError: `⚠️ El bot no pudo responder a "${entrante.texto.slice(0, 60)}". Conviene atenderlo a mano.`,
+  });
+}
+
+/**
+ * Acciones directas de la rama de texto (no pasan por el agente ni por el modo humano):
+ * confirmación de cita (C1.3), respuesta al seguimiento post-servicio (C3.1/D1.3),
+ * consentimiento de marketing y pedido de baja (C3.2). true si el mensaje era una de
+ * ellas (ya respondida). La ingesta marca estos mensajes como no agrupables
+ * (`esAccionDirecta`): una ráfaga nunca los descarta.
+ */
+async function responderAccionDirecta(p: Extract<Pendiente, { clase: "texto" }>, repo: Repositorio, db: DB | undefined): Promise<boolean> {
+  const { tenant, entrante, conv } = p;
+  const responder = async (ack: string) => {
+    await enviarTexto(tenant, entrante.clienteWa, ack);
+    await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
+  };
+
+  // El cliente tocó "Confirmo ✅" en el recordatorio: la cita viaja en el id del botón.
   const citaAConfirmar = esConfirmacionCita(entrante.interactiveId);
   if (citaAConfirmar) {
     try {
       const confirmada = await repo.confirmarCita(tenant.id, citaAConfirmar);
-      const ack = textoCliente(tenant, confirmada ? "citaConfirmadaAck" : "graciasGenerico");
-      await enviarTexto(tenant, entrante.clienteWa, ack);
-      await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
+      await responder(textoCliente(tenant, confirmada ? "citaConfirmadaAck" : "graciasGenerico"));
       log.info("cita_confirmacion", { tenantId: tenant.id, conversacionId: conv.id, citaId: citaAConfirmar, confirmada });
     } catch (e) {
       console.error(`[confirmacion] no se pudo confirmar la cita ${citaAConfirmar}:`, e);
     }
-    return;
+    return true;
   }
 
-  // SEGUIMIENTO POST-SERVICIO (C3.1 + Carril D 1.3): el cliente tocó un botón del
-  // mensaje que manda el scheduler unas horas después de la cita. Acción directa (no
-  // pasa por el agente ni por la ventana de modo humano): "positivo" (Todo bien/
-  // Excelente) pide la reseña de Google; "neutral" (Bien, solo existe en el flujo
-  // Pro de 3 botones) agradece SIN pedirla; "negativo" (mal) escala a un humano antes
-  // de que se convierta en reseña negativa. registrarRespuestaSeguimiento es no-op si
-  // el tenant es Básico (nunca se creó la fila de tracking al enviar).
+  // Botón del seguimiento post-servicio: "positivo" pide la reseña de Google, "neutral"
+  // agradece sin pedirla (solo Pro), "negativo" escala a una persona antes de que se
+  // convierta en una reseña negativa. El registro es no-op para Básico (sin fila).
   const postServicio = respuestaPostServicio(entrante.interactiveId);
   if (postServicio) {
     const { citaId, sentimiento } = postServicio;
     try {
       if (sentimiento === "positivo") {
-        const ack = tenant.linkResenas
-          ? textoCliente(tenant, "postServicioPositivoResena", { link: tenant.linkResenas })
-          : textoCliente(tenant, "postServicioPositivo");
-        await enviarTexto(tenant, entrante.clienteWa, ack);
-        await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
+        await responder(
+          tenant.linkResenas
+            ? textoCliente(tenant, "postServicioPositivoResena", { link: tenant.linkResenas })
+            : textoCliente(tenant, "postServicioPositivo"),
+        );
       } else if (sentimiento === "neutral") {
-        const ack = textoCliente(tenant, "postServicioNeutral");
-        await enviarTexto(tenant, entrante.clienteWa, ack);
-        await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
+        await responder(textoCliente(tenant, "postServicioNeutral"));
       } else {
         await repo.setModoConversacion(tenant.id, conv.id, "humano");
-        const ack = textoCliente(tenant, "postServicioNegativo");
-        await enviarTexto(tenant, entrante.clienteWa, ack);
-        await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
+        await responder(textoCliente(tenant, "postServicioNegativo"));
         await notificarOperador(
           repo,
           tenant,
@@ -823,19 +742,17 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
     } catch (e) {
       console.error(`[post-servicio] no se pudo procesar la respuesta de la cita ${citaId}:`, e);
     }
-    // Consentimiento de marketing: el punto menos invasivo para preguntarlo es acá,
-    // tras una buena experiencia con una cita ya hecha (ver campaigns/consentimiento.ts).
-    // Una sola vez por cliente; best-effort (nunca rompe el seguimiento).
+    // El momento menos invasivo para pedir el consentimiento de marketing: tras una buena
+    // experiencia. Una sola vez por cliente; best-effort.
     if (sentimiento !== "negativo") {
-      await pedirConsentimientoMarketing(tenant, repo, conv, { manual: false, almacen: almacenConsentimiento(db) }).catch(
-        (e) => console.error(`[consentimiento] no se pudo ofrecer a ${enmascararTelefono(entrante.clienteWa)} (tenant ${tenant.id}):`, e),
+      await pedirConsentimientoMarketing(tenant, repo, conv, { manual: false, almacen: almacenConsentimiento(db) }).catch((e) =>
+        console.error(`[consentimiento] no se pudo ofrecer a ${enmascararTelefono(entrante.clienteWa)} (tenant ${tenant.id}):`, e),
       );
     }
-    return;
+    return true;
   }
 
-  // CONSENTIMIENTO DE MARKETING: el cliente tocó "Sí, avísenme" / "No, gracias".
-  // Acción directa (no pasa por el agente ni depende del modo humano/bot).
+  // "Sí, avísenme" / "No, gracias" del pedido de consentimiento.
   const consentimiento = respuestaConsentimiento(entrante.interactiveId);
   if (consentimiento) {
     try {
@@ -843,170 +760,143 @@ export async function responderEntrante(p: Pendiente, repo: Repositorio, db?: DB
     } catch (e) {
       console.error(`[consentimiento] no se pudo registrar la respuesta de ${enmascararTelefono(entrante.clienteWa)} (tenant ${tenant.id}):`, e);
     }
-    return;
+    return true;
   }
 
-  // OPT-OUT DE CAMPAÑAS (C3.2): el mensaje COMPLETO es un pedido de baja ("baja",
-  // "BAJA.", "stop", "cancelar suscripción", "no me manden más"… normalizado, ver
-  // esPedidoDeBaja); una palabra suelta dentro de una frase no cuenta ("quiero
-  // cancelar mi cita" no es baja). Es acción directa: no pasa por el agente ni
-  // depende del modo (humano/bot) — un cliente puede pedir baja aunque lo esté
-  // atendiendo una persona. Marca la baja Y retira el consentimiento de marketing.
-  // Detiene SOLO campañas de marketing; los recordatorios y el seguimiento
-  // post-servicio siguen llegando (son mensajes de servicio, no marketing, ligados
-  // a una cita que el cliente ya agendó).
+  // Pedido de baja: el mensaje COMPLETO es "baja"/"stop"/… (normalizado, ver
+  // esPedidoDeBaja); una palabra suelta dentro de una frase no cuenta. Marca la baja Y
+  // retira el consentimiento. Solo frena campañas: recordatorios y post-servicio siguen.
   if (esPedidoDeBaja(entrante.texto)) {
     try {
       await repo.marcarOptOut(tenant.id, conv.id);
       await almacenConsentimiento(db)
         .revocar(tenant.id, entrante.clienteWa)
-        .catch((e) => console.error(`[opt-out] no se pudo retirar el consentimiento de ${enmascararTelefono(entrante.clienteWa)} (tenant ${tenant.id}):`, e));
-      const ack = textoCliente(tenant, "bajaAck");
-      await enviarTexto(tenant, entrante.clienteWa, ack);
-      await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: ack, creadoEn: new Date().toISOString() });
+        .catch((e) =>
+          console.error(`[opt-out] no se pudo retirar el consentimiento de ${enmascararTelefono(entrante.clienteWa)} (tenant ${tenant.id}):`, e),
+        );
+      await responder(textoCliente(tenant, "bajaAck"));
       log.info("opt_out_campanias", { tenantId: tenant.id, conversacionId: conv.id });
     } catch (e) {
       console.error(`[opt-out] no se pudo procesar la baja de ${enmascararTelefono(entrante.clienteWa)} (tenant ${tenant.id}):`, e);
     }
-    return;
+    return true;
   }
+  return false;
+}
 
-  // Si la conversación YA está en modo humano, el bot NO responde: el mensaje ya
-  // quedó guardado; solo avisamos al operador para que conteste del panel. Salvo
-  // que el traspaso haya vencido sin respuesta del equipo (vuelve al bot).
-  await reactivarBotSiVencio(repo, tenant, conv, historialSnapshot);
-  if (conv.modo === "humano") {
-    log.info("entrante_en_modo_humano", { tenantId: tenant.id, conversacionId: conv.id });
-    await notificarOperador(repo, tenant, conv, entrante.texto).catch((e) =>
-      console.error("[humano] notificarOperador:", e),
-    );
-    return;
+/** El cliente pidió explícitamente una persona: modo humano, aviso al cliente y al operador. */
+async function traspasarPorPedido(
+  p: Extract<Pendiente, { clase: "texto" | "audio" }>,
+  repo: Repositorio,
+  avisoOperador: string,
+  detalle: string,
+): Promise<void> {
+  const { tenant, entrante, conv } = p;
+  try {
+    await repo.setModoConversacion(tenant.id, conv.id, "humano");
+    await enviarTexto(tenant, entrante.clienteWa, textoCliente(tenant, "traspasoHumano"));
+    await notificarOperador(repo, tenant, conv, avisoOperador);
+    await repo.registrarCalidad({ tenantId: tenant.id, clienteWa: entrante.clienteWa, tipo: "fuera_de_alcance", detalle });
+  } catch (e) {
+    // La conversación ya quedó en humano: se registra el fallo para que el caso no quede
+    // mudo (sin confirmación al cliente ni aviso al operador).
+    console.error("[humano] no se pudo completar el traspaso:", e);
+    await repo
+      .registrarCalidad({ tenantId: tenant.id, clienteWa: entrante.clienteWa, tipo: "error", detalle: "fallo en traspaso a humano: " + String(e) })
+      .catch(() => {});
   }
+}
 
-  // Escotilla de salida humana: solo con un pedido EXPLÍCITO ("agente", "quiero
-  // hablar con una persona"); "¿cuánto es por persona?" ya no dispara.
-  if (pideHumano(entrante.texto)) {
-    try {
-      await repo.setModoConversacion(tenant.id, conv.id, "humano");
-      await enviarTexto(tenant, entrante.clienteWa, textoCliente(tenant, "traspasoHumano"));
-      await notificarOperador(repo, tenant, conv, entrante.texto);
-      await repo.registrarCalidad({
-        tenantId: tenant.id,
-        clienteWa: entrante.clienteWa,
-        tipo: "fuera_de_alcance",
-        detalle: "pidió humano",
-      });
-    } catch (e) {
-      // La conversación ya quedó en humano: registramos el fallo para que el caso
-      // no quede mudo (sin confirmación al cliente ni aviso al operador).
-      console.error("[humano] no se pudo completar el traspaso:", e);
-      await repo
-        .registrarCalidad({
-          tenantId: tenant.id,
-          clienteWa: entrante.clienteWa,
-          tipo: "error",
-          detalle: "fallo en traspaso a humano: " + String(e),
-        })
-        .catch(() => {});
-    }
-    return;
-  }
+/** Un turno del agente (texto, audio transcrito o foto) y su salida. */
+interface Turno {
+  p: Extract<Pendiente, { clase: "texto" | "audio" | "imagen" }>;
+  repo: Repositorio;
+  intento?: IntentoJob;
+  /** Lo que el agente recibe como mensaje del cliente. */
+  textoUsuario: string;
+  imagenDataUrl?: string;
+  /** Aviso al operador si el agente escala SIN motivo. */
+  avisoEscalada: string;
+  /** Va en el aviso con motivo: "🙋 El bot pasó este caso{etiqueta}: {motivo}". */
+  etiquetaMotivo: string;
+  /** Detalle del evento de calidad si escala sin motivo. */
+  detalleEscalada: string;
+  /** Texto al cliente y aviso al operador si el turno falla del todo. */
+  textoError: "errorGeneral" | "errorFoto";
+  avisoError: string;
+}
 
-  if (await aplicarFrenosPorCliente({ tenant, repo, conv, clienteWa: entrante.clienteWa, db })) return;
-  if (await aplicarTopeMensualSiCorresponde(tenant, repo, entrante, conv, primerContacto, db)) return;
-
-  // E7: un error transitorio (OpenAI 429/5xx/timeout, Graph caído) relanza para que la
-  // cola reintente el turno ENTERO con backoff — pero solo mientras el turno no haya
-  // dejado efectos que un reintento repetiría: una acción de agenda ya guardada
-  // (`confirmacion`, red de seguridad G5 de runAgent: re-correr el agente volvería a
-  // llamar a `agendar_cita` y duplicaría la cita), el traspaso a humano ya aplicado o
-  // la respuesta ya enviada. Pasado ese punto, el fallo se maneja como siempre.
+/**
+ * Corre el agente con el historial fresco y entrega su salida: respuesta (texto o
+ * interactivo), o traspaso a humano si el agente escaló.
+ *
+ * E7: un error transitorio (OpenAI 429/5xx/timeout, Graph caído) relanza para que la cola
+ * reintente el turno ENTERO con backoff — pero solo mientras el turno no dejó efectos que
+ * un reintento repetiría: una acción de agenda ya guardada (`confirmacion`: re-correr el
+ * agente duplicaría la cita), el traspaso aplicado o la respuesta ya enviada.
+ */
+async function turnoDelAgente(t: Turno): Promise<void> {
+  const { p, repo } = t;
+  const { tenant, entrante, conv, primerContacto, historialPrevio: snapshot } = p;
+  const base = { tenantId: tenant.id, conversacionId: conv.id, clase: p.clase, correlationId: p.correlationId };
   let reintentable = true;
   try {
-    const historialPrevio = await historialFresco(repo, tenant, conv, entrante.messageId, historialSnapshot);
-    const { respuesta, fueraDeAlcance, escalar, motivo, interactivo, confirmacion } = await correrAgente(
-      { tenant, repo, clienteWa: entrante.clienteWa },
-      entrante.texto,
-      historialPrevio,
-    );
-    if (confirmacion) reintentable = false;
+    const historial = await historialFresco(repo, tenant, conv, entrante.messageId, snapshot);
+    const r = await correrAgente({ tenant, repo, clienteWa: entrante.clienteWa }, t.textoUsuario, historial, t.imagenDataUrl);
+    if (r.confirmacion) reintentable = false;
 
-    // Mientras el LLM pensaba, un humano pudo tomar la conversación desde el panel.
-    // Revalidamos el modo (lectura liviana) ANTES de hablar para no pisar a la persona.
-    const modoActual = await repo.obtenerModo(tenant.id, conv.id);
-    if (modoActual === "humano") {
-      log.info("respuesta_descartada", { tenantId: tenant.id, conversacionId: conv.id, clase: "texto", motivo: "humano_tomo_la_conversacion" });
+    // Mientras el LLM pensaba, un humano pudo tomar la conversación desde el panel: se
+    // revalida el modo (lectura liviana) ANTES de hablar para no pisar a la persona.
+    if ((await repo.obtenerModo(tenant.id, conv.id)) === "humano") {
+      log.info("respuesta_descartada", { ...base, motivo: "humano_tomo_la_conversacion" });
       return;
     }
 
-    // El bot no pudo resolver (pidió escalar_a_humano o se trabó): pasamos la conversación
-    // a una persona y avisamos (push), en vez de mandar una respuesta vaga o genérica.
-    if (escalar) {
+    const conAviso = (texto: string) => (primerContacto ? `${avisoBot(tenant)}\n\n${texto}` : texto);
+    const ahora = () => new Date().toISOString();
+
+    if (r.escalar) {
+      // El bot no pudo resolver: pasa a una persona en vez de responder algo vago.
       reintentable = false;
       await repo.setModoConversacion(tenant.id, conv.id, "humano");
-      let salida = textoEscalada(tenant, confirmacion);
-      if (primerContacto) salida = `${avisoBot(tenant)}\n\n${salida}`;
-      await enviarTexto(tenant, entrante.clienteWa, salida);
+      const aviso = textoEscalada(tenant, r.confirmacion);
+      await enviarTexto(tenant, entrante.clienteWa, conAviso(aviso));
       if (primerContacto) await repo.marcarOptIn(tenant.id, conv.id);
-      await repo.guardarMensaje(tenant.id, conv.id, {
-        rol: "assistant",
-        contenido: textoEscalada(tenant, confirmacion),
-        creadoEn: new Date().toISOString(),
-      });
-      await notificarOperador(repo, tenant, conv, motivo ? `🙋 El bot pasó este caso: ${motivo}` : entrante.texto);
+      await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: aviso, creadoEn: ahora() });
+      await notificarOperador(repo, tenant, conv, r.motivo ? `🙋 El bot pasó este caso${t.etiquetaMotivo}: ${r.motivo}` : t.avisoEscalada);
       await repo.registrarCalidad({
         tenantId: tenant.id,
         clienteWa: entrante.clienteWa,
         tipo: "fuera_de_alcance",
-        detalle: motivo ? `escalado: ${motivo}` : "escalado a humano",
+        detalle: r.motivo ? `escalado: ${r.motivo}` : t.detalleEscalada,
       });
-      log.info("escalado_a_humano", { tenantId: tenant.id, conversacionId: conv.id, conMotivo: !!motivo });
+      log.info("escalado_a_humano", { ...base, conMotivo: !!r.motivo });
       return;
     }
 
-    // En el primer contacto, anteponer el aviso de bot (transparencia + opt-in).
-    let salida = respuesta;
-    if (primerContacto) salida = `${avisoBot(tenant)}\n\n${respuesta}`;
-
-    // Enviar PRIMERO y persistir DESPUÉS: si el envío falla, no queda un mensaje
-    // "fantasma" en el historial que el cliente nunca recibió (y el opt-in no se
-    // marca, así el aviso se reintenta en el próximo mensaje).
-    await enviarRespuestaBot(tenant, entrante.clienteWa, salida, interactivo);
+    // Enviar PRIMERO y persistir DESPUÉS: si el envío falla no queda en el historial un
+    // mensaje que el cliente nunca recibió (y el aviso de bot se reintenta la próxima).
+    await enviarRespuestaBot(tenant, entrante.clienteWa, conAviso(r.respuesta), r.interactivo);
     reintentable = false;
     if (primerContacto) await repo.marcarOptIn(tenant.id, conv.id);
-    await repo.guardarMensaje(tenant.id, conv.id, {
-      rol: "assistant",
-      contenido: respuesta,
-      creadoEn: new Date().toISOString(),
-    });
-    log.info("respuesta_enviada", { correlationId, tenantId: tenant.id, conversacionId: conv.id, fueraDeAlcance, largo: respuesta.length });
-
+    await repo.guardarMensaje(tenant.id, conv.id, { rol: "assistant", contenido: r.respuesta, creadoEn: ahora() });
+    log.info("respuesta_enviada", { ...base, fueraDeAlcance: r.fueraDeAlcance, largo: r.respuesta.length });
     await repo.registrarCalidad({
       tenantId: tenant.id,
       clienteWa: entrante.clienteWa,
-      tipo: fueraDeAlcance ? "fuera_de_alcance" : "mensaje_ok",
+      tipo: r.fueraDeAlcance ? "fuera_de_alcance" : "mensaje_ok",
     });
   } catch (e) {
-    // Quedan intentos y el error es transitorio: sin disculpa ni aviso al operador
-    // todavía — eso es solo para el último intento (o para errores permanentes).
-    if (reintentable && reintentarMasTarde(e, intento)) throw e;
-    console.error("[webhook] error procesando mensaje:", e);
-    await repo.registrarCalidad({
-      tenantId: tenant.id,
-      clienteWa: entrante.clienteWa,
-      tipo: "error",
-      detalle: String(e),
-    });
-    await enviarTexto(tenant, entrante.clienteWa, textoCliente(tenant, "errorGeneral")).catch(() => {});
-    // Red de seguridad: avisar a un humano para que entre de una. Si el envío de
-    // arriba también falló (p. ej. caída de WhatsApp), el cliente quedó sin
-    // respuesta y no queremos que espere horas hasta que alguien lo note a mano.
-    await notificarOperador(
-      repo,
-      tenant,
-      conv,
-      `⚠️ El bot no pudo responder a "${entrante.texto.slice(0, 60)}". Conviene atenderlo a mano.`,
-    ).catch((e2) => console.error("[webhook] notificarOperador tras error:", e2));
+    // Quedan intentos y el error es transitorio: sin disculpa ni aviso todavía.
+    if (reintentable && reintentarMasTarde(e, t.intento)) throw e;
+    console.error(`[${p.clase}] error procesando el turno:`, e);
+    await repo
+      .registrarCalidad({ tenantId: tenant.id, clienteWa: entrante.clienteWa, tipo: "error", detalle: String(e) })
+      .catch(() => {});
+    await enviarTexto(tenant, entrante.clienteWa, textoCliente(tenant, t.textoError)).catch(() => {});
+    // Red de seguridad: si el envío de arriba también falló (WhatsApp caído), el cliente
+    // quedó sin respuesta; un humano tiene que enterarse ya.
+    await notificarOperador(repo, tenant, conv, t.avisoError).catch((e2) => console.error("[webhook] notificarOperador tras error:", e2));
   }
 }
 

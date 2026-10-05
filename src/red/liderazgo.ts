@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { schema } from "../db/schema";
 import { filasDe } from "../db/filas";
+import { conSistema } from "../db/alcance";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Líder de schedulers tipo cron (ROADMAP F6, PLAN-ESCALA-MULTITENANT.md).
@@ -59,7 +60,7 @@ export async function intentarLiderazgo(db: DB | null, nombre: string, titular: 
   if (!db) return true; // modo memoria: un solo proceso, siempre es el líder.
 
   const filas = filasDe<{ titular: string }>(
-    await db.execute(sql`
+    await conSistema(db, (tx) => tx.execute(sql`
       INSERT INTO wa_lideres (nombre, titular, vence_en)
       VALUES (${nombre}, ${titular}, now() + ${duracionMs} * interval '1 millisecond')
       ON CONFLICT (nombre) DO UPDATE
@@ -67,7 +68,7 @@ export async function intentarLiderazgo(db: DB | null, nombre: string, titular: 
         WHERE wa_lideres.vence_en < now() OR wa_lideres.titular = excluded.titular
       RETURNING titular
     `),
-  );
+  ));
   // 0 filas = el UPDATE no cumplió el WHERE (otro titular tiene un lease vigente):
   // ni se insertó ni se actualizó nada, así que no hay nada que devolver.
   return filas.length > 0;

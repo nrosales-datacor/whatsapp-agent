@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ResumenConversacion } from "../api";
 import { fmtNum, hora, transcurrido } from "../lib/formato";
 import EstadoVacio from "./EstadoVacio";
@@ -9,6 +9,11 @@ interface Props {
   abiertaId: string | null;
   escondida: boolean;
   onAbrir: (id: string) => void;
+  /** Hay conversaciones más viejas sin cargar (bandeja paginada). */
+  hayMas?: boolean;
+  onVerMas?: () => void;
+  /** Búsqueda en el servidor (teléfono o nombre), con debounce. */
+  onBuscar?: (q: string) => void;
 }
 
 type Filtro = "todos" | "bot" | "humano" | "necesita" | "atendida";
@@ -36,9 +41,17 @@ export function necesitaRespuesta(c: ResumenConversacion): boolean {
   return c.modo === "humano" && c.sinLeer > 0;
 }
 
-export default function Lista({ conversaciones, abiertaId, escondida, onAbrir }: Props) {
+export default function Lista({ conversaciones, abiertaId, escondida, onAbrir, hayMas, onVerMas, onBuscar }: Props) {
   const [busqueda, setBusqueda] = useState("");
   const [filtro, setFiltro] = useState<Filtro>("todos");
+
+  // La lista cargada se filtra al instante; además se busca en el servidor (debounce) para
+  // encontrar conversaciones que todavía no se cargaron.
+  useEffect(() => {
+    if (!onBuscar) return;
+    const t = setTimeout(() => onBuscar(busqueda.trim()), 300);
+    return () => clearTimeout(t);
+  }, [busqueda, onBuscar]);
 
   const conteos = useMemo(() => ({
     todos:    conversaciones.length,
@@ -54,6 +67,7 @@ export default function Lista({ conversaciones, abiertaId, escondida, onAbrir }:
       const q = busqueda.toLowerCase();
       r = r.filter(c =>
         c.clienteWa.toLowerCase().includes(q) ||
+        (c.nombre?.toLowerCase().includes(q)) ||
         (c.ultimoMensaje?.toLowerCase().includes(q))
       );
     }
@@ -170,6 +184,13 @@ export default function Lista({ conversaciones, abiertaId, escondida, onAbrir }:
               </div>
             );
           })
+        )}
+        {hayMas && onVerMas && (
+          <div className="convs-mas">
+            <button type="button" className="btn-punteado" onClick={onVerMas}>
+              Ver conversaciones anteriores
+            </button>
+          </div>
         )}
       </div>
     </section>

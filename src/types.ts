@@ -433,9 +433,19 @@ export interface PendienteSerializado {
     /** nombre del contacto compartido (solo cuando clase === "contacto"), para el push al operador. */
     contactoNombre?: string;
   };
+  /** Conversación al momento de la ingesta, SIN `mensajes` (el historial va en `historialPrevio`). */
   conv: Conversacion;
   primerContacto?: boolean;
   historialPrevio?: MensajeConversacion[];
+  /**
+   * Ráfagas (src/queue/cola.ts, regla 3). `agrupable`: el job es un texto que solo
+   * contesta el agente, así que puede ceder ante un turno más nuevo de la misma
+   * conversación. `releeHistorial`: el job es un turno del agente (texto, audio o foto)
+   * que relee el historial, así que puede absorber a los anteriores. Ausentes (payloads
+   * de una versión anterior) = el job se procesa siempre.
+   */
+  agrupable?: boolean;
+  releeHistorial?: boolean;
 }
 
 export interface MensajeConversacion {
@@ -749,6 +759,23 @@ export interface FichaCliente {
  */
 export type VerificarHorario = (citasDelDia: Cita[]) => boolean;
 
+/** Opciones del listado paginado de la bandeja (ver `Repositorio.listarConversaciones`). */
+export interface OpcionesListado {
+  limite?: number;
+  antesDe?: string;
+  buscar?: string;
+  hoy?: string;
+}
+
+/** Estado liviano de una conversación (ver `Repositorio.obtenerEstadoConversacion`). */
+export interface EstadoConversacionLigero {
+  id: string;
+  clienteWa: string;
+  modo: ModoConversacion;
+  ventanaAbierta: boolean;
+  ventanaCierraEn: string | null;
+}
+
 export interface Repositorio {
   obtenerOConversacion(tenantId: string, clienteWa: string): Promise<Conversacion>;
   /**
@@ -949,10 +976,20 @@ export interface Repositorio {
   setModoConversacion(tenantId: string, conversacionId: string, modo: ModoConversacion): Promise<void>;
   /** Cambia el estado de la cola de trabajo (abierta ↔ atendida), a mano desde el panel (C2.3). */
   marcarEstadoConversacion(tenantId: string, conversacionId: string, estado: EstadoConversacion): Promise<void>;
-  /** Lista las conversaciones del negocio para la bandeja (más reciente primero). */
-  listarConversaciones(tenantId: string): Promise<ResumenConversacion[]>;
+  /**
+   * Conversaciones del negocio para la bandeja, más reciente primero, de a páginas: usa el
+   * índice (tenant_id, ultima_actividad_en). `limite` (default 100), `antesDe` (cursor: ISO
+   * de la última actividad de la página anterior), `buscar` (teléfono o nombre del cliente)
+   * y `hoy` ("YYYY-MM-DD" en la zona del negocio, para "cita próxima").
+   */
+  listarConversaciones(tenantId: string, opciones?: OpcionesListado): Promise<ResumenConversacion[]>;
   /** Trae una conversación con su historial por id (null si no existe o no es del tenant). */
-  obtenerConversacionPorId(tenantId: string, conversacionId: string): Promise<Conversacion | null>;
+  obtenerConversacionPorId(tenantId: string, conversacionId: string, opciones?: { hoy?: string }): Promise<Conversacion | null>;
+  /**
+   * Lo mínimo para que el operador responda o reabra: cliente, modo y ventana de 24 h, sin
+   * leer el historial ni firmar fotos. null si no existe o no es del tenant.
+   */
+  obtenerEstadoConversacion(tenantId: string, conversacionId: string): Promise<EstadoConversacionLigero | null>;
   /**
    * Últimos `limite` mensajes de una conversación, en orden cronológico, para armar el
    * historial del AGENTE (revisión pre-venta 2026-10). Lectura liviana a propósito: a

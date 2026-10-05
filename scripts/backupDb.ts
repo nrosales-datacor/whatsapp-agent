@@ -47,7 +47,7 @@ async function fallar(mensaje: string, e?: unknown): Promise<never> {
   process.exit(1);
 }
 
-const url = process.env.BACKUP_DATABASE_URL ?? process.env.DATABASE_URL;
+const url = process.env.BACKUP_DATABASE_URL ?? process.env.DATABASE_URL_MIGRACIONES ?? process.env.DATABASE_URL;
 if (!url) await fallar("Falta BACKUP_DATABASE_URL (o DATABASE_URL) en el .env");
 if (!process.env.BACKUP_DATABASE_URL) {
   console.warn(

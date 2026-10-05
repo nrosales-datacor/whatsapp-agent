@@ -20,6 +20,7 @@ import {
   waWebhooksCrudos,
 } from "../db/schema";
 import { obtenerDb } from "../db/client";
+import { conSistema, conTenant } from "../db/alcance";
 import { borrarPrefijo } from "../storage/supabaseStorage";
 import { actorSuperadmin, registrarAuditoria } from "./auditoria";
 import { hayBaseDeDatos } from "./tenantStore";
@@ -123,7 +124,9 @@ export async function darDeBajaTenant(tenantId: string, confirmarNombre: string,
   if (!db && !hayBaseDeDatos()) throw new Error("SIN_DB");
   const d = db ?? obtenerDb();
 
-  const exportado = await d.transaction(async (tx) => {
+  // Sistema: además de las tablas del negocio borra sus wa_webhooks_crudos (tabla de
+  // infraestructura, sin tenant_id) y lo hace el superadmin. Acción explícita y auditada.
+  const exportado = await conSistema(d, async (tx) => {
     const [tenant] = await tx.select().from(waTenants).where(eq(waTenants.id, tenantId));
     if (!tenant) throw new Error("TENANT_NO_ENCONTRADO");
     if (tenant.nombre !== confirmarNombre) throw new Error("CONFIRMACION_INVALIDA");
@@ -157,8 +160,7 @@ export async function darDeBajaTenant(tenantId: string, confirmarNombre: string,
     );
 
     // ── (b) Borrado en orden de dependencia ──
-    // wa_mensajes primero (cuelga de wa_conversaciones vía conversacion_id, no tiene
-    // tenant_id propio), después wa_conversaciones, después el resto del catálogo
+    // wa_mensajes primero (cuelga de wa_conversaciones vía conversacion_id), después wa_conversaciones, después el resto del catálogo
     // (sin FKs entre sí, el orden no importa), y al final wa_usuarios → wa_tenants.
     if (idsConversaciones.length) {
       await tx.delete(waMensajes).where(inArray(waMensajes.conversacionId, idsConversaciones));

@@ -43,8 +43,10 @@ general. Si le piden algo fuera de alcance, redirige con amabilidad.
 5. En el panel de Meta, configurá el webhook con la URL de ngrok + `/webhook` y tu
    `WHATSAPP_VERIFY_TOKEN`. Escribile al número de prueba desde tu WhatsApp. ✅
 
-> Sin `DATABASE_URL`, el agente usa almacenamiento **en memoria** (no persiste,
-> ideal para probar). Reiniciás el server y se borra.
+> Sin `DATABASE_URL` (solo en desarrollo), el server levanta un **Postgres local en el mismo
+> proceso** (PGlite) con las migraciones reales: mismo SQL que producción, sin instalar nada.
+> Por default vive en memoria (se borra al reiniciar); con `PGLITE_DIR=.pglite` persiste.
+> En producción `DATABASE_URL` es obligatoria.
 
 ## Cómo funciona
 
@@ -58,7 +60,7 @@ WhatsApp → POST al webhook (src/server.ts)
              │              ├─ consultar_disponibilidad (pulidos)
              │              └─ agendar_cita (pulidos) ──▶ Google Calendar (opcional)
              ▼
-        Repositorio (memoria  ó  PostgreSQL/Drizzle)
+        Repositorio (PostgreSQL/Drizzle; PGlite en desarrollo)
              ▲
         reminders/scheduler.ts ── recordatorios por WhatsApp (día antes + mismo día)
 ```
@@ -77,9 +79,10 @@ Regla de negocio: los **lavados son por orden de llegada** (sin cita); solo los
 | `src/agent/tools.ts` | Herramientas (consultar disponibilidad, agendar). |
 | `src/agent/runAgent.ts` | Loop con OpenAI + candado de agendado. |
 | `src/booking/availability.ts` | Cálculo de espacios libres. |
-| `src/booking/inMemoryRepository.ts` | Almacenamiento en memoria (default). |
-| `src/booking/drizzleRepository.ts` | Almacenamiento en PostgreSQL. |
-| `src/db/schema.ts` · `src/db/client.ts` | Tablas y cliente de base de datos. |
+| `src/booking/drizzleRepository.ts` | Acceso a datos (PostgreSQL), cada operación acotada al negocio. |
+| `src/db/schema.ts` · `src/db/client.ts` | Tablas (con políticas RLS) y cliente de base de datos (PGlite en desarrollo). |
+| `src/db/alcance.ts` | `conTenant` / `conSistema`: el alcance de cada transacción (RLS, ROADMAP F1). |
+| `src/panel/router.ts` · `src/panel/rutas/*` | API del panel: orquestador y un módulo por recurso. |
 | `src/whatsapp/client.ts` | Verificación, firma, parseo y envío a Meta (texto y plantillas). |
 | `src/calendar/googleCalendar.ts` | Crea el evento de cada cita en Google Calendar. |
 | `src/reminders/scheduler.ts` | Recordatorios por WhatsApp: día antes y mismo día. |

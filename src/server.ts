@@ -2,10 +2,9 @@ import "dotenv/config";
 import http from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import { verificarWebhook, firmaValida, separarPayloadWebhook } from "./whatsapp/client";
-import { ingerirEntrante, responderEntrante } from "./handleWebhook";
-import { RepositorioEnMemoria } from "./booking/inMemoryRepository";
+import { ingerirEntrante } from "./handleWebhook";
 import { RepositorioDrizzle } from "./booking/drizzleRepository";
-import { obtenerDb } from "./db/client";
+import { iniciarDbLocal, obtenerDb } from "./db/client";
 import { iniciarRecordatorios } from "./reminders/scheduler";
 import { iniciarReputacion, placesConfigurado } from "./reputacion/places";
 import { cargarTenants, alRecargar } from "./config/tenantStore";
@@ -24,12 +23,14 @@ import { canalesDeAlertaConfigurados } from "./observabilidad/alertas";
 import { chequearSalud, codigoHttpSalud } from "./salud";
 import { leerCuerpoConTope, MAX_BODY_WEBHOOK, conRedDeSeguridad } from "./red/http";
 import { conCabecerasSeguridad } from "./red/cabeceras";
+import { esperarTareas, tareasEnCurso } from "./red/apagado";
 import type { Repositorio } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Servidor del agente de WhatsApp (standalone, sin framework).
-// Si hay DATABASE_URL en el entorno → guarda en PostgreSQL (Drizzle).
-// Si no → usa el repositorio en memoria (ideal para probar; no persiste).
+// Servidor del agente de WhatsApp (standalone, sin framework). Siempre sobre Postgres:
+// con DATABASE_URL, la base configurada; sin ella (desarrollo, E2E), un Postgres en el
+// mismo proceso (PGlite) con las migraciones reales. En producción DATABASE_URL es
+// obligatoria: sin ella el proceso no arranca.
 // ─────────────────────────────────────────────────────────────────────────────
 
 iniciarSentry(); // antes de aceptar tráfico: registra los handlers globales de error (ROADMAP B5).
@@ -62,12 +63,21 @@ const ROL: Rol = process.env.ROL === "web" || process.env.ROL === "worker" ? pro
 const SIRVE_WEB = ROL === "web" || ROL === "todo";
 const SIRVE_TRABAJO_DE_FONDO = ROL === "worker" || ROL === "todo";
 
-// `db` se expone por separado para pasárselo al worker (que opera directamente
-// sobre wa_jobs sin pasar por la interfaz Repositorio). `obtenerDb()` es el
-// pool único del proceso (ROADMAP F7): el resto de los módulos DB-directos
-// (tenantStore, uso, campaigns, rescate) comparten esta misma instancia.
-const db = process.env.DATABASE_URL ? obtenerDb() : null;
-const repo: Repositorio = db ? new RepositorioDrizzle(db) : new RepositorioEnMemoria();
+if (!process.env.DATABASE_URL) {
+  if (process.env.NODE_ENV === "production") {
+    console.error("❌ DATABASE_URL es obligatoria en producción (sin ella no hay dónde guardar nada).");
+    process.exit(1);
+  }
+  await iniciarDbLocal();
+  console.warn(
+    `[db] sin DATABASE_URL: Postgres local en el proceso (PGlite)${process.env.PGLITE_DIR ? ` en ${process.env.PGLITE_DIR}` : ", en memoria: no persiste"}.`,
+  );
+}
+
+// `db` se pasa a los workers (operan sobre las colas sin la interfaz Repositorio). Es el
+// pool único del proceso (F7), compartido con el resto de los módulos.
+const db = obtenerDb();
+const repo: Repositorio = new RepositorioDrizzle(db);
 
 // Reproceso de wa_webhooks_crudos (ROADMAP F3): tenantStore no puede importar
 // handleWebhook (ciclo de imports — ver el comentario en reprocesoWebhooks.ts),
@@ -76,14 +86,12 @@ const repo: Repositorio = db ? new RepositorioDrizzle(db) : new RepositorioEnMem
 // CUALQUIER recarga exitosa del caché: alta de negocio (router.ts), refresco
 // periódico y recarga on-demand ante un phone_number_id nuevo — son justo los
 // momentos en que un mensaje que quedó "pendiente" puede volverse resoluble.
-if (db) {
-  alRecargar(() => {
-    reprocesarPendientes(db, repo).catch((e) => {
-      console.error("[server] reprocesarPendientes falló:", e);
-      capturarError(e, { modulo: "reprocesoWebhooks" });
-    });
+alRecargar(() => {
+  reprocesarPendientes(db, repo).catch((e) => {
+    console.error("[server] reprocesarPendientes falló:", e);
+    capturarError(e, { modulo: "reprocesoWebhooks" });
   });
-}
+});
 
 // Health check (antes vivía en `/`; el root ahora es la landing pública, C4.4).
 // ROADMAP E10 / AUDIT.md BLOQUEANTE-11: antes esto devolvía 200 con el proceso
@@ -202,11 +210,9 @@ const servidorCompleto = http.createServer(conRedDeSeguridad(conCabecerasSegurid
     // y Meta reintenta — la deduplicación por waMessageId evita procesarlo dos veces.
     // Un POST puede traer VARIOS mensajes (varios entry/changes/messages): se
     // ingiere cada uno, en orden (`separarPayloadWebhook`).
-    const pendientes = [];
     try {
       for (const parte of separarPayloadWebhook(body)) {
-        const p = await ingerirEntrante(parte, repo, db ?? undefined);
-        if (p) pendientes.push(p);
+        await ingerirEntrante(parte, repo, db);
       }
     } catch (e) {
       console.error("[server] no se pudo persistir el mensaje entrante (Meta reintentará):", e);
@@ -216,17 +222,9 @@ const servidorCompleto = http.createServer(conRedDeSeguridad(conCabecerasSegurid
       return;
     }
 
-    // FASE 2: respondemos 200 rápido y procesamos la respuesta (LLM) aparte.
+    // FASE 2: el job quedó encolado en la fase 1; lo consume el worker (src/queue/worker.ts).
     res.writeHead(200, { "content-type": "text/plain" });
     res.end("EVENT_RECEIVED");
-    for (const pendiente of db ? [] : pendientes) {
-      // Sin base de datos (dev local / sin DATABASE_URL): procesar inline como antes.
-      // Con DB el job ya quedó encolado en Fase 1 y el worker lo consume.
-      responderEntrante(pendiente, repo).catch((e) => {
-        console.error("[server] responderEntrante:", e);
-        capturarError(e, { ruta: "webhook", fase: 2 });
-      });
-    }
     return;
   }
 
@@ -256,17 +254,17 @@ const server = SIRVE_WEB ? servidorCompleto : servidorMinimo;
 // tráfico: ningún webhook ni login debe entrar con el caché vacío. (ROADMAP B2)
 await cargarTenants();
 
-// Datos de demo para desarrollo/diseño del panel. SOLO se siembran en el repo en
-// memoria: si hay DATABASE_URL (base real), se ignora para no ensuciar producción.
+// Datos de demo para desarrollo/diseño del panel. SOLO en la base local (PGlite): con
+// DATABASE_URL (base real) se ignora para no ensuciar producción.
 if (process.env.SEED_DEMO && !process.env.DATABASE_URL) {
   const { seedDemo } = await import("./panel/seedDemo");
   await seedDemo(repo).catch((e) => console.error("[seed] error:", e));
 } else if (process.env.SEED_DEMO) {
-  console.warn("[seed] SEED_DEMO ignorado: hay DATABASE_URL. Los datos de demo solo se cargan en memoria.");
+  console.warn("[seed] SEED_DEMO ignorado: hay DATABASE_URL. Los datos de demo solo se cargan en la base local.");
 }
 
 server.listen(PORT, () => {
-  const modo = db ? "PostgreSQL (Drizzle)" : "memoria (no persiste)";
+  const modo = process.env.DATABASE_URL ? "PostgreSQL" : "PostgreSQL local (PGlite)";
   console.log(`Agente escuchando en http://localhost:${PORT}  ·  Rol: ${ROL}`);
   if (SIRVE_WEB) {
     console.log(`Webhook: http://localhost:${PORT}${RUTA_WEBHOOK}  ·  Almacenamiento: ${modo}`);
@@ -288,16 +286,13 @@ server.listen(PORT, () => {
   // arranca — los atiende la(s) réplica(s) `worker` (o el mismo proceso si
   // `ROL=todo`, el default, idéntico al comportamiento de siempre).
   if (SIRVE_TRABAJO_DE_FONDO) {
-    // Cola durable: el worker consume los jobs de wa_jobs. Solo cuando hay DB.
-    if (db) iniciarWorker(repo, db);
+    // Cola durable: el worker consume los jobs de wa_jobs.
+    iniciarWorker(repo, db);
 
-    // Envío de campañas segmentadas (C3.2): cola independiente, solo cuando hay DB
-    // (no tiene sentido en modo demo/memoria — ver src/campaigns/db.ts).
-    if (db) iniciarCampanias();
-
-    // Rescate de cotizaciones abandonadas (Carril D, 1.1): cola independiente, solo
-    // cuando hay DB (el registro/dashboard sí funciona en memoria, ver src/rescate/db.ts).
-    if (db) iniciarRescate();
+    // Envío de campañas segmentadas (C3.2) y rescate de cotizaciones (Carril D, 1.1):
+    // colas independientes de wa_jobs.
+    iniciarCampanias();
+    iniciarRescate();
 
     // Recordatorios de cita por WhatsApp (día antes + mismo día). Coordinados por
     // lease de liderazgo entre réplicas `worker` (F6, ver src/red/liderazgo.ts).
@@ -310,9 +305,26 @@ server.listen(PORT, () => {
     // Métricas internas: msg/min, latencia del turno del agente, profundidad de cola.
     iniciarReporteMetricas(db);
 
-    // Vigilancia de "bot mudo" (cola atascada, DLQ, tenants sin entrantes en
-    // horario, cuota agotada) con alertas a la plataforma. Solo con DB: sin ella
-    // no hay wa_jobs ni uso mensual que vigilar. Coordinada por lease (F6).
-    if (db) iniciarVigilancia(db);
+    // Vigilancia de "bot mudo" (cola atascada, DLQ, tenants sin entrantes en horario,
+    // cuota agotada) con alertas a la plataforma. Coordinada por lease (F6).
+    iniciarVigilancia(db);
   }
 });
+
+// ── Apagado ordenado (deploy con `pm2 reload`, o SIGTERM del sistema) ──
+// Deja de aceptar conexiones y de reclamar trabajo, espera los turnos en curso (con tope)
+// y sale. PM2 tiene kill_timeout de 30 s (ecosystem.config.cjs). Ver src/red/apagado.ts.
+const ESPERA_APAGADO_MS = Number(process.env.APAGADO_ESPERA_MS ?? 25_000);
+let saliendo = false;
+async function apagar(senal: string): Promise<void> {
+  if (saliendo) return;
+  saliendo = true;
+  console.log(`[server] ${senal}: apagado ordenado (${tareasEnCurso()} tarea(s) en curso, espera máx ${ESPERA_APAGADO_MS} ms)…`);
+  server.close();
+  server.closeIdleConnections?.();
+  const terminaron = await esperarTareas(ESPERA_APAGADO_MS);
+  if (!terminaron) console.warn("[server] quedaron tareas sin terminar: el reaper las retoma al volver.");
+  process.exit(0);
+}
+process.once("SIGINT", () => void apagar("SIGINT"));
+process.once("SIGTERM", () => void apagar("SIGTERM"));

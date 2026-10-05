@@ -72,13 +72,15 @@ Siembra **2 tenants** con el **mismo número de cliente** (la prueba más dura d
   su **control positivo**: el dueño legítimo SÍ puede, para no pasar por un bug genérico.
 - **Recordatorios** (sin `tenantId`, keyed por `citaId` único): el claim de una cita no bloquea la del otro tenant.
 
-**Fuera de alcance de este repo:** `usuarios` / `config` / `campañas` viven en auth y stores propios (no en
-`RepositorioEnMemoria`); su aislamiento se cubre en el panel E2E (ángulo 6, guards de rol 403).
+**Fuera de alcance de este bloque:** `usuarios` / `config` / `campañas` viven en el tenantStore y sus módulos; su
+aislamiento lo cubren el panel E2E (ángulo 6) y `test/security/rlsAplicado.test.ts`, que corre TODO el acceso a
+datos de producción con el rol `app_wa` (sin BYPASSRLS): una consulta sin `conTenant`/`conSistema` falla ahí.
 - **Una fuga acá es un incidente, no un bug cosmético.** Bloque propio, sin excepciones.
 
 ### 3. ✅ End-to-end del webhook (in-process, sin red)
 
-Suite en `test/e2e-webhook/webhook.test.ts` (15 casos, corre en CI vía `npm test`). Repo en memoria + `global.fetch`
+Suite en `test/e2e-webhook/webhook.test.ts` (corre en CI vía `npm test`). Repositorio real sobre PGlite
+(`test/helpers/repoDePrueba.ts`: una base por archivo, vaciada con TRUNCATE entre tests) + `global.fetch`
 mockeado (`test/helpers/webhookMock.ts`) que atiende los tres destinos del flujo SIN red: Graph API (envíos, capturados
 para afirmar qué respondió el bot), descarga de media (bytes falsos, para visión), y OpenAI (turnos **programados** por el
 test → agente 100% determinista). `test/helpers/setupEnv.ts` fija `OPENAI_API_KEY` dummy antes de importar el server
@@ -172,10 +174,10 @@ Postgres igual en serie. La **contención real de 2 backends en paralelo** (que 
 
 Suite en `test/e2e-panel/*.spec.ts` (Chromium, `npm run test:e2e`; corre en CI como **job aparte**
 `e2e-panel`, que además **bloquea el deploy**). Playwright `@1.60.0` fijo (política supply-chain). El
-webServer levanta el **mismo `src/server.ts`** en modo seguro (`test/e2e-panel/servidor.ts`): repo **en
-memoria** (sin `DATABASE_URL` → jamás toca producción; se neutraliza el `.env` real vía `DOTENV_CONFIG_PATH`),
+webServer levanta el **mismo `src/server.ts`** en modo seguro (`test/e2e-panel/servidor.ts`): base **local del server** (PGlite en
+memoria, sin `DATABASE_URL` → jamás toca producción; se neutraliza el `.env` real vía `DOTENV_CONFIG_PATH`),
 `SEED_DEMO=1`, y **Graph API mockeado in-process** (reusa el helper del ángulo 3) para que `responder` envíe
-sin red. `workers:1` porque todas las specs comparten el repo en memoria del proceso.
+sin red. `workers:1` porque todas las specs comparten la base del proceso.
 
 - [x] **Login** (feliz + credenciales malas) → **responder** (el mensaje del operador aparece, Graph mockeado)
   → **toggle bot/humano** → **marcar atendido/reabrir**. Todo por la UI real.
@@ -188,10 +190,27 @@ sin red. `workers:1` porque todas las specs comparten el repo en memoria del pro
 - [x] **CSRF:** `POST` con `Origin` ajeno → 403; con el `Origin` del host → pasa el guard (y falla por credenciales).
 - [x] **Responsivo 390/1440px × claro/oscuro; sin errores de consola** (pageerror + console.error, filtrando ruido de red/PWA).
 - [x] **PWA:** `sw.js` (200 + `Service-Worker-Allowed: /panel/`), `manifest.webmanifest`, íconos.
-- [ ] **Requiere base de datos real → cubrir en la corrida con Postgres** (ángulo 7 / job futuro con service
-  container): alta de negocio **409 por duplicado**, CRUD de **usuarios/config/campañas** (en memoria dan 503),
-  y **white-label** aplicado/limpiado (necesita un tenant con colores guardados). El **403** del operador y la
-  separación admin/operador SÍ se prueban acá (son de rol, no de DB).
+- [x] **Con base de datos → proyecto Playwright `db`** (`test/e2e-db/*.spec.ts`, ~125 casos). Su server
+  (`test/e2e-db/servidor.ts`) es el mismo `src/server.ts` con un **Postgres efímero in-process (PGlite +
+  migraciones reales)** inyectado vía `_inyectarDbParaTests` (DATABASE_URL apunta a un host inválido que nunca
+  se usa), 5 negocios sembrados que cubren cada estado (Pro con la demo, Básico al 85% de cuota, al 100%, tope
+  de IA agotado, pausado), superadmin con **2FA TOTP activo**, llaves VAPID efímeras y **toda la red mockeada**
+  (Graph, OAuth de Embedded Signup, OpenAI) con un servidor de control (`puertoControl`) para leer lo que "envió"
+  el bot y forzar fallas de Graph. Los workers reales (cola, campañas, recordatorios) corren contra PGlite.
+  Cubre: landing (links, anclas, FAQ, menú móvil, CSP), login/sesión/pausa, bandeja completa (filtros, búsqueda,
+  modo, atendida, acciones rápidas, composer, ventana 24 h + reapertura, permiso de promos, ficha, borrado Ley
+  8968, webhook firmado en vivo), agenda (día/semana, alta con validaciones, choques, cada acción del detalle,
+  feriados, equipo con carriles/409/reasignación), **"Mi negocio" sección por sección** (+ validaciones, white-
+  label aplicado, historial F15, gating Básico), usuarios (alta, roles, revocación de sesión, último dueño),
+  campañas (preview, borrador, envío real por el worker, programar, cancelar), dashboard, cuotas/avisos, push,
+  superadmin (2FA + anti-replay, plan, pausa, reset de clave → cambio obligatorio, WhatsApp, borrado, historial,
+  alta manual y por **Embedded Signup con el SDK de Facebook simulado**, tope, DLQ, baja) y todas las vistas en
+  390/1440 px × claro/oscuro. `npm run test:e2e` corre ambos proyectos (`--project=db` para uno solo).
+  Bugs que encontró en su primera corrida (2026-10-03, corregidos): el alta de negocio descartaba el perfil
+  (B7); "Mi negocio" borraba `mensajeTopeExcedido`; la CSP bloqueaba el script de la landing con CRLF; un typo
+  en la clave temporal sacaba al login; "Agendá la primera" agendaba en hoy; se aceptaban horarios que cierran
+  antes de abrir; la tabla del equipo del admin no se refrescaba tras un reset; tras el cambio obligatorio de
+  clave el usuario caía al login (se revocaba también su propia sesión).
 
 ### 7. ✅ Guardrail de migraciones en CI (tu trampa conocida)
 
@@ -257,7 +276,7 @@ es seguro contra producción:
 test/
   unit/            # node:test — availability, planes, segmentos, validadores, metricas, botones
   tenant/          # aislamiento multi-tenant
-  e2e-webhook/     # responderEntrante con repo en memoria + fetch mockeado
+  e2e-webhook/     # responderEntrante con el repo real sobre PGlite + fetch mockeado
   reliability/     # cola, recordatorios, campañas (concurrencia)
   security/        # sesión firmada, anti-timing, firma del webhook (ángulo 8)
   e2e-panel/       # Playwright: servidor.ts (server E2E), *.spec.ts, constantes.ts
@@ -289,7 +308,9 @@ CI (`.github/workflows/ci-cd.yml`): `npm test` y `npm run db:check` corren en el
 ## Principios
 
 1. **Determinista en cada push, no determinista aparte.** Nada que cueste tokens o toque red real corre en el hot path de CI.
-2. **Sin tocar producción.** Todo lo automatizado usa repo en memoria o Postgres efímera; jamás el `.env` real ni el droplet.
+2. **Sin tocar producción.** Todo lo automatizado usa Postgres efímero (PGlite); jamás el `.env` real ni el droplet.
+   La plantilla de PGlite (migraciones ya aplicadas) se arma una vez y se cachea en el tmp del sistema
+   (`test/helpers/pgliteDb.ts`): cada base nueva cuesta ~1 s en vez de 5-13 s.
 3. **El sanity script de hoy es el test de mañana.** No botar verificaciones: al terminar una feature, dejar su prueba en `test/`.
 4. **Aislamiento por tenant = seguridad, no calidad.** Se prueba siempre, no es opcional.
 5. **Cubrir el modo de fallo caro.** Migración silenciosa y fuga entre tenants antes que cobertura cosmética.

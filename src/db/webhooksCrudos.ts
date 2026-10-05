@@ -1,6 +1,6 @@
 import { eq, sql } from "drizzle-orm";
-import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import { waWebhooksCrudos, schema } from "./schema";
+import { waWebhooksCrudos } from "./schema";
+import { conSistema, type DB } from "./alcance";
 import { filasDe } from "./filas";
 import { capturarError } from "../observabilidad/sentry";
 
@@ -15,7 +15,6 @@ import { capturarError } from "../observabilidad/sentry";
 // `src/whatsapp/reprocesoWebhooks.ts`, para no crear un ciclo de imports.
 // ─────────────────────────────────────────────────────────────────────────────
 
-type DB = PostgresJsDatabase<typeof schema>;
 
 export type MotivoDescarte = "tenant_desconocido" | "no_parseable";
 
@@ -34,7 +33,7 @@ export async function guardarCrudo(
   input: { payload: unknown; phoneNumberId: string | null; waMessageId: string | null; motivo: MotivoDescarte },
 ): Promise<void> {
   try {
-    await db
+    await conSistema(db, (tx) => tx
       .insert(waWebhooksCrudos)
       .values({
         payload: input.payload,
@@ -42,7 +41,7 @@ export async function guardarCrudo(
         waMessageId: input.waMessageId,
         motivo: input.motivo,
       })
-      .onConflictDoNothing();
+      .onConflictDoNothing());
     registrarParaAlerta(input.motivo);
   } catch (e) {
     console.error("[webhooksCrudos] no se pudo guardar el crudo (red de seguridad de F3):", e);
@@ -60,22 +59,24 @@ export interface CrudoPendiente {
 
 /** Pendientes más viejos primero (el índice `wa_webhooks_crudos_pendiente_idx` cubre esto). */
 export async function listarPendientes(db: DB, limite = 200): Promise<CrudoPendiente[]> {
-  return db
-    .select({
-      id: waWebhooksCrudos.id,
-      payload: waWebhooksCrudos.payload,
-      phoneNumberId: waWebhooksCrudos.phoneNumberId,
-      intentos: waWebhooksCrudos.intentos,
-    })
-    .from(waWebhooksCrudos)
-    .where(eq(waWebhooksCrudos.estado, "pendiente"))
-    .orderBy(waWebhooksCrudos.recibidoEn)
-    .limit(limite);
+  return conSistema(db, (tx) =>
+    tx
+      .select({
+        id: waWebhooksCrudos.id,
+        payload: waWebhooksCrudos.payload,
+        phoneNumberId: waWebhooksCrudos.phoneNumberId,
+        intentos: waWebhooksCrudos.intentos,
+      })
+      .from(waWebhooksCrudos)
+      .where(eq(waWebhooksCrudos.estado, "pendiente"))
+      .orderBy(waWebhooksCrudos.recibidoEn)
+      .limit(limite),
+  );
 }
 
 /** El reproceso reinyectó el mensaje con éxito por el mismo camino de ingesta. */
 export async function marcarProcesado(db: DB, id: string): Promise<void> {
-  await db.update(waWebhooksCrudos).set({ estado: "procesado" }).where(eq(waWebhooksCrudos.id, id));
+  await conSistema(db, (tx) => tx.update(waWebhooksCrudos).set({ estado: "procesado" }).where(eq(waWebhooksCrudos.id, id)));
 }
 
 /**
@@ -88,10 +89,10 @@ export async function marcarProcesado(db: DB, id: string): Promise<void> {
 export async function marcarIntentoFallido(db: DB, id: string, intentosActuales: number, maxIntentos: number): Promise<boolean> {
   const nuevoIntentos = intentosActuales + 1;
   const descartar = nuevoIntentos >= maxIntentos;
-  await db
+  await conSistema(db, (tx) => tx
     .update(waWebhooksCrudos)
     .set({ intentos: nuevoIntentos, estado: descartar ? "descartado" : "pendiente" })
-    .where(eq(waWebhooksCrudos.id, id));
+    .where(eq(waWebhooksCrudos.id, id)));
   return descartar;
 }
 
@@ -105,7 +106,7 @@ export async function purgarWebhooksCrudos(db: DB, retencionDias = 7, tamanoLote
   let total = 0;
   for (;;) {
     const rows = filasDe<{ id: string }>(
-      await db.execute(sql`
+      await conSistema(db, (tx) => tx.execute(sql`
       DELETE FROM wa_webhooks_crudos
        WHERE id IN (
          SELECT id FROM wa_webhooks_crudos
@@ -115,7 +116,7 @@ export async function purgarWebhooksCrudos(db: DB, retencionDias = 7, tamanoLote
        )
       RETURNING id
     `),
-    );
+    ));
     total += rows.length;
     if (rows.length < tamanoLote) break;
   }

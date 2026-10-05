@@ -5,6 +5,8 @@ import { obtenerTenantPorId } from "../config/tenantStore";
 import { enviarPlantilla } from "../whatsapp/client";
 import { capturarError } from "../observabilidad/sentry";
 import { obtenerDb } from "./db";
+import { conSistema, conTenant } from "../db/alcance";
+import { apagando, enCurso } from "../red/apagado";
 import { enmascararTelefono } from "../observabilidad/privacidad";
 import {
   marcarEnviado,
@@ -76,11 +78,13 @@ export function elegirEsperaMs(huboEnvio: boolean, pollMs: number): number {
 
 /** Pasa a "enviando" las campañas "programada" cuya hora ya llegó. */
 async function activarProgramadas(): Promise<void> {
-  const d = obtenerDb();
-  await d
-    .update(waCampanias)
-    .set({ estado: "enviando", iniciadaEn: new Date() })
-    .where(and(eq(waCampanias.estado, "programada"), lte(waCampanias.programadaPara, new Date())));
+  // Sistema: recorre las campañas programadas de todos los negocios.
+  await conSistema(obtenerDb(), (tx) =>
+    tx
+      .update(waCampanias)
+      .set({ estado: "enviando", iniciadaEn: new Date() })
+      .where(and(eq(waCampanias.estado, "programada"), lte(waCampanias.programadaPara, new Date()))),
+  );
 }
 
 /**
@@ -91,14 +95,13 @@ async function activarProgramadas(): Promise<void> {
  * de conversación tampoco hay consentimiento: no se envía.
  */
 async function siguioOptOut(tenantId: string, clienteWa: string): Promise<boolean> {
-  const d = obtenerDb();
   const rows = filasDe(
-    await d.execute(sql`
+    await conTenant(obtenerDb(), tenantId, (tx) => tx.execute(sql`
     SELECT 1 FROM wa_conversaciones
      WHERE tenant_id = ${tenantId} AND cliente_wa = ${clienteWa}
        AND opt_out_en IS NULL AND marketing_consentimiento_en IS NOT NULL
      LIMIT 1
-  `),
+  `)),
   );
   return rows.length === 0;
 }
@@ -148,10 +151,12 @@ async function procesarUno(): Promise<boolean> {
 
   // Si ya no quedan envíos pendientes de esta campaña, se da por completada.
   if (!(await quedanPendientes(d, envio.campaniaId))) {
-    await d
-      .update(waCampanias)
-      .set({ estado: "completada", completadaEn: new Date() })
-      .where(and(eq(waCampanias.id, envio.campaniaId), eq(waCampanias.estado, "enviando")));
+    await conTenant(d, envio.tenantId, (tx) =>
+      tx
+        .update(waCampanias)
+        .set({ estado: "completada", completadaEn: new Date() })
+        .where(and(eq(waCampanias.id, envio.campaniaId), eq(waCampanias.estado, "enviando"))),
+    );
   }
   return true;
 }
@@ -159,10 +164,10 @@ async function procesarUno(): Promise<boolean> {
 /** Arranca el worker de campañas. Llamar UNA vez al iniciar el servidor (solo si hay DB). */
 export function iniciarCampanias(): void {
   const loop = async () => {
-    while (true) {
+    while (!apagando()) {
       try {
         await activarProgramadas();
-        const proceso = await procesarUno();
+        const proceso = await enCurso(procesarUno());
         await dormir(elegirEsperaMs(proceso, POLL_MS));
       } catch (e) {
         console.error("[campanias] error en el loop:", e);

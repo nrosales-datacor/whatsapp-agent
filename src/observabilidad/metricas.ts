@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type { schema } from "../db/schema";
+import { filasDe } from "../db/filas";
+import { conSistema } from "../db/alcance";
 import { iniciarCicloSinSolape } from "../red/programador";
 import { intentarLiderazgo } from "../red/liderazgo";
 import { capturarError } from "./sentry";
@@ -73,9 +75,9 @@ function percentil(valores: number[], p: number): number {
 
 async function profundidadCola(db: DB | null): Promise<number | null> {
   if (!db) return null;
-  const rows = (await db.execute(
-    sql`SELECT count(*)::int AS n FROM wa_jobs WHERE estado = 'pendiente'`,
-  )) as unknown as Array<{ n: number }>;
+  const rows = filasDe<{ n: number }>(
+    await conSistema(db, (tx) => tx.execute(sql`SELECT count(*)::int AS n FROM wa_jobs WHERE estado = 'pendiente'`)),
+  );
   return rows[0]?.n ?? 0;
 }
 

@@ -28,6 +28,10 @@ export function limpiarLineas(v: unknown): string[] {
 }
 
 export function validarHorario(v: any): Record<number, HorarioDia> | null {
+  // Ausente → defaults (alta sin horario). Presente pero sin forma de objeto (un string, un
+  // número, un arreglo) → inválido: antes se tomaba como "ausente" y un POST mal armado
+  // reemplazaba el horario del negocio por el default sin avisar.
+  if (v !== undefined && v !== null && (typeof v !== "object" || Array.isArray(v))) return null;
   const out: Record<number, HorarioDia> = {};
   for (let d = 0; d < 7; d++) {
     const dia = v && typeof v === "object" ? v[d] : undefined;
@@ -44,6 +48,10 @@ export function validarHorario(v: any): Record<number, HorarioDia> | null {
     if (typeof abre !== "string" || typeof cierra !== "string" || !RE_HORA.test(abre) || !RE_HORA.test(cierra)) {
       return null;
     }
+    // La agenda no maneja horarios que cruzan la medianoche (availability.ts genera cupos
+    // de apertura a cierre): un día que "cierra" antes de abrir quedaba sin ningún cupo
+    // sin que el dueño se enterara. "HH:mm" se compara bien como texto.
+    if (abre >= cierra) return null;
     out[d] = { abre, cierra };
   }
   return out;

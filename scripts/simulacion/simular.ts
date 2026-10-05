@@ -68,7 +68,7 @@ if (!OPENAI_KEY) {
 // src/server.ts hace `import "dotenv/config"`: lo apuntamos a un archivo inexistente
 // para que no cargue nada, y limpiamos lo que el shell pudiera traer.
 process.env.DOTENV_CONFIG_PATH = path.join(RAIZ, "scripts/simulacion/.env.inexistente");
-delete process.env.DATABASE_URL; // ← repositorio en memoria; nunca Supabase
+delete process.env.DATABASE_URL; // ← base local en el proceso (PGlite); nunca Supabase
 delete process.env.GOOGLE_CALENDAR_ID; // ← no crear eventos reales
 delete process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
 delete process.env.GOOGLE_PRIVATE_KEY;
@@ -317,7 +317,7 @@ const corre = (n: string) => !filtro || n.toLowerCase().includes(filtro);
 // ── (6) FASE A — casos por HTTP contra el server real ──
 
 console.log("━".repeat(78));
-console.log(" FASE A — HTTP real → src/server.ts (repo en memoria, procesamiento inline)");
+console.log(" FASE A — HTTP real → src/server.ts (base local PGlite + cola durable)");
 console.log("━".repeat(78));
 
 interface CasoSimple {

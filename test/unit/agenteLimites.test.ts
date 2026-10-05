@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import { ejecutarTool, MAX_LARGO_NOMBRE, textoLibre } from "../../src/agent/runAgent";
-import { RepositorioEnMemoria } from "../../src/booking/inMemoryRepository";
+import { repoDePrueba, type RepoDePrueba } from "../helpers/repoDePrueba";
 import type { Service, Tenant } from "../../src/types";
 import { crearTenant } from "../helpers/fixtures";
 
@@ -23,11 +23,11 @@ function lunesEn(semanas: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-function contexto(tenant: Tenant, repo = new RepositorioEnMemoria(), clienteWa = CLIENTE) {
-  return { tenant, repo, clienteWa };
+async function contexto(tenant: Tenant, repo?: RepoDePrueba, clienteWa = CLIENTE) {
+  return { tenant, repo: repo ?? (await repoDePrueba()), clienteWa };
 }
 
-async function correr(ctx: ReturnType<typeof contexto>, nombre: string, args: Record<string, unknown>): Promise<any> {
+async function correr(ctx: Awaited<ReturnType<typeof contexto>>, nombre: string, args: Record<string, unknown>): Promise<any> {
   return JSON.parse(await ejecutarTool(nombre, args, ctx, {}));
 }
 
@@ -46,7 +46,7 @@ afterEach(() => {
 // ── Tope de citas activas por número ──
 
 test("agendar_cita: con 3 citas activas (default) el número no puede agendar una 4ª", async () => {
-  const ctx = contexto(crearTenant());
+  const ctx = await contexto(crearTenant());
   for (let i = 1; i <= 3; i++) {
     const r = await correr(ctx, "agendar_cita", agendar(lunesEn(i)));
     assert.equal(r.ok, true, `la cita ${i} debía agendarse`);
@@ -60,16 +60,16 @@ test("agendar_cita: con 3 citas activas (default) el número no puede agendar un
 
 test("agendar_cita: el tope es por número — otro cliente sí puede agendar", async () => {
   process.env.MAX_CITAS_ACTIVAS_POR_CLIENTE = "1";
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = crearTenant();
-  assert.equal((await correr(contexto(tenant, repo), "agendar_cita", agendar(lunesEn(1)))).ok, true);
-  assert.equal((await correr(contexto(tenant, repo), "agendar_cita", agendar(lunesEn(2)))).ok, false);
-  assert.equal((await correr(contexto(tenant, repo, "50677776666"), "agendar_cita", agendar(lunesEn(2)))).ok, true);
+  assert.equal((await correr(await contexto(tenant, repo), "agendar_cita", agendar(lunesEn(1)))).ok, true);
+  assert.equal((await correr(await contexto(tenant, repo), "agendar_cita", agendar(lunesEn(2)))).ok, false);
+  assert.equal((await correr(await contexto(tenant, repo, "50677776666"), "agendar_cita", agendar(lunesEn(2)))).ok, true);
 });
 
 test("agendar_cita: una cita cancelada libera el cupo", async () => {
   process.env.MAX_CITAS_ACTIVAS_POR_CLIENTE = "1";
-  const ctx = contexto(crearTenant());
+  const ctx = await contexto(crearTenant());
   const primera = await correr(ctx, "agendar_cita", agendar(lunesEn(1)));
   assert.equal(primera.ok, true);
   assert.equal((await correr(ctx, "cancelar_cita", {})).ok, true);
@@ -79,7 +79,7 @@ test("agendar_cita: una cita cancelada libera el cupo", async () => {
 // ── Texto libre acotado ──
 
 test("agendar_cita: nombre larguísimo con saltos de línea se limpia y trunca; placa también", async () => {
-  const ctx = contexto(crearTenant());
+  const ctx = await contexto(crearTenant());
   const nombre = "Juan\n\nPérez\u0000 " + "x".repeat(5000);
   const r = await correr(ctx, "agendar_cita", agendar(lunesEn(1), { nombre, placa: "ABC-123\n" + "9".repeat(100) }));
   assert.equal(r.ok, true);
@@ -91,7 +91,7 @@ test("agendar_cita: nombre larguísimo con saltos de línea se limpia y trunca; 
 });
 
 test("agendar_cita: sin nombre usable (vacío o solo espacios) no agenda", async () => {
-  const ctx = contexto(crearTenant());
+  const ctx = await contexto(crearTenant());
   const r = await correr(ctx, "agendar_cita", agendar(lunesEn(1), { nombre: " \n\t " }));
   assert.equal(r.ok, false);
   assert.match(r.motivo, /nombre/);
@@ -124,7 +124,7 @@ function tenantPro(): Tenant {
 }
 
 test("agregar_addon_a_cita SIN citaId (turno siguiente): usa la única cita activa con ese add-on", async () => {
-  const ctx = contexto(tenantPro());
+  const ctx = await contexto(tenantPro());
   const agendada = await correr(ctx, "agendar_cita", agendar(lunesEn(1), { servicioId: "limpieza_dental" }));
   assert.equal(agendada.addonSugerido.addonId, "fluor");
   // Otra cita activa SIN add-on configurado: no debe confundir la resolución.
@@ -140,7 +140,7 @@ test("agregar_addon_a_cita SIN citaId (turno siguiente): usa la única cita acti
 });
 
 test("agregar_addon_a_cita con un citaId INVENTADO: igual resuelve la cita del cliente", async () => {
-  const ctx = contexto(tenantPro());
+  const ctx = await contexto(tenantPro());
   const agendada = await correr(ctx, "agendar_cita", agendar(lunesEn(1), { servicioId: "limpieza_dental" }));
   const r = await correr(ctx, "agregar_addon_a_cita", { citaId: "cita-123", addonId: "fluor" });
   assert.equal(r.ok, true, JSON.stringify(r));
@@ -148,7 +148,7 @@ test("agregar_addon_a_cita con un citaId INVENTADO: igual resuelve la cita del c
 });
 
 test("agregar_addon_a_cita sin citaId y con DOS citas candidatas: no adivina, devuelve la lista", async () => {
-  const ctx = contexto(tenantPro());
+  const ctx = await contexto(tenantPro());
   await correr(ctx, "agendar_cita", agendar(lunesEn(1), { servicioId: "limpieza_dental" }));
   await correr(ctx, "agendar_cita", agendar(lunesEn(2), { servicioId: "limpieza_dental" }));
   const r = await correr(ctx, "agregar_addon_a_cita", { addonId: "fluor" });
@@ -157,14 +157,14 @@ test("agregar_addon_a_cita sin citaId y con DOS citas candidatas: no adivina, de
 });
 
 test("agregar_addon_a_cita con un addonId distinto al configurado: se rechaza (no agrega otra cosa)", async () => {
-  const ctx = contexto(tenantPro());
+  const ctx = await contexto(tenantPro());
   const agendada = await correr(ctx, "agendar_cita", agendar(lunesEn(1), { servicioId: "limpieza_dental" }));
   const r = await correr(ctx, "agregar_addon_a_cita", { citaId: agendada.cita.id, addonId: "control" });
   assert.equal(r.ok, false);
 });
 
 test("rechazar_addon sin citaId: registra el rechazo y la próxima cita ya no sugiere el add-on", async () => {
-  const ctx = contexto(tenantPro());
+  const ctx = await contexto(tenantPro());
   await ctx.repo.obtenerOConversacion(ctx.tenant.id, CLIENTE); // el rechazo vive en la conversación
   await correr(ctx, "agendar_cita", agendar(lunesEn(1), { servicioId: "limpieza_dental" }));
   assert.equal((await correr(ctx, "rechazar_addon", { addonId: "fluor" })).ok, true);

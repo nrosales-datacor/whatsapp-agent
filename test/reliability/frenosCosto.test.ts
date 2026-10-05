@@ -5,7 +5,7 @@ import { and, eq, like } from "drizzle-orm";
 import { crearDbEfimera } from "../helpers/pgliteDb";
 import { waMensajes } from "../../src/db/schema";
 import { RepositorioDrizzle } from "../../src/booking/drizzleRepository";
-import { RepositorioEnMemoria } from "../../src/booking/inMemoryRepository";
+import { repoDePrueba } from "../helpers/repoDePrueba";
 import { ingerirEntrante, responderEntrante, type Pendiente } from "../../src/handleWebhook";
 import { _registrarTenantParaTests } from "../../src/config/tenantStore";
 import { incrementarUso, anioMesActual } from "../../src/observabilidad/uso";
@@ -120,7 +120,7 @@ test("límite por cliente: la ventana es deslizante — respuestas de hace más 
     // 30 respuestas de hace 2 h (ya fuera de la ventana) + 29 recientes: por debajo del límite.
     const viejo = new Date(Date.now() - 2 * HORA_MS);
     await db.insert(waMensajes).values(
-      Array.from({ length: 30 }, (_, i) => ({ conversacionId: conv.id, rol: "assistant", contenido: `vieja ${i}`, creadoEn: viejo })),
+      Array.from({ length: 30 }, (_, i) => ({ tenantId: tenant.id, conversacionId: conv.id, rol: "assistant", contenido: `vieja ${i}`, creadoEn: viejo })),
     );
     await sembrarTurnosBot(repo, tenant, conv.id, 29);
 
@@ -134,7 +134,7 @@ test("límite por cliente: la ventana es deslizante — respuestas de hace más 
 
 test("límite por cliente: sin DB (repositorio en memoria) aplica igual", async () => {
   const mock = instalarMockWebhook();
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = crearTenant({ id: "tenant-freno-mem", phoneNumberId: "pnid-freno-mem", accessToken: "test-token" });
   const conv = await repo.obtenerOConversacion(tenant.id, "50600000005");
   await sembrarTurnosBot(repo, tenant, conv.id, 30);

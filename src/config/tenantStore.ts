@@ -12,7 +12,8 @@ import type {
   Tenant,
   TextosCliente,
 } from "../types";
-import { obtenerDb } from "../db/client";
+import { hayBaseDeDatos as hayBaseDeDatosConfigurada, obtenerDb } from "../db/client";
+import { conSistema, conTenant, type Tx } from "../db/alcance";
 import { schema, waPushSubs, waTenants, waUsuarios } from "../db/schema";
 import { cifrar, descifrar } from "./secretos";
 import { TENANT_FALLBACK_SELYON } from "./tenants";
@@ -241,15 +242,17 @@ function notificarRecarga(): void {
 
 async function recargarDesdeDb(): Promise<void> {
   try {
-    const d = obtenerDb();
+    // Sistema: el caché es el registro de TODOS los negocios (ruteo del webhook, login).
     // Se leen TODOS los tenants (no solo activo = true) para poder separar los pausados en
     // sus propios índices (ver `Cache`). Si TODOS están pausados se arma igual un caché sin
     // activos, NO el fallback: el fallback hardcodeado podría ser justamente un negocio que
     // se pausó por falta de pago, y volvería a atender gratis.
-    const filas = await d.select().from(waTenants);
+    const { filas, usuarios } = await conSistema(obtenerDb(), async (tx) => ({
+      filas: await tx.select().from(waTenants),
+      usuarios: await tx.select().from(waUsuarios).where(eq(waUsuarios.activo, true)),
+    }));
     const tenants = filas.filter((f) => f.activo);
     const pausados = filas.filter((f) => !f.activo);
-    const usuarios = await d.select().from(waUsuarios).where(eq(waUsuarios.activo, true));
     if (filas.length === 0) {
       activarFallback("la base no tiene tenants");
       return;
@@ -286,7 +289,7 @@ function activarFallback(motivo: string): void {
   cache = cacheFallback();
   fuenteActual = "fallback";
   console.error(
-    `[tenantStore] ⚠️ ${motivo} — usando fallback hardcodeado 'rosales'. ` +
+    `[tenantStore] ⚠️ ${motivo} — usando fallback hardcodeado 'selyon'. ` +
       "EL ALTA DE NEGOCIOS NO ESTÁ DISPONIBLE hasta sembrar la base (npx tsx scripts/seedTenants.ts).",
   );
 }
@@ -302,11 +305,11 @@ function iniciarRefresco(): void {
 
 /** Carga inicial del caché. Llamar UNA vez antes de aceptar tráfico (server.listen). */
 export async function cargarTenants(): Promise<void> {
-  hayDb = !!process.env.DATABASE_URL;
+  hayDb = hayBaseDeDatosConfigurada();
   if (!hayDb) {
     cache = cacheFallback();
     fuenteActual = "fallback";
-    console.log(`[tenantStore] sin DATABASE_URL: ${cache.porId.size} tenant(s) en memoria (fallback).`);
+    console.log(`[tenantStore] sin base de datos: ${cache.porId.size} tenant(s) en memoria (fallback).`);
     return;
   }
   await recargarDesdeDb();
@@ -362,7 +365,7 @@ export function obtenerUsuarioPorId(usuarioId: string): CuentaUsuario | undefine
 
 /** true si hay base configurada (el alta de negocios la requiere). */
 export function hayBaseDeDatos(): boolean {
-  return !!process.env.DATABASE_URL;
+  return hayBaseDeDatosConfigurada();
 }
 
 /**
@@ -398,8 +401,8 @@ interface NuevoUsuario {
  */
 export async function crearTenant(tenant: Tenant, u: NuevoUsuario): Promise<void> {
   if (!hayDb) throw new Error("SIN_DB");
-  const d = obtenerDb();
-  await d.transaction(async (tx) => {
+  // Acotado al negocio NUEVO: las filas que se insertan son todas de `tenant.id`.
+  await conTenant(obtenerDb(), tenant.id, async (tx) => {
     await tx.insert(waTenants).values({
       id: tenant.id,
       nombre: tenant.nombre,
@@ -415,6 +418,16 @@ export async function crearTenant(tenant: Tenant, u: NuevoUsuario): Promise<void
       servicios: tenant.servicios,
       kb: tenant.kb,
       bloqueos: tenant.bloqueos,
+      empleados: tenant.empleados ?? [],
+      // Perfil del negocio (B7): el formulario de alta lo pide y validarAltaTenant lo
+      // arma; sin estas columnas el negocio arrancaba con el prompt genérico y el dueño
+      // tenía que volver a cargarlo en "Mi negocio".
+      tipoNegocio: tenant.tipoNegocio ?? null,
+      pais: tenant.pais ?? null,
+      formasPago: tenant.formasPago ?? null,
+      registro: tenant.registro ?? null,
+      tono: tenant.tono ?? null,
+      instrucciones: tenant.instrucciones ?? null,
       linkResenas: tenant.linkResenas ?? null,
       plantillaMarketing: tenant.plantillaMarketing ?? null,
       plantillaReapertura: tenant.plantillaReapertura ?? null,
@@ -505,8 +518,7 @@ export async function actualizarConfigTenant(
   db?: DB,
 ): Promise<void> {
   if (!db && !hayDb) throw new Error("SIN_DB");
-  const d = db ?? obtenerDb();
-  await d.transaction(async (tx) => {
+  await conTenant(db ?? obtenerDb(), tenantId, async (tx) => {
     await tx
       .update(waTenants)
       .set({
@@ -591,11 +603,12 @@ export async function restaurarVersionConfigTenant(
  */
 export async function actualizarTopeTenant(tenantId: string, desactivado: boolean): Promise<void> {
   if (!hayDb) throw new Error("SIN_DB");
-  const d = obtenerDb();
-  await d
-    .update(waTenants)
-    .set({ topeConversacionesDesactivado: desactivado, actualizadoEn: new Date() })
-    .where(eq(waTenants.id, tenantId));
+  await conTenant(obtenerDb(), tenantId, (tx) =>
+    tx
+      .update(waTenants)
+      .set({ topeConversacionesDesactivado: desactivado, actualizadoEn: new Date() })
+      .where(eq(waTenants.id, tenantId)),
+  );
 }
 
 // ── Pausar / reactivar un negocio (revisión pre-venta 2026-10, cobro manual) ──
@@ -624,8 +637,7 @@ export async function cambiarEstadoTenant(
   db?: DB,
 ): Promise<"ok" | "sin_cambio" | "no_encontrado"> {
   if (!db && !hayDb) throw new Error("SIN_DB");
-  const d = db ?? obtenerDb();
-  return d.transaction(async (tx) => {
+  return conTenant(db ?? obtenerDb(), tenantId, async (tx) => {
     const [fila] = await tx.select({ activo: waTenants.activo }).from(waTenants).where(eq(waTenants.id, tenantId));
     if (!fila) return "no_encontrado" as const;
     if (fila.activo === activo) return "sin_cambio" as const;
@@ -654,8 +666,7 @@ export async function actualizarConexionWhatsapp(
   db?: DB,
 ): Promise<boolean> {
   if (!db && !hayDb) throw new Error("SIN_DB");
-  const d = db ?? obtenerDb();
-  return d.transaction(async (tx) => {
+  return conTenant(db ?? obtenerDb(), tenantId, async (tx) => {
     const [fila] = await tx.select({ pnid: waTenants.phoneNumberId }).from(waTenants).where(eq(waTenants.id, tenantId));
     if (!fila) return false;
     await tx
@@ -687,8 +698,9 @@ export interface UsuarioTenant {
 
 /** Todos los usuarios (activos e inactivos) de un negocio, para la pestaña "Usuarios". */
 export async function listarUsuariosDeTenant(tenantId: string): Promise<UsuarioTenant[]> {
-  const d = obtenerDb();
-  const filas = await d.select().from(waUsuarios).where(eq(waUsuarios.tenantId, tenantId));
+  const filas = await conTenant(obtenerDb(), tenantId, (tx) =>
+    tx.select().from(waUsuarios).where(eq(waUsuarios.tenantId, tenantId)),
+  );
   return filas.map((f) => ({
     id: f.id,
     usuario: f.usuario,
@@ -712,8 +724,9 @@ interface NuevoUsuarioTenant {
  */
 export async function crearUsuarioTenant(tenantId: string, u: NuevoUsuarioTenant): Promise<void> {
   if (!hayDb) throw new Error("SIN_DB");
-  const d = obtenerDb();
-  await d.insert(waUsuarios).values({ usuario: u.usuario, passwordHash: u.passwordHash, tenantId, rol: u.rol });
+  await conTenant(obtenerDb(), tenantId, (tx) =>
+    tx.insert(waUsuarios).values({ usuario: u.usuario, passwordHash: u.passwordHash, tenantId, rol: u.rol }),
+  );
 }
 
 /**
@@ -737,8 +750,7 @@ export async function actualizarUsuarioTenant(
 ): Promise<void> {
   if (!hayDb) throw new Error("SIN_DB");
   const subeEpoch = patch.rol !== undefined || patch.activo === false;
-  const d = obtenerDb();
-  await d.transaction(async (tx) => {
+  await conTenant(obtenerDb(), tenantId, async (tx) => {
     await tx
       .update(waUsuarios)
       .set({ ...patch, ...(subeEpoch ? { sessionEpoch: sql`${waUsuarios.sessionEpoch} + 1` } : {}) })
@@ -758,7 +770,7 @@ export async function actualizarUsuarioTenant(
  * descarta cualquier suscripción cuyo epoch ya no coincida: defensa en profundidad.)
  */
 async function borrarPushSubsDeUsuario(
-  tx: Parameters<Parameters<DB["transaction"]>[0]>[0],
+  tx: Tx,
   usuarioId: string,
   tenantId?: string,
 ): Promise<void> {
@@ -784,8 +796,8 @@ async function borrarPushSubsDeUsuario(
  */
 export async function resetearClaveUsuario(usuarioId: string, passwordHash: string, expiraEn: Date): Promise<UsuarioTenant | null> {
   if (!hayDb) throw new Error("SIN_DB");
-  const d = obtenerDb();
-  const filas = await d.transaction(async (tx) => {
+  // Sistema: el superadmin resetea por id de usuario, sin un negocio de sesión.
+  const filas = await conSistema(obtenerDb(), async (tx) => {
     const r = await tx
       .update(waUsuarios)
       .set({ passwordHash, debeCambiarClave: true, claveTemporalExpira: expiraEn, sessionEpoch: sql`${waUsuarios.sessionEpoch} + 1` })
@@ -812,8 +824,7 @@ export async function resetearClaveUsuario(usuarioId: string, passwordHash: stri
  */
 export async function cambiarClavePropia(tenantId: string, usuarioId: string, nuevoHash: string): Promise<void> {
   if (!hayDb) throw new Error("SIN_DB");
-  const d = obtenerDb();
-  await d.transaction(async (tx) => {
+  await conTenant(obtenerDb(), tenantId, async (tx) => {
     await tx
       .update(waUsuarios)
       .set({
@@ -849,8 +860,7 @@ export async function actualizarFacturacionTenant(
   },
 ): Promise<void> {
   if (!hayDb) throw new Error("SIN_DB");
-  const d = obtenerDb();
-  await d.update(waTenants).set(patch).where(eq(waTenants.id, tenantId));
+  await conTenant(obtenerDb(), tenantId, (tx) => tx.update(waTenants).set(patch).where(eq(waTenants.id, tenantId)));
 }
 
 /**
@@ -859,8 +869,9 @@ export async function actualizarFacturacionTenant(
  * frecuencia (un webhook por evento de Stripe), no pasa por el caché en memoria.
  */
 export async function buscarTenantIdPorStripeCustomer(stripeCustomerId: string): Promise<string | null> {
-  const d = obtenerDb();
-  const filas = await d.select({ id: waTenants.id }).from(waTenants).where(eq(waTenants.stripeCustomerId, stripeCustomerId)).limit(1);
+  const filas = await conSistema(obtenerDb(), (tx) =>
+    tx.select({ id: waTenants.id }).from(waTenants).where(eq(waTenants.stripeCustomerId, stripeCustomerId)).limit(1),
+  );
   return filas[0]?.id ?? null;
 }
 

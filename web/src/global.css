@@ -300,6 +300,7 @@ button { font: inherit; cursor: pointer; border: none; background: none; color: 
 /* Conversaciones */
 #convs { flex: 1; overflow-y: auto; }
 .convs-vacio-wrap { padding: var(--space-lg) var(--space-md); }
+.convs-mas { padding: var(--space-sm) var(--space-md) var(--space-md); }
 .conv { display: flex; gap: var(--space-sm); padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--border); cursor: pointer; align-items: center; transition: background .12s; }
 .conv:hover { background: var(--surface-2); }
 .conv.activa { background: var(--active); box-shadow: inset 3px 0 0 var(--accent); }

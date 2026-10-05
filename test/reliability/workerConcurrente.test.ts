@@ -49,6 +49,9 @@ function payload(c: Conversacion): PendienteSerializado {
     entrante: { phoneNumberId: "pnid", clienteWa: c.clienteWa, esTexto: true, texto: "hola" },
     conv: c,
     primerContacto: false,
+    // Texto común: lo contesta el agente (ver la regla 3 de src/queue/cola.ts).
+    agrupable: true,
+    releeHistorial: true,
   };
 }
 
@@ -61,7 +64,7 @@ async function encolar(
   const cuando = new Date(Date.now() - haceSeg * 1000);
   const [row] = await base.db
     .insert(waJobs)
-    .values({ tenantId: c.tenantId, payload: payload(c), creadoEn: cuando, ejecutarDespuesDe: cuando, ...extra })
+    .values({ tenantId: c.tenantId, conversacionId: c.id, payload: payload(c), creadoEn: cuando, ejecutarDespuesDe: cuando, ...extra })
     .returning({ id: waJobs.id });
   return row.id;
 }
@@ -69,7 +72,7 @@ async function encolar(
 async function enVueloPorConversacion(): Promise<Map<string, number>> {
   const filas = filasDe<{ conv: string; n: number }>(
     await base.db.execute(sql`
-      SELECT payload->'conv'->>'id' AS conv, count(*)::int AS n
+      SELECT conversacion_id AS conv, count(*)::int AS n
         FROM wa_jobs WHERE estado = 'procesando' GROUP BY 1
     `),
   );

@@ -341,6 +341,14 @@ test("cabeceras: la landing autoriza SOLO su script inline por hash (sin 'unsafe
   assert.doesNotMatch(csp, /unsafe-inline/);
 });
 
+test("cabeceras: el hash del script inline es el del navegador aunque el HTML tenga fin de línea CRLF", () => {
+  // El parser HTML normaliza CRLF/CR → LF antes de hashear: un checkout en Windows
+  // (core.autocrlf) no puede dejar el script de la landing bloqueado por la CSP.
+  const lf = hashesScriptsInline("<script>\nvar a = 1;\nvar b = 2;\n</script>");
+  assert.deepEqual(hashesScriptsInline("<script>\r\nvar a = 1;\r\nvar b = 2;\r\n</script>"), lf);
+  assert.deepEqual(hashesScriptsInline("<script>\rvar a = 1;\rvar b = 2;\r</script>"), lf);
+});
+
 test("cabeceras: HSTS solo si la request vino por https (X-Forwarded-Proto del proxy) o forzado por env", async () => {
   assert.equal((await cabeceras("/", { "x-forwarded-proto": "https" })).h.get("strict-transport-security"), "max-age=31536000");
   assert.equal((await cabeceras("/salud", { "x-forwarded-proto": "http" })).h.get("strict-transport-security"), null);

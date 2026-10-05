@@ -3,6 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { schema, waUsoMensual } from "../db/schema";
 import { filasDe } from "../db/filas";
+import { conSistema } from "../db/alcance";
 import type { Tenant } from "../types";
 import { listarTenants } from "../config/tenantStore";
 import { iniciarCicloSinSolape } from "../red/programador";
@@ -88,12 +89,12 @@ export interface ResumenVigilancia {
  */
 export async function antiguedadPendienteMasViejoMin(db: DB): Promise<number | null> {
   const filas = filasDe<{ seg: number | string | null }>(
-    await db.execute(sql`
+    await conSistema(db, (tx) => tx.execute(sql`
       SELECT EXTRACT(EPOCH FROM (now() - min(ejecutar_despues_de)))::float8 AS seg
         FROM wa_jobs
        WHERE estado = 'pendiente' AND ejecutar_despues_de <= now()
     `),
-  );
+  ));
   const seg = filas[0]?.seg;
   return seg === null || seg === undefined ? null : Math.round((Number(seg) / 60) * 10) / 10;
 }
@@ -103,7 +104,7 @@ export async function antiguedadPendienteMasViejoMin(db: DB): Promise<number | n
 /** Jobs que pasaron a `error` (agotaron reintentos) en los últimos `ventanaMin`, por tenant. */
 export async function jobsEnErrorRecientes(db: DB, ventanaMin: number): Promise<{ tenantId: string; n: number }[]> {
   const filas = filasDe<{ tenant_id: string; n: number }>(
-    await db.execute(sql`
+    await conSistema(db, (tx) => tx.execute(sql`
       SELECT tenant_id, count(*)::int AS n
         FROM wa_jobs
        WHERE estado = 'error'
@@ -111,7 +112,7 @@ export async function jobsEnErrorRecientes(db: DB, ventanaMin: number): Promise<
        GROUP BY tenant_id
        ORDER BY n DESC
     `),
-  );
+  ));
   return filas.map((f) => ({ tenantId: f.tenant_id, n: Number(f.n) }));
 }
 
@@ -130,19 +131,19 @@ export async function ultimoEntrantePorTenant(db: DB, tenantIds: string[]): Prom
   const mapa = new Map<string, Date>();
   if (tenantIds.length === 0) return mapa;
   const desdeJobs = filasDe<{ tenant_id: string; ultimo: string | Date }>(
-    await db.execute(sql`
+    await conSistema(db, (tx) => tx.execute(sql`
       SELECT tenant_id, max(creado_en) AS ultimo
         FROM wa_jobs
        WHERE tipo = 'responder_entrante'
        GROUP BY tenant_id
     `),
-  );
+  ));
   for (const f of desdeJobs) if (f.ultimo) mapa.set(f.tenant_id, new Date(f.ultimo));
 
   const faltantes = tenantIds.filter((id) => !mapa.has(id));
   if (faltantes.length > 0) {
     const desdeMensajes = filasDe<{ tenant_id: string; ultimo: string | Date }>(
-      await db.execute(sql`
+      await conSistema(db, (tx) => tx.execute(sql`
         SELECT c.tenant_id, max(m.creado_en) AS ultimo
           FROM wa_mensajes m
           JOIN wa_conversaciones c ON c.id = m.conversacion_id
@@ -150,7 +151,7 @@ export async function ultimoEntrantePorTenant(db: DB, tenantIds: string[]): Prom
            AND c.tenant_id IN (${sql.join(faltantes.map((id) => sql`${id}`), sql`, `)})
          GROUP BY c.tenant_id
       `),
-    );
+    ));
     for (const f of desdeMensajes) if (f.ultimo) mapa.set(f.tenant_id, new Date(f.ultimo));
   }
   return mapa;
@@ -273,10 +274,10 @@ export async function tenantsSinEntrantes(
 
 /** Tenants al 100% (o más) de su tope mensual. Una sola consulta para todos. */
 export async function tenantsConCuotaAgotada(db: DB, tenants: Tenant[]): Promise<{ tenantId: string; usados: number; tope: number }[]> {
-  const filas = await db
+  const filas = await conSistema(db, (tx) => tx
     .select({ tenantId: waUsoMensual.tenantId, conversaciones: waUsoMensual.conversacionesIniciadas })
     .from(waUsoMensual)
-    .where(eq(waUsoMensual.anioMes, anioMesActual()));
+    .where(eq(waUsoMensual.anioMes, anioMesActual())));
   const usoPorTenant = new Map(filas.map((f) => [f.tenantId, f.conversaciones]));
   const resultado: { tenantId: string; usados: number; tope: number }[] = [];
   for (const t of tenants) {

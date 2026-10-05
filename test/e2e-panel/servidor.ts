@@ -7,9 +7,9 @@ import { E2E } from "./constantes";
 // Playwright (ver playwright.config.ts → webServer). Levanta el MISMO server de
 // producción (src/server.ts) pero en modo seguro para tests:
 //
-//   • SIN base de datos → repositorio EN MEMORIA (RepositorioEnMemoria). Jamás toca
-//     Postgres ni el .env real (ver el truco de DOTENV_CONFIG_PATH abajo).
-//   • SEED_DEMO=1 → siembra conversaciones y citas de demo en memoria.
+//   • SIN DATABASE_URL → el server usa su Postgres local en el proceso (PGlite, en
+//     memoria). Jamás toca la base real ni el .env real (ver DOTENV_CONFIG_PATH abajo).
+//   • SEED_DEMO=1 → siembra conversaciones y citas de demo en esa base local.
 //   • Graph API mockeado in-process (mismo helper que el E2E del webhook, ángulo 3):
 //     responder() "envía" al cliente sin salir a la red.
 //
@@ -26,6 +26,7 @@ delete process.env.DATABASE_URL;
 
 process.env.NODE_ENV = "test";
 process.env.SEED_DEMO = "1";
+process.env.TENANTS_REFRESH_MS = "0"; // caché de tenants estable: las specs registran cuentas de prueba
 process.env.PORT = String(E2E.puerto);
 process.env.PANEL_SESSION_SECRET = E2E.secret; // conocido → las specs pueden mintear cookies
 // E6/BLOQUEANTE-10: el rate limit de login es por IP, y TODO el suite de Playwright
@@ -71,13 +72,13 @@ await import("../../src/server");
 
 // (6) E13/ALTO-06 (revocación de sesiones): `sesionDeOperador` ya no confía en el rol
 // firmado en el token — revalida CADA request contra la cuenta viva del caché
-// (`obtenerUsuarioPorId`) y usa el `rol` de esa cuenta, no el del token. En modo memoria
+// (`obtenerUsuarioPorId`) y usa el `rol` de esa cuenta, no el del token. Con la base local vacía
 // (sin DB) el único usuario que trae `cacheFallback()` es el dueño "fallback"; para que
 // las specs de `api.spec.ts` puedan mintear sesiones de "operador" Y de "dueno" con
 // guards de rol reales (no solo la firma), hace falta una cuenta VIVA de cada rol en el
 // caché. `_registrarUsuarioParaTests` (solo-test, tenantStore.ts) inyecta sin pasar por
 // la base — se llama DESPUÉS de `cargarTenants()` (ya corrió dentro del import de arriba)
-// porque esa función reemplaza el caché entero; en modo memoria no hay refresh periódico
+// porque esa función reemplaza el caché entero; con TENANTS_REFRESH_MS=0 no hay refresh periódico
 // que lo pise después (ver `cargarTenants`: `iniciarRefresco()` solo se llama con DB).
 const { _registrarUsuarioParaTests } = await import("../../src/config/tenantStore");
 for (const rol of ["dueno", "operador"] as const) {

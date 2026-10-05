@@ -1,6 +1,7 @@
 import { and, desc, eq, gt, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { schema, waMensajes } from "../db/schema";
+import { conTenant } from "../db/alcance";
 import type { Conversacion, Repositorio, Tenant } from "../types";
 import { enviarTexto } from "../whatsapp/client";
 import { notificarOperador } from "../panel/notificaciones";
@@ -142,16 +143,16 @@ export interface ActividadCliente {
 }
 
 /** Con DB: dos consultas chicas sobre `wa_mensajes` (índice por conversación). */
-async function leerActividadDb(db: DB, conversacionId: string, ahora: number): Promise<ActividadCliente> {
+async function leerActividadDb(db: DB, tenantId: string, conversacionId: string, ahora: number): Promise<ActividadCliente> {
   const haceUnaHora = new Date(ahora - HORA_MS);
-  const [fila] = await db
+  const [fila] = await conTenant(db, tenantId, (tx) => tx
     .select({
       turnos: sql<number>`count(*) filter (where ${waMensajes.rol} = 'assistant' and ${waMensajes.porHumano} = false and ${waMensajes.waMessageId} is null)`.mapWith(Number),
       avisos: sql<number>`count(*) filter (where ${waMensajes.waMessageId} like ${PREFIJO_AVISO_LIMITE + "%"})`.mapWith(Number),
     })
     .from(waMensajes)
-    .where(and(eq(waMensajes.conversacionId, conversacionId), gt(waMensajes.creadoEn, haceUnaHora)));
-  const entrantes = await db
+    .where(and(eq(waMensajes.conversacionId, conversacionId), gt(waMensajes.creadoEn, haceUnaHora))));
+  const entrantes = await conTenant(db, tenantId, (tx) => tx
     .select({ contenido: waMensajes.contenido, creadoEn: waMensajes.creadoEn })
     .from(waMensajes)
     .where(
@@ -162,7 +163,7 @@ async function leerActividadDb(db: DB, conversacionId: string, ahora: number): P
       ),
     )
     .orderBy(desc(waMensajes.creadoEn))
-    .limit(100);
+    .limit(100));
   return {
     turnosBotUltimaHora: fila?.turnos ?? 0,
     avisoUltimaHora: (fila?.avisos ?? 0) > 0,
@@ -220,7 +221,7 @@ export async function aplicarFrenosPorCliente(a: FrenoClienteArgs): Promise<bool
   const ahora = (a.ahora ?? new Date()).getTime();
   let actividad: ActividadCliente;
   try {
-    actividad = db ? await leerActividadDb(db, conv.id, ahora) : await leerActividadRepo(repo, tenant.id, conv.id, ahora);
+    actividad = db ? await leerActividadDb(db, tenant.id, conv.id, ahora) : await leerActividadRepo(repo, tenant.id, conv.id, ahora);
   } catch (e) {
     console.error("[freno-cliente] no se pudo leer la actividad reciente, se deja pasar el turno:", e);
     return false;

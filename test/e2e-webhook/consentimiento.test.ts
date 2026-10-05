@@ -1,7 +1,7 @@
 import "../helpers/setupEnv"; // PRIMERO: fija OPENAI_API_KEY antes de importar handleWebhook
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, test } from "node:test";
-import { RepositorioEnMemoria } from "../../src/booking/inMemoryRepository";
+import { repoDePrueba, type RepoDePrueba } from "../helpers/repoDePrueba";
 import { responderEntrante, type Pendiente } from "../../src/handleWebhook";
 import {
   _resetConsentimientoMemoriaParaTests,
@@ -24,7 +24,7 @@ function tenantPro(overrides: Partial<Tenant> = {}): Tenant {
   return crearTenant({ plan: "pro", accessToken: "test-token", linkResenas: "https://g.page/r/demo", ...overrides });
 }
 
-async function nuevaConv(repo: RepositorioEnMemoria, tenant: Tenant): Promise<Conversacion> {
+async function nuevaConv(repo: RepoDePrueba, tenant: Tenant): Promise<Conversacion> {
   const c = await repo.obtenerOConversacion(tenant.id, CLIENTE);
   return (await repo.obtenerConversacionPorId(tenant.id, c.id))!;
 }
@@ -52,7 +52,7 @@ afterEach(() => desactivarMockWebhook());
 
 test("post-servicio positivo (Pro): tras la reseña, el bot ofrece UNA vez los botones Sí/No", async () => {
   const mock = instalarMockWebhook();
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantPro();
   const conv = await nuevaConv(repo, tenant);
 
@@ -75,7 +75,7 @@ test("post-servicio positivo (Pro): tras la reseña, el bot ofrece UNA vez los b
 
 test("post-servicio negativo o plan Básico: NO se pide consentimiento", async () => {
   const mock = instalarMockWebhook();
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantPro();
   const conv = await nuevaConv(repo, tenant);
   await responderEntrante(pendiente(tenant, conv, "Mal 😞", "postmal|cita-1"), repo);
@@ -90,7 +90,7 @@ test("post-servicio negativo o plan Básico: NO se pide consentimiento", async (
 
 test('tocar "Sí, avísenme" registra el consentimiento (acción directa, sin agente)', async () => {
   const mock = instalarMockWebhook();
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantPro();
   const conv = await nuevaConv(repo, tenant);
 
@@ -103,7 +103,7 @@ test('tocar "Sí, avísenme" registra el consentimiento (acción directa, sin ag
 
 test('tocar "No, gracias" deja sin consentimiento; un "Sí" previo se revoca', async () => {
   const mock = instalarMockWebhook();
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantPro();
   const conv = await nuevaConv(repo, tenant);
 
@@ -117,7 +117,7 @@ test('tocar "No, gracias" deja sin consentimiento; un "Sí" previo se revoca', a
 
 test('una baja escrita ("No me manden más") marca opt-out Y retira el consentimiento', async () => {
   const mock = instalarMockWebhook();
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantPro();
   const conv = await nuevaConv(repo, tenant);
 
@@ -134,7 +134,7 @@ test('una baja escrita ("No me manden más") marca opt-out Y retira el consentim
 test('"quiero cancelar mi cita" NO es baja: pasa al agente', async () => {
   const mock = instalarMockWebhook();
   mock.programarLLM({ texto: "Claro, ¿cuál cita querés cancelar?" });
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantPro();
   const conv = await nuevaConv(repo, tenant);
 
@@ -147,7 +147,7 @@ test('"quiero cancelar mi cita" NO es baja: pasa al agente', async () => {
 
 test("pedido manual del panel: respeta la baja y no re-pregunta antes de 30 días", async () => {
   const mock = instalarMockWebhook();
-  const repo = new RepositorioEnMemoria();
+  const repo = await repoDePrueba();
   const tenant = tenantPro();
   let conv = await nuevaConv(repo, tenant);
 

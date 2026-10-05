@@ -146,12 +146,17 @@ export default function ListaNegocios() {
 // automática todavía, la clave temporal se muestra en pantalla para que el
 // superadmin la copie y se la comunique al dueño por su cuenta.
 function EquipoNegocio({ tenantId }: { tenantId: string }) {
+  const qc = useQueryClient();
   const q = useQuery({ queryKey: ["adminUsuariosTenant", tenantId], queryFn: () => adminListarUsuariosTenant(tenantId) });
   const [resultado, setResultado] = useState<{ usuarioId: string; usuario: string; claveTemporal: string } | null>(null);
 
   const resetear = useMutation({
     mutationFn: (usuarioId: string) => adminResetearClave(usuarioId),
-    onSuccess: (r, usuarioId) => setResultado({ usuarioId, usuario: r.usuario, claveTemporal: r.claveTemporal }),
+    onSuccess: (r, usuarioId) => {
+      setResultado({ usuarioId, usuario: r.usuario, claveTemporal: r.claveTemporal });
+      // La fila tiene que pasar a "clave temporal pendiente" sin recargar la página.
+      void qc.invalidateQueries({ queryKey: ["adminUsuariosTenant", tenantId] });
+    },
   });
 
   const usuarios = q.data ?? [];
