@@ -12,7 +12,8 @@
 
 **Leyenda:** ✅ hecho · 🔵 en progreso · ⬜ pendiente · 🔴 bloqueante crítico para escalar
 
-**Última actualización:** 2026-10-04 — Carril H (auditoría de arquitectura): ráfagas que descartaban
+**Última actualización:** 2026-10-10 — E14: chequeo rápido de producción (`scripts/verificarProduccion.ts`).
+Antes, 2026-10-04 — Carril H (auditoría de arquitectura): ráfagas que descartaban
 fotos/BAJA/confirmaciones, F1 RLS en código, bandeja paginada, deploy con artefacto + apagado ordenado,
 verificación de restore, una sola implementación de datos (PGlite en dev/tests), refactor de
 `handleWebhook` y `router.ts`, ROADMAP compactado. Antes: G17 (E2E con base de datos, otra sesión).
@@ -71,7 +72,7 @@ activar el rol RLS en producción) y **comercial** (Stripe). Ver Carril H para e
 ## Carril E — Hardening multi-cliente (bloque A de `AUDIT.md`)
 
 - [x] ✅ E1–E13, E15 (timeouts, seed, horarios pasados, Calendar por negocio, ráfagas, login, worker concurrente, plantillas por tenant, botones de plantilla, health check, textos por registro, tipos de mensaje, revocación de sesiones, agenda multi-empleado)
-- [ ] 🔴 **E14 — Backups + Sentry + uptime verificados en producción.** Se cierra con H6.
+- [ ] 🔴 **E14 — Backups + Sentry + uptime verificados en producción.** Se cierra con H6. `scripts/verificarProduccion.ts` (`npm run verificar:produccion`, DEPLOY.md §19.3) chequea en el droplet Sentry, cron, backup reciente y copia externa; falta correrlo allá junto con el restore.
 
 ## Carril F — Escala a 50 tenants (`PLAN-ESCALA-MULTITENANT.md`)
 
