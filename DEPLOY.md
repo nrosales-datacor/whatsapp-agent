@@ -713,6 +713,19 @@ piloto real:
 **Repetir este test de restore cada 2-3 meses** — un backup que nunca se restauró no
 es un backup confiable.
 
+### 19.3 Chequeo rápido de producción (E14)
+
+```bash
+cd ~/lavacar-whatsapp-bot && node --import tsx scripts/verificarProduccion.ts   # o npm run verificar:produccion
+```
+
+Corrido **en el droplet**, resume en 10 s lo que se puede leer del propio servidor: si
+`SENTRY_DSN` está puesto, si el cron de §19.1 existe, si hay un `.sql.gz` de menos de
+48 h (y ningún `.parcial` huérfano), si `BACKUP_DATABASE_URL` y `BACKUP_COMANDO_COPIA`
+están configurados. Sale con código 1 si algo crítico falla. **No reemplaza** el restore
+de §19.2 ni confirmar las alertas de Sentry/UptimeRobot en sus dashboards — eso sigue
+siendo manual — pero evita depender de la memoria de nadie para el resto.
+
 ## 20. Cifrado del `access_token` de WhatsApp en reposo (ROADMAP F2)
 
 El `access_token` de cada negocio se guarda **cifrado** en `wa_tenants` (AES-256-GCM,
