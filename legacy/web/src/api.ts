@@ -28,7 +28,7 @@ import type {
   SeccionConocimiento,
   SegmentoFiltro,
   Service,
-} from "../../legacy/src/types";
+} from "../../src/types";
 import { desuscribirPushLocal, endpointPushLocal } from "./lib/pushLocal";
 
 export type {
