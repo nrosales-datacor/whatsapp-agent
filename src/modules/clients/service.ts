@@ -553,13 +553,13 @@ export async function anonymizeClient(
 
     // Sin datos personales: id interno y conteos (src/platform/db/schema.ts, `audit_log`).
     await recordAudit(tx, businessId, "client_anonymized", options.actor, {
+      ...erased,
       clientId,
       unlinkedDependents: unlinked.length,
-      ...erased,
     });
     return toClientView(row);
   });
 }
 
 // SQL que comparten la búsqueda y la vista (ver ./search.ts).
-export const notAnonymized = sql`(${clients.customData} ->> ${ANONYMIZED_MARKER}) IS NULL`;
+export const notAnonymized = sql`(${clients.customData} ->> ${ANONYMIZED_MARKER}::text) IS NULL`;
