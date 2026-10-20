@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { terminologyOf } from "../../app/navigation";
 import { useSession } from "../../app/session";
@@ -27,6 +27,11 @@ export default function GuardianPicker({ open, onClose, clientId, onPick }: Prop
   const [draft, setDraft] = useState("");
   const [q, setQ] = useState("");
   const listId = useId();
+  const searchRef = useRef<HTMLInputElement>(null);
+  // El foco va al buscador al abrir (el <dialog> nativo enfocaría el botón de cerrar).
+  useEffect(() => {
+    if (open) searchRef.current?.focus();
+  }, [open]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setQ(draft.trim()), 250);
@@ -53,7 +58,7 @@ export default function GuardianPicker({ open, onClose, clientId, onPick }: Prop
         label={`Buscar ${t.client}`}
         type="search"
         autoComplete="off"
-        autoFocus
+        ref={searchRef}
         placeholder="Nombre o teléfono"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}

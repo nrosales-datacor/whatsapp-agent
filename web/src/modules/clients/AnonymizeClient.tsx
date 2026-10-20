@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { terminologyOf } from "../../app/navigation";
 import { useSession } from "../../app/session";
 import { errorMessage, isApiError } from "../../lib/api";
@@ -21,6 +21,11 @@ export default function AnonymizeClient({ client }: { client: ClientDetail }) {
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState("");
   const mutation = useAnonymizeClient(me.business.id, client.id);
+  const confirmRef = useRef<HTMLInputElement>(null);
+  // Al abrir, el foco va a la confirmación (no al botón de cerrar del <dialog>).
+  useEffect(() => {
+    if (open) confirmRef.current?.focus();
+  }, [open]);
 
   const byPhone = Boolean(client.phone);
   const expected = byPhone ? formatPhone(client.phone) : client.name;
@@ -74,6 +79,7 @@ export default function AnonymizeClient({ client }: { client: ClientDetail }) {
           <TextField
             label={byPhone ? `Para confirmar, escribí su teléfono: ${expected}` : `Para confirmar, escribí su nombre: ${expected}`}
             autoComplete="off"
+            ref={confirmRef}
             inputMode={byPhone ? "tel" : "text"}
             value={typed}
             error={fieldError}
