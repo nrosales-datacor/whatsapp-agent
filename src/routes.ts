@@ -1,5 +1,6 @@
 import { adminRoutes } from "./admin/routes";
 import { businessRoutes, type LocationReferenceCheck } from "./modules/business";
+import { catalogRoutes, isLocationRestrictingServices } from "./modules/catalog";
 import { isLocationAssigned, staffRoutes, teamRoutes, type EnabledModules } from "./modules/team";
 import type { Executor } from "./platform/db/scope";
 import type { Route } from "./platform/http/routeTypes";
@@ -30,20 +31,22 @@ export interface RouteDeps {
 }
 
 /**
- * Borrar una sucursal: business no ve las tablas de team, así que se le pregunta acá si un
- * miembro está limitado a ella (en ese caso se desactiva en vez de borrarse).
+ * Borrar una sucursal: business no ve las tablas de team ni de catalog, así que se le
+ * pregunta acá si un miembro está limitado a ella o un servicio se ofrece solo ahí (en
+ * ese caso se desactiva en vez de borrarse).
  */
-const isLocationReferenced: LocationReferenceCheck = (executor, businessId, locationId) =>
-  isLocationAssigned(executor, businessId, locationId);
+const isLocationReferenced: LocationReferenceCheck = async (executor, businessId, locationId) =>
+  (await isLocationAssigned(executor, businessId, locationId)) || (await isLocationRestrictingServices(executor, businessId, locationId));
 
 export function panelRoutes(deps: RouteDeps): Route[] {
   return [
     ...systemRoutes(),
     // Identidad y equipo: /auth/* y /team/*.
     ...teamRoutes(deps),
-    // Configuración (I1): /settings/business, /settings/locations, /settings/staff y
-    // /settings/time-off.
+    // Configuración (I1): /settings/business, /settings/locations, /settings/services,
+    // /settings/service-categories, /settings/staff y /settings/time-off.
     ...businessRoutes({ db: deps.db, isLocationReferenced }),
+    ...catalogRoutes(deps),
     ...staffRoutes(deps),
     // Superadmin: /admin/*.
     ...adminRoutes(deps),
