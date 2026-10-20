@@ -6,7 +6,8 @@ import { businesses } from "../../src/modules/business/schema";
 import { clients } from "../../src/modules/clients/schema";
 import { paymentMethods, payments } from "../../src/modules/sales/schema";
 import { appointments } from "../../src/modules/scheduling/schema";
-import { memberships, users } from "../../src/modules/team/schema";
+import { authTokens, memberships, users } from "../../src/modules/team/schema";
+import { findValidToken, issueAuthToken } from "../../src/modules/team/tokens";
 import { listPlatformAudit, listTenantAudit, recordAudit, superadminActor, userActor } from "../../src/platform/audit/auditLog";
 import { auditLog } from "../../src/platform/db/schema";
 import { rowsOf } from "../../src/platform/db/rows";
@@ -238,4 +239,23 @@ test("RLS aplicado: users — un negocio ve solo a los usuarios con membresía e
     isRlsViolation,
     "un usuario sin membresía no es visible para el negocio: su alta va por withSystem",
   );
+});
+
+test("RLS aplicado: auth_tokens — solo de sistema; ni el negocio de la invitación los ve ni los crea", async () => {
+  const f = await createBusinessFixture(db);
+  const token = await withSystem(db, async (tx) => {
+    const [u] = await tx.insert(users).values({ email: `t-${f.businessId.slice(0, 8)}@example.com`, name: "Invitada" }).returning({ id: users.id });
+    await tx.insert(memberships).values({ businessId: f.businessId, userId: u.id, role: "staff" });
+    return issueAuthToken(tx, { userId: u.id, kind: "invitation", businessId: f.businessId }).then((t) => ({ ...t, userId: u.id }));
+  });
+  const fromBusiness = await withTenant(db, f.businessId, (tx) => tx.select().from(authTokens));
+  assert.equal(fromBusiness.length, 0, "ni siquiera el negocio de la invitación");
+  await assert.rejects(
+    withTenant(db, f.businessId, (tx) =>
+      tx.insert(authTokens).values({ userId: token.userId, kind: "password_reset", tokenHash: "f".repeat(64), expiresAt: new Date(Date.now() + 60_000) }),
+    ),
+    isRlsViolation,
+  );
+  const fromSystem = await withSystem(db, (tx) => findValidToken(tx, token.token, "invitation"));
+  assert.equal(fromSystem?.userId, token.userId);
 });
