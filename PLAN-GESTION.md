@@ -167,13 +167,13 @@ como `weekday` + `time`, `created_at`/`updated_at`.
 | business | `businesses` | slug, name, industry, plan, extra_modules, status, currency, country, terminology, client_status_rules, reminder_channels, branding, datos de facturación |
 | | `locations` | business_id, name, address, phone, timezone, active |
 | | `location_hours` | location_id, weekday, opens_at, closes_at (varias filas por día = descansos) |
-| | `time_off` | business_id, location_id?, staff_id?, starts_at, ends_at, reason (feriados, vacaciones e incapacidades en una sola tabla) |
 | | `custom_fields` | business_id, entity (client/appointment), key, label, type, options, required, position |
 | team | `users` | email (único), name, password_hash, totp_secret, session_epoch, active |
 | | `memberships` | user_id, business_id, role (owner/admin/front_desk/staff), active |
 | | `membership_locations` | membership_id, location_id (sin filas = todas) |
 | | `staff` | business_id, membership_id? (puede existir sin usuario), name, color, active |
 | | `staff_hours` | staff_id, location_id, weekday, starts_at, ends_at (lunes en una sucursal, martes en otra) |
+| | `time_off` | business_id, location_id?, staff_id?, starts_at, ends_at, reason (feriados, vacaciones e incapacidades en una sola tabla; vive en team para que business no dependa de team) |
 | catalog | `service_categories` | business_id, name, position |
 | | `services` | category_id, name, description, duration_min, buffer_min, price_cents, variable_price, online_booking, active, position |
 | | `service_locations` | service_id, location_id |
@@ -189,9 +189,9 @@ como `weekday` + `time`, `created_at`/`updated_at`.
 | | `payouts` | staff_id, period_start, period_end, total_cents, paid_at, paid_by |
 | whatsapp | `whatsapp_channels` | business_id, location_id? (vacío = todas), phone_number_id (único), token cifrado, templates, status |
 | | `ai_settings` | business_id, tone, register, instructions, knowledge, faq, texts, quote_recovery |
-| | `conversations`, `messages`, `quotes`, `follow_ups`, `ai_usage_monthly` | lo de hoy, con `client_id` y `channel_id` |
+| | `conversations`, `messages`, `quotes`, `follow_ups`, `ai_usage_monthly`, `raw_webhooks` | lo de hoy, con `client_id` y `channel_id` (`raw_webhooks` es solo de sistema) |
 | campaigns | `campaigns`, `campaign_sends` | lo de hoy, con `client_id` |
-| platform | `jobs`, `raw_webhooks`, `leader_leases`, `audit_log`, `config_history`, `push_subscriptions`, `daily_usage` | lo de hoy, renombrado |
+| platform | `jobs`, `leader_leases`, `audit_log`, `config_history`, `push_subscriptions`, `daily_usage` | lo de hoy, renombrado |
 
 **Reglas de negocio que salen del modelo**
 - **Estado del cliente** (`new` / `active` / `vip` / `at_risk` / `inactive`): se calcula al consultar, desde la caché
