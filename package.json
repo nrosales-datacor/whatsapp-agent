@@ -16,6 +16,7 @@
     "db:check": "tsx scripts/checkMigrations.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
+    "seed:dev": "tsx scripts/seedDev.ts",
     "ci:versions": "node scripts/ci/checkExactVersions.mjs",
     "ci:env": "node scripts/ci/checkEnvExample.mjs",
     "web:dev": "npm --prefix web run dev",
