@@ -32,6 +32,17 @@ export class HttpError extends Error {
   }
 }
 
+/**
+ * 429 del rate limit de login (y de los demás intentos de credenciales). Mismo mensaje y
+ * código sin importar qué límite se pasó (IP, par IP+usuario o global): quien mira la
+ * respuesta no tiene que saber CUÁL disparó el corte. `Retry-After` en segundos.
+ */
+export function tooManyAttempts(retryAfterSec: number): HttpError {
+  return new HttpError(429, "Demasiados intentos. Probá de nuevo en unos minutos.", "too_many_attempts", {
+    headers: { "retry-after": String(Math.max(1, Math.ceil(retryAfterSec))) },
+  });
+}
+
 /** Mensaje por defecto de un 400 por validación. */
 export const VALIDATION_MESSAGE = "Datos inválidos: revisá los campos marcados.";
 

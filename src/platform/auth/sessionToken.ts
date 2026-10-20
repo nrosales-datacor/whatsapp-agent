@@ -38,7 +38,15 @@ function loadSecret(): string {
 // Subir PANEL_SESSION_VERSION invalida TODAS las sesiones vigentes sin cambiar el secreto
 // (sirve para forzar un re-login global, ya que las sesiones son stateless).
 const SESSION_VERSION = process.env.PANEL_SESSION_VERSION ?? "1";
-const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 días: ventana acotada si se filtra un token
+
+/** Duración de la sesión del equipo, en segundos (también es el Max-Age de la cookie): 7 días. */
+export const SESSION_MAX_AGE_SEC = 7 * 24 * 60 * 60;
+const SESSION_DURATION_MS = SESSION_MAX_AGE_SEC * 1000; // ventana acotada si se filtra un token
+
+// Marca del formato del token del equipo: un token de otro formato (el viejo, con el rol
+// adentro, o el del superadmin) no calza con el split y se descarta solo.
+const TEAM_MARKER = "u1";
+const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function sign(payload: string): string {
   return crypto.createHmac("sha256", SECRET).update(payload).digest("hex");
@@ -50,45 +58,50 @@ function sameSignature(given: string, expected: string): boolean {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-/** Sesión decodificada de un miembro del equipo: de qué negocio, quién y con qué rol. */
-export interface Session {
-  tenantId: string;
+/**
+ * Lo que firma el token de sesión de un miembro del equipo: quién, en qué negocio y con
+ * qué epoch. El ROL no viaja: lo lee de la membresía viva quien valida la sesión
+ * (src/modules/team/session.ts), así un cambio de rol pega en la request siguiente.
+ */
+export interface SessionClaims {
+  businessId: string;
   userId: string;
-  role: Role;
-  // Epoch del usuario en el momento en que se firmó el token. Quien valida la sesión lo
+  // Epoch de la cuenta en el momento en que se firmó el token. Quien valida la sesión lo
   // compara contra el epoch VIGENTE de la cuenta: si no coinciden, el token es de una
   // sesión ya revocada (cambio de clave/rol/estado desde el login) aunque la firma y la
   // expiración sigan siendo válidas.
-  epoch: number;
+  sessionEpoch: number;
 }
 
-/**
- * Crea un token de sesión firmado (va en una cookie). Lleva tenantId + userId + rol (el
- * rol gatea qué puede ver/hacer en el panel) y el `epoch` vigente de la cuenta al momento
- * del login, para detectar sesiones revocadas sin volver a la base en cada request.
- */
-export function createSession(tenantId: string, userId: string, role: Role, epoch: number): string {
-  const payload = `${tenantId}.${userId}.${role}.${epoch}.${Date.now() + SESSION_DURATION_MS}.${SESSION_VERSION}`;
+/** Crea el token de sesión firmado (va en la cookie `panel_session`). */
+export function createSessionToken(claims: SessionClaims): string {
+  const { businessId, userId, sessionEpoch } = claims;
+  if (!RE_UUID.test(businessId) || !RE_UUID.test(userId)) throw new Error("createSessionToken: ids inválidos (se espera uuid)");
+  if (!Number.isSafeInteger(sessionEpoch) || sessionEpoch < 0) throw new Error("createSessionToken: epoch inválido");
+  const payload = `${TEAM_MARKER}.${businessId}.${userId}.${sessionEpoch}.${Date.now() + SESSION_DURATION_MS}.${SESSION_VERSION}`;
   return Buffer.from(`${payload}.${sign(payload)}`).toString("base64url");
 }
 
 /**
- * Verifica el token de sesión y devuelve tenantId/userId/rol/epoch, o null si es inválido
- * o venció. Cambiar el formato del payload invalida sola cualquier sesión previa: los
- * tokens viejos no calzan con el split nuevo.
+ * Verifica el token de sesión y devuelve sus claims, o null si es inválido, de otro
+ * formato o venció. No sabe si la sesión fue revocada: eso lo decide quien compara el
+ * epoch contra la cuenta viva.
  */
-export function verifySession(token: string | undefined): Session | null {
+export function verifySessionToken(token: string | undefined): SessionClaims | null {
   if (!token) return null;
   try {
-    const [tenantId, userId, role, epoch, exp, ver, signature] = Buffer.from(token, "base64url").toString().split(".");
-    if (!tenantId || !userId || !role || !epoch || !exp || !ver || !signature) return null;
+    const parts = Buffer.from(token, "base64url").toString().split(".");
+    if (parts.length !== 7) return null;
+    const [marker, businessId, userId, epoch, exp, ver, signature] = parts;
+    if (marker !== TEAM_MARKER || !exp || !signature) return null;
     if (ver !== SESSION_VERSION) return null; // sesión de una versión anterior → fuera
-    if (!sameSignature(signature, sign(`${tenantId}.${userId}.${role}.${epoch}.${exp}.${ver}`))) return null;
-    if (Date.now() > Number(exp)) return null;
-    if (!isRole(role)) return null;
-    const epochNum = Number(epoch);
-    if (!Number.isInteger(epochNum) || epochNum < 0) return null; // epoch corrupto/no numérico
-    return { tenantId, userId, role, epoch: epochNum };
+    if (!sameSignature(signature, sign(`${marker}.${businessId}.${userId}.${epoch}.${exp}.${ver}`))) return null;
+    if (!(Date.now() <= Number(exp))) return null;
+    if (!RE_UUID.test(businessId) || !RE_UUID.test(userId)) return null;
+    if (!/^\d+$/.test(epoch)) return null; // epoch corrupto, no numérico o negativo
+    const sessionEpoch = Number(epoch);
+    if (!Number.isSafeInteger(sessionEpoch)) return null;
+    return { businessId: businessId.toLowerCase(), userId: userId.toLowerCase(), sessionEpoch };
   } catch {
     return null;
   }
