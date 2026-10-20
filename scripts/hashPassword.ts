@@ -1,12 +1,11 @@
-import { hashearPassword } from "../src/panel/auth";
+import { hashPassword } from "../src/platform/auth/password";
 
-// Genera el hash de una contraseña para el panel de un negocio.
+// Genera el hash scrypt ("salt:hash") de una contraseña, p. ej. para PANEL_SUPERADMIN_HASH.
 //   Uso:  npx tsx scripts/hashPassword.ts "MiContraseñaSegura"
-// Pegá el resultado en panelPasswordHash del tenant (src/config/tenants.ts).
 
-const pw = process.argv[2];
-if (!pw) {
+const password = process.argv[2];
+if (!password) {
   console.error('Uso: npx tsx scripts/hashPassword.ts "TU_CONTRASEÑA"');
   process.exit(1);
 }
-console.log(await hashearPassword(pw));
+console.log(await hashPassword(password));
