@@ -8,6 +8,20 @@
       "when": 1792472512645,
       "tag": "0000_platform_base",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792479618484,
+      "tag": "0001_domain_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792479678757,
+      "tag": "0002_domain_constraints",
+      "breakpoints": true
     }
   ]
 }
