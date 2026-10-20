@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
+import { applyIndustryTemplate } from "../src/modules/business";
 import { businesses, locationHours, locations } from "../src/modules/business/schema";
-import { serviceCategories, serviceLocations, services, staffServices } from "../src/modules/catalog/schema";
+import { applyCatalogTemplate } from "../src/modules/catalog";
+import { serviceLocations, services, staffServices } from "../src/modules/catalog/schema";
 import { clients } from "../src/modules/clients/schema";
 import { paymentMethods, payments } from "../src/modules/sales/schema";
 import { appointments, appointmentServices, type AppointmentChannel, type AppointmentStatus } from "../src/modules/scheduling/schema";
@@ -11,7 +13,10 @@ import { hashPassword } from "../src/platform/auth/password";
 import { withSystem, withTenant, type Executor } from "../src/platform/db/scope";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Seed de DESARROLLO: un negocio demo genérico de estética para ver el producto con datos.
+// Seed de DESARROLLO: un negocio demo de estética para ver el producto con datos. Nace
+// de la plantilla de rubro `aesthetics` (src/modules/business/templates/aesthetics.json:
+// terminología, campos personalizados y catálogo de ejemplo), igual que un alta real; el
+// seed le suma precios de demo, sucursales, equipo, clientes y citas.
 //   Uso:  npm run seed:dev
 //
 // Base: DATABASE_URL_MIGRATIONS o DATABASE_URL si están (nunca con NODE_ENV=production);
@@ -83,9 +88,10 @@ export async function seedDev(db: Executor, options: { now?: Date } = {}): Promi
       currency: "CRC",
       country: "CR",
       timezone: TIMEZONE,
-      terminology: { staffMember: "especialista", staff: "especialistas" },
       reminderChannels: ["whatsapp", "email"],
     });
+    // Plantilla de estética: terminología ("especialista"), campos y catálogo de ejemplo.
+    await applyIndustryTemplate(tx, { businessId, industry: "aesthetics" }, { seedCatalog: applyCatalogTemplate });
     await tx.insert(memberships).values({ businessId, userId: ownerId, role: "owner" });
 
     // ── Sucursales y su horario (0 = domingo … 6 = sábado) ──
@@ -145,34 +151,38 @@ export async function seedDev(db: Executor, options: { now?: Date } = {}): Promi
       ...[2, 3, 4, 5, 6].map((d) => shift(diego.id, heredia.id, d, "10:00", "18:00")),
     ]);
 
-    // ── Catálogo ──
-    const [faciales, corporales, unas] = await tx
-      .insert(serviceCategories)
-      .values([
-        { businessId, name: "Faciales", position: 0 },
-        { businessId, name: "Corporales", position: 1 },
-        { businessId, name: "Uñas", position: 2 },
-      ])
-      .returning({ id: serviceCategories.id });
-    const serviceRows = await tx
-      .insert(services)
-      .values([
-        { businessId, categoryId: faciales.id, name: "Limpieza facial profunda", durationMin: 60, bufferMin: 10, priceCents: crc(25_000), position: 0 },
-        { businessId, categoryId: faciales.id, name: "Hidratación facial", durationMin: 45, bufferMin: 5, priceCents: crc(18_000), position: 1 },
-        { businessId, categoryId: corporales.id, name: "Masaje relajante", durationMin: 60, bufferMin: 10, priceCents: crc(22_000), position: 0 },
-        { businessId, categoryId: corporales.id, name: "Drenaje linfático", durationMin: 50, bufferMin: 10, priceCents: crc(24_000), position: 1 },
-        { businessId, categoryId: unas.id, name: "Manicura", durationMin: 40, priceCents: crc(8_000), position: 0 },
-        { businessId, categoryId: unas.id, name: "Pedicura spa", durationMin: 50, priceCents: crc(12_000), variablePrice: true, position: 1 },
-      ])
-      .returning();
+    // ── Catálogo: el de la plantilla, con precios de demo (la plantilla los trae en null) ──
+    const demoPrices: Record<string, number> = {
+      "Limpieza facial profunda": 25_000,
+      "Hidratación facial": 18_000,
+      "Peeling químico": 30_000,
+      "Masaje relajante": 22_000,
+      "Drenaje linfático": 24_000,
+      "Depilación de cejas": 5_000,
+      "Depilación de piernas completas": 15_000,
+      Manicura: 8_000,
+      "Pedicura spa": 12_000,
+    };
+    for (const [name, colones] of Object.entries(demoPrices)) {
+      await tx
+        .update(services)
+        .set({ priceCents: crc(colones) })
+        .where(and(eq(services.businessId, businessId), eq(services.name, name)));
+    }
+    const serviceRows = await tx.select().from(services).where(eq(services.businessId, businessId));
     const svc = Object.fromEntries(serviceRows.map((s) => [s.name, s]));
-    const limpieza = svc["Limpieza facial profunda"];
-    const hidratacion = svc["Hidratación facial"];
-    const masaje = svc["Masaje relajante"];
-    const drenaje = svc["Drenaje linfático"];
-    const manicura = svc["Manicura"];
-    const pedicura = svc["Pedicura spa"];
-    // Uñas solo en Escazú (el resto, sin filas = en todas las sucursales).
+    const pick = (name: string) => {
+      const s = svc[name];
+      if (!s) throw new Error(`seed:dev: la plantilla de estética ya no trae "${name}"`);
+      return s;
+    };
+    const limpieza = pick("Limpieza facial profunda");
+    const hidratacion = pick("Hidratación facial");
+    const masaje = pick("Masaje relajante");
+    const drenaje = pick("Drenaje linfático");
+    const manicura = pick("Manicura");
+    const pedicura = pick("Pedicura spa");
+    // Manicura y pedicura solo en Escazú (el resto, sin filas = en todas las sucursales).
     await tx.insert(serviceLocations).values([
       { businessId, serviceId: manicura.id, locationId: escazu.id },
       { businessId, serviceId: pedicura.id, locationId: escazu.id },

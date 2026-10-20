@@ -1,0 +1,60 @@
+{
+  "$comment": "Plantilla de rubro (ver src/modules/business/templates.ts). Centro de estética. La usa también scripts/seedDev.ts (el seed les pone precio a los servicios de ejemplo).",
+  "industry": "aesthetics",
+  "label": "Estética",
+  "terminology": {
+    "staffMember": "especialista",
+    "staff": "especialistas"
+  },
+  "clientStatusRules": {
+    "newMaxVisits": 1,
+    "vipMinVisits": 10,
+    "atRiskAfterDays": 60,
+    "inactiveAfterDays": 120
+  },
+  "customFields": [
+    { "entity": "client", "key": "skin_type", "label": "Tipo de piel", "type": "select", "options": ["Seca", "Grasa", "Mixta", "Normal", "Sensible"] },
+    { "entity": "client", "key": "allergies", "label": "Alergias o sensibilidades", "type": "long_text" }
+  ],
+  "catalog": {
+    "categories": [
+      {
+        "name": "Faciales",
+        "services": [
+          { "name": "Limpieza facial profunda", "description": "Limpieza, extracción y mascarilla según el tipo de piel.", "durationMin": 60, "bufferMin": 10, "priceCents": null },
+          { "name": "Hidratación facial", "durationMin": 45, "bufferMin": 5, "priceCents": null },
+          { "name": "Peeling químico", "durationMin": 45, "bufferMin": 10, "priceCents": null, "onlineBooking": false }
+        ]
+      },
+      {
+        "name": "Corporales",
+        "services": [
+          { "name": "Masaje relajante", "durationMin": 60, "bufferMin": 10, "priceCents": null },
+          { "name": "Drenaje linfático", "durationMin": 50, "bufferMin": 10, "priceCents": null }
+        ]
+      },
+      {
+        "name": "Depilación",
+        "services": [
+          { "name": "Depilación de cejas", "durationMin": 15, "bufferMin": 5, "priceCents": null },
+          { "name": "Depilación de piernas completas", "durationMin": 45, "bufferMin": 5, "priceCents": null }
+        ]
+      },
+      {
+        "name": "Manos y pies",
+        "services": [
+          { "name": "Manicura", "durationMin": 40, "bufferMin": 0, "priceCents": null },
+          { "name": "Pedicura spa", "durationMin": 50, "bufferMin": 0, "priceCents": null, "variablePrice": true }
+        ]
+      }
+    ]
+  },
+  "ai": {
+    "register": "vos",
+    "instructions": "Sos el asistente virtual del centro de estética por WhatsApp. Respondés con calidez y en pocas palabras las preguntas sobre tratamientos, precios, horarios y ubicación, y agendás, reprogramás o cancelás citas con la disponibilidad real de cada especialista. No prometés resultados ni das indicaciones médicas. Si alguien menciona una alergia, una reacción o un tratamiento reciente en la piel, pasás la conversación a una persona del equipo antes de agendar.",
+    "reminders": {
+      "dayBefore": "¡Hola, {clientName}! Te recordamos tu cita de mañana {date} a las {time} con {staffName} en {businessName} ({locationName}). ¿Nos confirmás? Si necesitás moverla, escribinos por acá.",
+      "sameDay": "¡Hola, {clientName}! Hoy a las {time} te esperamos en {businessName} ({locationName}) para {services}."
+    }
+  }
+}
