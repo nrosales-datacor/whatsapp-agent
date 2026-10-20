@@ -1,70 +1,56 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { _resetPoolParaTests, crearDb, obtenerDb } from "../../src/db/client";
+import { _resetPoolForTests, createDb, getDb } from "../../src/platform/db/client";
 
-// ROADMAP F7: `obtenerDb()` debe ser el ÚNICO pool de Postgres por proceso —
-// si cada módulo abriera el suyo (como pasaba antes) el número de conexiones
-// se multiplica por cada call site y, al separar web/worker (F6), por cada
-// réplica, hasta reventar el límite del pooler de Supabase.
+// `getDb()` debe ser el ÚNICO pool de Postgres por proceso — si cada módulo abriera el
+// suyo, el número de conexiones se multiplica por cada call site y, con varias réplicas
+// web/worker, por cada réplica, hasta reventar el límite del pooler de Supabase.
 //
-// No se abre conexión real: postgres.js es un driver "lazy" (conecta recién
-// en el primer query), así que construir el pool con una URL falsa alcanza
-// para probar la identidad de las instancias sin depender de una DB viva.
-const URL_FALSA = "postgres://usuario:clave@localhost:5432/prueba";
+// No se abre conexión real: postgres.js es un driver "lazy" (conecta recién en la primera
+// query), así que construir el pool con una URL falsa alcanza para probar la identidad de
+// las instancias sin depender de una base viva.
+const FAKE_URL = "postgres://usuario:clave@localhost:5432/prueba";
 
-test("obtenerDb(): dos llamadas devuelven la MISMA instancia (singleton por proceso)", () => {
+function withDatabaseUrl(url: string | undefined, fn: () => void): void {
   const original = process.env.DATABASE_URL;
-  process.env.DATABASE_URL = URL_FALSA;
-  _resetPoolParaTests();
+  if (url === undefined) delete process.env.DATABASE_URL;
+  else process.env.DATABASE_URL = url;
+  _resetPoolForTests();
   try {
-    const a = obtenerDb();
-    const b = obtenerDb();
-    assert.equal(a, b);
+    fn();
   } finally {
-    _resetPoolParaTests();
-    process.env.DATABASE_URL = original;
+    _resetPoolForTests();
+    if (original === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = original;
   }
+}
+
+test("getDb(): dos llamadas devuelven la MISMA instancia (singleton por proceso)", () => {
+  withDatabaseUrl(FAKE_URL, () => {
+    assert.equal(getDb(), getDb());
+  });
 });
 
-test("crearDb(url): cada llamada devuelve un pool NUEVO, distinto del singleton", () => {
-  const original = process.env.DATABASE_URL;
-  process.env.DATABASE_URL = URL_FALSA;
-  _resetPoolParaTests();
-  try {
-    const singleton = obtenerDb();
-    const nuevo1 = crearDb(URL_FALSA);
-    const nuevo2 = crearDb(URL_FALSA);
-    assert.notEqual(nuevo1, singleton);
-    assert.notEqual(nuevo1, nuevo2); // dos llamadas a crearDb tampoco comparten instancia entre sí
-  } finally {
-    _resetPoolParaTests();
-    process.env.DATABASE_URL = original;
-  }
+test("createDb(url): cada llamada devuelve un pool NUEVO, distinto del singleton", () => {
+  withDatabaseUrl(FAKE_URL, () => {
+    const singleton = getDb();
+    const first = createDb(FAKE_URL);
+    const second = createDb(FAKE_URL);
+    assert.notEqual(first, singleton);
+    assert.notEqual(first, second); // dos llamadas a createDb tampoco comparten instancia entre sí
+  });
 });
 
-test("obtenerDb(): sin DATABASE_URL lanza el mismo error claro que crearDb()", () => {
-  const original = process.env.DATABASE_URL;
-  delete process.env.DATABASE_URL;
-  _resetPoolParaTests();
-  try {
-    assert.throws(() => obtenerDb(), /Falta DATABASE_URL/);
-  } finally {
-    _resetPoolParaTests();
-    process.env.DATABASE_URL = original;
-  }
+test("getDb(): sin DATABASE_URL lanza el mismo error claro que createDb()", () => {
+  withDatabaseUrl(undefined, () => {
+    assert.throws(() => getDb(), /Falta DATABASE_URL/);
+  });
 });
 
-test("_resetPoolParaTests(): tras resetear, obtenerDb() abre un pool distinto al anterior", () => {
-  const original = process.env.DATABASE_URL;
-  process.env.DATABASE_URL = URL_FALSA;
-  _resetPoolParaTests();
-  try {
-    const antes = obtenerDb();
-    _resetPoolParaTests();
-    const despues = obtenerDb();
-    assert.notEqual(antes, despues);
-  } finally {
-    _resetPoolParaTests();
-    process.env.DATABASE_URL = original;
-  }
+test("_resetPoolForTests(): tras resetear, getDb() abre un pool distinto al anterior", () => {
+  withDatabaseUrl(FAKE_URL, () => {
+    const before = getDb();
+    _resetPoolForTests();
+    assert.notEqual(before, getDb());
+  });
 });
