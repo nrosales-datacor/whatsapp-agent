@@ -12,8 +12,7 @@ import CreateBusinessForm, { INDUSTRY_OPTIONS } from "./CreateBusinessForm";
 const PLAN_LABELS: Record<string, string> = { basic: "Básico", pro: "Pro" };
 const STATUS_LABELS: Record<string, string> = { active: "Activo", paused: "Pausado", closed: "Dado de baja" };
 
-function formatDate(iso: string | undefined): string | null {
-  if (!iso) return null;
+function formatDate(iso: string): string | null {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return null;
   return date.toLocaleDateString("es-CR", { day: "numeric", month: "short", year: "numeric" });
@@ -22,19 +21,23 @@ function formatDate(iso: string | undefined): string | null {
 function BusinessRow({ business }: { business: AdminBusiness }) {
   const industry = INDUSTRY_OPTIONS.find((o) => o.value === business.industry)?.label ?? business.industry;
   const created = formatDate(business.createdAt);
+  const locations = `${business.locationCount} ${business.locationCount === 1 ? "sucursal" : "sucursales"}`;
   return (
     <li className="business-row">
       <div className="business-row-main">
         <span className="business-row-name">{business.name}</span>
-        {business.slug && <span className="business-row-slug">{business.slug}</span>}
+        <span className="business-row-slug">{business.slug}</span>
       </div>
       <div className="business-row-meta">
-        {business.plan && <span className="badge">{PLAN_LABELS[business.plan] ?? business.plan}</span>}
-        {business.status && business.status !== "active" && (
+        <span className="badge">{PLAN_LABELS[business.plan] ?? business.plan}</span>
+        {business.status !== "active" && (
           <span className="badge badge-warning">{STATUS_LABELS[business.status] ?? business.status}</span>
         )}
-        {industry && <span>{industry}</span>}
-        {business.country && <span>{business.country}</span>}
+        <span>{industry}</span>
+        <span>
+          {business.country} · {business.currency}
+        </span>
+        <span className="tnum">{locations}</span>
         {created && <span className="tnum">Alta: {created}</span>}
       </div>
     </li>

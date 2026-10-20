@@ -3,10 +3,8 @@ import type { Branding } from "./branding";
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos del contrato de identidad de la API del panel (/api/panel/auth/* y /admin/*,
 // I0.6). Escritos a mano mientras los esquemas Zod del backend no se compartan con el
-// front (PLAN-GESTION.md §2). Si el backend cambia la forma, cambia acá.
-//
-// Lo marcado "asumido" no estaba en el contrato acordado: es la forma más probable y el
-// panel la trata con tolerancia (campos opcionales).
+// front (PLAN-GESTION.md §2): espejo de src/modules/team/{routes,me,invitations}.ts y
+// src/admin/routes.ts. Si el backend cambia la forma, cambia acá (y en lib/mockApi.ts).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type Role = "owner" | "admin" | "front_desk" | "staff";
@@ -93,21 +91,36 @@ export interface TotpSetup {
   otpauthUrl: string;
 }
 
+/** `GET /auth/invitations/:token`. */
 export interface Invitation {
   email: string;
   businessName: string;
   role: Role;
+  /** true = la persona ya tiene cuenta: acepta con su clave actual (y su código si tiene 2FA), sin nombre. */
+  hasAccount: boolean;
+}
+
+/** `POST /auth/invitations/accept` → `Me` (la sesión queda en el negocio que invitó). */
+export interface AcceptInvitationInput {
+  token: string;
+  /** Obligatorio para una cuenta nueva; una cuenta que ya existe conserva su nombre. */
+  name?: string;
+  /** Cuenta nueva: la clave que elige. Cuenta existente: su clave actual. */
+  password: string;
+  /** Solo cuenta existente con 2FA (si falta, 400 `totp_required`). */
+  totpCode?: string;
 }
 
 // ── Superadmin ──────────────────────────────────────────────────────────────
 
-/** Asumido: `GET /admin/me` devuelve al menos el usuario del superadmin. */
+/** `GET /admin/me`. */
 export interface AdminMe {
   username: string;
+  totpEnabled: boolean;
 }
 
-/** Asumido: mismo esquema de dos pasos que el login del panel. */
-export type AdminLoginResult = { status: "ok"; admin?: AdminMe } | { status: "totp_required" };
+/** Mismo esquema de dos pasos que el login del panel. */
+export type AdminLoginResult = { status: "ok"; me: AdminMe } | { status: "totp_required" };
 
 export interface AdminLoginInput {
   username: string;
@@ -115,16 +128,20 @@ export interface AdminLoginInput {
   totpCode?: string;
 }
 
-/** Asumido: fila de `GET /admin/businesses` (los campos opcionales se muestran si vienen). */
+/** Fila de `GET /admin/businesses` (los más nuevos primero) y respuesta del alta (201). */
 export interface AdminBusiness {
   id: string;
   name: string;
-  slug?: string;
-  plan?: string;
-  industry?: string;
-  status?: string;
-  country?: string;
-  createdAt?: string;
+  slug: string;
+  industry: string;
+  plan: string;
+  status: string;
+  currency: string;
+  country: string;
+  timezone: string;
+  locationCount: number;
+  /** ISO 8601. */
+  createdAt: string;
 }
 
 export interface CreateBusinessInput {

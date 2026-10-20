@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { errorMessage, isApiError } from "../../lib/api";
+import { errorMessage } from "../../lib/api";
 import type { AdminLoginInput } from "../../lib/contract";
 import { FormError, PasswordField, TextField } from "../../ui/Field";
 import AuthLayout from "../auth/AuthLayout";
-import { ADMIN_ME_QUERY_KEY, adminLogin, fetchAdminMe } from "./adminApi";
+import { ADMIN_ME_QUERY_KEY, adminLogin } from "./adminApi";
 
 /** Login del superadmin (usuario + clave, y el código de 2FA si lo pide). */
 export default function AdminLoginPage() {
@@ -19,12 +19,13 @@ export default function AdminLoginPage() {
 
   const mutation = useMutation({
     mutationFn: (input: AdminLoginInput) => adminLogin(input),
-    onSuccess: async (result) => {
+    onSuccess: (result) => {
       if (result.status === "totp_required") {
         setStep("totp");
         return;
       }
-      await qc.fetchQuery({ queryKey: ADMIN_ME_QUERY_KEY, queryFn: fetchAdminMe, staleTime: 0 });
+      // El login ya trae el `me` del superadmin: se deja en la query sin otro viaje.
+      qc.setQueryData(ADMIN_ME_QUERY_KEY, result.me);
       navigate("/admin", { replace: true });
     },
   });
@@ -43,11 +44,7 @@ export default function AdminLoginPage() {
     });
   }
 
-  const error = mutation.isError
-    ? isApiError(mutation.error, "too_many_attempts")
-      ? mutation.error.message || "Demasiados intentos. Esperá unos minutos."
-      : errorMessage(mutation.error, "No pudimos iniciar sesión.")
-    : null;
+  const error = mutation.isError ? errorMessage(mutation.error, "No pudimos iniciar sesión.") : null;
 
   return (
     <AuthLayout title="Superadmin" intro={step === "totp" ? "Escribí el código de tu app de autenticación." : "Acceso de la plataforma."}>

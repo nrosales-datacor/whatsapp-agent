@@ -2,7 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import AdminHomePage from "../modules/admin/AdminHomePage";
 import AdminLoginPage from "../modules/admin/AdminLoginPage";
 import RequireAdmin from "../modules/admin/RequireAdmin";
-import AcceptInvitationPage from "../modules/auth/AcceptInvitationPage";
+import AcceptInvitationPage, { InviteRedirect } from "../modules/auth/AcceptInvitationPage";
 import ChangePasswordPage from "../modules/auth/ChangePasswordPage";
 import ForgotPasswordPage from "../modules/auth/ForgotPasswordPage";
 import LoginPage from "../modules/auth/LoginPage";
@@ -26,7 +26,8 @@ import { PublicOnly, RequireAuth } from "./session";
 // Rutas del panel (basename "/panel", ver main.tsx). Las URLs son estables para poder
 // enlazar una sección o una ficha desde una notificación push (PLAN-GESTION.md §6).
 //
-//   Acceso:      /login · /forgot-password · /reset-password?token= · /invite/:token
+//   Acceso:      /login · /forgot-password · /reset-password?token= (enlace del correo)
+//                /accept-invitation?token= (enlace del correo; /invite/:token es alias)
 //                /change-password (obligatorio con clave temporal)
 //   Panel:       / · /agenda · /clients · /clients/:id · /sales · /reports · /whatsapp
 //                /campaigns · /settings/:page
@@ -53,7 +54,8 @@ export default function App() {
         }
       />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
-      <Route path="/invite/:token" element={<AcceptInvitationPage />} />
+      <Route path="/accept-invitation" element={<AcceptInvitationPage />} />
+      <Route path="/invite/:token" element={<InviteRedirect />} />
 
       <Route path="/admin/login" element={<AdminLoginPage />} />
       <Route path="/admin" element={<RequireAdmin />}>
