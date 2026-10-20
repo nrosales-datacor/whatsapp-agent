@@ -1,8 +1,9 @@
 import "dotenv/config";
 import http from "node:http";
-import { createAppHandler, createWorkerHandler, type ProcessRole } from "./app";
+import type { ProcessRole } from "./app";
 import { registerJobHandlers } from "./jobs";
 import { PRODUCT_NAME } from "./platform/brand";
+import { productionConfigWarnings, productionSecretProblems } from "./platform/config/requiredSecrets";
 import { getDb, startLocalDb } from "./platform/db/client";
 import { withSafetyNet } from "./platform/net/http";
 import type { Loop } from "./platform/net/scheduler";
@@ -22,6 +23,21 @@ import { startQueueWorker, type QueueWorker } from "./platform/queue";
 // ─────────────────────────────────────────────────────────────────────────────
 
 initSentry(); // antes de aceptar tráfico: registra los handlers globales de error.
+
+// ── Fail-closed de secretos en producción ──
+// Antes de cargar la app (que importa los módulos de sesión y de cifrado): sin
+// PANEL_SESSION_SECRET o TOKENS_ENCRYPTION_KEY el proceso no atiende ni un request, y el
+// mensaje lista TODO lo que falta de una vez. Ver src/platform/config/requiredSecrets.ts.
+const secretProblems = productionSecretProblems();
+if (secretProblems.length > 0) {
+  console.error(`❌ Faltan secretos obligatorios en producción:\n${secretProblems.map((p) => `   • ${p}`).join("\n")}`);
+  process.exit(1);
+}
+for (const warning of productionConfigWarnings()) console.warn(`⚠️  ${warning}`);
+
+// La app se carga recién ahora (import dinámico): así el chequeo de arriba corre antes que
+// cualquier módulo que lea los secretos al importarse.
+const { createAppHandler, createWorkerHandler } = await import("./app");
 
 const PORT = Number(process.env.PORT ?? 3000);
 
