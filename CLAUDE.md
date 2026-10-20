@@ -2,6 +2,11 @@
 
 Agente de WhatsApp con IA (soporte + agenda de citas) para lavacar, multi-tenant y pensado como producto SaaS white-label. Backend en TypeScript (Node `node:http`, sin framework), OpenAI, Drizzle + Postgres (Supabase), Google Calendar. Panel web (bandeja humana + CRM + dashboard, PWA con push) servido en `/panel`. Deploy: ver `DEPLOY.md`.
 
+> **Reestructura en curso (Carril I, rama `carril-i`):** el producto pasa a ser **Selyon CRM** (nombre provisional),
+> software de gestión para negocios con cita (dental, estética, uñas), multi-sucursal, con WhatsApp IA como módulo; el
+> lavacar se elimina. El plan acordado (arquitectura,
+> modelo de datos, fases) está en `PLAN-GESTION.md`: léelo antes de tocar el esquema o la estructura de carpetas.
+
 ## ROADMAP.md — manténgalo vivo (IMPORTANTE)
 
 `ROADMAP.md` es la **fuente de verdad** del plan de arquitectura/evolución a SaaS.
@@ -13,7 +18,10 @@ Agente de WhatsApp con IA (soporte + agenda de citas) para lavacar, multi-tenant
 
 ## Convenciones del repo
 
-- Código y comentarios en español (es-CR), igual que el código existente.
+- **Identificadores en inglés** (decisión del 2026-10-19): clases, funciones, variables, tipos, archivos, carpetas,
+  tablas, columnas, valores de enums, rutas de la API y nombres de las tools del agente. **Comentarios, documentación,
+  commits y textos de la UI en español (es-CR).** El código existente en español se traduce al portarlo en el Carril I;
+  no se mezclan idiomas en los identificadores de un mismo archivo nuevo.
 - El panel y el backend se comunican por la API JSON `/api/panel/*` — esa costura es estable; respétala al migrar el panel a React.
 - Secretos en `.env` (gitignored); ver `.env.example` para la lista vigente.
 

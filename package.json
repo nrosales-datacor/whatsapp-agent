@@ -1,9 +1,9 @@
 {
-  "name": "whatsapp-agent",
+  "name": "selyon-crm",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Agente de WhatsApp con IA (soporte + agenda). Proyecto individual ejecutable.",
+  "description": "Selyon CRM (nombre provisional): software de gestión para negocios con cita, con agente de WhatsApp IA como módulo.",
   "engines": {
     "node": ">=24.0.0 <25"
   },

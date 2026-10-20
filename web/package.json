@@ -1,9 +1,9 @@
 {
-  "name": "whatsapp-agent-web",
+  "name": "selyon-crm-web",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Panel del agente de WhatsApp (React + TS). Se construye con Vite y lo sirve el server Node en /panel.",
+  "description": "Panel de Selyon CRM (React + TS). Se construye con Vite y lo sirve el server Node en /panel.",
   "engines": {
     "node": ">=24.0.0 <25"
   },
