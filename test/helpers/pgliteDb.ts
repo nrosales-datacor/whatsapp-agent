@@ -80,6 +80,10 @@ function getTemplate(): Promise<Blob> {
 
 export async function createEphemeralDb(): Promise<EphemeralDb> {
   const client = new PGlite({ loadDataDir: await getTemplate(), extensions: EXTENSIONS });
+  // El arranque (WASM + cargar el volcado) es perezoso: sin esperarlo, lo paga la primera
+  // consulta del test. Un test con timeout corto (el ping de /health, 1,5 s) lo vería como
+  // "base lenta" y cerraría la base a mitad del arranque, que deja a PGlite colgado.
+  await client.waitReady;
   const db = drizzle(client, { schema });
   return {
     db: db as unknown as Db,

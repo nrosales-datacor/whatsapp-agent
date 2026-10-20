@@ -1,4 +1,6 @@
-import { index, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { bigint, check, date, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { createdAt, timestamps, updatedAt, uuidPk } from "./columns";
 import { systemOnlyPolicy, tenantPolicy } from "./rls";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -7,6 +9,11 @@ import { systemOnlyPolicy, tenantPolicy } from "./rls";
 // `id` uuid, `business_id` + política RLS en toda tabla de negocio, instantes
 // `timestamptz`. Toda tabla nueva: `.enableRLS()` + `tenantPolicy()` o `systemOnlyPolicy()`
 // (lo exige test/security/rls.test.ts) y registrarla en ./schemaRegistry.ts.
+//
+// FKs hacia tablas de módulos (`businesses`, `users`): la plataforma no importa de
+// src/modules (test/architecture/moduleBoundaries.test.ts), así que esas FKs NO se
+// declaran acá sino en SQL a mano en drizzle/0002_domain_constraints.sql, y
+// test/reliability/domainSchema.test.ts verifica que existan en la base migrada.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -61,3 +68,88 @@ export const auditLog = pgTable(
   },
   (t) => [index("audit_log_business_created_idx").on(t.businessId, t.createdAt), tenantPolicy()],
 ).enableRLS();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Suscripciones Web Push del panel (PWA), por negocio Y por usuario. Llevan el
+// `session_epoch` del usuario con el que se registraron: si la cuenta se desactiva o su
+// epoch sube (cambio de clave, rol o estado), la suscripción deja de recibir y se borra en
+// el próximo envío. Así desactivar a alguien corta también las notificaciones de su
+// teléfono (que traen fragmentos de mensajes de clientes).
+// FKs (en SQL, ver arriba): business_id → businesses y user_id → users, ambas CASCADE.
+// ─────────────────────────────────────────────────────────────────────────────
+export const pushSubscriptions = pgTable(
+  "push_subscriptions",
+  {
+    id: uuidPk(),
+    businessId: uuid("business_id").notNull(),
+    userId: uuid("user_id").notNull(),
+    sessionEpoch: integer("session_epoch").notNull(),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    ...timestamps(),
+  },
+  (t) => [
+    uniqueIndex("push_subscriptions_endpoint_uq").on(t.endpoint),
+    index("push_subscriptions_business_idx").on(t.businessId),
+    index("push_subscriptions_user_idx").on(t.userId),
+    tenantPolicy(),
+  ],
+).enableRLS();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Historial de configuración del negocio: cada cambio de una pantalla de configuración
+// guarda, en la MISMA transacción que el cambio, el estado completo como quedó
+// (`snapshot`, no un diff) con quién y cuándo. Restaurar una versión crea una fila nueva
+// (como un revert), nunca reescribe el historial.
+// FKs (en SQL): business_id → businesses CASCADE; changed_by → users SET NULL (el
+// historial sobrevive a la baja del usuario).
+// ─────────────────────────────────────────────────────────────────────────────
+export const configHistory = pgTable(
+  "config_history",
+  {
+    id: uuidPk(),
+    businessId: uuid("business_id").notNull(),
+    // Qué configuración cambió: "business", "ai_settings", "location"…
+    entity: text("entity").notNull(),
+    // Id de la fila cambiada cuando la entidad tiene varias (p. ej. una sucursal).
+    entityId: uuid("entity_id"),
+    snapshot: jsonb("snapshot").notNull(),
+    changedBy: uuid("changed_by"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("config_history_business_entity_idx").on(t.businessId, t.entity, t.createdAt), tenantPolicy()],
+).enableRLS();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Uso diario por negocio y métrica (PLAN-GESTION.md §2, "Medible"): citas creadas, pagos
+// registrados, usuarios activos, conversaciones IA, costo LLM… Mide activación y
+// retención en el superadmin. Una fila por (negocio, día, métrica) con incrementos
+// atómicos (INSERT … ON CONFLICT DO UPDATE SET value = value + n). La lista de métricas
+// crece sin migración: solo se exige snake_case.
+// FK (en SQL): business_id → businesses CASCADE.
+// ─────────────────────────────────────────────────────────────────────────────
+export const dailyUsage = pgTable(
+  "daily_usage",
+  {
+    businessId: uuid("business_id").notNull(),
+    date: date("date").notNull(),
+    metric: text("metric").notNull(),
+    value: bigint("value", { mode: "number" }).notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.businessId, t.date, t.metric] }),
+    // Superadmin: una métrica en un rango de días, para todos los negocios.
+    index("daily_usage_metric_date_idx").on(t.metric, t.date),
+    check("daily_usage_metric_check", sql`${t.metric} ~ '^[a-z][a-z0-9_]*$'`),
+    tenantPolicy(),
+  ],
+).enableRLS();
+
+export type PushSubscription = typeof pushSubscriptions.$inferSelect;
+export type NewPushSubscription = typeof pushSubscriptions.$inferInsert;
+export type ConfigHistoryEntry = typeof configHistory.$inferSelect;
+export type NewConfigHistoryEntry = typeof configHistory.$inferInsert;
+export type DailyUsage = typeof dailyUsage.$inferSelect;
+export type NewDailyUsage = typeof dailyUsage.$inferInsert;
