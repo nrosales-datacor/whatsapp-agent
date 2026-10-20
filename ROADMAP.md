@@ -12,7 +12,9 @@
 
 **Leyenda:** ✅ hecho · 🔵 en progreso · ⬜ pendiente · 🔴 bloqueante crítico para escalar
 
-**Última actualización:** 2026-10-10 — E14: chequeo rápido de producción (`scripts/verificarProduccion.ts`).
+**Última actualización:** 2026-10-19 — Carril I: reestructura a software de gestión multi-sucursal y multi-rubro
+(plan acordado en [`PLAN-GESTION.md`](PLAN-GESTION.md); nombre provisional "Selyon CRM"; I0 arrancó en la rama `carril-i`).
+Antes, 2026-10-10 — E14: chequeo rápido de producción (`scripts/verificarProduccion.ts`).
 Antes, 2026-10-04 — Carril H (auditoría de arquitectura): ráfagas que descartaban
 fotos/BAJA/confirmaciones, F1 RLS en código, bandeja paginada, deploy con artefacto + apagado ordenado,
 verificación de restore, una sola implementación de datos (PGlite en dev/tests), refactor de
@@ -22,8 +24,20 @@ verificación de restore, una sola implementación de datos (PGlite en dev/tests
 
 ## Contexto en una línea
 
-El código es sólido para los primeros clientes; lo que falta para escalar es **operativo** (restore probado,
-activar el rol RLS en producción) y **comercial** (Stripe). Ver Carril H para el estado de la última auditoría.
+**El producto se reestructura** (Carril I): pasa de agente de WhatsApp para lavacar a software de gestión para
+negocios con cita (dental, estética, uñas), multi-sucursal, con WhatsApp IA como módulo. Se conserva la plataforma
+(RLS, colas, red, observabilidad, deploy) y se rehace el dominio sobre un esquema nuevo sin prefijo `wa_`.
+
+## Carril I — Reestructura a software de gestión ([`PLAN-GESTION.md`](PLAN-GESTION.md))
+
+- [x] ✅ **I-plan — Análisis de brechas, veredicto de arquitectura, modelo de datos, planes y fases.** Acordado: Básico = agente de WhatsApp, Pro = gestión completa (con o sin agente), identificadores en inglés, nombre provisional "Selyon CRM".
+- [ ] 🔵 **I0 — Cimientos** (rama `carril-i`, pasos en `PLAN-GESTION.md` §10; I0.1 hecho). Tag del estado actual, Supabase nuevo, módulos por dominio, router declarativo + Zod + permisos, esquema base con RLS, caché nuevo, correo de plataforma, login por email, sin lavacar ni `wa_`, identificadores en inglés.
+- [ ] ⬜ **I1 — Núcleo del Básico.** Disponibilidad con horario por profesional, buffers, varios servicios y `EXCLUDE`; Agenda, profesionales, ficha del cliente, navegación nueva, Inicio básico, plantillas de rubro.
+- [ ] ⬜ **I2 — Agente y lanzamiento del Básico.** Agente sobre los servicios del núcleo, bandeja, recordatorios por WhatsApp y correo, superadmin y alta de negocios portados, planes y límites, cobro manual.
+- [ ] ⬜ **I3 — CRM y equipo (Pro).** Estados configurables, campos personalizados, CSV, usuario por profesional con roles, varias sucursales.
+- [ ] ⬜ **I4 — Ventas y comisiones (Pro).** Pagos y señas, pendientes, resumen del día, comisiones sobre lo cobrado, liquidaciones.
+- [ ] ⬜ **I5 — Reportes e Inicio completo (Pro).** Rango de fechas, por sucursal/profesional/servicio/canal, export CSV, `daily_usage`.
+- [ ] ⬜ **I6 — Crecimiento.** Campañas, rescate, upsell y reseñas portados, marca propia, Stripe (absorbe C4.3), alta self-service.
 
 ## Próximos pasos operativos (no son código)
 
@@ -87,6 +101,9 @@ activar el rol RLS en producción) y **comercial** (Stripe). Ver Carril H para e
 - [x] ✅ **G17 — E2E completo con base de datos (Playwright, proyecto `db`) + 8 bugs que destapó.**
 
 ## Pendientes operativos (piloto)
+
+> **Obsoletos (2026-10-19):** el piloto del lavacar termina (Carril I). Las plantillas de Meta se vuelven a pedir
+> por negocio en I2.
 
 - [ ] Cambiar la contraseña temporal del panel del piloto.
 - [ ] Plantilla de recordatorio aprobada por Meta (`GUIA-META.md` §A).
