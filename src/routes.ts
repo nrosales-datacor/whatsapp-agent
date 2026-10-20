@@ -1,6 +1,6 @@
 import { adminRoutes } from "./admin/routes";
 import { businessRoutes, type LocationReferenceCheck } from "./modules/business";
-import { isLocationAssigned, teamRoutes, type EnabledModules } from "./modules/team";
+import { isLocationAssigned, staffRoutes, teamRoutes, type EnabledModules } from "./modules/team";
 import type { Executor } from "./platform/db/scope";
 import type { Route } from "./platform/http/routeTypes";
 import { systemRoutes } from "./platform/http/systemRoutes";
@@ -41,8 +41,10 @@ export function panelRoutes(deps: RouteDeps): Route[] {
     ...systemRoutes(),
     // Identidad y equipo: /auth/* y /team/*.
     ...teamRoutes(deps),
-    // Configuración (I1): /settings/business y /settings/locations.
+    // Configuración (I1): /settings/business, /settings/locations, /settings/staff y
+    // /settings/time-off.
     ...businessRoutes({ db: deps.db, isLocationReferenced }),
+    ...staffRoutes(deps),
     // Superadmin: /admin/*.
     ...adminRoutes(deps),
   ];
