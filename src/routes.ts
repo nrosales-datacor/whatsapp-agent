@@ -1,5 +1,6 @@
 import { adminRoutes } from "./admin/routes";
-import { teamRoutes, type EnabledModules } from "./modules/team";
+import { businessRoutes, type LocationReferenceCheck } from "./modules/business";
+import { isLocationAssigned, teamRoutes, type EnabledModules } from "./modules/team";
 import type { Executor } from "./platform/db/scope";
 import type { Route } from "./platform/http/routeTypes";
 import { systemRoutes } from "./platform/http/systemRoutes";
@@ -28,11 +29,20 @@ export interface RouteDeps {
   enabledModules: EnabledModules;
 }
 
+/**
+ * Borrar una sucursal: business no ve las tablas de team, así que se le pregunta acá si un
+ * miembro está limitado a ella (en ese caso se desactiva en vez de borrarse).
+ */
+const isLocationReferenced: LocationReferenceCheck = (executor, businessId, locationId) =>
+  isLocationAssigned(executor, businessId, locationId);
+
 export function panelRoutes(deps: RouteDeps): Route[] {
   return [
     ...systemRoutes(),
     // Identidad y equipo: /auth/* y /team/*.
     ...teamRoutes(deps),
+    // Configuración (I1): /settings/business y /settings/locations.
+    ...businessRoutes({ db: deps.db, isLocationReferenced }),
     // Superadmin: /admin/*.
     ...adminRoutes(deps),
   ];

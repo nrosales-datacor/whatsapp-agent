@@ -51,6 +51,22 @@ export async function assertLocationsOfBusiness(db: Executor, businessId: string
   if (unknown.length > 0) throw new ValidationError({ "body.locationIds": "Alguna de las sucursales no existe en este negocio." });
 }
 
+/**
+ * ¿Algún miembro está limitado a esta sucursal? (filas en membership_locations). Lo usa
+ * business al borrar una sucursal: si la borrara, ese miembro quedaría sin filas, que
+ * significa "todas las sucursales"; en ese caso se desactiva en vez de borrarse.
+ */
+export async function isLocationAssigned(executor: Executor, businessId: string, locationId: string): Promise<boolean> {
+  const rows = await withTenant(executor, businessId, (tx) =>
+    tx
+      .select({ id: membershipLocations.membershipId })
+      .from(membershipLocations)
+      .where(and(eq(membershipLocations.businessId, businessId), eq(membershipLocations.locationId, locationId)))
+      .limit(1),
+  );
+  return rows.length > 0;
+}
+
 /** Reemplaza las sucursales de una membresía (un dueño no lleva filas: entra a todas). */
 export async function replaceMembershipLocations(
   tx: Tx,
