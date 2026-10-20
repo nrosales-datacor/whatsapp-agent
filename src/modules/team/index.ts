@@ -3,6 +3,7 @@
 export { inviteMember, ACCEPT_INVITATION_PATH } from "./invitations";
 export type { InviteInput, InvitationInfo } from "./invitations";
 export type { EnabledModules, Me } from "./me";
+export { isLocationAssigned } from "./members";
 export type { Member, MemberStatus } from "./members";
 export { RESET_PASSWORD_PATH } from "./recovery";
 export { createSessionResolver } from "./session";
