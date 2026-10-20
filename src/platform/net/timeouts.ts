@@ -25,6 +25,12 @@ export function msFromEnv(name: string, fallback: number): number {
 export const STORAGE_TIMEOUT_MS = msFromEnv("STORAGE_TIMEOUT_MS", 20_000);
 
 /**
+ * Proveedor de correo (Resend): un envío normal responde en < 1 s. Si se pasa, el job se
+ * reintenta por la cola (con la misma clave de idempotencia: no sale duplicado).
+ */
+export const EMAIL_TIMEOUT_MS = msFromEnv("EMAIL_TIMEOUT_MS", 10_000);
+
+/**
  * Señal de abort para pasarle a `fetch`. Envuelta en una función (en vez de usar
  * `AbortSignal.timeout` suelto en cada llamada) para que el timeout quede documentado en
  * un solo lugar y para poder loguear/ajustar la política después.
