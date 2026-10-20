@@ -1,3 +1,5 @@
+import { adminRoutes } from "./admin/routes";
+import { teamRoutes, type EnabledModules } from "./modules/team";
 import type { Executor } from "./platform/db/scope";
 import type { Route } from "./platform/http/routeTypes";
 import { systemRoutes } from "./platform/http/systemRoutes";
@@ -22,8 +24,16 @@ import { systemRoutes } from "./platform/http/systemRoutes";
 /** Dependencias que reciben las rutas de los módulos. */
 export interface RouteDeps {
   db: Executor;
+  /** Módulos del plan de un negocio (provisional hasta I2, ver src/planModules.ts). */
+  enabledModules: EnabledModules;
 }
 
-export function panelRoutes(_deps: RouteDeps): Route[] {
-  return [...systemRoutes()];
+export function panelRoutes(deps: RouteDeps): Route[] {
+  return [
+    ...systemRoutes(),
+    // Identidad y equipo: /auth/* y /team/*.
+    ...teamRoutes(deps),
+    // Superadmin: /admin/*.
+    ...adminRoutes(deps),
+  ];
 }

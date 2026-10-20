@@ -1,3 +1,6 @@
+import { resolveSuperadmin } from "./admin/session";
+import { createSessionResolver } from "./modules/team";
+import { enabledModules, moduleGate } from "./planModules";
 import type { Executor } from "./platform/db/scope";
 import { serveHealth } from "./platform/http/health";
 import { sendJson } from "./platform/http/http";
@@ -22,10 +25,19 @@ export type ProcessRole = "web" | "worker" | "all";
 
 /**
  * Lo inyectable del router de la API: sesión del equipo, del superadmin y módulos del
- * plan. Sin configurar, las rutas con sesión responden 401 y las de un módulo 403 (la
- * identidad real llega en I0.6 y los planes en I2).
+ * plan. Lo que no se pase usa la implementación real (`defaultPanelApiAccess`); un test
+ * puede reemplazar una pieza (p. ej. un `moduleGate` que niega) sin tocar las demás.
  */
 export type PanelApiAccess = Pick<RouterOptions, "resolveSession" | "resolveSuperadmin" | "moduleGate">;
+
+/**
+ * Acceso real: la sesión del equipo validada contra la base (src/modules/team/session.ts),
+ * la del superadmin por cookie firmada (src/admin/session.ts) y los módulos del plan
+ * (provisional hasta I2, src/planModules.ts).
+ */
+export function defaultPanelApiAccess(db: Executor): Required<PanelApiAccess> {
+  return { resolveSession: createSessionResolver(db), resolveSuperadmin, moduleGate };
+}
 
 export interface AppOptions {
   db: Executor;
@@ -44,7 +56,11 @@ function requestUrl(rawUrl: string | undefined): URL {
  */
 export function createAppHandler({ db, role, panelApi = {} }: AppOptions): HttpHandler {
   // Se arma una vez por proceso: una declaración de rutas incoherente rompe el arranque.
-  const panelApiHandler = createRouter({ routes: panelRoutes({ db }), ...panelApi });
+  const panelApiHandler = createRouter({
+    routes: panelRoutes({ db, enabledModules }),
+    ...defaultPanelApiAccess(db),
+    ...panelApi,
+  });
 
   return withSecurityHeaders(async (req, res) => {
     const url = requestUrl(req.url);
