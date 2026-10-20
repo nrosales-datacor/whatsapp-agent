@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { businesses, locations } from "../../src/modules/business/schema";
 import { clients } from "../../src/modules/clients/schema";
 import { paymentMethods } from "../../src/modules/sales/schema";
+import type { NewAppointment } from "../../src/modules/scheduling/schema";
 import { staff } from "../../src/modules/team/schema";
 import { withTenant, type Db } from "../../src/platform/db/scope";
 
@@ -49,6 +50,27 @@ export async function createBusinessFixture(db: Db, options: { staffCount?: numb
       paymentMethodId: method.id,
     };
   });
+}
+
+/** Valores de una cita del negocio `f`: `start` ISO, `minutes` de duración, profesional `staffIndex`. */
+export function appointmentValues(
+  f: BusinessFixture,
+  start: string,
+  minutes: number,
+  overrides: Partial<NewAppointment> & { staffIndex?: number } = {},
+): NewAppointment {
+  const { staffIndex = 0, ...rest } = overrides;
+  const startsAt = new Date(start);
+  return {
+    businessId: f.businessId,
+    locationId: f.locationId,
+    clientId: f.clientId,
+    staffId: f.staffIds[staffIndex],
+    startsAt,
+    endsAt: new Date(startsAt.getTime() + minutes * 60_000),
+    status: "confirmed",
+    ...rest,
+  };
 }
 
 /** ¿El error (o alguno de su cadena de `cause`) trae este código de Postgres? Drizzle envuelve el original. */
