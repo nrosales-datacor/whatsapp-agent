@@ -1,0 +1,42 @@
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import App from "./app/App";
+import { ME_QUERY_KEY } from "./app/session";
+import { ADMIN_ME_QUERY_KEY } from "./modules/admin/adminApi";
+import { onUnauthorized } from "./lib/api";
+import { initTheme } from "./lib/theme";
+import { ToastProvider } from "./ui/Toast";
+import "./global.css";
+
+// El tema se aplica antes del primer render para que no parpadee.
+initTheme();
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: false, // un 401/403/404 no se arregla reintentando
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
+// Sesión vencida en cualquier llamada (401 `unauthorized`): se limpia la sesión que
+// corresponde y las guardas de ruta mandan al login correcto (panel o superadmin).
+onUnauthorized((path) => {
+  queryClient.setQueryData(path.startsWith("/admin") ? ADMIN_ME_QUERY_KEY : ME_QUERY_KEY, null);
+});
+
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <QueryClientProvider client={queryClient}>
+      {/* basename "/panel": el panel se sirve bajo /panel (mismo base que Vite). */}
+      <BrowserRouter basename="/panel">
+        <ToastProvider>
+          <App />
+        </ToastProvider>
+      </BrowserRouter>
+    </QueryClientProvider>
+  </StrictMode>,
+);
