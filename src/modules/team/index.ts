@@ -6,6 +6,7 @@ export type { EnabledModules, Me } from "./me";
 export type { Member, MemberStatus } from "./members";
 export { RESET_PASSWORD_PATH } from "./recovery";
 export { createSessionResolver } from "./session";
+export { listStaffOptions, type StaffOption } from "./staffDirectory";
 export { teamRoutes, type TeamRouteDeps } from "./routes";
 export type {
   AuthToken,
