@@ -1,3 +1,4 @@
+import * as queue from "../queue/schema";
 import * as platform from "./schema";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -15,6 +16,6 @@ import * as platform from "./schema";
 // test/security/rls.test.ts verifica que toda tabla de un src/**/schema.ts esté acá.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const schema = { ...platform };
+export const schema = { ...platform, ...queue };
 
 export type Schema = typeof schema;
