@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { currencyCode, currencySymbol, formatAmount } from "../../src/platform/money/currency";
-import * as panel from "../../web/src/lib/formato";
+import * as panel from "../../web/src/lib/money";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Montos en la moneda del negocio (src/platform/money/currency.ts) y su copia gemela del
-// panel (web/src/lib/formato.ts). Puros, sin red ni base.
+// panel (web/src/lib/money.ts). Puros, sin red ni base.
 // ─────────────────────────────────────────────────────────────────────────────
 
 test("currencyCode: acepta código ISO (cualquier caja) o símbolo", () => {
@@ -48,9 +48,9 @@ test("currencySymbol: para prefijos de inputs", () => {
 test("panel y backend formatean exactamente igual (copia gemela)", () => {
   for (const currency of ["₡", "CRC", "USD", "usd", "$", "MXN", "GTQ", "Q", "EUR", "€", "COP", "PEN", "S/", "Bs", ""]) {
     for (const n of [0, 5, 1500, 15000, 12.5, 1234567]) {
-      assert.equal(panel.monto(n, currency), formatAmount(n, currency), `${currency} ${n}`);
+      assert.equal(panel.formatAmount(n, currency), formatAmount(n, currency), `${currency} ${n}`);
     }
-    assert.equal(panel.simboloMoneda(currency), currencySymbol(currency), currency);
+    assert.equal(panel.currencySymbol(currency), currencySymbol(currency), currency);
+    assert.equal(panel.currencyCode(currency), currencyCode(currency), currency);
   }
-  assert.equal(panel.monto(15000), formatAmount(15000, "₡"), "sin moneda: colones");
 });
