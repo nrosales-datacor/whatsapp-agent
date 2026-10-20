@@ -1,29 +1,28 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { dumpCompleto, elegirBackupsAPodar } from "../../src/db/backups";
+import { isDumpComplete, selectBackupsToPrune } from "../../src/platform/db/backups";
 
-// Revisión pre-venta 2026-10 (G8): la poda nunca deja cero respaldos y un dump
-// truncado no se da por bueno.
+// La poda nunca deja cero respaldos y un dump truncado no se da por bueno.
 
-const DIA = 86_400_000;
-const ahora = Date.UTC(2026, 9, 1);
-const archivo = (diasAtras: number) => ({ nombre: `wa_bot_${diasAtras}.sql.gz`, mtimeMs: ahora - diasAtras * DIA });
+const DAY = 86_400_000;
+const now = Date.UTC(2026, 9, 1);
+const file = (daysAgo: number) => ({ name: `db_${daysAgo}.sql.gz`, mtimeMs: now - daysAgo * DAY });
 
-test("elegirBackupsAPodar: borra solo los más viejos que la retención", () => {
-  const archivos = [0, 1, 2, 15, 20].map(archivo);
-  assert.deepEqual(elegirBackupsAPodar(archivos, ahora, 14, 3).sort(), ["wa_bot_15.sql.gz", "wa_bot_20.sql.gz"]);
+test("selectBackupsToPrune: borra solo los más viejos que la retención", () => {
+  const files = [0, 1, 2, 15, 20].map(file);
+  assert.deepEqual(selectBackupsToPrune(files, now, 14, 3).sort(), ["db_15.sql.gz", "db_20.sql.gz"]);
 });
 
-test("elegirBackupsAPodar: aunque todos sean viejos, conserva los N más recientes", () => {
-  const archivos = [30, 31, 32, 40, 50].map(archivo);
-  assert.deepEqual(elegirBackupsAPodar(archivos, ahora, 14, 3).sort(), ["wa_bot_40.sql.gz", "wa_bot_50.sql.gz"]);
+test("selectBackupsToPrune: aunque todos sean viejos, conserva los N más recientes", () => {
+  const files = [30, 31, 32, 40, 50].map(file);
+  assert.deepEqual(selectBackupsToPrune(files, now, 14, 3).sort(), ["db_40.sql.gz", "db_50.sql.gz"]);
 });
 
-test("elegirBackupsAPodar: con menos archivos que el mínimo no borra nada", () => {
-  assert.deepEqual(elegirBackupsAPodar([archivo(90), archivo(100)], ahora, 14, 3), []);
+test("selectBackupsToPrune: con menos archivos que el mínimo no borra nada", () => {
+  assert.deepEqual(selectBackupsToPrune([file(90), file(100)], now, 14, 3), []);
 });
 
-test("dumpCompleto: exige la marca de cierre de pg_dump", () => {
-  assert.equal(dumpCompleto("...\n--\n-- PostgreSQL database dump complete\n--\n"), true);
-  assert.equal(dumpCompleto("COPY public.wa_mensajes (id, ...) FROM stdin;\n1\tho"), false);
+test("isDumpComplete: exige la marca de cierre de pg_dump", () => {
+  assert.equal(isDumpComplete("...\n--\n-- PostgreSQL database dump complete\n--\n"), true);
+  assert.equal(isDumpComplete("COPY public.audit_log (id, ...) FROM stdin;\n1\tho"), false);
 });
