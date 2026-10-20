@@ -20,20 +20,31 @@ import { VitePWA } from "vite-plugin-pwa";
 // navegador manda Origin "localhost:5173" → no coinciden → 403 al hacer login.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Fuentes self-hosted del backend (las baja scripts/fetchFonts.mjs). En dev, Vite las
-// sirve directo desde esa carpeta (vía /@fs/, permitida en server.fs.allow), con o sin
-// backend corriendo: el middleware solo reescribe la URL.
+// Ayudas del server de desarrollo:
+//   • Fuentes self-hosted del backend (las baja scripts/fetchFonts.mjs): Vite las sirve
+//     directo desde esa carpeta (vía /@fs/, permitida en server.fs.allow), con o sin
+//     backend corriendo; el middleware solo reescribe la URL.
+//   • "/panel" sin barra → "/panel/": el router genera "/panel" para el inicio y el server
+//     de Vite solo atiende la base con barra (el backend acepta las dos).
 const FONTS_DIR = "../src/platform/http/fonts";
 const FONTS_FS_PATH = new URL(`${FONTS_DIR}/`, import.meta.url).pathname;
 
-function devFonts(): Plugin {
+function devServerHelpers(): Plugin {
   return {
-    name: "selyon-dev-fonts",
+    name: "selyon-dev-server-helpers",
     apply: "serve",
     configureServer(server) {
-      server.middlewares.use((req, _res, next) => {
-        const match = /^\/panel\/fonts\/([A-Za-z0-9-]+\.(?:woff2|ttf))(?:\?.*)?$/.exec(req.url ?? "");
-        if (match) req.url = `/panel/@fs${FONTS_FS_PATH}${match[1]}`;
+      server.middlewares.use((req, res, next) => {
+        const url = req.url ?? "";
+        const base = /^\/panel(\?.*)?$/.exec(url);
+        if (base) {
+          res.statusCode = 302;
+          res.setHeader("Location", `/panel/${base[1] ?? ""}`);
+          res.end();
+          return;
+        }
+        const font = /^\/panel\/fonts\/([A-Za-z0-9-]+\.(?:woff2|ttf))(?:\?.*)?$/.exec(url);
+        if (font) req.url = `/panel/@fs${FONTS_FS_PATH}${font[1]}`;
         next();
       });
     },
@@ -47,7 +58,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       react(),
-      devFonts(),
+      devServerHelpers(),
       // ── PWA (instalable + push) ──
       // injectManifest: NUESTRO service worker (src/sw.ts) con los handlers de push;
       // `injectionPoint: undefined` => sin precache (passthrough). El plugin inyecta el

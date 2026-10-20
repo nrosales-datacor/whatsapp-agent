@@ -1,17 +1,21 @@
 import { defineConfig, devices } from "@playwright/test";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Config de Playwright. Por ahora un smoke del servidor nuevo (test/e2e): /health, la
-// landing y el panel compilado. El E2E del panel se rehace en I0.7 con el shell nuevo
-// (login, layout, rutas).
+// Config de Playwright. Dos proyectos:
 //
-// El server corre en modo test sobre un Postgres EFÍMERO en el proceso (PGlite + las
-// migraciones reales: sin DATABASE_URL) y en un puerto propio. Requiere el build del
-// panel (web/dist); `npm run test:e2e` lo construye antes.
+//   • server (test/e2e/smoke.spec.ts): smoke del servidor nuevo — /health, la landing y el
+//     panel compilado. Corre en modo test sobre un Postgres EFÍMERO en el proceso (PGlite
+//     + las migraciones reales: sin DATABASE_URL) y en un puerto propio. Requiere el build
+//     del panel (web/dist); `npm run test:e2e` lo construye antes.
+//   • panel-mock (test/e2e/panel.spec.ts): el shell del panel (login, layout, rutas, menú
+//     por rol y plan, superadmin) contra la API simulada (Vite en modo mock, sin backend).
+//     Cuando la identidad real (I0.6) esté integrada, se suma un E2E contra el server.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PORT = 3100;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
+const PANEL_PORT = 5174;
+const PANEL_URL = `http://127.0.0.1:${PANEL_PORT}`;
 
 export default defineConfig({
   testDir: "./test/e2e",
@@ -23,17 +27,30 @@ export default defineConfig({
   timeout: 30_000,
   expect: { timeout: 10_000 },
   use: {
-    baseURL: BASE_URL,
     trace: "on-first-retry",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"], baseURL: BASE_URL } }],
-  webServer: {
-    command: "npx tsx src/server.ts",
-    url: `${BASE_URL}/health`,
-    env: { PORT: String(PORT), DATABASE_URL: "", NODE_ENV: "test" },
-    reuseExistingServer: !process.env.CI,
-    timeout: 180_000, // PGlite (WASM) + migraciones
-    stdout: "pipe",
-    stderr: "pipe",
-  },
+  projects: [
+    { name: "server", testMatch: /smoke\.spec\.ts$/, use: { ...devices["Desktop Chrome"], baseURL: BASE_URL } },
+    { name: "panel-mock", testMatch: /panel\.spec\.ts$/, use: { ...devices["Desktop Chrome"], baseURL: PANEL_URL } },
+  ],
+  webServer: [
+    {
+      command: "npx tsx src/server.ts",
+      url: `${BASE_URL}/health`,
+      env: { PORT: String(PORT), DATABASE_URL: "", NODE_ENV: "test" },
+      reuseExistingServer: !process.env.CI,
+      timeout: 180_000, // PGlite (WASM) + migraciones
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+    {
+      // Vite en modo mock (web/.env.mock): el panel responde con lib/mockApi.ts.
+      command: `npm --prefix web run dev:mock -- --port ${PANEL_PORT} --strictPort --host 127.0.0.1`,
+      url: `${PANEL_URL}/panel/`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  ],
 });
