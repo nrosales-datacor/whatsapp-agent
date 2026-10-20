@@ -1,11 +1,11 @@
 // Descarga (una sola vez) los .woff2 de las fuentes del panel desde Google Fonts
-// y los guarda en src/panel/fonts/ para SERVIRLOS NOSOTROS (sin depender del CDN
+// y los guarda en src/platform/http/fonts/ para SERVIRLOS NOSOTROS (sin depender del CDN
 // de Google en runtime: funciona offline y detrás de firewalls corporativos).
 import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const OUT = resolve(dirname(fileURLToPath(import.meta.url)), "../src/panel/fonts");
+const OUT = resolve(dirname(fileURLToPath(import.meta.url)), "../src/platform/http/fonts");
 if (!existsSync(OUT)) mkdirSync(OUT, { recursive: true });
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
