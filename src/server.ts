@@ -1,6 +1,7 @@
 import "dotenv/config";
 import http from "node:http";
 import { createAppHandler, createWorkerHandler, type ProcessRole } from "./app";
+import { registerJobHandlers } from "./jobs";
 import { PRODUCT_NAME } from "./platform/brand";
 import { getDb, startLocalDb } from "./platform/db/client";
 import { withSafetyNet } from "./platform/net/http";
@@ -81,6 +82,7 @@ server.listen(PORT, () => {
   // que registren los módulos (src/platform/queue); sin ninguno registrado no reclama nada.
   if (RUNS_BACKGROUND) {
     loops.push(startMetricsReport(db));
+    registerJobHandlers();
     queueWorker = startQueueWorker({ db });
   }
 });
