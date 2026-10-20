@@ -9,11 +9,13 @@ import { FormError, PasswordField, TextField } from "../../ui/Field";
 import AuthLayout from "./AuthLayout";
 import { login } from "./authApi";
 
-function loginErrorMessage(error: unknown): string {
-  if (isApiError(error, "too_many_attempts")) {
-    return error.message || "Demasiados intentos. Esperá unos minutos y probá de nuevo.";
+function loginErrorMessage(error: unknown, step: "credentials" | "totp"): string {
+  // En el paso del código, el backend responde el mismo `invalid_credentials` (no revela
+  // qué parte falló), pero acá lo único que cambió es el código.
+  if (step === "totp" && isApiError(error, "invalid_credentials")) {
+    return "El código no es correcto. Probá con el que muestra la app ahora.";
   }
-  if (isApiError(error, "invalid_credentials")) return error.message || "El correo o la clave no coinciden.";
+  // `no_active_business`, `too_many_attempts`, `invalid_credentials`…: el mensaje del backend.
   return errorMessage(error, "No pudimos iniciar sesión. Probá de nuevo.");
 }
 
@@ -68,7 +70,7 @@ export default function LoginPage() {
     mutation.reset();
   }
 
-  const error = mutation.isError ? loginErrorMessage(mutation.error) : null;
+  const error = mutation.isError ? loginErrorMessage(mutation.error, step) : null;
 
   if (step === "totp") {
     return (

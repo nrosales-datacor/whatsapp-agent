@@ -3,8 +3,8 @@
 // backend:
 //
 //   • Sobre de respuesta: éxito `{ ok: true, data }` → devuelve `data`; error
-//     `{ ok: false, error, code, fields? }` → lanza `ApiError` (status, code estable y
-//     errores por campo). 204 → `undefined`.
+//     `{ ok: false, error, code, fields? }` → lanza `ApiError` (status, code estable,
+//     mensaje en español y errores por campo; ver ERROR_MESSAGES). 204 → `undefined`.
 //   • Sucursal activa: viaja en el header `X-Location-Id` (la fija el proveedor de
 //     sucursal con `setActiveLocationId`; sin sucursal = "todas").
 //   • 401 `unauthorized` (sesión vencida o inexistente) → avisa al manejador registrado
@@ -23,6 +23,46 @@ export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 const NETWORK_MESSAGE = "No pudimos conectar con el servidor. Revisá tu conexión y probá de nuevo.";
 const GENERIC_MESSAGE = "Algo salió mal. Probá de nuevo en un momento.";
+
+/**
+ * Mensaje en español de cada código estable del backend. El backend ya manda su propio
+ * `error` en español (más específico según el caso) y ese es el que se muestra; este
+ * mapa es el respaldo cuando la respuesta no lo trae (proxy, 502, versión vieja) y la
+ * referencia de los códigos que el panel conoce.
+ */
+export const ERROR_MESSAGES: Readonly<Record<string, string>> = {
+  // Genéricos (router / transporte)
+  network_error: NETWORK_MESSAGE,
+  server_error: GENERIC_MESSAGE,
+  http_error: GENERIC_MESSAGE,
+  invalid_response: GENERIC_MESSAGE,
+  validation_error: "Datos inválidos: revisá los campos marcados.",
+  unauthorized: "Tu sesión no es válida o venció. Iniciá sesión de nuevo.",
+  forbidden: "No tenés permiso para hacer esto.",
+  not_found: "No encontramos lo que buscabas.",
+  too_many_attempts: "Demasiados intentos. Probá de nuevo en unos minutos.",
+  module_not_in_plan: "Esta función no está incluida en tu plan.",
+  // Identidad (I0.6)
+  invalid_credentials: "Correo o clave incorrectos.",
+  no_active_business: "Tu cuenta no tiene acceso a ningún negocio activo. Hablá con quien administra tu negocio.",
+  business_forbidden: "No tenés acceso a ese negocio.",
+  invalid_password: "La clave no es correcta.",
+  invalid_code: "El código no es correcto.",
+  totp_required: "Tu cuenta tiene verificación en dos pasos: escribí el código de tu app de autenticación.",
+  totp_already_enabled: "La verificación en dos pasos ya está activa.",
+  totp_not_enabled: "La verificación en dos pasos no está activa.",
+  totp_not_setup: "Primero generá el código para tu app de autenticación.",
+  invalid_token: "El enlace no es válido o venció. Pedí uno nuevo.",
+  already_member: "Esa persona ya es parte del equipo.",
+  last_owner: "Debe quedar al menos un dueño activo en el negocio.",
+  user_inactive: "Esa cuenta está desactivada en la plataforma.",
+  forbidden_role: "Tu rol no permite hacer este cambio.",
+};
+
+/** Mensaje en español para un código del backend (o el genérico si no se conoce). */
+export function messageForCode(code: string): string {
+  return ERROR_MESSAGES[code] ?? GENERIC_MESSAGE;
+}
 
 /** Error de la API con el código estable que manda el backend (`invalid_credentials`, …). */
 export class ApiError extends Error {
@@ -161,15 +201,11 @@ export async function apiRequest<T>(method: HttpMethod, path: string, body?: unk
   let error: ApiError;
   if (isObject(payload) && payload.ok === false) {
     const env = payload as unknown as ErrorEnvelope;
-    error = new ApiError(
-      res.status,
-      env.error || GENERIC_MESSAGE,
-      env.code || fallbackCode(res.status),
-      isObject(env.fields) ? env.fields : {},
-      path,
-    );
+    const code = env.code || fallbackCode(res.status);
+    error = new ApiError(res.status, env.error || messageForCode(code), code, isObject(env.fields) ? env.fields : {}, path);
   } else {
-    error = new ApiError(res.status, GENERIC_MESSAGE, res.status < 400 ? "invalid_response" : fallbackCode(res.status), {}, path);
+    const code = res.status < 400 ? "invalid_response" : fallbackCode(res.status);
+    error = new ApiError(res.status, messageForCode(code), code, {}, path);
   }
 
   if (error.status === 401 && error.code === "unauthorized") unauthorizedHandler?.(path);

@@ -49,8 +49,8 @@ export default function ResetPasswordPage() {
 
   const serverFieldError = isApiError(mutation.error) ? mutation.error.fieldError("password") : undefined;
   const formError = mutation.isError && !serverFieldError ? errorMessage(mutation.error) : null;
-  // Un 4xx sin error de campo es el token (vencido o ya usado): se ofrece pedir otro.
-  const tokenProblem = !!formError && isApiError(mutation.error) && mutation.error.status >= 400 && mutation.error.status < 500;
+  // `invalid_token`: el enlace venció o ya se usó → se ofrece pedir otro.
+  const tokenProblem = isApiError(mutation.error, "invalid_token");
 
   return (
     <AuthLayout title="Creá tu clave nueva" intro="Elegí una clave que no uses en otros sitios.">

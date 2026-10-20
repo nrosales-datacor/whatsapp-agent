@@ -41,7 +41,8 @@ export default function ChangePasswordPage() {
   }
 
   const apiError = isApiError(mutation.error) ? mutation.error : null;
-  const currentError = apiError?.fieldError("currentPassword");
+  // `invalid_password` (400, sin detalle por campo) es la clave actual.
+  const currentError = apiError?.fieldError("currentPassword") ?? (apiError?.code === "invalid_password" ? apiError.message : undefined);
   const newError = apiError?.fieldError("newPassword");
   const formError = mutation.isError && !currentError && !newError ? errorMessage(mutation.error) : null;
 

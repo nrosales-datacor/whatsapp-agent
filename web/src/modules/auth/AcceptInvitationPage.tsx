@@ -1,27 +1,40 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { homePathFor, roleLabel } from "../../app/navigation";
 import { useSetSession } from "../../app/session";
 import { errorMessage, isApiError } from "../../lib/api";
-import { DEFAULT_TERMINOLOGY } from "../../lib/contract";
+import { DEFAULT_TERMINOLOGY, type AcceptInvitationInput, type Invitation } from "../../lib/contract";
 import { FormError, PasswordField, TextField } from "../../ui/Field";
 import FullPageStatus from "../../ui/FullPageStatus";
 import AuthLayout from "./AuthLayout";
 import { acceptInvitation, getInvitation } from "./authApi";
 import { usePasswordPair } from "./usePasswordPair";
 
-/**
- * Aceptar una invitación (`/invite/:token`): el profesional o la recepcionista elige su
- * nombre y su clave, y entra directo al negocio que lo invitó.
- */
-export default function AcceptInvitationPage() {
+// ─────────────────────────────────────────────────────────────────────────────
+// Aceptar una invitación al equipo (`/accept-invitation?token=…`, el enlace del correo).
+//
+//   • Cuenta nueva (`hasAccount: false`): elige su nombre y una clave.
+//   • Cuenta que ya existe (está en otro negocio): confirma con SU clave actual, y con el
+//     código de su app si tiene 2FA (el backend lo pide con 400 `totp_required`). El
+//     enlace nunca sirve para cambiarle la clave a nadie.
+//
+// Al aceptar, la sesión queda abierta en el negocio que invitó.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Alias viejo `/invite/:token` → `/accept-invitation?token=…`. */
+export function InviteRedirect() {
   const { token = "" } = useParams();
-  const navigate = useNavigate();
-  const setSession = useSetSession();
-  const [name, setName] = useState("");
-  const [nameMissing, setNameMissing] = useState(false);
-  const pair = usePasswordPair();
+  return <Navigate to={`/accept-invitation?token=${encodeURIComponent(token)}`} replace />;
+}
+
+function onlyDigits(value: string): string {
+  return value.replace(/\D/g, "").slice(0, 6);
+}
+
+export default function AcceptInvitationPage() {
+  const [params] = useSearchParams();
+  const token = params.get("token")?.trim() ?? "";
 
   const invitation = useQuery({
     queryKey: ["invitation", token],
@@ -29,26 +42,18 @@ export default function AcceptInvitationPage() {
     enabled: token !== "",
   });
 
-  const mutation = useMutation({
-    mutationFn: () => acceptInvitation(token, name.trim(), pair.password),
-    onSuccess: (me) => {
-      setSession(me);
-      navigate(homePathFor(me), { replace: true });
-    },
-  });
-
   if (!token || invitation.isError) {
-    const notFound = !token || (isApiError(invitation.error) && invitation.error.status >= 400 && invitation.error.status < 500);
+    const unavailable = !token || (isApiError(invitation.error) && invitation.error.status >= 400 && invitation.error.status < 500);
     return (
       <AuthLayout
-        title={notFound ? "Esta invitación no está disponible" : "No pudimos cargar la invitación"}
+        title={unavailable ? "Esta invitación no está disponible" : "No pudimos cargar la invitación"}
         intro={
-          notFound
+          unavailable
             ? "Puede que haya vencido o que ya se haya usado. Pedile a quien te invitó que te mande una nueva."
             : errorMessage(invitation.error)
         }
       >
-        {!notFound && (
+        {!unavailable && (
           <button type="button" className="btn btn-secondary btn-block" onClick={() => void invitation.refetch()}>
             Reintentar
           </button>
@@ -60,8 +65,38 @@ export default function AcceptInvitationPage() {
     );
   }
 
-  const data = invitation.data;
-  if (!data) return <FullPageStatus message="Buscando tu invitación…" />;
+  if (!invitation.data) return <FullPageStatus message="Buscando tu invitación…" />;
+  return invitation.data.hasAccount ? (
+    <ExistingAccountForm token={token} invitation={invitation.data} />
+  ) : (
+    <NewAccountForm token={token} invitation={invitation.data} />
+  );
+}
+
+interface FormProps {
+  token: string;
+  invitation: Invitation;
+}
+
+/** Acepta y abre la sesión en el negocio que invitó. */
+function useAccept() {
+  const navigate = useNavigate();
+  const setSession = useSetSession();
+  return useMutation({
+    mutationFn: (input: AcceptInvitationInput) => acceptInvitation(input),
+    onSuccess: (me) => {
+      setSession(me);
+      navigate(homePathFor(me), { replace: true });
+    },
+  });
+}
+
+/** Cuenta nueva: nombre + clave (con confirmación). */
+function NewAccountForm({ token, invitation }: FormProps) {
+  const [name, setName] = useState("");
+  const [nameMissing, setNameMissing] = useState(false);
+  const pair = usePasswordPair();
+  const mutation = useAccept();
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -69,26 +104,27 @@ export default function AcceptInvitationPage() {
     setNameMissing(!nameOk);
     const passwordOk = pair.validate();
     if (mutation.isPending || !nameOk || !passwordOk) return;
-    mutation.mutate();
+    mutation.mutate({ token, name: name.trim(), password: pair.password });
   }
 
   const apiError = isApiError(mutation.error) ? mutation.error : null;
-  const nameError = (nameMissing ? "Escribí tu nombre." : undefined) ?? apiError?.fieldError("name");
+  const nameServerError = apiError?.fieldError("name");
   const passwordServerError = apiError?.fieldError("password");
-  const formError = mutation.isError && !apiError?.fieldError("name") && !passwordServerError ? errorMessage(mutation.error) : null;
+  const nameError = (nameMissing ? "Escribí tu nombre." : undefined) ?? nameServerError;
+  const formError = mutation.isError && !nameServerError && !passwordServerError ? errorMessage(mutation.error) : null;
 
   return (
     <AuthLayout
-      title={`Sumate a ${data.businessName}`}
+      title={`Sumate a ${invitation.businessName}`}
       intro={
         <>
-          Te invitaron como <strong>{roleLabel(data.role, DEFAULT_TERMINOLOGY)}</strong>. Elegí tu nombre y una clave para
-          entrar.
+          Te invitaron como <strong>{roleLabel(invitation.role, DEFAULT_TERMINOLOGY)}</strong>. Elegí tu nombre y una clave
+          para entrar.
         </>
       }
     >
       <form onSubmit={onSubmit} noValidate>
-        <TextField label="Correo" name="email" type="email" autoComplete="username" value={data.email} readOnly />
+        <TextField label="Correo" name="email" type="email" autoComplete="username" value={invitation.email} readOnly />
         <TextField
           label="Tu nombre"
           name="name"
@@ -120,6 +156,88 @@ export default function AcceptInvitationPage() {
         <FormError message={formError} />
         <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={mutation.isPending}>
           {mutation.isPending ? "Creando tu cuenta…" : "Aceptar invitación"}
+        </button>
+      </form>
+    </AuthLayout>
+  );
+}
+
+/** Cuenta existente: confirma con su clave actual (y el código de 2FA si lo pide). */
+function ExistingAccountForm({ token, invitation }: FormProps) {
+  const [password, setPassword] = useState("");
+  const [totpCode, setTotpCode] = useState("");
+  const [needsTotp, setNeedsTotp] = useState(false);
+  const totpRef = useRef<HTMLInputElement>(null);
+  const mutation = useAccept();
+
+  // El backend pide el código recién después de validar la clave (400 `totp_required`).
+  useEffect(() => {
+    if (isApiError(mutation.error, "totp_required")) setNeedsTotp(true);
+  }, [mutation.error]);
+  useEffect(() => {
+    if (needsTotp) totpRef.current?.focus();
+  }, [needsTotp]);
+
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (mutation.isPending || !password || (needsTotp && totpCode.length < 6)) return;
+    mutation.mutate({ token, password, ...(needsTotp ? { totpCode } : {}) });
+  }
+
+  const error = mutation.error;
+  const passwordError = isApiError(error, "invalid_password") ? error.message : undefined;
+  const codeError = isApiError(error, "invalid_code") ? error.message : undefined;
+  const formError =
+    mutation.isError && !passwordError && !codeError && !isApiError(error, "totp_required") ? errorMessage(error) : null;
+
+  return (
+    <AuthLayout
+      title={`Sumate a ${invitation.businessName}`}
+      intro={
+        <>
+          Te invitaron como <strong>{roleLabel(invitation.role, DEFAULT_TERMINOLOGY)}</strong>. Ya tenés una cuenta con
+          este correo: confirmá con la clave con la que ya entrás.
+        </>
+      }
+    >
+      <form onSubmit={onSubmit} noValidate>
+        <TextField label="Correo" name="email" type="email" autoComplete="username" value={invitation.email} readOnly />
+        <PasswordField
+          label="Tu clave actual"
+          name="password"
+          autoComplete="current-password"
+          required
+          value={password}
+          error={passwordError}
+          onChange={(e) => setPassword(e.target.value)}
+          labelAside={
+            <Link to="/forgot-password" className="link">
+              ¿La olvidaste?
+            </Link>
+          }
+        />
+        {needsTotp && (
+          <TextField
+            ref={totpRef}
+            label="Código de verificación"
+            name="totpCode"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            maxLength={6}
+            required
+            hint="El código de 6 dígitos de tu app de autenticación."
+            value={totpCode}
+            error={codeError}
+            onChange={(e) => setTotpCode(onlyDigits(e.target.value))}
+          />
+        )}
+        <FormError message={formError} />
+        <button
+          type="submit"
+          className="btn btn-primary btn-block btn-lg"
+          disabled={mutation.isPending || !password || (needsTotp && totpCode.length < 6)}
+        >
+          {mutation.isPending ? "Verificando…" : "Aceptar invitación"}
         </button>
       </form>
     </AuthLayout>

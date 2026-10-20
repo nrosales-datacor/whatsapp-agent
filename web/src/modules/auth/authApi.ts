@@ -1,5 +1,5 @@
 import { api } from "../../lib/api";
-import type { Invitation, LoginInput, LoginResult, Me, TotpSetup } from "../../lib/contract";
+import type { AcceptInvitationInput, Invitation, LoginInput, LoginResult, Me, TotpSetup } from "../../lib/contract";
 
 // Endpoints de identidad del panel (contrato de I0.6). La sesión (`/auth/me`, logout y
 // cambio de negocio) está en app/session.tsx.
@@ -16,11 +16,11 @@ export const changePassword = (currentPassword: string, newPassword: string) =>
 
 export const getInvitation = (token: string) => api.get<Invitation>(`/auth/invitations/${encodeURIComponent(token)}`);
 
-export const acceptInvitation = (token: string, name: string, password: string) =>
-  api.post<Me>("/auth/invitations/accept", { token, name, password });
+export const acceptInvitation = (input: AcceptInvitationInput) => api.post<Me>("/auth/invitations/accept", input);
 
 export const setupTotp = () => api.post<TotpSetup>("/auth/totp/setup");
 
+// Activar y desactivar responden 204 (el backend re-emite la cookie de la sesión).
 export const enableTotp = (code: string) => api.post<void>("/auth/totp/enable", { code });
 
 export const disableTotp = (password: string, code: string) => api.post<void>("/auth/totp/disable", { password, code });

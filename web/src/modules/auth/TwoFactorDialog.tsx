@@ -21,6 +21,16 @@ function onlyDigits(value: string): string {
   return value.replace(/\D/g, "").slice(0, 6);
 }
 
+/**
+ * Error de un campo: el que venga por campo (400 de validación) o el del código estable
+ * que corresponde a ese campo (`invalid_code` → código, `invalid_password` → clave).
+ */
+function fieldErrorFor(error: unknown, field: "code" | "password"): string | undefined {
+  if (!isApiError(error)) return undefined;
+  const code = field === "code" ? "invalid_code" : "invalid_password";
+  return error.fieldError(field) ?? (error.code === code ? error.message : undefined);
+}
+
 /** Activar la verificación en dos pasos: generar el secreto, cargarlo en la app y confirmar con un código. */
 function EnableTwoFactor({ onDone }: { onDone: () => void }) {
   const qc = useQueryClient();
@@ -57,7 +67,7 @@ function EnableTwoFactor({ onDone }: { onDone: () => void }) {
     if (!enable.isPending && code.length === 6) enable.mutate(code);
   }
 
-  const codeError = isApiError(enable.error) ? enable.error.fieldError("code") : undefined;
+  const codeError = fieldErrorFor(enable.error, "code");
   return (
     <form className="stack" onSubmit={onSubmit} noValidate>
       <ol className="steps">
@@ -110,9 +120,8 @@ function DisableTwoFactor({ onDone }: { onDone: () => void }) {
     if (!disable.isPending && password && code.length === 6) disable.mutate();
   }
 
-  const apiError = isApiError(disable.error) ? disable.error : null;
-  const passwordError = apiError?.fieldError("password");
-  const codeError = apiError?.fieldError("code");
+  const passwordError = fieldErrorFor(disable.error, "password");
+  const codeError = fieldErrorFor(disable.error, "code");
   return (
     <form className="stack" onSubmit={onSubmit} noValidate>
       <p>Tu cuenta va a quedar protegida solo con la clave. Para confirmar, escribí tu clave y un código de la app.</p>
