@@ -108,8 +108,8 @@ async function allPages(b: B, query: string, limit: number): Promise<string[]> {
   const names: string[] = [];
   let cursor: string | null = null;
   for (let i = 0; i < 50; i++) {
-    const qs = `${query}&limit=${limit}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
-    const res = await b.get(`/api/panel/clients?${qs}`);
+    const qs: string = `${query}&limit=${limit}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
+    const res: { status: number; body: any } = await b.get(`/api/panel/clients?${qs}`);
     assert.equal(res.status, 200, JSON.stringify(res.body));
     assert.ok(res.body.data.items.length <= limit);
     names.push(...res.body.data.items.map((c: { name: string }) => c.name));
