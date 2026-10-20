@@ -17,17 +17,23 @@ export function sendJson(res: ServerResponse, status: number, obj: unknown): voi
   res.end(body);
 }
 
+export interface CookieOptions {
+  /** Segundos de vida; 0 borra la cookie. */
+  maxAgeSec: number;
+  /** `Lax` (sesión del equipo: los links de los correos llegan con la sesión) o `Strict` (superadmin). */
+  sameSite: "Lax" | "Strict";
+}
+
 /**
- * 429 del rate limit de login. Mismo mensaje/forma sin importar si el límite que se pasó
- * fue el de IP o el de usuario — no hay que darle a quien mira la respuesta ninguna pista
- * de CUÁL de los dos disparó el corte.
+ * Cabecera `Set-Cookie` de una cookie de sesión: siempre `HttpOnly` (el JS del panel no
+ * la ve), `Path=/` y `SameSite`; `Secure` en producción (en desarrollo el panel corre por
+ * http://localhost y una cookie Secure no volvería por http). El valor es un token
+ * base64url: no lleva caracteres que haya que escapar.
  */
-export function sendRateLimited(res: ServerResponse, retryAfterSec: number): void {
-  res.writeHead(429, {
-    "content-type": "application/json; charset=utf-8",
-    "retry-after": String(retryAfterSec),
-  });
-  res.end(JSON.stringify({ ok: false, error: "Demasiados intentos. Probá de nuevo en unos minutos." }));
+export function sessionCookie(name: string, value: string, options: CookieOptions): string {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  const maxAge = Math.max(0, Math.floor(options.maxAgeSec));
+  return `${name}=${value}; HttpOnly; SameSite=${options.sameSite}; Path=/; Max-Age=${maxAge}${secure}`;
 }
 
 export function parseCookies(req: IncomingMessage): Record<string, string> {
