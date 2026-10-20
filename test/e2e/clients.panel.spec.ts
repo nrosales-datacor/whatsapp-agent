@@ -109,8 +109,10 @@ test("+ Nuevo › Paciente abre el alta desde cualquier sección", async ({ page
   await page.getByRole("button", { name: "Nuevo", exact: true }).click();
   await page.getByRole("menuitem", { name: /Paciente/ }).click();
   await expect(page).toHaveURL(/\/panel\/clients\?new=1$/);
-  await expect(page.getByRole("dialog", { name: "Nuevo paciente" })).toBeVisible();
-  await page.getByRole("dialog", { name: "Nuevo paciente" }).getByRole("button", { name: "Cancelar" }).click();
+  const dialog = page.getByRole("dialog", { name: "Nuevo paciente" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel("Nombre")).toBeFocused();
+  await dialog.getByRole("button", { name: "Cancelar" }).click();
   await expect(page).toHaveURL(/\/panel\/clients$/);
 });
 

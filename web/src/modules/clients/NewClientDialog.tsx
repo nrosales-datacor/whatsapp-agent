@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { capitalize, terminologyOf } from "../../app/navigation";
 import { useSession } from "../../app/session";
@@ -30,6 +30,11 @@ export default function NewClientDialog({ open, onClose }: Props) {
   const [form, setForm] = useState(EMPTY);
   const [localErrors, setLocalErrors] = useState<Partial<Record<Field, string>>>({});
   const mutation = useCreateClient(me.business.id);
+  const nameRef = useRef<HTMLInputElement>(null);
+  // El foco va al nombre al abrir (el <dialog> nativo enfocaría el botón de cerrar).
+  useEffect(() => {
+    if (open) nameRef.current?.focus();
+  }, [open]);
 
   function close() {
     setForm(EMPTY);
@@ -77,7 +82,7 @@ export default function NewClientDialog({ open, onClose }: Props) {
           name="name"
           autoComplete="off"
           required
-          autoFocus
+          ref={nameRef}
           value={form.name}
           error={errorFor("name")}
           onChange={(e) => set("name", e.target.value)}
