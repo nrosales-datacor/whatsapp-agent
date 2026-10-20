@@ -9,7 +9,7 @@ export type IconId =
   | "grid" | "plus" | "x" | "check" | "chevronDown" | "chevronLeft" | "chevronsUpDown"
   | "lock" | "key" | "shield" | "logout" | "sun" | "moon" | "mapPin" | "building"
   | "user" | "mail" | "eye" | "eyeOff" | "alert" | "cloudOff" | "refresh" | "sparkles"
-  | "search" | "clock";
+  | "search" | "clock" | "chevronUp" | "trash" | "pencil";
 
 // Literales hardcodeados en este módulo: nunca llevan datos del usuario.
 const PATHS: Record<IconId, string> = {
@@ -46,6 +46,9 @@ const PATHS: Record<IconId, string> = {
   sparkles: '<path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
   clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  chevronUp: '<polyline points="18 15 12 9 6 15"/>',
+  trash: '<path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/>',
+  pencil: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
 };
 
 interface Props {

@@ -86,3 +86,48 @@ export function currencySymbol(currency: string | null | undefined): string {
   const symbol = fmt?.formatToParts(0).find((p) => p.type === "currency")?.value;
   return symbol ?? (String(currency ?? "").trim() || "₡");
 }
+
+// ── Céntimos (solo panel) ───────────────────────────────────────────────────
+// La API manda y recibe montos en CÉNTIMOS (`*_cents`). Estas utilidades no tienen gemela
+// en el backend: el backend nunca formatea céntimos para la UI.
+
+/** Monto en céntimos formateado en la moneda del negocio (2500050 → "₡25 000,50"). */
+export function formatCents(cents: number, currency: string | null | undefined): string {
+  return formatAmount((Number.isFinite(cents) ? cents : 0) / 100, currency);
+}
+
+/** Céntimos → texto editable sin separador de miles (2500050 → "25000,50"; 2500000 → "25000"). */
+export function centsToInput(cents: number): string {
+  const whole = Math.trunc(cents / 100);
+  const fraction = Math.abs(cents % 100);
+  return fraction === 0 ? String(whole) : `${whole},${String(fraction).padStart(2, "0")}`;
+}
+
+/**
+ * Lo que escribe la persona → céntimos, o null si no es un monto válido. Acepta "," o "."
+ * como separador decimal y espacios, "." o "," como separador de miles: "25 000",
+ * "25.000,50", "25,000.50", "1500,5". Sin negativos ni más de 2 decimales. Vacío = 0.
+ */
+export function parseAmountToCents(text: string): number | null {
+  const raw = text.replace(/[\s  ]/g, "");
+  if (raw === "") return 0;
+  if (!/^\d[\d.,]*$/.test(raw)) return null;
+  const commas = raw.split(",").length - 1;
+  const dots = raw.split(".").length - 1;
+  let intPart = raw;
+  let fracPart = "";
+  // Separador decimal: el último, si hay de los dos tipos; si hay de uno solo, cuando
+  // aparece una vez y le siguen 1 o 2 dígitos ("1500,5"; "25.000" son miles).
+  const lastSep = Math.max(raw.lastIndexOf(","), raw.lastIndexOf("."));
+  const after = lastSep >= 0 ? raw.slice(lastSep + 1) : "";
+  const decimalCandidate = (commas > 0 && dots > 0) || commas + dots === 1;
+  if (lastSep >= 0 && decimalCandidate && after.length >= 1 && after.length <= 2) {
+    intPart = raw.slice(0, lastSep);
+    fracPart = after;
+  } else if (commas > 0 && dots > 0) {
+    return null; // "25.000,505": más de dos decimales
+  }
+  const digits = intPart.replace(/[.,]/g, "");
+  if (!/^\d+$/.test(digits) || digits.length > 12 || /[.,]/.test(fracPart)) return null;
+  return Number(digits) * 100 + Number(fracPart.padEnd(2, "0"));
+}
