@@ -1,4 +1,5 @@
 import type { TransportRequest, TransportResponse } from "./api";
+import { routeClientsMock } from "../modules/clients/clientsMock";
 import type { AdminBusiness, LocationRef, Me, MeBusiness, Role } from "./contract";
 import { readStorage, writeStorage } from "./storage";
 
@@ -390,6 +391,22 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
   const { body } = req;
   const sessionUser = state.sessionEmail ? findUser(state, state.sessionEmail) : null;
   const sessionMe = () => (sessionUser ? buildMe(sessionUser, state.businessId ?? sessionUser.memberships[0].businessId) : null);
+
+  // Clientes (I1): su propio archivo, con la sesión ya resuelta.
+  if (path === "/clients" || path.startsWith("/clients/")) {
+    const me = sessionMe();
+    if (!me) return unauthorized();
+    const b = BUSINESSES[me.business.id];
+    return (
+      routeClientsMock(req, {
+        businessId: b.id,
+        role: me.role,
+        locations: b.locations,
+        country: b.country,
+        clientTerm: b.terminology.client ?? "cliente",
+      }) ?? fail(404, "not_found", "Ruta inexistente en el mock.")
+    );
+  }
 
   const invitationMatch = /^\/auth\/invitations\/([^/]+)$/.exec(path);
   if (req.method === "GET" && invitationMatch) {

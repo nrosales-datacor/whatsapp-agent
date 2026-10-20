@@ -1,4 +1,5 @@
 import { adminRoutes } from "./admin/routes";
+import { clientsRoutes } from "./modules/clients";
 import { teamRoutes, type EnabledModules } from "./modules/team";
 import type { Executor } from "./platform/db/scope";
 import type { Route } from "./platform/http/routeTypes";
@@ -35,5 +36,8 @@ export function panelRoutes(deps: RouteDeps): Route[] {
     ...teamRoutes(deps),
     // Superadmin: /admin/*.
     ...adminRoutes(deps),
+    // Clientes: /clients/*. Los módulos de afuera del núcleo suman acá sus borradores de
+    // datos personales para la anonimización (WhatsApp en I2).
+    ...clientsRoutes({ db: deps.db, clientErasers: [] }),
   ];
 }
