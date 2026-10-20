@@ -56,7 +56,8 @@ test("dueña Pro: recorre todas las secciones del menú con la terminología del
     await nav.getByRole("link", { name, exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`${path}$`));
     await expect(heading(page, name)).toBeVisible();
-    await expect(page.getByText("Esto llega en la próxima etapa")).toBeVisible();
+    // Clientes ya tiene contenido (I1, ver clients.panel.spec.ts); el resto, el estado de la etapa.
+    if (path !== "/panel/clients") await expect(page.getByText("Esto llega en la próxima etapa")).toBeVisible();
   }
 
   await nav.getByRole("link", { name: "Configuración", exact: true }).click();
@@ -112,7 +113,7 @@ test("plan Básico: Ventas, Reportes y Campañas con candado abren el aviso del 
   await expect(heading(page, "Ventas")).toBeVisible();
   await expect(page.getByText("Disponible en el plan Pro")).toBeVisible();
 
-  // "+ Nuevo" ofrece cita y cliente (sin cobro), todo "Próximamente".
+  // "+ Nuevo" ofrece cita ("Próximamente") y cliente, sin cobro.
   await page.getByRole("button", { name: "Nuevo" }).click();
   await expect(page.getByRole("menuitem", { name: /Cita/ })).toHaveAttribute("aria-disabled", "true");
   await expect(page.getByRole("menuitem", { name: /Cobro/ })).toHaveCount(0);
