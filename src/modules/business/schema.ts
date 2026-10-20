@@ -2,7 +2,14 @@ import { sql } from "drizzle-orm";
 import { boolean, check, index, integer, jsonb, pgTable, smallint, text, time, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { oneOf, timestamps, uuidPk } from "../../platform/db/columns";
 import { tenantPolicy } from "../../platform/db/rls";
-import type { Branding, ClientStatusRules, ExtraModules, ReminderChannel, Terminology } from "./settings";
+import {
+  DEFAULT_REMINDER_CHANNELS,
+  type Branding,
+  type ClientStatusRules,
+  type ExtraModules,
+  type ReminderChannel,
+  type Terminology,
+} from "./settings";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Módulo business: el negocio (tenant), sus sucursales con su horario y las definiciones
@@ -62,7 +69,10 @@ export const businesses = pgTable(
     terminology: jsonb("terminology").$type<Partial<Terminology>>().notNull().default({}),
     clientStatusRules: jsonb("client_status_rules").$type<Partial<ClientStatusRules>>().notNull().default({}),
     // Canales activos de recordatorio, en orden de preferencia (el primero es el default).
-    reminderChannels: jsonb("reminder_channels").$type<ReminderChannel[]>().notNull().default(["whatsapp"]),
+    reminderChannels: jsonb("reminder_channels")
+      .$type<ReminderChannel[]>()
+      .notNull()
+      .default([...DEFAULT_REMINDER_CHANNELS]),
     branding: jsonb("branding").$type<Branding>().notNull().default({}),
     // Datos de facturación (a quién le facturamos el plan).
     legalName: text("legal_name"),
