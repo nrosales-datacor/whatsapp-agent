@@ -7,6 +7,14 @@ Agente de WhatsApp con IA (soporte + agenda de citas) para lavacar, multi-tenant
 > lavacar se elimina. El plan acordado (arquitectura,
 > modelo de datos, fases) está en `PLAN-GESTION.md`: léelo antes de tocar el esquema o la estructura de carpetas.
 
+## Flujo de trabajo: pull requests (OBLIGATORIO)
+
+- Todo cambio vive en su rama y se revisa en un **PR que el usuario aprueba antes de mergear**. Nunca se mergea a la
+  rama base (ni a `main`) por cuenta propia.
+- Subir ramas y abrir PRs solo cuando el usuario lo pida.
+- Reestructura (Carril I): **ramas apiladas por sección** (`i0/platform` sobre `carril-i`, la siguiente sobre esa…);
+  el PR de cada sección apunta a la rama anterior. Commits chicos y con sentido dentro de cada rama.
+
 ## ROADMAP.md — manténgalo vivo (IMPORTANTE)
 
 `ROADMAP.md` es la **fuente de verdad** del plan de arquitectura/evolución a SaaS.
