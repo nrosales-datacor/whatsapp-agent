@@ -2,6 +2,7 @@ import { mockAgendaSetup, settingsMockRoute, settingsOverlay, type MockMemberSee
 import type { TransportRequest, TransportResponse } from "./api";
 import { mockClientsOf, routeClientsMock } from "../modules/clients/clientsMock";
 import { routeSchedulingMock } from "../modules/scheduling/schedulingMock";
+import { routeWhatsappMock } from "../modules/whatsapp/whatsappMock";
 import type { AdminBusiness, LocationRef, Me, MeBusiness, Role } from "./contract";
 import { readStorage, writeStorage } from "./storage";
 
@@ -437,6 +438,28 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
         country: b.country,
         clientTerm: b.terminology.client ?? "cliente",
       }) ?? fail(404, "not_found", "Ruta inexistente en el mock.")
+    );
+  }
+
+  // WhatsApp IA y push (I2): su propio archivo, con la sesión ya resuelta.
+  if (path.startsWith("/whatsapp/") || path.startsWith("/push/")) {
+    const me = sessionMe();
+    if (!me) return unauthorized();
+    const b = BUSINESSES[me.business.id];
+    return (
+      routeWhatsappMock(
+        req,
+        {
+          businessId: b.id,
+          businessName: me.business.name,
+          industry: b.industry,
+          role: me.role,
+          modules: me.modules,
+          locations: b.locations,
+          clients: mockClientsOf(b.id, b.locations),
+        },
+        req.headers["X-Location-Id"],
+      ) ?? fail(404, "not_found", "Ruta inexistente en el mock.")
     );
   }
 
