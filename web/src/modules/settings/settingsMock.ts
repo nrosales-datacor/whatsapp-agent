@@ -719,6 +719,39 @@ export function settingsMockRoute(
   return res;
 }
 
+/** Lo que necesita la Agenda simulada: sucursales, equipo con horario, servicios, ausencias y miembros. */
+export interface MockAgendaSetup {
+  timezone: string;
+  locations: LocationView[];
+  staff: StaffView[];
+  services: ServiceView[];
+  staffServices: Record<string, StaffServiceItem[]>;
+  timeOff: TimeOffEntry[];
+  members: { membershipId: string; email: string }[];
+}
+
+/** Configuración del negocio para la Agenda simulada (la siembra si hace falta). */
+export function mockAgendaSetup(business: MockBusinessSeed, members: MockMemberSeed[]): MockAgendaSetup {
+  const state = loadState();
+  if (!state.businesses[business.id]) {
+    state.businesses[business.id] = seedBusiness(state, business, members);
+    saveState(state);
+  }
+  const b = state.businesses[business.id];
+  return {
+    timezone: b.settings.timezone,
+    locations: byPosition(b.locations).map(stripHistory),
+    staff: byPosition(b.staff).flatMap((s) => {
+      const view = staffView(b, s.id);
+      return view ? [view] : [];
+    }),
+    services: catalogView(b).services,
+    staffServices: b.staffServices,
+    timeOff: b.timeOff,
+    members: b.members.map((m) => ({ membershipId: m.membershipId, email: m.email })),
+  };
+}
+
 /** Lo que cambió del negocio en el mock (para que `me` lo refleje), o null si no se tocó. */
 export function settingsOverlay(businessId: string): {
   name: string;

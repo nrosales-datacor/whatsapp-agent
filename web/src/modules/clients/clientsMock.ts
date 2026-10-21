@@ -241,6 +241,16 @@ function applyChanges(
 
 const EDITORS: Role[] = ["owner", "admin", "front_desk"];
 
+/** Clientes del negocio en el mock (los siembra si hace falta). Lo usa la Agenda simulada. */
+export function mockClientsOf(businessId: string, locations: LocationRef[]): Array<{ id: string; name: string; phone: string | null; email: string | null; anonymized: boolean }> {
+  const state = loadState();
+  if (!state[businessId]) {
+    state[businessId] = seedClients(businessId, locations);
+    saveState(state);
+  }
+  return state[businessId].map((c) => ({ id: c.id, name: c.name, phone: c.phone, email: c.email, anonymized: c.anonymized }));
+}
+
 /** Rutas /clients* del mock. null si la ruta no es de clientes. */
 export function routeClientsMock(req: TransportRequest, session: MockClientsSession): TransportResponse | null {
   const url = new URL(req.path, "http://mock");
