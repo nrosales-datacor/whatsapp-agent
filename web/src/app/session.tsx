@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { api, isApiError } from "../lib/api";
 import { resetBranding } from "../lib/branding";
+import { forgetPushOnLogout } from "../lib/push";
 import type { Me } from "../lib/contract";
 import FullPageStatus from "../ui/FullPageStatus";
 import { useToast } from "../ui/Toast";
@@ -101,7 +102,11 @@ export function useLogout() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   return useMutation({
-    mutationFn: () => api.post<void>("/auth/logout"),
+    // Primero se da de baja el push de este dispositivo (necesita la sesión todavía).
+    mutationFn: async () => {
+      await forgetPushOnLogout();
+      return api.post<void>("/auth/logout");
+    },
     // Aunque el backend falle (sin red), la sesión local se cierra igual.
     onSettled: () => {
       qc.clear();

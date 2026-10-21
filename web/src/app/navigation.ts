@@ -132,7 +132,7 @@ export const SECTIONS: readonly SectionDef[] = [
     module: () => "whatsapp",
     upsell: false,
     label: () => "WhatsApp IA",
-    planned: () => ["Bandeja", "Métricas del bot", "Configuración del bot"],
+    planned: () => ["Bandeja", "Métricas", "Configuración del agente"],
     description: () => "Las conversaciones que atiende el agente, con la opción de tomar el control y responder vos.",
   },
   {
