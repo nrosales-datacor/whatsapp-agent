@@ -1,4 +1,4 @@
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { checkLoginLimit, recordLoginAttempt, recordLoginFailure } from "../../platform/auth/loginRateLimit";
 import { isRole, type Role } from "../../platform/auth/sessionToken";
@@ -75,6 +75,21 @@ export async function activeMemberships(executor: Executor, userId: string): Pro
     out.push({ membershipId: m.id, businessId: m.businessId, businessName: ctx.business.name, role: m.role });
   }
   return out;
+}
+
+/** ¿La persona tiene una membresía activa en algún negocio PAUSADO? (el login lo explica). */
+export async function hasMembershipInPausedBusiness(executor: Executor, userId: string): Promise<boolean> {
+  const rows = await withSystem(executor, (tx) =>
+    tx
+      .select({ businessId: memberships.businessId })
+      .from(memberships)
+      .where(and(eq(memberships.userId, userId), eq(memberships.active, true))),
+  );
+  for (const m of rows) {
+    const ctx = await getBusinessContext(executor, m.businessId);
+    if (ctx?.business.status === "paused") return true;
+  }
+  return false;
 }
 
 /**

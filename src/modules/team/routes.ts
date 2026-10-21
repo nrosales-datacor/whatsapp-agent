@@ -6,12 +6,13 @@ import type { Executor } from "../../platform/db/scope";
 import { HttpError } from "../../platform/http/errors";
 import { created, noContent, route } from "../../platform/http/router";
 import type { Route } from "../../platform/http/routeTypes";
+import type { PlanHooks } from "../../platform/plan/planHooks";
 import { getClientIp } from "../../platform/net/clientIp";
 import { getBusinessContext } from "../business";
 import { changePassword, login, switchBusiness } from "./auth";
 import { findUserById, NewPasswordSchema, PasswordInputSchema, TotpCodeSchema } from "./identity";
 import { acceptInvitation, getInvitation, inviteMember } from "./invitations";
-import { buildMe, type EnabledModules, type Me } from "./me";
+import { buildMe, type Me } from "./me";
 import { assertLocationsOfBusiness, listMembers, updateMember } from "./members";
 import { requestPasswordReset, resetPassword } from "./recovery";
 import { clearSessionCookie, loadSession, setSessionCookie } from "./session";
@@ -22,7 +23,9 @@ import { disableTotp, enableTotp, setupTotp } from "./twoFactor";
 //
 //   /auth/*  login, logout, me, cambio de negocio, recuperación y cambio de clave, 2FA,
 //            invitaciones (ver y aceptar). Públicas las que se usan sin sesión.
-//   /team/*  invitar y gestionar el equipo del negocio (dueño y admin).
+//   /team/*  invitar y gestionar el equipo del negocio (dueño y admin). Invitar o
+//            reactivar a alguien pasando el cupo de usuarios del plan → 403
+//            `plan_limit_reached` (el plan llega inyectado desde modules/billing).
 //
 // Respuestas con el sobre del router: `{ ok: true, data }` / `{ ok: false, error, code }`.
 // Toda ruta que deja una sesión nueva (login, cambio de negocio, aceptar invitación,
@@ -32,8 +35,8 @@ import { disableTotp, enableTotp, setupTotp } from "./twoFactor";
 /** Dependencias de las rutas del módulo (src/routes.ts las inyecta). */
 export interface TeamRouteDeps {
   db: Executor;
-  /** Módulos del plan del negocio (`me.modules`); los planes llegan en I2. */
-  enabledModules: EnabledModules;
+  /** Plan del negocio (`me.plan`) y cupo de usuarios; lo inyecta la composición desde modules/billing. */
+  plans: Pick<PlanHooks, "snapshot" | "quota" | "hasFeature">;
 }
 
 const Email = z.string().trim().min(1).max(320);
@@ -70,13 +73,13 @@ const MemberPatchBody = z
     message: "Indicá qué cambiar (rol, estado o sucursales).",
   });
 
-export function teamRoutes({ db, enabledModules }: TeamRouteDeps): Route[] {
+export function teamRoutes({ db, plans }: TeamRouteDeps): Route[] {
   /** Fija la cookie de la sesión nueva y devuelve su `me`. */
   async function startSession(res: ServerResponse, claims: SessionClaims): Promise<Me> {
     const session = await loadSession(db, claims);
     if (!session) throw new HttpError(401, "Tu sesión no es válida o venció. Iniciá sesión de nuevo.", "unauthorized");
     setSessionCookie(res, claims);
-    return buildMe(db, session, enabledModules);
+    return buildMe(db, session, plans);
   }
 
   return [
@@ -92,7 +95,7 @@ export function teamRoutes({ db, enabledModules }: TeamRouteDeps): Route[] {
       return noContent();
     }),
 
-    route({ method: "GET", path: "/auth/me", auth: "user" }, ({ session }) => buildMe(db, session, enabledModules)),
+    route({ method: "GET", path: "/auth/me", auth: "user" }, ({ session }) => buildMe(db, session, plans)),
 
     route(
       { method: "POST", path: "/auth/switch-business", auth: "user", body: SwitchBusinessBody },
@@ -150,16 +153,22 @@ export function teamRoutes({ db, enabledModules }: TeamRouteDeps): Route[] {
         }
         const locationIds = body.role === "owner" ? [] : (body.locationIds ?? []);
         await assertLocationsOfBusiness(db, session.businessId, locationIds);
-        const [ctx, inviter] = await Promise.all([getBusinessContext(db, session.businessId), findUserById(db, session.userId)]);
+        const [ctx, inviter, userLimit, branded] = await Promise.all([
+          getBusinessContext(db, session.businessId),
+          findUserById(db, session.userId),
+          plans.quota(session.businessId, "users"),
+          plans.hasFeature(session.businessId, "branding"),
+        ]);
         if (!ctx) throw new HttpError(404, "Negocio no encontrado.", "not_found");
         const member = await inviteMember(db, {
-          business: { id: ctx.business.id, name: ctx.business.name, brandColor: ctx.business.branding.accentColor },
+          business: { id: ctx.business.id, name: ctx.business.name, brandColor: branded ? ctx.business.branding.accentColor : null },
           email: body.email,
           name: body.name,
           role: body.role,
           locationIds,
           invitedByName: inviter?.name ?? null,
           actor: userActor(session.userId),
+          userLimit,
         });
         return created(member);
       },
@@ -179,7 +188,8 @@ export function teamRoutes({ db, enabledModules }: TeamRouteDeps): Route[] {
         body: MemberPatchBody,
       },
       async ({ res, session, params, body }) => {
-        const { member, reissue } = await updateMember(db, session, params.membershipId, body);
+        const userLimit = body.active === true ? await plans.quota(session.businessId, "users") : null;
+        const { member, reissue } = await updateMember(db, session, params.membershipId, body, userLimit);
         if (reissue) setSessionCookie(res, reissue);
         return member;
       },

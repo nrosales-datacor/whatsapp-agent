@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, max, ne, type SQL } from "drizzle-orm";
+import { and, asc, count, eq, inArray, max, ne, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { recordConfigChange } from "../../platform/audit/configHistory";
 import { hasPgCode, PG_FOREIGN_KEY_VIOLATION, PG_UNIQUE_VIOLATION } from "../../platform/db/errors";
@@ -6,6 +6,7 @@ import { withTenant, type Executor, type Tx } from "../../platform/db/scope";
 import { assertLocationAccess, assertSameIds } from "../../platform/http/access";
 import { HttpError, ValidationError } from "../../platform/http/errors";
 import type { Session } from "../../platform/http/routeTypes";
+import { assertQuota } from "../../platform/plan/planHooks";
 import {
   assertLocationsOfBusiness,
   fromDbTime,
@@ -29,6 +30,9 @@ import { memberships, staff, staffHours, users, type Staff } from "./schema";
 //     disponibilidad es la intersección de los dos.
 //   • "Eliminar" borra solo a quien no tiene historial; con citas, comisiones o
 //     liquidaciones (FKs NO ACTION) se desactiva.
+//   • Cupo del plan (`staffLimit`, profesionales ACTIVOS): crear uno activo o reactivar a
+//     uno inactivo pasando el tope → 403 `plan_limit_reached` (lo resuelve la ruta antes
+//     de la transacción; null/undefined = sin tope).
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Profesional (API pública). */
@@ -129,6 +133,20 @@ async function readStaffView(tx: Tx, businessId: string, staffId: string): Promi
   return view;
 }
 
+/** Profesionales activos del negocio, contados con `tx` (cupo del plan). */
+async function countActiveStaffIn(tx: Tx, businessId: string): Promise<number> {
+  const [row] = await tx
+    .select({ n: count() })
+    .from(staff)
+    .where(and(eq(staff.businessId, businessId), eq(staff.active, true)));
+  return Number(row?.n ?? 0);
+}
+
+/** Profesionales activos del negocio (uso del plan). */
+export function countActiveStaff(executor: Executor, businessId: string): Promise<number> {
+  return withTenant(executor, businessId, (tx) => countActiveStaffIn(tx, businessId));
+}
+
 /** Equipo completo (activos e inactivos) en el orden de la agenda. */
 export function listStaffViews(db: Executor, businessId: string): Promise<StaffView[]> {
   return withTenant(db, businessId, (tx) => readStaffViews(tx, businessId));
@@ -223,10 +241,18 @@ async function assertLinkableMembership(tx: Tx, businessId: string, membershipId
 
 const membershipTaken = () => new HttpError(409, "Ese usuario ya está vinculado a otro profesional.", "membership_taken");
 
-export async function createStaff(db: Executor, session: Session, input: z.output<typeof NewStaffInput>): Promise<StaffView> {
+export async function createStaff(
+  db: Executor,
+  session: Session,
+  input: z.output<typeof NewStaffInput>,
+  staffLimit?: number | null,
+): Promise<StaffView> {
   const { businessId } = session;
   try {
     return await withTenant(db, businessId, async (tx) => {
+      if (input.active ?? true) {
+        await assertQuota(tx, { businessId, resource: "staff", limit: staffLimit, count: () => countActiveStaffIn(tx, businessId) });
+      }
       if (input.membershipId) await assertLinkableMembership(tx, businessId, input.membershipId);
       const [{ last }] = await tx
         .select({ last: max(staff.position) })
@@ -254,10 +280,27 @@ export async function createStaff(db: Executor, session: Session, input: z.outpu
   }
 }
 
-export async function updateStaff(db: Executor, session: Session, staffId: string, patch: z.output<typeof StaffPatch>): Promise<StaffView> {
+export async function updateStaff(
+  db: Executor,
+  session: Session,
+  staffId: string,
+  patch: z.output<typeof StaffPatch>,
+  staffLimit?: number | null,
+): Promise<StaffView> {
   const { businessId } = session;
   try {
     return await withTenant(db, businessId, async (tx) => {
+      if (patch.active === true) {
+        // Reactivar a alguien inactivo suma un activo: cuenta para el cupo del plan.
+        const [current] = await tx
+          .select({ active: staff.active })
+          .from(staff)
+          .where(and(eq(staff.id, staffId), eq(staff.businessId, businessId)))
+          .for("update");
+        if (current && !current.active) {
+          await assertQuota(tx, { businessId, resource: "staff", limit: staffLimit, count: () => countActiveStaffIn(tx, businessId) });
+        }
+      }
       if (patch.membershipId) await assertLinkableMembership(tx, businessId, patch.membershipId, staffId);
       const [row] = await tx
         .update(staff)

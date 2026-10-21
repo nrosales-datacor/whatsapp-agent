@@ -5,21 +5,46 @@ import { withSystem, type Executor } from "../platform/db/scope";
 import { created, noContent, route } from "../platform/http/router";
 import type { Route } from "../platform/http/routeTypes";
 import { getClientIp } from "../platform/net/clientIp";
-import { createBusiness, INDUSTRIES, isValidTimeZone, listBusinesses, summarizeBusiness } from "../modules/business";
+import {
+  adminRowOf,
+  changeBusinessPlan,
+  getAdminBusinessDetail,
+  listAdminBusinesses,
+  pauseBusiness,
+  PauseInput,
+  PlanChangeInput,
+  reactivateBusiness,
+  type PlanService,
+} from "../modules/billing";
+import { createBusiness, INDUSTRIES, isValidTimeZone, summarizeBusiness } from "../modules/business";
 import { applyCatalogTemplate } from "../modules/catalog";
 import { inviteMember } from "../modules/team";
 import { adminLogin, clearAdminSessionCookie, setAdminSessionCookie, superadminUsername } from "./session";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// API del superadmin (/api/panel/admin/*), mínima para I0.6: entrar, salir, ver y crear
-// negocios. Crear un negocio = el negocio + su primera sucursal con horario default + la
-// invitación por correo al dueño, todo en UNA transacción (si el correo no se puede
-// encolar, no queda un negocio a medias) y con su rastro en audit_log.
+// API del superadmin (/api/panel/admin/*): entrar, salir, ver y crear negocios, y el
+// cobro manual (I2). Crear un negocio = el negocio + su primera sucursal con horario
+// default + la invitación por correo al dueño, todo en UNA transacción (si el correo no se
+// puede encolar, no queda un negocio a medias) y con su rastro en audit_log.
+//
+//   GET    /admin/businesses                 lista con el plan efectivo
+//   POST   /admin/businesses                 alta
+//   GET    /admin/businesses/:id             detalle: plan, cupos, uso del mes, auditoría
+//   PATCH  /admin/businesses/:id/plan        { plan?, extraModules?, limits?, billingStatus? }
+//   POST   /admin/businesses/:id/pause       { reason? } → la API del negocio responde 403
+//                                            `business_paused` y la cola posterga su trabajo
+//   POST   /admin/businesses/:id/reactivate
+//
+// Plan, pausa y cobro viven en modules/billing (con su auditoría en la misma transacción).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface AdminRouteDeps {
   db: Executor;
+  /** Planes: uso del mes para el detalle. */
+  plans: Pick<PlanService, "usage">;
 }
+
+const BusinessParams = z.object({ id: z.uuid() });
 
 const LoginBody = z.object({
   username: z.string().trim().min(1).max(100),
@@ -52,7 +77,7 @@ function adminMe() {
   return { username: superadminUsername() ?? "", totpEnabled: isAdminTotpConfigured() };
 }
 
-export function adminRoutes({ db }: AdminRouteDeps): Route[] {
+export function adminRoutes({ db, plans }: AdminRouteDeps): Route[] {
   return [
     route({ method: "POST", path: "/admin/login", auth: "public", body: LoginBody }, async ({ req, res, body }) => {
       const result = await adminLogin(db, { ...body, ip: getClientIp(req) });
@@ -68,7 +93,7 @@ export function adminRoutes({ db }: AdminRouteDeps): Route[] {
 
     route({ method: "GET", path: "/admin/me", auth: "superadmin" }, () => adminMe()),
 
-    route({ method: "GET", path: "/admin/businesses", auth: "superadmin" }, () => listBusinesses(db)),
+    route({ method: "GET", path: "/admin/businesses", auth: "superadmin" }, () => listAdminBusinesses(db)),
 
     route({ method: "POST", path: "/admin/businesses", auth: "superadmin", body: CreateBusinessBody }, async ({ session, body, log }) => {
       const actor = superadminActor(session.adminId);
@@ -98,7 +123,38 @@ export function adminRoutes({ db }: AdminRouteDeps): Route[] {
         return summarizeBusiness(business, 1);
       });
       log.info("business_created", { businessId: summary.id });
-      return created(summary);
+      return created(adminRowOf(summary));
     }),
+
+    route({ method: "GET", path: "/admin/businesses/:id", auth: "superadmin", params: BusinessParams }, ({ params }) =>
+      getAdminBusinessDetail(db, plans, params.id),
+    ),
+
+    route(
+      { method: "PATCH", path: "/admin/businesses/:id/plan", auth: "superadmin", params: BusinessParams, body: PlanChangeInput },
+      async ({ session, params, body, log }) => {
+        await changeBusinessPlan(db, params.id, body, superadminActor(session.adminId));
+        log.info("business_plan_changed", { businessId: params.id });
+        return getAdminBusinessDetail(db, plans, params.id);
+      },
+    ),
+
+    route(
+      { method: "POST", path: "/admin/businesses/:id/pause", auth: "superadmin", params: BusinessParams, body: PauseInput },
+      async ({ session, params, body, log }) => {
+        await pauseBusiness(db, params.id, body.reason, superadminActor(session.adminId));
+        log.info("business_paused", { businessId: params.id });
+        return getAdminBusinessDetail(db, plans, params.id);
+      },
+    ),
+
+    route(
+      { method: "POST", path: "/admin/businesses/:id/reactivate", auth: "superadmin", params: BusinessParams },
+      async ({ session, params, log }) => {
+        await reactivateBusiness(db, params.id, superadminActor(session.adminId));
+        log.info("business_reactivated", { businessId: params.id });
+        return getAdminBusinessDetail(db, plans, params.id);
+      },
+    ),
   ];
 }

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
+import type { Branding, ExtraModules } from "../../src/modules/business";
 import { businesses, locations } from "../../src/modules/business/schema";
 import { membershipLocations, memberships, users } from "../../src/modules/team/schema";
 import type { Role } from "../../src/platform/auth/sessionToken";
@@ -25,8 +26,25 @@ export interface TestBusiness {
   locationIds: string[];
 }
 
+/**
+ * Cupos holgados para los tests que no prueban límites: el negocio de prueba es Pro con
+ * esto contratado, así crear sucursales, profesionales o invitar no choca con el plan.
+ * Los tests de límites piden `plan: "basic"` (o sus propios `extraModules`).
+ */
+export const ROOMY_EXTRAS: ExtraModules = { limits: { locations: 50, staff: 200, users: 200 } };
+
 /** Negocio activo con N sucursales (default 2: "Central" y "Norte"). */
-export async function createTestBusiness(db: Db, options: { name?: string; locations?: string[]; status?: "active" | "paused" } = {}): Promise<TestBusiness> {
+export async function createTestBusiness(
+  db: Db,
+  options: {
+    name?: string;
+    locations?: string[];
+    status?: "active" | "paused";
+    plan?: "basic" | "pro";
+    extraModules?: ExtraModules;
+    branding?: Branding;
+  } = {},
+): Promise<TestBusiness> {
   const businessId = randomUUID();
   const name = options.name ?? `Negocio ${businessId.slice(0, 6)}`;
   const names = options.locations ?? ["Central", "Norte"];
@@ -36,7 +54,9 @@ export async function createTestBusiness(db: Db, options: { name?: string; locat
       slug: `negocio-${businessId.slice(0, 8)}`,
       name,
       status: options.status ?? "active",
-      branding: { accentColor: "#123456" },
+      plan: options.plan ?? "pro",
+      extraModules: options.extraModules ?? (options.plan === "basic" ? {} : ROOMY_EXTRAS),
+      branding: options.branding ?? { accentColor: "#123456" },
     });
     const rows = await tx
       .insert(locations)

@@ -1,9 +1,10 @@
 import { adminRoutes } from "./admin/routes";
+import type { PlanService } from "./modules/billing";
 import { businessRoutes, type LocationReferenceCheck } from "./modules/business";
 import { clientsRoutes } from "./modules/clients";
 import { catalogRoutes, isLocationRestrictingServices } from "./modules/catalog";
 import { schedulingRoutes } from "./modules/scheduling";
-import { isLocationAssigned, staffRoutes, teamRoutes, type EnabledModules } from "./modules/team";
+import { isLocationAssigned, staffRoutes, teamRoutes } from "./modules/team";
 import type { Executor } from "./platform/db/scope";
 import type { Route } from "./platform/http/routeTypes";
 import { systemRoutes } from "./platform/http/systemRoutes";
@@ -28,8 +29,11 @@ import { systemRoutes } from "./platform/http/systemRoutes";
 /** Dependencias que reciben las rutas de los módulos. */
 export interface RouteDeps {
   db: Executor;
-  /** Módulos del plan de un negocio (provisional hasta I2, ver src/planModules.ts). */
-  enabledModules: EnabledModules;
+  /**
+   * Planes (src/modules/billing): el núcleo lo recibe como `PlanHooks` (cupos, marca
+   * propia, `me.plan`) sin importar billing; el superadmin usa el servicio completo.
+   */
+  plans: PlanService;
 }
 
 /**
@@ -47,7 +51,7 @@ export function panelRoutes(deps: RouteDeps): Route[] {
     ...teamRoutes(deps),
     // Configuración (I1): /settings/business, /settings/locations, /settings/services,
     // /settings/service-categories, /settings/staff y /settings/time-off.
-    ...businessRoutes({ db: deps.db, isLocationReferenced }),
+    ...businessRoutes({ db: deps.db, isLocationReferenced, plans: deps.plans }),
     ...catalogRoutes(deps),
     ...staffRoutes(deps),
     // Superadmin: /admin/*.
