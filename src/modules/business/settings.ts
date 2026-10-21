@@ -76,8 +76,15 @@ export interface Branding {
 }
 
 /**
- * Módulos sueltos encima del plan (§5): `true` suma un módulo que el plan no trae (p. ej.
- * Básico + campañas), `false` apaga uno que sí trae (p. ej. el agente en un Pro). La lista
- * de módulos y lo que incluye cada plan viven en `modules/billing`.
+ * Lo contratado encima del plan (§5), en `businesses.extra_modules`:
+ *   • `modules`: `true` suma un módulo que el plan no trae (p. ej. Básico + campañas),
+ *     `false` apaga uno que sí trae (p. ej. el agente en un Pro: "Pro sin agente").
+ *   • `limits`: cupos contratados que reemplazan los del plan (sucursales, profesionales,
+ *     usuarios, topes del agente); null = sin tope.
+ * La forma la valida `modules/billing` con Zod (dueño del catálogo de planes); acá solo el
+ * tipo de la columna. Vacío = el plan tal cual.
  */
-export type ExtraModules = Partial<Record<string, boolean>>;
+export interface ExtraModules {
+  modules?: Partial<Record<string, boolean>>;
+  limits?: Partial<Record<string, number | null>>;
+}
