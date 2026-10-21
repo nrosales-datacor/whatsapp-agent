@@ -11,6 +11,7 @@ import { FormError, SelectField, TextField } from "../../ui/Field";
 import Icon from "../../ui/Icons";
 import PageHeader from "../../ui/PageHeader";
 import { useToast } from "../../ui/Toast";
+import ClientAppointments from "../scheduling/ClientAppointments";
 import AnonymizeClient from "./AnonymizeClient";
 import { canEditClients, type ClientListState } from "./ClientsPage";
 import {
@@ -94,20 +95,7 @@ export default function ClientDetailPage() {
         <ClientForm key={`${client.id}:${client.updatedAt}`} client={client} />
       )}
 
-      <section className="card client-section" aria-labelledby="client-history-title">
-        <h2 id="client-history-title" className="card-title">
-          Historial de {t.appointments}
-        </h2>
-        <div className="client-history-placeholder">
-          <Icon id="calendar" size={22} strokeWidth={1.6} />
-          <div>
-            <p className="client-history-title">Llega con la Agenda</p>
-            <p className="muted">
-              Acá vas a ver las {t.appointments} de este {t.client}: las pasadas, las próximas y las que no se presentó.
-            </p>
-          </div>
-        </div>
-      </section>
+      <ClientAppointments client={client} />
 
       {me.role === "owner" && !client.anonymized && <AnonymizeClient client={client} />}
     </div>
