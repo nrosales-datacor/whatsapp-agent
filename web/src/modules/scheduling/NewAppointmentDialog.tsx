@@ -120,7 +120,7 @@ export default function NewAppointmentDialog({ open, onClose, defaults, location
       { locationId, clientId: client.id, serviceIds, staffId: chosenStaff, startsAt: slot.startsAt, channel, notes: notes.trim() || null },
       {
         onSuccess: (appointment) => {
-          showToast(`${capitalize(t.appointment)} agendada: ${client.name}, ${formatWhen(appointment.startsAt, timeZone)}.`);
+          showToast(`${capitalize(t.appointment)} agendada: ${client.name}, ${formatWhen(appointment.startsAt, timeZone)}`);
           onCreated?.(appointment);
           close();
         },

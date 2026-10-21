@@ -59,7 +59,7 @@ export default function HomePage() {
   const tz = home.timezone;
   return (
     <div className="page">
-      <PageHeader title="Inicio" subtitle={`${capitalize(formatLongDate(home.date))} · ${subtitle}`}>
+      <PageHeader title="Inicio" subtitle={subtitle}>
         <Link className="btn btn-secondary" to="/agenda">
           <Icon id="calendar" size={18} />
           Ver agenda
@@ -71,6 +71,7 @@ export default function HomePage() {
           <h2 id="home-today-title" className="card-title">
             {capitalize(t.appointments)} de hoy
           </h2>
+          <p className="muted">{capitalize(formatLongDate(home.date))}</p>
           <p className="home-big tnum">{home.today.total}</p>
           <ul className="home-status-list">
             {STATUS_ORDER.map((s) => (
