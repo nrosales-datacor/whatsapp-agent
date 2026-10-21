@@ -12,9 +12,13 @@ import { defineConfig, devices } from "@playwright/test";
 //     Cuando la identidad real (I0.6) esté integrada, se suma un E2E contra el server.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const PORT = 3100;
+// Puertos configurables (E2E_SERVER_PORT / E2E_PANEL_PORT) para correr en paralelo desde
+// varios worktrees sin reusar el server de otro. E2E_PANEL_ONLY=1 no levanta el backend
+// (alcanza para el proyecto panel-mock).
+const PORT = Number(process.env.E2E_SERVER_PORT) || 3100;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
-const PANEL_PORT = 5174;
+const PANEL_PORT = Number(process.env.E2E_PANEL_PORT) || 5174;
+const PANEL_ONLY = process.env.E2E_PANEL_ONLY === "1";
 const PANEL_URL = `http://127.0.0.1:${PANEL_PORT}`;
 
 export default defineConfig({
@@ -34,15 +38,15 @@ export default defineConfig({
     { name: "panel-mock", testMatch: /panel\.spec\.ts$/, use: { ...devices["Desktop Chrome"], baseURL: PANEL_URL } },
   ],
   webServer: [
-    {
+    ...(PANEL_ONLY ? [] : [{
       command: "npx tsx src/server.ts",
       url: `${BASE_URL}/health`,
       env: { PORT: String(PORT), DATABASE_URL: "", NODE_ENV: "test" },
       reuseExistingServer: !process.env.CI,
       timeout: 180_000, // PGlite (WASM) + migraciones
-      stdout: "pipe",
-      stderr: "pipe",
-    },
+      stdout: "pipe" as const,
+      stderr: "pipe" as const,
+    }]),
     {
       // Vite en modo mock (web/.env.mock): el panel responde con lib/mockApi.ts.
       command: `npm --prefix web run dev:mock -- --port ${PANEL_PORT} --strictPort --host 127.0.0.1`,

@@ -144,7 +144,7 @@ test("Inicio: tarjetas del día y las del agente según el plan", async ({ page 
   for (const title of ["Citas de hoy", "Próximas citas", "Sin confirmar (hoy y mañana)", "No asistieron hoy", "Agendadas por el agente esta semana", "Conversaciones esperando"]) {
     await expect(heading(page, title, 2)).toBeVisible();
   }
-  await expect(page.getByText("Llega con la bandeja de WhatsApp IA")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Conversaciones esperando" }).getByRole("link", { name: "Ir a la bandeja" })).toBeVisible();
   // Una próxima cita lleva a la agenda con su detalle abierto.
   const upcoming = page.getByRole("region", { name: "Próximas citas" }).getByRole("link").first();
   await upcoming.click();
