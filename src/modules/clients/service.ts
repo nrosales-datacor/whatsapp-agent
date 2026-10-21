@@ -468,6 +468,31 @@ export async function refreshClientStats(
   return rows.length > 0;
 }
 
+// ── Baja de promociones (agente de WhatsApp: "BAJA") ────────────────────────
+
+/**
+ * El cliente pidió no recibir más promociones: marca la baja y retira el consentimiento de
+ * marketing (vale lo último que dijo). No toca recordatorios ni la atención normal. Pasá
+ * la transacción del llamador para que quede junto con su propio registro. Devuelve false
+ * si el cliente no existe.
+ */
+export async function recordMarketingOptOut(
+  executor: Executor,
+  businessId: string,
+  clientId: string,
+  at: Date = new Date(),
+): Promise<boolean> {
+  if (!isTenantId(clientId)) return false;
+  const rows = await withTenant(executor, businessId, (tx) =>
+    tx
+      .update(clients)
+      .set({ marketingOptOutAt: at, marketingConsentAt: null })
+      .where(sameBusiness(businessId, clientId))
+      .returning({ id: clients.id }),
+  );
+  return rows.length > 0;
+}
+
 // ── Derecho de supresión (Ley 8968) ─────────────────────────────────────────
 
 /**

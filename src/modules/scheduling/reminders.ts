@@ -43,8 +43,13 @@ import { addDays, MINUTE_MS, wallClock, zonedInstant } from "./time";
 //      la misma transacción que marca el recordatorio como enviado (outbox): o las dos
 //      cosas o ninguna. Repetir el job no duplica nada (lock + estado + dedupe del correo).
 //
-// WhatsApp todavía no existe como módulo (I2): un recordatorio que solo puede salir por
-// WhatsApp queda `pending` con `error = 'whatsapp_pending'` (el loop no lo vuelve a tomar).
+// WhatsApp: el núcleo no importa el módulo whatsapp; la composición (src/jobs.ts) le
+// inyecta `isWhatsAppConnected` y `queueWhatsAppReminder`. Con número conectado, el
+// recordatorio se marca enviado y en la MISMA transacción se encola el envío del módulo
+// whatsapp (outbox, igual que el correo); si ese envío falla sin remedio, el módulo lo
+// registra con `recordReminderDeliveryFailure`. Sin inyección (o sin número), uno que solo
+// puede salir por WhatsApp queda `pending` con `error = 'whatsapp_pending'` (el loop no
+// lo vuelve a tomar).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const REMINDER_SEND_JOB = "reminder.send";
@@ -247,16 +252,32 @@ export interface ReminderJobPayload {
   scheduledFor: string;
 }
 
+/** Lo que el módulo whatsapp necesita para mandar un recordatorio (ids, sin datos personales). */
+export interface WhatsAppReminderRequest {
+  businessId: string;
+  reminderId: string;
+  appointmentId: string;
+  clientId: string;
+  kind: ReminderKind;
+  /** Hora programada (ISO): clave de idempotencia del envío. */
+  scheduledFor: string;
+}
+
 export interface ReminderJobDeps {
   /**
    * ¿El negocio tiene un número de WhatsApp conectado? Lo inyecta la composición
    * (src/jobs.ts): el núcleo no importa el módulo whatsapp. Default: no.
    */
   isWhatsAppConnected?: (db: Executor, businessId: string) => Promise<boolean>;
+  /**
+   * Encola el envío por WhatsApp DENTRO de la transacción que marca el recordatorio como
+   * enviado (outbox). Lo inyecta la composición; sin él, queda `whatsapp_pending`.
+   */
+  queueWhatsAppReminder?: (tx: Tx, request: WhatsAppReminderRequest) => Promise<void>;
   now?: () => Date;
 }
 
-export type ReminderOutcome = "sent_email" | typeof WHATSAPP_PENDING | "skipped" | "noop";
+export type ReminderOutcome = "sent_email" | "sent_whatsapp" | typeof WHATSAPP_PENDING | "skipped" | "noop";
 
 /** Corre un recordatorio vencido. Idempotente: un reintento o un job viejo no duplica nada. */
 export async function handleReminderJob(
@@ -340,10 +361,23 @@ export async function handleReminderJob(
       return "sent_email";
     }
 
+    if (decision === "whatsapp" && client && deps.queueWhatsAppReminder) {
+      // El módulo whatsapp elige plantilla o texto con botones según la ventana de 24 h.
+      await deps.queueWhatsAppReminder(tx, {
+        businessId,
+        reminderId: reminder.id,
+        appointmentId: appointment.id,
+        clientId: client.id,
+        kind: reminder.kind as ReminderKind,
+        scheduledFor: reminder.scheduledFor.toISOString(),
+      });
+      await mark({ status: "sent", sentAt: now, channel: "whatsapp", error: null });
+      return "sent_whatsapp";
+    }
+
     if (decision === "whatsapp" || decision === WHATSAPP_PENDING) {
-      // TODO(I2): el módulo de WhatsApp manda el recordatorio con la plantilla aprobada del
-      // negocio (fuera de la ventana de 24 h no se puede texto libre) y lo marca enviado.
-      // Hasta entonces queda pendiente y el barrido no lo vuelve a tomar.
+      // Sin número conectado (o sin el módulo inyectado): queda pendiente y el barrido no
+      // lo vuelve a tomar.
       await mark({ channel: "whatsapp", error: WHATSAPP_PENDING });
       return WHATSAPP_PENDING;
     }
@@ -351,6 +385,29 @@ export async function handleReminderJob(
     await mark({ status: "skipped", error: "no_channel" });
     return "skipped";
   });
+}
+
+/**
+ * El canal no pudo entregar un recordatorio que ya se había dado por enviado (p. ej. el
+ * negocio no tiene plantilla aprobada y el cliente está fuera de la ventana de 24 h de
+ * WhatsApp, o Meta lo rechazó). Lo llama el módulo que hizo el envío. `error` es un código
+ * corto, sin datos personales.
+ */
+export async function recordReminderDeliveryFailure(
+  executor: Executor,
+  businessId: string,
+  reminderId: string,
+  error: string,
+): Promise<boolean> {
+  if (!isTenantId(reminderId)) return false;
+  const rows = await withTenant(executor, businessId, (tx) =>
+    tx
+      .update(reminders)
+      .set({ status: "failed", error: error.slice(0, 120) })
+      .where(and(eq(reminders.businessId, businessId), eq(reminders.id, reminderId)))
+      .returning({ id: reminders.id }),
+  );
+  return rows.length > 0;
 }
 
 /** Recordatorios de una cita (tests y diagnóstico). */

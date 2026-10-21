@@ -124,6 +124,10 @@ test("startLeaderLoop: con el lease libre, este proceso lo toma y corre el tick"
         db,
         label: "leader-free-test",
         intervalMs: 5,
+        // Lease largo a propósito: con el default (3 intervalos = 15 ms) la suite completa en
+        // paralelo puede tardar más que eso entre el tick y el chequeo de abajo, y el lease
+        // ya vencido lo tomaría el otro titular (falso negativo por carga, no un bug).
+        leaseMs: 60_000,
         scalingHint: "",
         onError: () => {},
         tick: async () => {
