@@ -1,0 +1,2 @@
+ALTER TABLE "businesses" ADD COLUMN "billing_status" text DEFAULT 'trial' NOT NULL;--> statement-breakpoint
+ALTER TABLE "businesses" ADD CONSTRAINT "businesses_billing_status_check" CHECK ("businesses"."billing_status" IN ('trial', 'active', 'past_due', 'cancelled'));
