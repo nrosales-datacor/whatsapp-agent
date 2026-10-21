@@ -1,7 +1,6 @@
 import "dotenv/config";
 import http from "node:http";
 import type { ProcessRole } from "./app";
-import { registerJobHandlers, startModuleSchedulers } from "./jobs";
 import { PRODUCT_NAME } from "./platform/brand";
 import { productionConfigWarnings, productionSecretProblems } from "./platform/config/requiredSecrets";
 import { getDb, startLocalDb } from "./platform/db/client";
@@ -35,9 +34,11 @@ if (secretProblems.length > 0) {
 }
 for (const warning of productionConfigWarnings()) console.warn(`⚠️  ${warning}`);
 
-// La app se carga recién ahora (import dinámico): así el chequeo de arriba corre antes que
-// cualquier módulo que lea los secretos al importarse.
+// La app y los handlers de la cola se cargan recién ahora (import dinámico): así el
+// chequeo de arriba corre antes que cualquier módulo que lea los secretos al importarse
+// (src/jobs.ts trae los módulos del dominio, y con ellos la sesión).
 const { createAppHandler, createWorkerHandler } = await import("./app");
+const { registerJobHandlers, startModuleSchedulers } = await import("./jobs");
 
 const PORT = Number(process.env.PORT ?? 3000);
 
