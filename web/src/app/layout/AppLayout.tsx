@@ -3,6 +3,7 @@ import { Outlet, useLocation } from "react-router-dom";
 import { applyBranding, resetBranding } from "../../lib/branding";
 import { LocationProvider } from "../location";
 import { navItemsFor } from "../navigation";
+import { PushProvider } from "../push";
 import { useSession } from "../session";
 import BottomNav from "./BottomNav";
 import Sidebar from "./Sidebar";
@@ -65,9 +66,11 @@ export default function AppLayout() {
   // `key`: al cambiar de negocio (o de usuario) la sucursal se recalcula desde cero.
   return (
     <LocationProvider key={`${me.user.id}:${me.business.id}`}>
-      <UpsellProvider>
-        <Shell />
-      </UpsellProvider>
+      <PushProvider>
+        <UpsellProvider>
+          <Shell />
+        </UpsellProvider>
+      </PushProvider>
     </LocationProvider>
   );
 }
