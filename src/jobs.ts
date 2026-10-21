@@ -1,5 +1,6 @@
 import { handleReminderJob, REMINDER_SEND_JOB, startReminderScheduler, type ReminderJobPayload } from "./modules/scheduling";
 import {
+  createAgentRunner,
   createWhatsAppDeps,
   defaultAiLimits,
   isWhatsAppConnected,
@@ -25,12 +26,11 @@ import { registerJobHandler } from "./platform/queue";
 // ── WhatsApp IA: puntos de inyección ────────────────────────────────────────
 
 /**
- * Agente de IA de WhatsApp (contrato en src/modules/whatsapp/agentContract.ts).
- * TODO(integración I2): conectar acá el runner real del módulo (src/modules/whatsapp/agent).
- * Mientras sea `undefined`, el pipeline pasa cada conversación a una persona
- * (`handoffAgentRunner`): el bot nunca inventa respuestas.
+ * Agente de IA de WhatsApp (contrato en src/modules/whatsapp/agentContract.ts; el agente vive
+ * en src/modules/whatsapp/agent). Sin `OPENAI_API_KEY` queda `undefined` y el pipeline pasa
+ * cada conversación a una persona (`handoffAgentRunner`): el bot nunca inventa respuestas.
  */
-const whatsappAgentRunner: AgentRunner | undefined = undefined;
+const whatsappAgentRunner: AgentRunner | undefined = process.env.OPENAI_API_KEY ? createAgentRunner() : undefined;
 
 /** Límites de IA del plan (tope de conversaciones y de gasto). TODO(billing): los del plan del negocio. */
 const whatsappAiLimits: AiLimitsResolver = defaultAiLimits;
