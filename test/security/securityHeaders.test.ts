@@ -63,6 +63,15 @@ test("cabeceras: CSP estricta en el panel (sin inline), relajada solo para el SD
   const admin = (await get("/panel/admin")).h.get("content-security-policy") ?? "";
   assert.match(admin, /script-src 'self' https:\/\/connect\.facebook\.net/);
   assert.doesNotMatch(admin, /script-src[^;]*unsafe-inline/);
+  // La configuración del número de WhatsApp del negocio también usa el Embedded Signup.
+  const waSettings = (await get("/panel/whatsapp/settings")).h;
+  assert.match(waSettings.get("content-security-policy") ?? "", /script-src 'self' https:\/\/connect\.facebook\.net/);
+  assert.match(waSettings.get("content-security-policy") ?? "", /frame-src https:\/\/\*\.facebook\.com/);
+  assert.equal(waSettings.get("cross-origin-opener-policy"), "same-origin-allow-popups");
+  assert.doesNotMatch((await get("/panel/whatsapp/inbox")).h.get("content-security-policy") ?? "", /facebook/);
+  // Las notas de voz de la bandeja se reproducen desde URLs firmadas de Storage.
+  assert.match(panel, /media-src 'self' blob: https:/);
+  assert.match((await get("/webhook/whatsapp")).h.get("content-security-policy") ?? "", /default-src 'none'/);
   assert.match((await get("/api/panel/me")).h.get("content-security-policy") ?? "", /default-src 'none'/);
   assert.match((await get("/health")).h.get("content-security-policy") ?? "", /default-src 'none'/);
 });

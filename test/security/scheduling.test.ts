@@ -243,7 +243,7 @@ test("Inicio básico: hoy por estado, próximas, sin confirmar, no-show y las de
   const home = res.body.data;
   assert.equal(home.date, today);
   assert.equal(home.timezone, CR);
-  assert.equal(home.conversationsWaiting, null);
+  assert.equal(home.conversationsWaiting, 0, "lo cuenta el módulo WhatsApp (ninguna esperando a una persona)");
   assert.ok(home.today.byStatus.no_show >= 1);
   assert.ok(home.today.total >= 2);
   assert.ok(home.noShowsToday.some((a: { id: string }) => a.id === missed.id));

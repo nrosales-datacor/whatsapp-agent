@@ -23,7 +23,7 @@ import {
   type AppointmentView,
 } from "./appointments";
 import { findSlots, MAX_SERVICES_PER_APPOINTMENT, type Slot } from "./availability";
-import { getHomeToday } from "./home";
+import { getHomeToday, type ConversationsWaitingCounter } from "./home";
 import { localDayBounds } from "./time";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -53,6 +53,8 @@ import { localDayBounds } from "./time";
 
 export interface SchedulingRouteDeps {
   db: Executor;
+  /** Conversaciones esperando a una persona para el Inicio (lo inyecta la composición desde whatsapp). */
+  countConversationsWaiting?: ConversationsWaitingCounter;
 }
 
 const DESK: readonly Role[] = ["owner", "admin", "front_desk"];
@@ -156,7 +158,7 @@ function slotJson(slot: Slot) {
   };
 }
 
-export function schedulingRoutes({ db }: SchedulingRouteDeps): Route[] {
+export function schedulingRoutes({ db, countConversationsWaiting }: SchedulingRouteDeps): Route[] {
   return [
     route({ method: "GET", path: "/availability", auth: "user", query: AvailabilityQuery }, async ({ session, query }) => {
       assertLocationAccess(session, query.locationId);
@@ -292,7 +294,7 @@ export function schedulingRoutes({ db }: SchedulingRouteDeps): Route[] {
     ),
 
     route({ method: "GET", path: "/home/today", auth: "user", roles: DESK, location: "optional" }, ({ session, locationId }) =>
-      getHomeToday(db, session.businessId, { locationIds: visibleLocations(session, locationId), locationId }),
+      getHomeToday(db, session.businessId, { locationIds: visibleLocations(session, locationId), locationId, countConversationsWaiting }),
     ),
   ];
 }

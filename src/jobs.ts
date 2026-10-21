@@ -1,4 +1,15 @@
 import { handleReminderJob, REMINDER_SEND_JOB, startReminderScheduler, type ReminderJobPayload } from "./modules/scheduling";
+import {
+  createWhatsAppDeps,
+  defaultAiLimits,
+  isWhatsAppConnected,
+  queueWhatsAppReminder,
+  startWhatsAppSchedulers,
+  whatsappJobHandlers,
+  type AgentRunner,
+  type AiLimitsResolver,
+  type WhatsAppDeps,
+} from "./modules/whatsapp";
 import type { Executor } from "./platform/db/scope";
 import { handleSendEmailJob, SEND_EMAIL_JOB, type SendEmailJobPayload } from "./platform/email/job";
 import type { Loop } from "./platform/net/scheduler";
@@ -11,17 +22,42 @@ import { registerJobHandler } from "./platform/queue";
 // `pending` en vez de fallar.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function registerJobHandlers(): void {
+// ── WhatsApp IA: puntos de inyección ────────────────────────────────────────
+
+/**
+ * Agente de IA de WhatsApp (contrato en src/modules/whatsapp/agentContract.ts).
+ * TODO(integración I2): conectar acá el runner real del módulo (src/modules/whatsapp/agent).
+ * Mientras sea `undefined`, el pipeline pasa cada conversación a una persona
+ * (`handoffAgentRunner`): el bot nunca inventa respuestas.
+ */
+const whatsappAgentRunner: AgentRunner | undefined = undefined;
+
+/** Límites de IA del plan (tope de conversaciones y de gasto). TODO(billing): los del plan del negocio. */
+const whatsappAiLimits: AiLimitsResolver = defaultAiLimits;
+
+export interface JobDeps {
+  /** Dependencias del módulo WhatsApp (los tests inyectan dobles de Graph, OpenAI y el agente). */
+  whatsapp?: WhatsAppDeps;
+}
+
+export function registerJobHandlers(options: JobDeps = {}): void {
   registerJobHandler<SendEmailJobPayload>(SEND_EMAIL_JOB, async (payload, ctx) => {
     // El id del job da la clave de idempotencia: un reintento tras un timeout no duplica el correo.
     await handleSendEmailJob(payload, { id: ctx.jobId });
   });
 
-  // Recordatorios de cita: el job elige el canal al enviar. WhatsApp todavía no existe
-  // como módulo: TODO(I2) inyectar acá `isWhatsAppConnected` del módulo whatsapp.
+  // Recordatorios de cita: el job elige el canal al enviar. El núcleo no conoce WhatsApp: se
+  // le inyecta si hay número conectado y cómo encolar el envío (outbox).
   registerJobHandler<ReminderJobPayload>(REMINDER_SEND_JOB, async (payload, ctx) => {
-    await handleReminderJob(payload, { db: ctx.db, businessId: ctx.businessId });
+    await handleReminderJob(payload, { db: ctx.db, businessId: ctx.businessId }, { isWhatsAppConnected, queueWhatsAppReminder });
   });
+
+  // WhatsApp: mensajes entrantes (pipeline + agente), recordatorios y borrado de adjuntos.
+  // Las dependencias se arman con el pool del proceso la primera vez que corre un job.
+  let whatsapp = options.whatsapp;
+  const whatsappDeps = (db: Executor): WhatsAppDeps =>
+    (whatsapp ??= createWhatsAppDeps(db, { agent: whatsappAgentRunner, getAiLimits: whatsappAiLimits }));
+  for (const spec of whatsappJobHandlers(whatsappDeps)) registerJobHandler(spec.type, spec.handler, spec.options);
 }
 
 /**
@@ -29,5 +65,5 @@ export function registerJobHandlers(): void {
  * réplicas con su lease (src/platform/net/leaderLease.ts).
  */
 export function startModuleSchedulers(db: Executor): Loop[] {
-  return [startReminderScheduler({ db })];
+  return [startReminderScheduler({ db }), ...startWhatsAppSchedulers(db)];
 }

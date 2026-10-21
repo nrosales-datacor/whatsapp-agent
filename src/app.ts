@@ -1,5 +1,6 @@
 import { resolveSuperadmin } from "./admin/session";
 import { createSessionResolver } from "./modules/team";
+import { createWhatsAppWebhookHandler, WHATSAPP_WEBHOOK_PATH, type WhatsAppDeps } from "./modules/whatsapp";
 import { enabledModules, moduleGate } from "./planModules";
 import type { Executor } from "./platform/db/scope";
 import { serveHealth } from "./platform/http/health";
@@ -43,6 +44,8 @@ export interface AppOptions {
   db: Executor;
   role: ProcessRole;
   panelApi?: PanelApiAccess;
+  /** Dependencias del módulo WhatsApp (los tests inyectan dobles de Graph). Default: las reales. */
+  whatsapp?: WhatsAppDeps;
 }
 
 function requestUrl(rawUrl: string | undefined): URL {
@@ -51,16 +54,19 @@ function requestUrl(rawUrl: string | undefined): URL {
 }
 
 /**
- * Handler completo (`ROLE=web` y `ROLE=all`): /health, la API del panel (router
- * declarativo, rutas en src/routes.ts), la landing en `/` y el panel estático en `/panel`.
+ * Handler completo (`ROLE=web` y `ROLE=all`): /health, el webhook de WhatsApp, la API del
+ * panel (router declarativo, rutas en src/routes.ts), la landing en `/` y el panel
+ * estático en `/panel`.
  */
-export function createAppHandler({ db, role, panelApi = {} }: AppOptions): HttpHandler {
+export function createAppHandler({ db, role, panelApi = {}, whatsapp }: AppOptions): HttpHandler {
   // Se arma una vez por proceso: una declaración de rutas incoherente rompe el arranque.
   const panelApiHandler = createRouter({
-    routes: panelRoutes({ db, enabledModules }),
+    routes: panelRoutes({ db, enabledModules, whatsapp }),
     ...defaultPanelApiAccess(db),
     ...panelApi,
   });
+  // Webhook de WhatsApp: lo llama Meta (firma propia; sin sesión ni CSRF del panel).
+  const whatsappWebhook = createWhatsAppWebhookHandler({ db });
 
   return withSecurityHeaders(async (req, res) => {
     const url = requestUrl(req.url);
@@ -68,6 +74,12 @@ export function createAppHandler({ db, role, panelApi = {} }: AppOptions): HttpH
 
     if (pathname === "/health") {
       await serveHealth(res, url, db, { role });
+      return;
+    }
+
+    // Webhook de WhatsApp (Meta): verificación GET y mensajes POST firmados.
+    if (pathname === WHATSAPP_WEBHOOK_PATH) {
+      await whatsappWebhook(req, res);
       return;
     }
 
