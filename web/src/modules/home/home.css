@@ -1,0 +1,20 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Inicio básico: tarjetas del día. Tokens de global.css; una columna en el celular.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.home-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: var(--space-md); align-items: start; }
+.home-card { display: flex; flex-direction: column; gap: var(--space-sm); }
+.home-card .card-title { margin-bottom: 0; }
+.home-card-head { display: flex; align-items: center; gap: var(--space-xs); }
+.home-count { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: var(--radius-pill); background: var(--accent-soft); color: var(--accent-strong); font-size: 12px; letter-spacing: 0; }
+.home-big { font-family: var(--font-display); font-size: var(--step-4); font-weight: 800; line-height: 1; color: var(--text); }
+.home-status-list { display: flex; flex-direction: column; gap: 6px; }
+.home-status-list li { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); font-weight: 700; }
+.home-list { display: flex; flex-direction: column; gap: 4px; }
+.home-row { display: flex; align-items: center; gap: var(--space-xs); }
+.home-item { flex: 1; min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--space-sm); row-gap: 2px; padding: 8px 10px; border-radius: var(--radius-sm); text-decoration: none; color: var(--text); font-size: var(--step--1); min-height: 44px; }
+.home-item:hover { background: var(--surface-2); }
+.home-item-time { font-weight: 700; grid-row: span 2; align-self: start; min-width: 72px; }
+.home-item-main { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-item-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-item-simple { grid-template-columns: minmax(0, 1fr); }

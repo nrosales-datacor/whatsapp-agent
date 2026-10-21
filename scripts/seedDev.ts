@@ -25,9 +25,10 @@ import { withSystem, withTenant, type Executor } from "../src/platform/db/scope"
 // base es en memoria y el seed solo sirve como prueba de humo.
 //
 // Idempotente: si el negocio demo ya existe, se borra (cascada) y se vuelve a crear.
-// Crea dos usuarios con una clave CONOCIDA de desarrollo (se imprime por consola) para
-// entrar al panel con POST /api/panel/auth/login: la dueña (todas las sucursales) y una
-// recepcionista que solo entra a Escazú (para ver el permiso por sucursal). Esa clave es
+// Crea tres usuarios con una clave CONOCIDA de desarrollo (se imprime por consola) para
+// entrar al panel con POST /api/panel/auth/login: la dueña (todas las sucursales), una
+// recepcionista que solo entra a Escazú (para ver el permiso por sucursal) y Ana, una
+// especialista vinculada a su carril de la agenda ("Mi agenda": solo sus citas). Esa clave es
 // pública (está en el repo): el seed se niega a correr con NODE_ENV=production.
 // Teléfonos con prefijo +506 0… (no existen en Costa Rica) y correos @example.com /
 // .test: nada de esto le llega a una persona real.
@@ -36,6 +37,7 @@ import { withSystem, withTenant, type Executor } from "../src/platform/db/scope"
 export const DEMO_SLUG = "demo-estetica";
 export const DEMO_OWNER_EMAIL = "owner@demo-estetica.test";
 export const DEMO_FRONT_DESK_EMAIL = "recepcion@demo-estetica.test";
+export const DEMO_STAFF_EMAIL = "ana@demo-estetica.test";
 /** Clave de desarrollo de los usuarios demo. Solo desarrollo: es pública. */
 export const DEMO_PASSWORD = "demo1234";
 
@@ -53,7 +55,8 @@ export interface SeedResult {
   replaced: boolean;
   ownerEmail: string;
   frontDeskEmail: string;
-  /** Clave de los dos usuarios demo (`DEMO_PASSWORD`). */
+  staffEmail: string;
+  /** Clave de los usuarios demo (`DEMO_PASSWORD`). */
   password: string;
   counts: Record<"locations" | "staff" | "services" | "clients" | "appointments" | "payments", number>;
 }
@@ -64,17 +67,18 @@ export async function seedDev(db: Executor, options: { now?: Date } = {}): Promi
 
   // Lo global (negocio previo y usuarios demo) es de sistema; el resto, con el alcance del negocio.
   const passwordHash = await hashPassword(DEMO_PASSWORD);
-  const { replaced, ownerId, frontDeskId } = await withSystem(db, async (tx) => {
+  const { replaced, ownerId, frontDeskId, staffUserId } = await withSystem(db, async (tx) => {
     const previous = await tx.delete(businesses).where(eq(businesses.slug, DEMO_SLUG)).returning({ id: businesses.id });
-    await tx.delete(users).where(inArray(users.email, [DEMO_OWNER_EMAIL, DEMO_FRONT_DESK_EMAIL]));
-    const [owner, frontDesk] = await tx
+    await tx.delete(users).where(inArray(users.email, [DEMO_OWNER_EMAIL, DEMO_FRONT_DESK_EMAIL, DEMO_STAFF_EMAIL]));
+    const [owner, frontDesk, staffUser] = await tx
       .insert(users)
       .values([
         { email: DEMO_OWNER_EMAIL, name: "Dueña Demo", passwordHash },
         { email: DEMO_FRONT_DESK_EMAIL, name: "Recepción Escazú", passwordHash },
+        { email: DEMO_STAFF_EMAIL, name: "Ana Rojas", passwordHash },
       ])
       .returning({ id: users.id });
-    return { replaced: previous.length > 0, ownerId: owner.id, frontDeskId: frontDesk.id };
+    return { replaced: previous.length > 0, ownerId: owner.id, frontDeskId: frontDesk.id, staffUserId: staffUser.id };
   });
 
   const businessId = randomUUID();
@@ -124,10 +128,15 @@ export async function seedDev(db: Executor, options: { now?: Date } = {}): Promi
     ]);
 
     // ── Equipo y su horario por sucursal ──
+    // Ana entra con su usuario (rol staff, todas las sucursales donde trabaja).
+    const [anaMembership] = await tx
+      .insert(memberships)
+      .values({ businessId, userId: staffUserId, role: "staff" })
+      .returning({ id: memberships.id });
     const [ana, carla, diego] = await tx
       .insert(staff)
       .values([
-        { businessId, name: "Ana Rojas", color: "#e86a92", position: 0 },
+        { businessId, name: "Ana Rojas", color: "#e86a92", position: 0, membershipId: anaMembership.id },
         { businessId, name: "Carla Méndez", color: "#6a8ee8", position: 1 },
         { businessId, name: "Diego Vargas", color: "#5cb88a", position: 2 },
       ])
@@ -348,7 +357,15 @@ export async function seedDev(db: Executor, options: { now?: Date } = {}): Promi
     };
   });
 
-  return { businessId, replaced, ownerEmail: DEMO_OWNER_EMAIL, frontDeskEmail: DEMO_FRONT_DESK_EMAIL, password: DEMO_PASSWORD, counts };
+  return {
+    businessId,
+    replaced,
+    ownerEmail: DEMO_OWNER_EMAIL,
+    frontDeskEmail: DEMO_FRONT_DESK_EMAIL,
+    staffEmail: DEMO_STAFF_EMAIL,
+    password: DEMO_PASSWORD,
+    counts,
+  };
 }
 
 async function closeDb(db: unknown): Promise<void> {
@@ -377,6 +394,7 @@ async function main(): Promise<void> {
     console.log("   Usuarios de desarrollo (POST /api/panel/auth/login):");
     console.log(`     Dueña:                     ${r.ownerEmail} / ${r.password}`);
     console.log(`     Recepción (solo Escazú):   ${r.frontDeskEmail} / ${r.password}`);
+    console.log(`     Especialista (Mi agenda):  ${r.staffEmail} / ${r.password}`);
     if (!url && !process.env.PGLITE_DIR) {
       console.log("   Ojo: sin PGLITE_DIR la base es en memoria y se pierde al terminar (sirve como prueba de humo).");
     }
