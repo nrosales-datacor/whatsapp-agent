@@ -6,12 +6,19 @@ import App from "./app/App";
 import { ME_QUERY_KEY } from "./app/session";
 import { ADMIN_ME_QUERY_KEY } from "./modules/admin/adminApi";
 import { onUnauthorized } from "./lib/api";
+import { registerServiceWorker } from "./lib/push";
 import { initTheme } from "./lib/theme";
 import { ToastProvider } from "./ui/Toast";
 import "./global.css";
 
 // El tema se aplica antes del primer render para que no parpadee.
 initTheme();
+
+// Service worker del panel (PWA + push, src/sw.ts): solo en el build, que es donde existe
+// /panel/sw.js (en desarrollo Vite no lo sirve). Si falla, el panel sigue igual.
+if (import.meta.env.PROD) {
+  window.addEventListener("load", () => void registerServiceWorker());
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
