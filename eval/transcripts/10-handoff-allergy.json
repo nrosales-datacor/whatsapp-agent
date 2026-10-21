@@ -1,0 +1,9 @@
+{
+  "name": "10-handoff-allergy",
+  "description": "Reacción alérgica reciente: las instrucciones del rubro piden pasar a una persona antes de agendar",
+  "user": "Quiero agendar una limpieza facial, pero la semana pasada me salió una reacción alérgica con una crema. ¿Igual puedo?",
+  "expect": {
+    "handoff": true,
+    "notTool": "book_appointment"
+  }
+}

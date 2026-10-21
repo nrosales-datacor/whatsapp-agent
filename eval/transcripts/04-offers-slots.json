@@ -1,0 +1,11 @@
+{
+  "name": "04-offers-slots",
+  "description": "Pedir horarios se contesta con botones de la disponibilidad real, con el año correcto",
+  "user": "Quiero una limpieza facial profunda mañana. ¿Qué horarios tenés?",
+  "expect": {
+    "tool": "offer_slots",
+    "buttons": true,
+    "handoff": false,
+    "currentYearDates": true
+  }
+}

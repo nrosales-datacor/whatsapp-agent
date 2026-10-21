@@ -1,0 +1,12 @@
+{
+  "name": "01-greeting",
+  "description": "Un saludo seco: se presenta como el negocio, trata de vos, sin tools",
+  "user": "Hola, buenas tardes",
+  "expect": {
+    "noTools": true,
+    "handoff": false,
+    "outOfScope": false,
+    "containsAny": ["estética demo", "ayudar", "ayudo", "servir"],
+    "notContains": ["usted"]
+  }
+}
