@@ -11,6 +11,7 @@ import { useToast } from "../../ui/Toast";
 import { isoToZoned } from "../settings/zonedTime";
 import { formatLongDate, formatTime, formatWhen, STATUS_LABEL } from "../scheduling/format";
 import { schedulingApi, useAppointmentStore, useHomeToday, type Appointment, type AppointmentStatus } from "../scheduling/schedulingApi";
+import WaitingCard from "../whatsapp/WaitingCard";
 import "../scheduling/agenda.css";
 import "./home.css";
 
@@ -124,18 +125,7 @@ export default function HomePage() {
             )}
           </section>
         )}
-        {hasWhatsapp && (
-          <section className="card home-card" aria-labelledby="home-conv-title">
-            <h2 id="home-conv-title" className="card-title">
-              Conversaciones esperando
-            </h2>
-            {home.conversationsWaiting === null ? (
-              <p className="muted">Llega con la bandeja de WhatsApp IA: las conversaciones que esperan a una persona.</p>
-            ) : (
-              <p className="home-big tnum">{home.conversationsWaiting}</p>
-            )}
-          </section>
-        )}
+        {hasWhatsapp && <WaitingCard />}
       </div>
     </div>
   );

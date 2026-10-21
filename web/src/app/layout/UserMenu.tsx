@@ -3,13 +3,30 @@ import { useNavigate } from "react-router-dom";
 import { initials } from "../../lib/branding";
 import { useTheme } from "../../lib/theme";
 import TwoFactorDialog from "../../modules/auth/TwoFactorDialog";
-import Menu from "../../ui/Menu";
+import Menu, { type MenuItem } from "../../ui/Menu";
 import { roleLabel, terminologyOf } from "../navigation";
+import { usePush } from "../push";
 import { useLogout, useSession } from "../session";
 
-/** Menú de usuario: cambiar clave, 2FA, tema claro/oscuro y salir. */
+/** Ítem de notificaciones push según el estado de este navegador (nada si no aplica). */
+function pushItems(push: ReturnType<typeof usePush>): MenuItem[] {
+  if (!push.relevant) return [];
+  switch (push.state) {
+    case "off":
+      return [{ key: "push", label: "Activar notificaciones", icon: "bell", disabled: push.busy, onSelect: () => void push.enable() }];
+    case "on":
+      return [{ key: "push", label: "Desactivar notificaciones", icon: "bellOff", disabled: push.busy, onSelect: () => void push.disable() }];
+    case "denied":
+      return [{ key: "push", label: "Notificaciones bloqueadas", icon: "bellOff", disabled: true, hint: "En el navegador" }];
+    default:
+      return [];
+  }
+}
+
+/** Menú de usuario: notificaciones, cambiar clave, 2FA, tema claro/oscuro y salir. */
 export default function UserMenu() {
   const me = useSession();
+  const push = usePush();
   const t = terminologyOf(me);
   const navigate = useNavigate();
   const logout = useLogout();
@@ -36,6 +53,7 @@ export default function UserMenu() {
           </div>
         }
         items={[
+          ...pushItems(push),
           { key: "password", label: "Cambiar clave", icon: "key", onSelect: () => navigate("/change-password") },
           {
             key: "totp",
