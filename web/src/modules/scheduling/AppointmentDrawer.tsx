@@ -214,7 +214,7 @@ function AppointmentDetail({
           onDone={(slot) =>
             run(
               () => schedulingApi.reschedule(appointment.id, slot.startsAt),
-              (moved) => `${capitalize(t.appointment)} movida a ${formatWhen(moved.startsAt, tz)}.`,
+              (moved) => `${capitalize(t.appointment)} movida a ${formatWhen(moved.startsAt, tz)}`,
               onMoved,
             )
           }
