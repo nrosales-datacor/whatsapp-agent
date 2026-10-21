@@ -117,7 +117,10 @@ export function createPlanService(db: Executor, options: PlanServiceOptions = {}
   return {
     resolve,
 
-    moduleGate: async (businessId, module) => (await resolve(businessId))?.modules.includes(module as never) ?? false,
+    moduleGate: async (businessId, module) => {
+      const modules: readonly string[] = (await resolve(businessId))?.modules ?? [];
+      return modules.includes(module);
+    },
 
     async enabledModules(businessId) {
       return (await resolve(businessId))?.modules ?? [];
