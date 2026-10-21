@@ -1,8 +1,20 @@
-import { mockAgendaSetup, settingsMockRoute, settingsOverlay, type MockMemberSeed } from "../modules/settings/settingsMock";
+import { mockAgendaSetup, mockPlanUsage, settingsMockRoute, settingsOverlay, type MockMemberSeed } from "../modules/settings/settingsMock";
 import type { TransportRequest, TransportResponse } from "./api";
 import { mockClientsOf, routeClientsMock } from "../modules/clients/clientsMock";
 import { routeSchedulingMock } from "../modules/scheduling/schedulingMock";
-import type { AdminBusiness, LocationRef, Me, MeBusiness, Role } from "./contract";
+import type {
+  AdminBusiness,
+  AdminBusinessDetail,
+  AdminLimitOverrides,
+  AdminPlanLimits,
+  AuditEntry,
+  LocationRef,
+  Me,
+  MeBusiness,
+  MePlan,
+  Plan,
+  Role,
+} from "./contract";
 import { readStorage, writeStorage } from "./storage";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -11,6 +23,10 @@ import { readStorage, writeStorage } from "./storage";
 // así el cliente de lib/api.ts y las pantallas recorren el camino real. El estado (sesión,
 // claves cambiadas, negocios creados) vive en sessionStorage: sobrevive a un recargo de
 // la pestaña y cada pestaña o test arranca limpio.
+//
+// Planes (I2): mismo catálogo que src/modules/billing (Básico, Pro, Pro sin agente), con
+// `me.plan`, cupos y marca propia; el superadmin simulado cambia plan, módulos, cupos y
+// cobro, y pausa/reactiva (la sesión de ese negocio pasa a 403 `business_paused`).
 //
 // Solo se carga con VITE_MOCK_API=1 (import dinámico desde lib/api.ts): no viaja en el
 // build normal. Los datos son ficticios.
@@ -36,19 +52,58 @@ export const MOCK_ACCOUNTS: readonly { email: string; description: string }[] = 
   { email: "2fa@demo.test", description: `Dueña con 2FA (código ${MOCK_TOTP_CODE})` },
   { email: "temporal@demo.test", description: "Admin con clave temporal (cambio obligatorio)" },
   { email: "sinnegocio@demo.test", description: "Cuenta sin ningún negocio activo (no entra)" },
+  { email: "pausada@demo.test", description: "Dueña de un negocio pausado por el superadmin (no entra: cuenta pausada)" },
 ];
 
 const LATENCY_MS = 250;
 
-const PRO_MODULES = ["scheduling", "clients", "sales", "commissions", "reports", "whatsapp", "campaigns"];
-const BASIC_MODULES = ["scheduling", "clients", "whatsapp"];
+const ALL_MODULES = ["scheduling", "clients", "sales", "commissions", "reports", "whatsapp", "campaigns"];
 
-interface MockBusiness extends MeBusiness {
-  locations: LocationRef[];
-  modules: string[];
+/** Espejo de PLANS en src/modules/billing/catalog.ts (con los topes default del agente). */
+const PLAN_CATALOG: Record<Plan, { label: string; clientsTier: MePlan["clientsTier"]; modules: string[]; features: string[]; limits: AdminPlanLimits }> = {
+  basic: {
+    label: "Básico",
+    clientsTier: "basic",
+    modules: ["scheduling", "clients", "whatsapp"],
+    features: [],
+    limits: { locations: 1, staff: 3, users: 2, aiConversations: 500, aiLlmUsd: 15 },
+  },
+  pro: {
+    label: "Pro",
+    clientsTier: "full",
+    modules: ALL_MODULES,
+    features: ["branding"],
+    limits: { locations: 1, staff: 5, users: 8, aiConversations: 3000, aiLlmUsd: 40 },
+  },
+};
+
+/** Lo contractual de un negocio simulado (lo cambia el superadmin). */
+interface MockSubscription {
+  plan: Plan;
+  /** Módulos sueltos: true suma, false apaga. */
+  extraModules: Partial<Record<string, boolean>>;
+  /** Cupos contratados (null = sin tope). */
+  limits: AdminLimitOverrides;
+  billingStatus: string;
   status: string;
+}
+
+interface MockBusiness extends MeBusiness, MockSubscription {
+  locations: LocationRef[];
   country: string;
   createdAt: string;
+}
+
+/** Plan efectivo: el del catálogo con lo contratado encima (como resolveEntitlements). */
+function resolvePlan(sub: MockSubscription) {
+  const def = PLAN_CATALOG[sub.plan] ?? PLAN_CATALOG.basic;
+  const modules = ALL_MODULES.filter((m) => sub.extraModules[m] ?? def.modules.includes(m));
+  const limits: AdminPlanLimits = { ...def.limits };
+  for (const [key, value] of Object.entries(sub.limits) as [keyof AdminPlanLimits, number | null | undefined][]) {
+    if (value !== undefined) limits[key] = value;
+  }
+  const label = sub.plan === "pro" && !modules.includes("whatsapp") ? "Pro sin agente" : def.label;
+  return { label, clientsTier: def.clientsTier, modules, features: [...def.features], limits };
 }
 
 const LOC_ESCAZU = "0b3c6f2e-6a1d-4c39-9a51-3f0f8c2a1e01";
@@ -69,7 +124,10 @@ const BUSINESSES: Record<string, MockBusiness> = {
       { id: LOC_ESCAZU, name: "Escazú" },
       { id: LOC_HEREDIA, name: "Heredia" },
     ],
-    modules: PRO_MODULES,
+    // Pro por cantidad contratada: dos sucursales.
+    extraModules: {},
+    limits: { locations: 2 },
+    billingStatus: "active",
     status: "active",
     country: "CR",
     createdAt: "2026-09-02T15:00:00.000Z",
@@ -85,7 +143,9 @@ const BUSINESSES: Record<string, MockBusiness> = {
     terminology: {},
     branding: { accentColor: "#7A3FF2", headerColor: "#1E1B2E" },
     locations: [{ id: "0b3c6f2e-6a1d-4c39-9a51-3f0f8c2a1e03", name: "Sabana" }],
-    modules: BASIC_MODULES,
+    extraModules: {},
+    limits: {},
+    billingStatus: "trial",
     status: "active",
     country: "CR",
     createdAt: "2026-09-20T15:00:00.000Z",
@@ -101,14 +161,36 @@ const BUSINESSES: Record<string, MockBusiness> = {
     terminology: { staffMember: "estilista", staff: "estilistas" },
     branding: { accentColor: "#C7513B", headerColor: "#2A2A2E" },
     locations: [{ id: "0b3c6f2e-6a1d-4c39-9a51-3f0f8c2a1e04", name: "Obarrio" }],
-    modules: PRO_MODULES.filter((m) => m !== "whatsapp"),
+    // Pro sin agente.
+    extraModules: { whatsapp: false },
+    limits: {},
+    billingStatus: "active",
     status: "active",
     country: "PA",
     createdAt: "2026-10-01T15:00:00.000Z",
   },
+  "5d0a1c7e-2f4b-4b8e-8f3a-6c1d2e3f4a04": {
+    id: "5d0a1c7e-2f4b-4b8e-8f3a-6c1d2e3f4a04",
+    name: "Barbería Centro",
+    slug: "barberia-centro",
+    plan: "basic",
+    industry: "generic",
+    currency: "CRC",
+    timezone: "America/Costa_Rica",
+    terminology: {},
+    branding: {},
+    locations: [{ id: "0b3c6f2e-6a1d-4c39-9a51-3f0f8c2a1e05", name: "Centro" }],
+    // Pausado por el superadmin (cobro manual).
+    extraModules: {},
+    limits: {},
+    billingStatus: "past_due",
+    status: "paused",
+    country: "CR",
+    createdAt: "2026-08-15T15:00:00.000Z",
+  },
 };
 
-const [DENTAL, AESTHETICS, NAILS] = Object.keys(BUSINESSES);
+const [DENTAL, AESTHETICS, NAILS, BARBER] = Object.keys(BUSINESSES);
 
 interface MockMembership {
   businessId: string;
@@ -194,6 +276,14 @@ const BASE_USERS: MockUser[] = [
     mustChangePassword: false,
     memberships: [],
   },
+  {
+    id: "7e1f0a2b-1111-4c3d-8e4f-000000000009",
+    name: "Paula Brenes",
+    email: "pausada@demo.test",
+    totpEnabled: false,
+    mustChangePassword: false,
+    memberships: [{ businessId: BARBER, role: "owner" }],
+  },
 ];
 
 interface MockInvitation extends MockMembership {
@@ -230,6 +320,10 @@ interface MockState {
   totpSetupDone: string[];
   createdBusinesses: AdminBusiness[];
   usedInvitations: string[];
+  /** Cambios del superadmin simulado sobre lo contractual de cada negocio. */
+  subscriptions: Record<string, Partial<MockSubscription>>;
+  /** Rastro de auditoría simulado por negocio (más reciente primero). */
+  audit: Record<string, AuditEntry[]>;
 }
 
 const STATE_KEY = "selyon.mock.state";
@@ -246,6 +340,8 @@ function emptyState(): MockState {
     totpSetupDone: [],
     createdBusinesses: [],
     usedInvitations: [],
+    subscriptions: {},
+    audit: {},
   };
 }
 
@@ -279,9 +375,36 @@ function passwordOf(state: MockState, email: string): string {
   return state.overrides[email]?.password ?? MOCK_PASSWORD;
 }
 
+/** El negocio con lo que cambió el superadmin y su plan efectivo. */
+function businessOf(state: MockState, businessId: string): MockBusiness & { resolved: ReturnType<typeof resolvePlan> } {
+  const b: MockBusiness = { ...BUSINESSES[businessId], ...state.subscriptions[businessId] };
+  return { ...b, resolved: resolvePlan(b) };
+}
+
+/** Semilla para Configuración y la Agenda simuladas: con los cupos y funciones del plan. */
+function settingsSeedOf(state: MockState, businessId: string) {
+  const b = businessOf(state, businessId);
+  return { ...b, planRules: { limits: b.resolved.limits, features: b.resolved.features } };
+}
+
+const isPaused = (state: MockState, businessId: string) => businessOf(state, businessId).status === "paused";
+
+/** Uso del mes simulado: activos de Configuración (o la semilla) y conversaciones ficticias. */
+function planUsageOf(state: MockState, b: MockBusiness, modules: string[]): MePlan["usage"] {
+  const counted = mockPlanUsage(b.id);
+  const users = membersOf(state, b.id).length;
+  return {
+    month: new Date().toISOString().slice(0, 7),
+    locations: counted?.locations ?? b.locations.length,
+    staff: counted?.staff ?? 2,
+    users: counted?.users ?? users,
+    aiConversations: modules.includes("whatsapp") ? 137 : null,
+  };
+}
+
 /** Profesional vinculado a la cuenta en ese negocio (Configuración simulada › Equipo), o null. */
 function staffIdOf(state: MockState, user: MockUser, businessId: string): string | null {
-  const setup = mockAgendaSetup(BUSINESSES[businessId], membersOf(state, businessId));
+  const setup = mockAgendaSetup(settingsSeedOf(state, businessId), membersOf(state, businessId));
   const membershipId = setup.members.find((m) => m.email === user.email)?.membershipId;
   return (membershipId && setup.staff.find((s) => s.membershipId === membershipId)?.id) || null;
 }
@@ -289,9 +412,10 @@ function staffIdOf(state: MockState, user: MockUser, businessId: string): string
 function buildMe(user: MockUser, businessId: string, state: MockState): Me {
   const membership = user.memberships.find((m) => m.businessId === businessId) ?? user.memberships[0];
   // Lo que se cambió en Configuración (nombre, terminología, sucursales…) pisa la semilla.
-  const base = BUSINESSES[membership.businessId];
+  const base = businessOf(state, membership.businessId);
   const overlay = settingsOverlay(base.id);
   const b: MockBusiness = overlay ? { ...base, ...overlay } : base;
+  const { resolved } = base;
   const all = membership.locationIds === undefined;
   return {
     user: {
@@ -310,17 +434,34 @@ function buildMe(user: MockUser, businessId: string, state: MockState): Me {
       currency: b.currency,
       timezone: b.timezone,
       terminology: b.terminology,
-      branding: b.branding,
+      branding: resolved.features.includes("branding") ? b.branding : {},
     },
     role: membership.role,
     locations: all ? b.locations : b.locations.filter((l) => membership.locationIds?.includes(l.id)),
     allLocations: all,
-    memberships: user.memberships.map((m) => ({
-      businessId: m.businessId,
-      businessName: BUSINESSES[m.businessId].name,
-      role: m.role,
-    })),
-    modules: b.modules,
+    memberships: user.memberships
+      .filter((m) => !isPaused(state, m.businessId))
+      .map((m) => ({
+        businessId: m.businessId,
+        businessName: BUSINESSES[m.businessId].name,
+        role: m.role,
+      })),
+    modules: resolved.modules,
+    plan: {
+      id: base.plan,
+      label: resolved.label,
+      clientsTier: resolved.clientsTier,
+      modules: resolved.modules,
+      features: resolved.features,
+      billingStatus: base.billingStatus,
+      limits: {
+        locations: resolved.limits.locations,
+        staff: resolved.limits.staff,
+        users: resolved.limits.users,
+        aiConversations: resolved.limits.aiConversations,
+      },
+      usage: planUsageOf(state, b, resolved.modules),
+    },
     staffId: staffIdOf(state, user, membership.businessId),
   };
 }
@@ -344,6 +485,7 @@ function invalid(fields: Record<string, string>): TransportResponse {
 }
 
 const unauthorized = () => fail(401, "unauthorized", "Tu sesión no es válida o venció. Iniciá sesión de nuevo.");
+const businessPaused = () => fail(403, "business_paused", "La cuenta de este negocio está pausada. Escribinos para reactivarla.");
 const invalidCredentials = () => fail(401, "invalid_credentials", "Correo o clave incorrectos.");
 const invalidPassword = () => fail(400, "invalid_password", "La clave actual no es correcta.");
 const invalidCode = () => fail(400, "invalid_code", "El código no es correcto.");
@@ -371,20 +513,95 @@ function slugify(name: string): string {
 
 /** `GET /admin/businesses`: los más nuevos primero. */
 function allAdminBusinesses(state: MockState): AdminBusiness[] {
-  const base: AdminBusiness[] = Object.values(BUSINESSES).map((b) => ({
+  const base: AdminBusiness[] = Object.keys(BUSINESSES).map((id) => adminRowOf(state, id));
+  const created = state.createdBusinesses.map((c) => {
+    const sub = { plan: c.plan as Plan, extraModules: {}, limits: {}, billingStatus: c.billingStatus, status: c.status, ...state.subscriptions[c.id] };
+    const resolved = resolvePlan(sub);
+    return { ...c, plan: sub.plan, status: sub.status, billingStatus: sub.billingStatus, planLabel: resolved.label, modules: resolved.modules };
+  });
+  return [...created, ...base].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+function adminRowOf(state: MockState, id: string): AdminBusiness {
+  const b = businessOf(state, id);
+  return {
     id: b.id,
     name: b.name,
     slug: b.slug,
     industry: b.industry,
     plan: b.plan,
+    planLabel: b.resolved.label,
+    modules: b.resolved.modules,
     status: b.status,
+    billingStatus: b.billingStatus,
     currency: b.currency,
     country: b.country,
     timezone: b.timezone,
     locationCount: b.locations.length,
     createdAt: b.createdAt,
-  }));
-  return [...state.createdBusinesses, ...base].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  };
+}
+
+/** Detalle del superadmin (solo negocios semilla: los creados en el mock no tienen datos). */
+function adminDetailOf(state: MockState, id: string): AdminBusinessDetail | null {
+  if (!BUSINESSES[id]) return null;
+  const b = businessOf(state, id);
+  const sub: MockSubscription = { plan: b.plan, extraModules: b.extraModules, limits: b.limits, billingStatus: b.billingStatus, status: b.status };
+  return {
+    business: adminRowOf(state, id),
+    clientsTier: b.resolved.clientsTier,
+    limits: b.resolved.limits,
+    overrides: { modules: { ...sub.extraModules }, limits: { ...sub.limits } },
+    usage: planUsageOf(state, b, b.resolved.modules),
+    audit: state.audit[id] ?? [],
+  };
+}
+
+function recordMockAudit(state: MockState, businessId: string, action: string, details: Record<string, unknown>): void {
+  const entry: AuditEntry = { id: mockId(9000 + Object.values(state.audit).flat().length), action, actor: `superadmin:${MOCK_ADMIN_USERNAME}`, details, createdAt: new Date().toISOString() };
+  state.audit[businessId] = [entry, ...(state.audit[businessId] ?? [])];
+}
+
+const MODULE_KEYS = new Set(ALL_MODULES);
+const LIMIT_KEYS = new Set(["locations", "staff", "users", "aiConversations", "aiLlmUsd"]);
+const BILLING_STATUSES = new Set(["trial", "active", "past_due", "cancelled"]);
+
+/** `PATCH /admin/businesses/:id/plan` del mock: misma validación básica que el backend. */
+function changeMockPlan(state: MockState, id: string, body: unknown): TransportResponse {
+  const input = (typeof body === "object" && body !== null ? body : {}) as Record<string, unknown>;
+  const fields: Record<string, string> = {};
+  const keys = Object.keys(input);
+  if (keys.length === 0) return invalid({ body: "Indicá qué cambiar (plan, módulos, límites o estado del cobro)." });
+  for (const k of keys) if (!["plan", "extraModules", "limits", "billingStatus"].includes(k)) fields[`body.${k}`] = "Campo desconocido.";
+  if (input.plan !== undefined && input.plan !== "basic" && input.plan !== "pro") fields["body.plan"] = "Plan inválido.";
+  if (input.billingStatus !== undefined && !BILLING_STATUSES.has(String(input.billingStatus))) fields["body.billingStatus"] = "Estado inválido.";
+  const modules = (input.extraModules ?? undefined) as Record<string, unknown> | undefined;
+  for (const [k, v] of Object.entries(modules ?? {})) if (!MODULE_KEYS.has(k) || typeof v !== "boolean") fields[`body.extraModules.${k}`] = "Módulo inválido.";
+  const limits = (input.limits ?? undefined) as Record<string, unknown> | undefined;
+  for (const [k, v] of Object.entries(limits ?? {})) {
+    const okValue = v === null || (typeof v === "number" && Number.isFinite(v) && v >= 0);
+    if (!LIMIT_KEYS.has(k) || !okValue) fields[`body.limits.${k}`] = "Límite inválido.";
+  }
+  if (Object.keys(fields).length > 0) return invalid(fields);
+  const before = businessOf(state, id);
+  const plan = (input.plan as Plan | undefined) ?? before.plan;
+  const included = PLAN_CATALOG[plan].modules;
+  const nextModules = Object.fromEntries(
+    Object.entries((modules as Record<string, boolean> | undefined) ?? before.extraModules).filter(([k, v]) => v !== included.includes(k)),
+  );
+  state.subscriptions[id] = {
+    ...state.subscriptions[id],
+    plan,
+    extraModules: nextModules,
+    limits: (limits as AdminLimitOverrides | undefined) ?? before.limits,
+    billingStatus: (input.billingStatus as string | undefined) ?? before.billingStatus,
+  };
+  const after = businessOf(state, id);
+  recordMockAudit(state, id, "plan_changed", {
+    before: { plan: before.plan, modules: before.resolved.modules, billingStatus: before.billingStatus },
+    after: { plan: after.plan, modules: after.resolved.modules, billingStatus: after.billingStatus },
+  });
+  return ok(adminDetailOf(state, id));
 }
 
 /** UUID ficticio y estable (sin `crypto.randomUUID`, que pide contexto seguro). */
@@ -405,11 +622,19 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
   const sessionUser = state.sessionEmail ? findUser(state, state.sessionEmail) : null;
   const sessionMe = () => (sessionUser ? buildMe(sessionUser, state.businessId ?? sessionUser.memberships[0].businessId, state) : null);
 
+  // Negocio pausado por el superadmin: la sesión sigue, pero toda la API responde 403.
+  const publicPath =
+    path.startsWith("/admin/") ||
+    path.startsWith("/auth/invitations/") ||
+    ["/auth/login", "/auth/logout", "/auth/password/forgot", "/auth/password/reset"].includes(path);
+  const sessionBusinessId = sessionUser ? (state.businessId ?? sessionUser.memberships[0]?.businessId) : null;
+  if (!publicPath && sessionBusinessId && isPaused(state, sessionBusinessId)) return businessPaused();
+
   // Agenda e Inicio (I1): /availability, /appointments*, /clients/:id/appointments y /home/today.
   if (path === "/availability" || path === "/appointments" || path.startsWith("/appointments/") || path === "/home/today" || /^\/clients\/[^/]+\/appointments$/.test(path)) {
     const me = sessionMe();
     if (!me || !sessionUser) return unauthorized();
-    const b = BUSINESSES[me.business.id];
+    const b = businessOf(state, me.business.id);
     const membership = sessionUser.memberships.find((m) => m.businessId === b.id);
     return (
       routeSchedulingMock(req, {
@@ -418,7 +643,7 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
         role: me.role,
         locationIds: membership?.locationIds,
         staffId: me.staffId ?? null,
-        setup: mockAgendaSetup(b, membersOf(state, b.id)),
+        setup: mockAgendaSetup(settingsSeedOf(state, b.id), membersOf(state, b.id)),
         clients: mockClientsOf(b.id, b.locations),
       }) ?? fail(404, "not_found", "Ruta inexistente en el mock.")
     );
@@ -428,7 +653,7 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
   if (path === "/clients" || path.startsWith("/clients/")) {
     const me = sessionMe();
     if (!me) return unauthorized();
-    const b = BUSINESSES[me.business.id];
+    const b = businessOf(state, me.business.id);
     return (
       routeClientsMock(req, {
         businessId: b.id,
@@ -476,7 +701,9 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
         state.failedLogins += 1;
         return invalidCredentials();
       }
-      if (user.memberships.length === 0) {
+      const activeMemberships = user.memberships.filter((m) => !isPaused(state, m.businessId));
+      if (activeMemberships.length === 0) {
+        if (user.memberships.length > 0) return businessPaused();
         return fail(
           403,
           "no_active_business",
@@ -485,7 +712,7 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
       }
       state.failedLogins = 0;
       state.sessionEmail = user.email;
-      state.businessId = user.memberships[0].businessId;
+      state.businessId = activeMemberships[0].businessId;
       return ok({ status: "ok", me: buildMe(user, state.businessId, state) });
     }
 
@@ -497,7 +724,7 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
     case "POST /auth/switch-business": {
       if (!sessionUser) return unauthorized();
       const businessId = str(body, "businessId");
-      if (!sessionUser.memberships.some((m) => m.businessId === businessId)) {
+      if (!sessionUser.memberships.some((m) => m.businessId === businessId) || isPaused(state, businessId)) {
         return fail(403, "business_forbidden", "No tenés acceso a ese negocio.");
       }
       state.businessId = businessId;
@@ -673,10 +900,38 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
         timezone: value("timezone"),
         locationCount: 1,
         createdAt: new Date().toISOString(),
+        planLabel: "Básico",
+        modules: [...PLAN_CATALOG.basic.modules],
+        billingStatus: "trial",
       };
       state.createdBusinesses = [created, ...state.createdBusinesses];
       return ok(created, 201);
     }
+  }
+
+  // ── Superadmin: plan, pausa y detalle (I2) ──
+  const adminBusiness = /^\/admin\/businesses\/([^/]+)(?:\/(plan|pause|reactivate))?$/.exec(path);
+  if (adminBusiness) {
+    if (!state.admin) return unauthorized();
+    const [, id, action] = adminBusiness;
+    if (!BUSINESSES[id]) return fail(404, "not_found", "Ese negocio no existe.");
+    if (!action && req.method === "GET") return ok(adminDetailOf(state, id));
+    if (action === "plan" && req.method === "PATCH") return changeMockPlan(state, id, body);
+    if (action === "pause" && req.method === "POST") {
+      const status = businessOf(state, id).status;
+      if (status === "paused") return fail(409, "already_paused", "El negocio ya estaba pausado.");
+      state.subscriptions[id] = { ...state.subscriptions[id], status: "paused" };
+      const reason = str(body, "reason").trim();
+      recordMockAudit(state, id, "business_paused", { reason: reason || null });
+      return ok(adminDetailOf(state, id));
+    }
+    if (action === "reactivate" && req.method === "POST") {
+      if (businessOf(state, id).status === "active") return fail(409, "already_active", "El negocio ya estaba activo.");
+      state.subscriptions[id] = { ...state.subscriptions[id], status: "active" };
+      recordMockAudit(state, id, "business_reactivated", {});
+      return ok(adminDetailOf(state, id));
+    }
+    return fail(405, "method_not_allowed", "Método no permitido.");
   }
 
   // Configuración (/settings/*) y equipo (/team/*): modules/settings/settingsMock.ts.
@@ -685,7 +940,7 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
   const settings = settingsMockRoute(
     req,
     me && membership ? { userId: me.user.id, businessId: me.business.id, role: me.role, locationIds: membership.locationIds } : null,
-    me ? BUSINESSES[me.business.id] : null,
+    me ? settingsSeedOf(state, me.business.id) : null,
     me ? membersOf(state, me.business.id) : [],
   );
   if (settings) return settings;

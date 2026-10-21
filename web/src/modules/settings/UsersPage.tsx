@@ -9,7 +9,7 @@ import ErrorState from "../../ui/ErrorState";
 import { FormError, SelectField, TextField } from "../../ui/Field";
 import Icon from "../../ui/Icons";
 import { useToast } from "../../ui/Toast";
-import { CheckRow, ConfirmDialog, fieldErrorOf, LoadingState, mutationError } from "./common";
+import { CheckRow, ConfirmDialog, fieldErrorOf, LoadingState, mutationError, PlanQuotaHint } from "./common";
 import { SETTINGS_KEYS, settingsApi, type LocationView, type Member } from "./settingsApi";
 
 // Configuración > Usuarios y permisos (usa /team/members y /team/invitations, I0.6): quién
@@ -40,6 +40,7 @@ export default function UsersPage() {
   return (
     <div className="settings-stack">
       <div className="settings-toolbar">
+        <PlanQuotaHint resource="users" used={members.filter((m) => m.active).length} />
         <button type="button" className="btn btn-primary" onClick={() => setDialog({ kind: "invite", member: null })}>
           <Icon id="mail" size={16} />
           Invitar a alguien
