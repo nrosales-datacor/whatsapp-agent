@@ -1,3 +1,4 @@
+import { settingsMockRoute, settingsOverlay, type MockMemberSeed } from "../modules/settings/settingsMock";
 import type { TransportRequest, TransportResponse } from "./api";
 import { routeClientsMock } from "../modules/clients/clientsMock";
 import type { AdminBusiness, LocationRef, Me, MeBusiness, Role } from "./contract";
@@ -279,7 +280,10 @@ function passwordOf(state: MockState, email: string): string {
 
 function buildMe(user: MockUser, businessId: string): Me {
   const membership = user.memberships.find((m) => m.businessId === businessId) ?? user.memberships[0];
-  const b = BUSINESSES[membership.businessId];
+  // Lo que se cambió en Configuración (nombre, terminología, sucursales…) pisa la semilla.
+  const base = BUSINESSES[membership.businessId];
+  const overlay = settingsOverlay(base.id);
+  const b: MockBusiness = overlay ? { ...base, ...overlay } : base;
   const all = membership.locationIds === undefined;
   return {
     user: {
@@ -647,7 +651,29 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
     }
   }
 
+  // Configuración (/settings/*) y equipo (/team/*): modules/settings/settingsMock.ts.
+  const me = sessionMe();
+  const membership = sessionUser?.memberships.find((m) => m.businessId === me?.business.id);
+  const settings = settingsMockRoute(
+    req,
+    me && membership ? { userId: me.user.id, businessId: me.business.id, role: me.role, locationIds: membership.locationIds } : null,
+    me ? BUSINESSES[me.business.id] : null,
+    me ? membersOf(state, me.business.id) : [],
+  );
+  if (settings) return settings;
+
   return fail(404, "not_found", "Ruta inexistente en el mock.");
+}
+
+/** Miembros de un negocio según las cuentas del mock (semilla de Configuración > Usuarios). */
+function membersOf(state: MockState, businessId: string): MockMemberSeed[] {
+  return [...BASE_USERS, ...state.extraUsers].flatMap((u) => {
+    const user = findUser(state, u.email);
+    const m = user?.memberships.find((x) => x.businessId === businessId);
+    return user && m
+      ? [{ userId: user.id, name: user.name, email: user.email, role: m.role, locationIds: m.locationIds, totpEnabled: user.totpEnabled, mustChangePassword: user.mustChangePassword }]
+      : [];
+  });
 }
 
 /** Transporte simulado: misma firma que el de red (ver lib/api.ts). */

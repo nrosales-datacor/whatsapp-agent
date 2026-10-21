@@ -1,0 +1,84 @@
+/* ══════════════════════════════════════════════════════════════════════════════
+   CONFIGURACIÓN (subpáginas). Usa los tokens de global.css; responsive desde 320 px.
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+.readonly-notice { display: flex; align-items: flex-start; gap: var(--space-xs); background: var(--info-soft); color: var(--text); border-radius: var(--radius-sm); padding: var(--space-sm) var(--space-md); font-size: var(--step--1); margin-bottom: var(--space-md); }
+.readonly-notice svg { flex-shrink: 0; margin-top: 1px; color: var(--info); }
+
+.settings-stack { display: flex; flex-direction: column; gap: var(--space-md); }
+.settings-toolbar { display: flex; flex-wrap: wrap; gap: var(--space-xs); justify-content: flex-end; }
+.settings-section-title { font-family: var(--font-display); font-size: var(--step-1); font-weight: 700; margin: var(--space-lg) 0 var(--space-sm); }
+.settings-help { font-size: var(--step--1); color: var(--text-2); line-height: 1.5; }
+.settings-intro { margin: calc(-1 * var(--space-xs)) 0 var(--space-md); }
+.check-row input[type="color"] { width: 36px; height: 36px; padding: 0; border: 1px solid var(--border-strong); border-radius: 50%; margin-top: 0; cursor: pointer; }
+
+/* ── Listas (sucursales, servicios, equipo, usuarios, ausencias) ── */
+.settings-list { display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.settings-item { display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--border-2); min-width: 0; flex-wrap: wrap; }
+.settings-item:last-child { border-bottom: none; }
+.settings-item-main { flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.settings-item-title { font-weight: 700; display: flex; align-items: center; gap: var(--space-xs); flex-wrap: wrap; overflow-wrap: anywhere; }
+.settings-item-meta { font-size: var(--step--1); color: var(--text-2); overflow-wrap: anywhere; }
+.settings-item-actions { display: flex; align-items: center; gap: 2px; flex-wrap: wrap; margin-left: auto; }
+.settings-item-actions .btn { min-height: 40px; padding: 8px 12px; }
+.settings-item.inactive .settings-item-title { color: var(--text-2); }
+.btn-small { min-height: 36px; padding: 6px 12px; }
+.icon-btn:disabled { opacity: .4; cursor: not-allowed; background: none; }
+.icon-btn.danger:hover:not(:disabled) { color: var(--danger); background: var(--danger-soft); }
+
+.badge-muted { background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border); }
+.badge-danger { background: var(--danger-soft); color: var(--danger); }
+.badge-info { background: var(--info-soft); color: var(--info); }
+
+.category-block { display: flex; flex-direction: column; gap: var(--space-xs); }
+.category-head { display: flex; align-items: center; gap: var(--space-xs); flex-wrap: wrap; margin-top: var(--space-md); }
+.category-head h3 { font-size: var(--step-0); font-weight: 700; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+.color-dot { display: inline-block; width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; border: 1px solid rgba(0,0,0,.12); }
+.color-swatches { display: flex; flex-wrap: wrap; gap: 8px; margin-top: var(--space-2xs); }
+.swatch { width: 36px; height: 36px; border-radius: 50%; border: 2px solid transparent; display: grid; place-items: center; color: #fff; }
+.swatch[aria-checked="true"] { border-color: var(--text); box-shadow: 0 0 0 2px var(--surface) inset; }
+
+/* ── Formularios ── */
+.settings-content .input:disabled, .dialog .input:disabled { background: var(--surface-2); color: var(--text-2); cursor: default; opacity: 1; }
+.check-row { display: flex; align-items: flex-start; gap: var(--space-xs); min-height: 32px; padding: 4px 0; font-size: var(--step--1); color: var(--text); cursor: pointer; }
+.check-row input { width: 18px; height: 18px; margin-top: 1px; accent-color: var(--accent); flex-shrink: 0; }
+.check-row small { display: block; color: var(--text-2); }
+.check-list { display: flex; flex-direction: column; margin-top: var(--space-2xs); }
+fieldset.field { border: none; padding: 0; min-width: 0; }
+fieldset.field > legend { font-size: var(--step--1); font-weight: 600; color: var(--text-2); margin-bottom: var(--space-2xs); padding: 0; }
+.money-field { position: relative; }
+.money-field > span { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-2); font-weight: 600; pointer-events: none; }
+.money-field .input { padding-left: 34px; }
+.form-actions { display: flex; flex-wrap: wrap; gap: var(--space-xs); justify-content: flex-end; margin-top: var(--space-lg); }
+.form-actions .btn { min-width: 120px; }
+.settings-form .card + .card { margin-top: var(--space-md); }
+.inline-fields { display: flex; gap: var(--space-sm); flex-wrap: wrap; align-items: flex-end; }
+.inline-fields > * { flex: 1 1 140px; }
+.color-input { display: flex; gap: var(--space-xs); align-items: flex-start; min-width: 0; }
+.color-input-text { flex: 1; min-width: 0; }
+.color-input input[type="color"] { width: 44px; height: 44px; padding: 2px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); flex-shrink: 0; margin-top: calc(var(--space-md) + 1.45em + var(--space-2xs)); cursor: pointer; }
+
+/* ── Editor de horario semanal ── */
+.hours-editor { display: flex; flex-direction: column; gap: var(--space-xs); color: var(--text); }
+.hours-day { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--space-xs) var(--space-sm); min-width: 0; }
+.hours-day-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-xs); flex-wrap: wrap; }
+.hours-day-head legend, .hours-day-name { font-weight: 700; font-size: var(--step--1); }
+.hours-blocks { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.hours-block { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.hours-block .input { width: auto; min-width: 0; flex: 1 1 110px; max-width: 150px; min-height: 40px; padding: 6px 8px; }
+.hours-block-sep { color: var(--text-2); font-size: var(--step--1); }
+.hours-block .field-error { flex-basis: 100%; margin-top: 0; }
+.hours-closed { font-size: var(--step--1); color: var(--text-3); }
+.hours-summary { font-size: var(--step--1); color: var(--text-2); }
+
+/* ── Plan ── */
+.plan-modules { display: flex; flex-wrap: wrap; gap: 6px; margin-top: var(--space-xs); }
+
+@media (max-width: 480px) {
+  .settings-item { padding: var(--space-sm); }
+  .settings-item-actions { width: 100%; justify-content: flex-end; }
+  .settings-item-actions .icon-btn { width: 36px; height: 36px; }
+  .settings-item-actions .btn-small { padding: 6px 10px; }
+  .form-actions .btn { flex: 1 1 auto; }
+}

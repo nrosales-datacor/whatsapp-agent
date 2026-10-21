@@ -1,19 +1,19 @@
 import { desc, eq, like, or, sql } from "drizzle-orm";
-import { withSystem, type Executor } from "../../platform/db/scope";
-import { businesses, locationHours, locations, type Business, type Location } from "./schema";
+import { withSystem, withTenant, type Executor, type Tx } from "../../platform/db/scope";
+import { businesses, customFields, locationHours, locations, type Business, type Location } from "./schema";
+import { loadIndustryTemplate, type Industry, type TemplateCatalog } from "./templates";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Alta y listado de negocios (lo usa el superadmin, src/admin). Es cross-tenant por
 // diseño: corre con `withSystem`. Si el llamador ya abrió una transacción (p. ej. el alta
 // junto con la invitación al dueño), le pasa esa transacción y todo queda atómico.
+//
+// El alta aplica la plantilla del rubro (`applyIndustryTemplate`, ver ./templates.ts): lo
+// que es de business (terminología, reglas de estado de cliente, campos personalizados)
+// lo escribe acá; el catálogo lo escribe modules/catalog a través de `ProvisioningSteps`
+// (business no puede importar catalog: catalog depende de business). La sección `ai` la
+// aplica el módulo whatsapp en I2.
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Rubros con plantilla (PLAN-GESTION.md §3). La columna `industry` no tiene CHECK a
- * propósito: sumar un rubro es sumar su plantilla y su nombre acá, sin migración.
- */
-export const INDUSTRIES = ["generic", "dental", "aesthetics", "nails"] as const;
-export type Industry = (typeof INDUSTRIES)[number];
 
 /** Horario con el que nace la primera sucursal: lunes a viernes 8–18 y sábado 8–12 (0 = domingo). */
 export const DEFAULT_LOCATION_HOURS: ReadonlyArray<{ weekday: number; opensAt: string; closesAt: string }> = [
@@ -65,10 +65,58 @@ export interface CreatedBusiness {
 }
 
 /**
- * Crea el negocio con su primera sucursal y el horario default (`DEFAULT_LOCATION_HOURS`).
- * El slug sale del nombre; si ya existe, se le suma `-2`, `-3`…
+ * Pasos del alta que viven en otros módulos y se inyectan (los arma quien compone:
+ * src/admin/routes.ts, scripts/seedDev.ts).
  */
-export async function createBusiness(executor: Executor, input: NewBusinessInput): Promise<CreatedBusiness> {
+export interface ProvisioningSteps {
+  /** Carga las categorías y servicios de la plantilla (`applyCatalogTemplate` de modules/catalog). */
+  seedCatalog: (tx: Tx, input: { businessId: string; catalog: TemplateCatalog }) => Promise<unknown>;
+}
+
+/**
+ * Aplica la plantilla del rubro a un negocio recién creado: terminología y reglas de
+ * estado de cliente (overrides en `businesses`), campos personalizados y, vía `steps`, el
+ * catálogo de ejemplo. Pensado para un negocio vacío: no borra lo que ya hubiera.
+ * Devuelve el negocio como quedó.
+ */
+export async function applyIndustryTemplate(
+  executor: Executor,
+  input: { businessId: string; industry: Industry },
+  steps: ProvisioningSteps,
+): Promise<Business> {
+  const template = loadIndustryTemplate(input.industry);
+  return withTenant(executor, input.businessId, async (tx) => {
+    const [business] = await tx
+      .update(businesses)
+      .set({ terminology: { ...template.terminology }, clientStatusRules: { ...template.clientStatusRules } })
+      .where(eq(businesses.id, input.businessId))
+      .returning();
+    if (!business) throw new Error("applyIndustryTemplate: el negocio no existe");
+    if (template.customFields.length > 0) {
+      await tx.insert(customFields).values(
+        template.customFields.map((f, position) => ({
+          businessId: input.businessId,
+          entity: f.entity,
+          key: f.key,
+          label: f.label,
+          type: f.type,
+          options: [...f.options],
+          required: f.required,
+          position,
+        })),
+      );
+    }
+    await steps.seedCatalog(tx, { businessId: input.businessId, catalog: template.catalog });
+    return business;
+  });
+}
+
+/**
+ * Crea el negocio con su primera sucursal, el horario default (`DEFAULT_LOCATION_HOURS`)
+ * y la plantilla de su rubro (`applyIndustryTemplate`). El slug sale del nombre; si ya
+ * existe, se le suma `-2`, `-3`…
+ */
+export async function createBusiness(executor: Executor, input: NewBusinessInput, steps: ProvisioningSteps): Promise<CreatedBusiness> {
   if (!isValidTimeZone(input.timezone)) throw new Error("createBusiness: zona horaria inválida");
   return withSystem(executor, async (tx) => {
     const base = slugify(input.name);
@@ -101,7 +149,8 @@ export async function createBusiness(executor: Executor, input: NewBusinessInput
     await tx
       .insert(locationHours)
       .values(DEFAULT_LOCATION_HOURS.map((h) => ({ businessId: business.id, locationId: location.id, ...h })));
-    return { business, location };
+    const withTemplate = await applyIndustryTemplate(tx, { businessId: business.id, industry: input.industry }, steps);
+    return { business: withTemplate, location };
   });
 }
 
