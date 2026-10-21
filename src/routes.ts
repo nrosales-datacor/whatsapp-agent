@@ -4,6 +4,7 @@ import { clientsRoutes } from "./modules/clients";
 import { catalogRoutes, isLocationRestrictingServices } from "./modules/catalog";
 import { schedulingRoutes } from "./modules/scheduling";
 import { isLocationAssigned, staffRoutes, teamRoutes, type EnabledModules } from "./modules/team";
+import { countConversationsWaiting, createWhatsAppDeps, whatsappClientEraser, whatsappRoutes, type WhatsAppDeps } from "./modules/whatsapp";
 import type { Executor } from "./platform/db/scope";
 import type { Route } from "./platform/http/routeTypes";
 import { systemRoutes } from "./platform/http/systemRoutes";
@@ -30,6 +31,8 @@ export interface RouteDeps {
   db: Executor;
   /** Módulos del plan de un negocio (provisional hasta I2, ver src/planModules.ts). */
   enabledModules: EnabledModules;
+  /** Dependencias del módulo WhatsApp (Graph, Storage, push…). Default: las reales. */
+  whatsapp?: WhatsAppDeps;
 }
 
 /**
@@ -41,6 +44,7 @@ const isLocationReferenced: LocationReferenceCheck = async (executor, businessId
   (await isLocationAssigned(executor, businessId, locationId)) || (await isLocationRestrictingServices(executor, businessId, locationId));
 
 export function panelRoutes(deps: RouteDeps): Route[] {
+  const whatsapp = deps.whatsapp ?? createWhatsAppDeps(deps.db);
   return [
     ...systemRoutes(),
     // Identidad y equipo: /auth/* y /team/*.
@@ -53,10 +57,13 @@ export function panelRoutes(deps: RouteDeps): Route[] {
     // Superadmin: /admin/*.
     ...adminRoutes(deps),
     // Clientes: /clients/*. Los módulos de afuera del núcleo suman acá sus borradores de
-    // datos personales para la anonimización (WhatsApp en I2).
-    ...clientsRoutes({ db: deps.db, clientErasers: [] }),
+    // datos personales para la anonimización (WhatsApp: conversaciones y mensajes).
+    ...clientsRoutes({ db: deps.db, clientErasers: [whatsappClientEraser] }),
     // Agenda e Inicio básico (I1): /availability, /appointments/*, /clients/:id/appointments
-    // y /home/today.
-    ...schedulingRoutes(deps),
+    // y /home/today (con las conversaciones esperando a una persona, del módulo WhatsApp).
+    ...schedulingRoutes({ db: deps.db, countConversationsWaiting }),
+    // WhatsApp IA (I2): canales, bandeja, resumen, métricas y push (/whatsapp/*, /push/*) y
+    // el alta manual de un número del superadmin (/admin/businesses/:id/whatsapp).
+    ...whatsappRoutes({ db: deps.db, deps: whatsapp }),
   ];
 }
