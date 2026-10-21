@@ -1,0 +1,11 @@
+{
+  "name": "12-asks-location",
+  "description": "Número que atiende todas las sucursales: pregunta en cuál antes de agendar",
+  "channel": "all",
+  "user": "Quiero agendar un masaje relajante para mañana",
+  "expect": {
+    "notTool": "book_appointment",
+    "containsAny": ["escazú", "heredia", "sucursal"],
+    "handoff": false
+  }
+}

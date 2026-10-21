@@ -1,0 +1,11 @@
+{
+  "name": "06-my-appointment",
+  "description": "Se identifica por su WhatsApp: consulta su cita sin pedirle datos",
+  "seedAppointments": [{ "service": "Limpieza facial profunda", "inDays": 2, "time": "09:00" }],
+  "user": "Hola, ¿a qué hora era mi cita?",
+  "expect": {
+    "tool": "get_my_appointments",
+    "containsAny": ["9:00", "9 a", "nueve"],
+    "handoff": false
+  }
+}

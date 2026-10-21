@@ -1,0 +1,10 @@
+{
+  "name": "09-out-of-scope",
+  "description": "Pedido ajeno al negocio: deflección amable, NO pasa a una persona",
+  "user": "Aprovechando, ¿me escribís un poema para el cumpleaños de mi mamá?",
+  "expect": {
+    "outOfScope": true,
+    "handoff": false,
+    "noTools": true
+  }
+}
