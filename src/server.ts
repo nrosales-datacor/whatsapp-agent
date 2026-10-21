@@ -1,7 +1,7 @@
 import "dotenv/config";
 import http from "node:http";
 import type { ProcessRole } from "./app";
-import { registerJobHandlers } from "./jobs";
+import { registerJobHandlers, startModuleSchedulers } from "./jobs";
 import { PRODUCT_NAME } from "./platform/brand";
 import { productionConfigWarnings, productionSecretProblems } from "./platform/config/requiredSecrets";
 import { getDb, startLocalDb } from "./platform/db/client";
@@ -100,6 +100,7 @@ server.listen(PORT, () => {
     loops.push(startMetricsReport(db));
     registerJobHandlers();
     queueWorker = startQueueWorker({ db });
+    loops.push(...startModuleSchedulers(db));
   }
 });
 
