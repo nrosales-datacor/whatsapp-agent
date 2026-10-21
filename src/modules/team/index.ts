@@ -7,7 +7,7 @@ export { isLocationAssigned } from "./members";
 export type { Member, MemberStatus } from "./members";
 export { RESET_PASSWORD_PATH } from "./recovery";
 export { createSessionResolver } from "./session";
-export { listStaffOptions, type StaffOption } from "./staffDirectory";
+export { getStaffIdForUser, listStaffOptions, type StaffOption } from "./staffDirectory";
 export { teamRoutes, type TeamRouteDeps } from "./routes";
 // Profesionales, horarios y ausencias (Configuración > Equipo y API pública de la agenda).
 export { getStaffMember, getStaffWeeklyHours, listStaff, STAFF_COLORS } from "./staff";

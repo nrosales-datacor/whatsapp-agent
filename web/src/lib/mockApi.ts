@@ -1,6 +1,7 @@
-import { settingsMockRoute, settingsOverlay, type MockMemberSeed } from "../modules/settings/settingsMock";
+import { mockAgendaSetup, settingsMockRoute, settingsOverlay, type MockMemberSeed } from "../modules/settings/settingsMock";
 import type { TransportRequest, TransportResponse } from "./api";
-import { routeClientsMock } from "../modules/clients/clientsMock";
+import { mockClientsOf, routeClientsMock } from "../modules/clients/clientsMock";
+import { routeSchedulingMock } from "../modules/scheduling/schedulingMock";
 import type { AdminBusiness, LocationRef, Me, MeBusiness, Role } from "./contract";
 import { readStorage, writeStorage } from "./storage";
 
@@ -278,7 +279,14 @@ function passwordOf(state: MockState, email: string): string {
   return state.overrides[email]?.password ?? MOCK_PASSWORD;
 }
 
-function buildMe(user: MockUser, businessId: string): Me {
+/** Profesional vinculado a la cuenta en ese negocio (Configuración simulada › Equipo), o null. */
+function staffIdOf(state: MockState, user: MockUser, businessId: string): string | null {
+  const setup = mockAgendaSetup(BUSINESSES[businessId], membersOf(state, businessId));
+  const membershipId = setup.members.find((m) => m.email === user.email)?.membershipId;
+  return (membershipId && setup.staff.find((s) => s.membershipId === membershipId)?.id) || null;
+}
+
+function buildMe(user: MockUser, businessId: string, state: MockState): Me {
   const membership = user.memberships.find((m) => m.businessId === businessId) ?? user.memberships[0];
   // Lo que se cambió en Configuración (nombre, terminología, sucursales…) pisa la semilla.
   const base = BUSINESSES[membership.businessId];
@@ -313,6 +321,7 @@ function buildMe(user: MockUser, businessId: string): Me {
       role: m.role,
     })),
     modules: b.modules,
+    staffId: staffIdOf(state, user, membership.businessId),
   };
 }
 
@@ -394,7 +403,26 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
   const path = req.path.split("?")[0];
   const { body } = req;
   const sessionUser = state.sessionEmail ? findUser(state, state.sessionEmail) : null;
-  const sessionMe = () => (sessionUser ? buildMe(sessionUser, state.businessId ?? sessionUser.memberships[0].businessId) : null);
+  const sessionMe = () => (sessionUser ? buildMe(sessionUser, state.businessId ?? sessionUser.memberships[0].businessId, state) : null);
+
+  // Agenda e Inicio (I1): /availability, /appointments*, /clients/:id/appointments y /home/today.
+  if (path === "/availability" || path === "/appointments" || path.startsWith("/appointments/") || path === "/home/today" || /^\/clients\/[^/]+\/appointments$/.test(path)) {
+    const me = sessionMe();
+    if (!me || !sessionUser) return unauthorized();
+    const b = BUSINESSES[me.business.id];
+    const membership = sessionUser.memberships.find((m) => m.businessId === b.id);
+    return (
+      routeSchedulingMock(req, {
+        businessId: b.id,
+        userId: me.user.id,
+        role: me.role,
+        locationIds: membership?.locationIds,
+        staffId: me.staffId ?? null,
+        setup: mockAgendaSetup(b, membersOf(state, b.id)),
+        clients: mockClientsOf(b.id, b.locations),
+      }) ?? fail(404, "not_found", "Ruta inexistente en el mock.")
+    );
+  }
 
   // Clientes (I1): su propio archivo, con la sesión ya resuelta.
   if (path === "/clients" || path.startsWith("/clients/")) {
@@ -458,7 +486,7 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
       state.failedLogins = 0;
       state.sessionEmail = user.email;
       state.businessId = user.memberships[0].businessId;
-      return ok({ status: "ok", me: buildMe(user, state.businessId) });
+      return ok({ status: "ok", me: buildMe(user, state.businessId, state) });
     }
 
     case "POST /auth/logout":
@@ -473,7 +501,7 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
         return fail(403, "business_forbidden", "No tenés acceso a ese negocio.");
       }
       state.businessId = businessId;
-      return ok(buildMe(sessionUser, businessId));
+      return ok(buildMe(sessionUser, businessId, state));
     }
 
     case "POST /auth/password/forgot": {
@@ -565,7 +593,7 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
         state.usedInvitations.push(token);
         state.sessionEmail = user.email;
         state.businessId = invitation.businessId;
-        return ok(buildMe(user, invitation.businessId));
+        return ok(buildMe(user, invitation.businessId, state));
       }
 
       // Cuenta existente: confirma con su clave (y su 2FA). Nunca se le cambia la clave acá.
@@ -586,7 +614,7 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
       state.sessionEmail = existing.email;
       state.businessId = invitation.businessId;
       const user = findUser(state, existing.email);
-      return user ? ok(buildMe(user, invitation.businessId)) : invalidInvitation(400);
+      return user ? ok(buildMe(user, invitation.businessId, state)) : invalidInvitation(400);
     }
 
     // ── Superadmin ──

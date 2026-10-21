@@ -1,6 +1,6 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { withTenant, type Executor } from "../../platform/db/scope";
-import { staff } from "./schema";
+import { memberships, staff } from "./schema";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Directorio mínimo de profesionales para otros módulos (API pública de team): id, nombre
@@ -24,4 +24,21 @@ export function listStaffOptions(db: Executor, businessId: string): Promise<Staf
       .where(eq(staff.businessId, businessId))
       .orderBy(asc(staff.position), asc(staff.name)),
   );
+}
+
+/**
+ * Profesional vinculado a la membresía de este usuario en el negocio (`staff.membership_id`),
+ * o null si no tiene. La agenda lo usa para que el rol `staff` vea y opere solo sus citas
+ * ("Mi agenda"). Incluye profesionales desactivados: siguen siendo dueños de su historial.
+ */
+export async function getStaffIdForUser(db: Executor, businessId: string, userId: string): Promise<string | null> {
+  const [row] = await withTenant(db, businessId, (tx) =>
+    tx
+      .select({ id: staff.id })
+      .from(staff)
+      .innerJoin(memberships, eq(memberships.id, staff.membershipId))
+      .where(and(eq(staff.businessId, businessId), eq(memberships.businessId, businessId), eq(memberships.userId, userId)))
+      .limit(1),
+  );
+  return row?.id ?? null;
 }
