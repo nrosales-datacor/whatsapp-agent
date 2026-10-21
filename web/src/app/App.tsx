@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from "react-router-dom";
+import AdminBusinessPage from "../modules/admin/AdminBusinessPage";
 import AdminHomePage from "../modules/admin/AdminHomePage";
 import AdminLoginPage from "../modules/admin/AdminLoginPage";
 import RequireAdmin from "../modules/admin/RequireAdmin";
@@ -31,7 +32,7 @@ import { PublicOnly, RequireAuth } from "./session";
 //                /change-password (obligatorio con clave temporal)
 //   Panel:       / · /agenda · /clients · /clients/:id · /sales · /reports · /whatsapp
 //                /campaigns · /settings/:page
-//   Superadmin:  /admin/login · /admin
+//   Superadmin:  /admin/login · /admin · /admin/businesses/:id (plan, cobro y pausa)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -60,6 +61,7 @@ export default function App() {
       <Route path="/admin/login" element={<AdminLoginPage />} />
       <Route path="/admin" element={<RequireAdmin />}>
         <Route index element={<AdminHomePage />} />
+        <Route path="businesses/:id" element={<AdminBusinessPage />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />
       </Route>
 
