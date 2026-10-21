@@ -4,6 +4,7 @@ import { HttpError } from "../../platform/http/errors";
 import type { Session } from "../../platform/http/routeTypes";
 import { getBusinessContext, type Branding, type Terminology } from "../business";
 import { activeMemberships, findUserById } from "./identity";
+import { getStaffIdForUser } from "./staffDirectory";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // `me`: lo que el panel necesita para pintarse después del login (quién soy, en qué
@@ -38,14 +39,17 @@ export interface Me {
   /** Negocios activos en los que tiene membresía activa (para el selector de negocio). */
   memberships: Array<{ businessId: string; businessName: string; role: Role }>;
   modules: string[];
+  /** Profesional vinculado a esta cuenta en el negocio (su carril en "Mi agenda"), o null. */
+  staffId: string | null;
 }
 
 export async function buildMe(db: Executor, session: Session, enabledModules: EnabledModules): Promise<Me> {
-  const [user, ctx, others, modules] = await Promise.all([
+  const [user, ctx, others, modules, staffId] = await Promise.all([
     findUserById(db, session.userId),
     getBusinessContext(db, session.businessId),
     activeMemberships(db, session.userId),
     enabledModules(session.businessId),
+    getStaffIdForUser(db, session.businessId, session.userId),
   ]);
   // La sesión se validó recién: si falta algo, la cuenta o el negocio se borraron en el medio.
   if (!user || !ctx) throw new HttpError(401, "Tu sesión no es válida o venció. Iniciá sesión de nuevo.", "unauthorized");
@@ -77,5 +81,6 @@ export async function buildMe(db: Executor, session: Session, enabledModules: En
     allLocations,
     memberships: others.map((m) => ({ businessId: m.businessId, businessName: m.businessName, role: m.role })),
     modules: [...modules],
+    staffId,
   };
 }
