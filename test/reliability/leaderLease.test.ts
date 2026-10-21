@@ -124,6 +124,9 @@ test("startLeaderLoop: con el lease libre, este proceso lo toma y corre el tick"
         db,
         label: "leader-free-test",
         intervalMs: 5,
+        // Lease largo a propósito: con el default (3 × intervalMs = 15 ms) el lease podía
+        // vencer antes del assert de abajo en una máquina cargada (test intermitente).
+        leaseMs: 60_000,
         scalingHint: "",
         onError: () => {},
         tick: async () => {
