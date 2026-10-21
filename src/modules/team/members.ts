@@ -56,6 +56,36 @@ export async function assertLocationsOfBusiness(db: Executor, businessId: string
  * business al borrar una sucursal: si la borrara, ese miembro quedaría sin filas, que
  * significa "todas las sucursales"; en ese caso se desactiva en vez de borrarse.
  */
+/**
+ * Epoch vigente de cada persona de `userIds` que hoy puede entrar al negocio (cuenta
+ * activa y membresía activa en ESE negocio). Las que no, no aparecen. Sirve para
+ * comprobar que algo atado a una sesión (p. ej. una suscripción de notificaciones push)
+ * sigue valiendo: si el epoch cambió (clave, rol o estado), ya no.
+ */
+export async function activeMemberSessionEpochs(
+  executor: Executor,
+  businessId: string,
+  userIds: readonly string[],
+): Promise<Map<string, number>> {
+  const ids = [...new Set(userIds)];
+  if (ids.length === 0) return new Map();
+  const rows = await withTenant(executor, businessId, (tx) =>
+    tx
+      .select({ userId: users.id, sessionEpoch: users.sessionEpoch })
+      .from(memberships)
+      .innerJoin(users, eq(users.id, memberships.userId))
+      .where(
+        and(
+          eq(memberships.businessId, businessId),
+          inArray(memberships.userId, ids),
+          eq(memberships.active, true),
+          eq(users.active, true),
+        ),
+      ),
+  );
+  return new Map(rows.map((r) => [r.userId, r.sessionEpoch]));
+}
+
 export async function isLocationAssigned(executor: Executor, businessId: string, locationId: string): Promise<boolean> {
   const rows = await withTenant(executor, businessId, (tx) =>
     tx
