@@ -24,8 +24,13 @@ export default function SettingsLayout() {
             {pages.map(({ page, access, label }) => (
               <li key={page.slug}>
                 {access === "open" ? (
-                  <NavLink to={`/settings/${page.slug}`} className={({ isActive }) => "settings-link" + (isActive ? " active" : "")}>
+                  <NavLink
+                    to={`/settings/${page.slug}`}
+                    className={({ isActive }) => "settings-link" + (isActive ? " active" : "") + (page.comingSoon ? " locked" : "")}
+                    aria-label={page.comingSoon ? `${label} (próximamente)` : undefined}
+                  >
                     {label}
+                    {page.comingSoon && <Icon id="lock" size={14} />}
                   </NavLink>
                 ) : (
                   <button

@@ -1,0 +1,54 @@
+{
+  "$comment": "Plantilla de rubro (ver src/modules/business/templates.ts). Salón de uñas. Precios en null: los carga el salón.",
+  "industry": "nails",
+  "label": "Uñas",
+  "terminology": {
+    "staffMember": "estilista",
+    "staff": "estilistas"
+  },
+  "clientStatusRules": {
+    "newMaxVisits": 1,
+    "vipMinVisits": 12,
+    "atRiskAfterDays": 45,
+    "inactiveAfterDays": 90
+  },
+  "customFields": [
+    { "entity": "client", "key": "preferred_shape", "label": "Forma preferida", "type": "select", "options": ["Cuadrada", "Redonda", "Almendra", "Stiletto", "Coffin"] },
+    { "entity": "appointment", "key": "design_notes", "label": "Diseño o referencia", "type": "long_text" }
+  ],
+  "catalog": {
+    "categories": [
+      {
+        "name": "Manos",
+        "services": [
+          { "name": "Manicura tradicional", "durationMin": 40, "bufferMin": 5, "priceCents": null },
+          { "name": "Manicura semipermanente", "durationMin": 60, "bufferMin": 5, "priceCents": null },
+          { "name": "Uñas acrílicas (set completo)", "durationMin": 120, "bufferMin": 10, "priceCents": null, "variablePrice": true },
+          { "name": "Relleno de acrílico", "durationMin": 90, "bufferMin": 10, "priceCents": null }
+        ]
+      },
+      {
+        "name": "Pies",
+        "services": [
+          { "name": "Pedicura tradicional", "durationMin": 50, "bufferMin": 5, "priceCents": null },
+          { "name": "Pedicura spa", "durationMin": 60, "bufferMin": 5, "priceCents": null }
+        ]
+      },
+      {
+        "name": "Diseño y extras",
+        "services": [
+          { "name": "Retiro de semipermanente", "durationMin": 20, "bufferMin": 5, "priceCents": null },
+          { "name": "Decoración por uña", "durationMin": 10, "bufferMin": 0, "priceCents": null, "variablePrice": true, "onlineBooking": false }
+        ]
+      }
+    ]
+  },
+  "ai": {
+    "register": "vos",
+    "instructions": "Sos el asistente virtual del salón de uñas por WhatsApp. Respondés con buena onda y en pocas palabras las preguntas sobre servicios, precios, horarios y ubicación, y agendás, reprogramás o cancelás citas con la disponibilidad real de cada estilista. Si la clienta quiere un diseño especial, le pedís una foto de referencia y aclarás que el precio final depende del diseño. Si pide hablar con alguien del salón, pasás la conversación a una persona.",
+    "reminders": {
+      "dayBefore": "¡Hola, {clientName}! Te recordamos tu cita de mañana {date} a las {time} con {staffName} en {businessName} ({locationName}). ¿Nos confirmás? Si necesitás cambiarla, escribinos por acá.",
+      "sameDay": "¡Hola, {clientName}! Hoy a las {time} te esperamos en {businessName} ({locationName}). Si traés referencia del diseño, mejor."
+    }
+  }
+}

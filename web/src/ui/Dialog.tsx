@@ -13,9 +13,11 @@ interface Props {
   title: string;
   children: ReactNode;
   variant?: "center" | "sheet";
+  /** Más ancho (formularios con varias columnas, editor de horario). */
+  wide?: boolean;
 }
 
-export default function Dialog({ open, onClose, title, children, variant = "center" }: Props) {
+export default function Dialog({ open, onClose, title, children, variant = "center", wide = false }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
 
@@ -29,7 +31,7 @@ export default function Dialog({ open, onClose, title, children, variant = "cent
   return (
     <dialog
       ref={ref}
-      className={"dialog" + (variant === "sheet" ? " dialog-sheet" : "")}
+      className={"dialog" + (variant === "sheet" ? " dialog-sheet" : "") + (wide ? " dialog-wide" : "")}
       aria-labelledby={titleId}
       onClose={onClose}
       // Clic en el fondo (fuera de la caja): el target es el propio <dialog>.
