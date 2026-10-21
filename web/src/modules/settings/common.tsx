@@ -1,5 +1,9 @@
 import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
+import { useSession } from "../../app/session";
 import { errorMessage, isApiError } from "../../lib/api";
+import type { PlanResource } from "../../lib/contract";
+import { atLimit, RESOURCE_LABELS, usageText } from "../../lib/plans";
 import Dialog from "../../ui/Dialog";
 import { FormError } from "../../ui/Field";
 import Icon from "../../ui/Icons";
@@ -12,6 +16,31 @@ export function ReadOnlyNotice() {
     <p className="readonly-notice">
       <Icon id="eye" size={16} />
       <span>Estás viendo esta sección en modo lectura: solo el dueño o la administración pueden cambiarla.</span>
+    </p>
+  );
+}
+
+/**
+ * Cupo del plan junto al botón de alta ("2 de 3 profesionales activos de tu plan"). El uso
+ * sale de la lista que ya muestra la página (al día); el tope, de `me.plan`. Sin tope no
+ * muestra nada. Al llegar al tope lo avisa (el backend igual responde 403
+ * `plan_limit_reached` si se intenta).
+ */
+export function PlanQuotaHint({ resource, used }: { resource: PlanResource; used: number }) {
+  const me = useSession();
+  const limit = me.plan.limits[resource];
+  if (limit === null) return null;
+  const [one, many] = RESOURCE_LABELS[resource];
+  const full = atLimit(used, limit);
+  return (
+    <p className={"plan-quota-hint" + (full ? " full" : "")}>
+      {usageText(used, limit)} {limit === 1 ? one : many} de tu plan.
+      {full && (
+        <>
+          {" "}
+          {me.role === "owner" ? <Link to="/settings/plan">Ampliá tu plan</Link> : "Pedile al dueño que amplíe el plan"} para sumar más.
+        </>
+      )}
     </p>
   );
 }

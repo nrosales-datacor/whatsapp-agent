@@ -1,6 +1,6 @@
 import type { TransportRequest, TransportResponse } from "../../lib/api";
 import type { Branding } from "../../lib/branding";
-import { DEFAULT_TERMINOLOGY, type LocationRef, type Role, type Terminology } from "../../lib/contract";
+import { DEFAULT_TERMINOLOGY, type LocationRef, type PlanLimits, type PlanResource, type Role, type Terminology } from "../../lib/contract";
 import { readStorage, writeStorage } from "../../lib/storage";
 import type {
   BusinessSettings,
@@ -21,6 +21,11 @@ import type {
 // negocio que se siembran la primera vez y viven en sessionStorage. La llama
 // lib/mockApi.ts con la sesión simulada; `settingsOverlay` le devuelve lo que cambió del
 // negocio (nombre, terminología, sucursales…) para que `me` lo refleje.
+//
+// Plan (I2): igual que el backend, los cupos de sucursales, profesionales y usuarios
+// activos responden 403 `plan_limit_reached` y la marca propia es solo del Pro, según el
+// `planRules` que trae la semilla del negocio (lo resuelve lib/mockApi.ts con lo que cambie el
+// superadmin simulado).
 //
 // Simplificaciones: no hay historial real (las sucursales y profesionales sembrados se
 // marcan "con historial": eliminarlos los desactiva) y cambiar el rol de un usuario no
@@ -47,6 +52,8 @@ export interface MockBusinessSeed {
   terminology: Partial<Terminology>;
   branding: Branding;
   locations: LocationRef[];
+  /** Límites y funciones del plan efectivo (sin valor = sin topes y con marca propia). */
+  planRules?: { limits: PlanLimits; features: string[] };
 }
 
 export interface MockMemberSeed {
@@ -323,10 +330,29 @@ const badOrder = () => invalid({ "body.ids": "La lista tiene que traer todos los
 
 // ── Rutas ───────────────────────────────────────────────────────────────────
 
-function route(req: TransportRequest, state: State, session: MockSession, b: BizState): TransportResponse | null {
+const RESOURCE_NOUNS: Record<PlanResource, [string, string]> = {
+  locations: ["sucursal activa", "sucursales activas"],
+  staff: ["profesional activo", "profesionales activos"],
+  users: ["usuario", "usuarios"],
+};
+
+/** Mismo 403 que el backend (src/platform/plan/planHooks.ts). */
+function planLimitReached(resource: PlanResource, limit: number): TransportResponse {
+  const [one, many] = RESOURCE_NOUNS[resource];
+  const what = limit === 1 ? `1 ${one}` : `${limit} ${many}`;
+  return fail(403, "plan_limit_reached", `Tu plan incluye hasta ${what} y ya llegaste a ese tope. Para sumar más, ampliá tu plan en Configuración › Plan.`);
+}
+
+function route(req: TransportRequest, state: State, session: MockSession, b: BizState, seed: MockBusinessSeed): TransportResponse | null {
   const path = req.path.split("?")[0];
   const body = asBody(req.body);
   const manager = MANAGERS.includes(session.role);
+  const brandingEditable = seed.planRules ? seed.planRules.features.includes("branding") : true;
+  /** 403 si sumar uno más de `resource` pasa el cupo del plan; null si entra. */
+  const overQuota = (resource: PlanResource, activeNow: number): TransportResponse | null => {
+    const limit = seed.planRules?.limits[resource] ?? null;
+    return limit !== null && activeNow + 1 > limit ? planLimitReached(resource, limit) : null;
+  };
   const write = req.method !== "GET";
   const key = `${req.method} ${path}`;
   const id = (re: RegExp) => re.exec(path)?.[1] ?? null;
@@ -334,13 +360,14 @@ function route(req: TransportRequest, state: State, session: MockSession, b: Biz
 
   if (path.startsWith("/team/")) {
     if (!manager) return forbidden();
-    return teamRoute(req, state, session, b, body);
+    return teamRoute(req, state, session, b, body, overQuota);
   }
   if (write && !manager) return forbidden();
 
   // ── Negocio ──
-  if (key === "GET /settings/business") return ok(settingsView(b, manager));
+  if (key === "GET /settings/business") return ok({ ...settingsView(b, manager), brandingEditable });
   if (key === "PATCH /settings/business") {
+    if (body.branding && !brandingEditable) return fail(403, "module_not_in_plan", "La marca propia es parte del plan Pro.");
     const fields: Record<string, string> = {};
     if (has(body, "name") && !text(body, "name")) fields["body.name"] = "No puede quedar vacío.";
     if (has(body, "currency") && !/^[A-Za-z]{3}$/.test(text(body, "currency"))) fields["body.currency"] = "Moneda inválida (código ISO de 3 letras, ej. CRC).";
@@ -369,7 +396,7 @@ function route(req: TransportRequest, state: State, session: MockSession, b: Biz
       }
     }
     touch();
-    return ok(settingsView(b, manager));
+    return ok({ ...settingsView(b, manager), brandingEditable });
   }
 
   // ── Sucursales ──
@@ -378,6 +405,8 @@ function route(req: TransportRequest, state: State, session: MockSession, b: Biz
   if (key === "POST /settings/locations") {
     if (session.locationIds) return fail(403, "location_forbidden", "No tenés acceso a esta sucursal.");
     if (!text(body, "name")) return invalid({ "body.name": "No puede quedar vacío." });
+    const full = overQuota("locations", b.locations.filter((l) => l.active).length);
+    if (full) return full;
     const location = {
       id: nextId(state),
       name: text(body, "name"),
@@ -412,6 +441,10 @@ function route(req: TransportRequest, state: State, session: MockSession, b: Biz
     if (req.method === "PATCH") {
       if (has(body, "name") && !text(body, "name")) return invalid({ "body.name": "No puede quedar vacío." });
       if (body.active === false && location.active && activeOthers === 0) return last();
+      if (body.active === true && !location.active) {
+        const full = overQuota("locations", activeOthers);
+        if (full) return full;
+      }
       if (has(body, "name")) location.name = text(body, "name");
       if (has(body, "address")) location.address = text(body, "address") || null;
       if (has(body, "phone")) location.phone = text(body, "phone") || null;
@@ -530,6 +563,10 @@ function route(req: TransportRequest, state: State, session: MockSession, b: Biz
   if (key === "POST /settings/staff") {
     if (!text(body, "name")) return invalid({ "body.name": "No puede quedar vacío." });
     if (membershipTaken(body.membershipId)) return takenError();
+    if (body.active !== false) {
+      const full = overQuota("staff", b.staff.filter((x) => x.active).length);
+      if (full) return full;
+    }
     const staffId = nextId(state);
     b.staff.push({
       id: staffId,
@@ -583,6 +620,10 @@ function route(req: TransportRequest, state: State, session: MockSession, b: Biz
     if (req.method === "PATCH") {
       if (has(body, "name") && !text(body, "name")) return invalid({ "body.name": "No puede quedar vacío." });
       if (membershipTaken(body.membershipId, staffId)) return takenError();
+      if (body.active === true && !s.active) {
+        const full = overQuota("staff", b.staff.filter((x) => x.active).length);
+        if (full) return full;
+      }
       for (const k of ["color", "active", "membershipId"] as const) if (has(body, k)) Object.assign(s, { [k]: body[k] });
       if (has(body, "name")) s.name = text(body, "name");
       return ok(staffView(b, staffId));
@@ -642,7 +683,15 @@ function route(req: TransportRequest, state: State, session: MockSession, b: Biz
   return null;
 }
 
-function teamRoute(req: TransportRequest, state: State, session: MockSession, b: BizState, body: Body): TransportResponse | null {
+function teamRoute(
+  req: TransportRequest,
+  state: State,
+  session: MockSession,
+  b: BizState,
+  body: Body,
+  overQuota: (resource: PlanResource, activeNow: number) => TransportResponse | null,
+): TransportResponse | null {
+  const activeMembers = () => b.members.filter((m) => m.active).length;
   const path = req.path.split("?")[0];
   if (req.method === "GET" && path === "/team/members") return ok(b.members);
   if (req.method === "POST" && path === "/team/invitations") {
@@ -653,6 +702,10 @@ function teamRoute(req: TransportRequest, state: State, session: MockSession, b:
     const locationIds = role === "owner" ? [] : ((body.locationIds as string[] | undefined) ?? []);
     const existing = b.members.find((m) => m.email === email);
     if (existing && existing.status !== "invited") return fail(409, "already_member", "Esa persona ya es parte del equipo.");
+    if (!existing?.active) {
+      const full = overQuota("users", activeMembers());
+      if (full) return full;
+    }
     const member: Member = existing
       ? { ...existing, role, locationIds, allLocations: locationIds.length === 0, active: true }
       : {
@@ -684,6 +737,10 @@ function teamRoute(req: TransportRequest, state: State, session: MockSession, b:
     if (member.role === "owner" && member.active && (nextRole !== "owner" || !nextActive) && otherOwners === 0) {
       return fail(409, "last_owner", "Debe quedar al menos un dueño activo en el negocio.");
     }
+    if (nextActive && !member.active) {
+      const full = overQuota("users", activeMembers());
+      if (full) return full;
+    }
     const locationIds = nextRole === "owner" ? [] : ((body.locationIds as string[] | undefined) ?? member.locationIds);
     Object.assign(member, {
       role: nextRole,
@@ -714,7 +771,7 @@ export function settingsMockRoute(
   if (!session || !business) return fail(401, "unauthorized", "Tu sesión no es válida o venció. Iniciá sesión de nuevo.");
   const state = loadState();
   state.businesses[business.id] ??= seedBusiness(state, business, members);
-  const res = route(req, state, session, state.businesses[business.id]) ?? fail(404, "not_found", "Ruta inexistente en el mock.");
+  const res = route(req, state, session, state.businesses[business.id], business) ?? fail(404, "not_found", "Ruta inexistente en el mock.");
   saveState(state);
   return res;
 }
@@ -772,5 +829,16 @@ export function settingsOverlay(businessId: string): {
     locations: byPosition(b.locations)
       .filter((l) => l.active)
       .map((l) => ({ id: l.id, name: l.name })),
+  };
+}
+
+/** Uso del plan según la Configuración simulada (activos), o null si el negocio no se sembró todavía. */
+export function mockPlanUsage(businessId: string): { locations: number; staff: number; users: number } | null {
+  const b = loadState().businesses[businessId];
+  if (!b) return null;
+  return {
+    locations: b.locations.filter((l) => l.active).length,
+    staff: b.staff.filter((s) => s.active).length,
+    users: b.members.filter((m) => m.active).length,
   };
 }
