@@ -1,7 +1,7 @@
 import { and, asc, eq, ne } from "drizzle-orm";
 import { recordAudit } from "../../platform/audit/auditLog";
 import { decrypt, encrypt } from "../../platform/crypto/secrets";
-import { withSystem, withTenant, type Executor } from "../../platform/db/scope";
+import { isTenantId, withSystem, withTenant, type Executor } from "../../platform/db/scope";
 import { HttpError } from "../../platform/http/errors";
 import { alertPlatform, forgetAlert } from "../../platform/observability/alerts";
 import { log } from "../../platform/observability/log";
@@ -163,6 +163,8 @@ const knownTokenState = new Map<string, boolean>();
 
 /** Marca el canal según la última respuesta de Graph (no lanza). */
 export async function recordTokenStatus(db: Executor, channel: { channelId: string; businessId: string }, valid: boolean): Promise<void> {
+  // Llamadas sin canal guardado todavía (el alta por Embedded Signup) no tienen qué marcar.
+  if (!isTenantId(channel.channelId) || !isTenantId(channel.businessId)) return;
   if (knownTokenState.get(channel.channelId) === valid) return;
   knownTokenState.set(channel.channelId, valid);
   try {

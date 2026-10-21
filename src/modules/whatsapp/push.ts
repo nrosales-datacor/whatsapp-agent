@@ -81,7 +81,8 @@ export function webPushTransport(): PushTransport | null {
     configuredVapid = key;
   }
   return async (target, payload) => {
-    await webpush.sendNotification(target, payload, { TTL: 3600 });
+    // Con tope: un servicio de push lento no frena el turno que avisa.
+    await webpush.sendNotification(target, payload, { TTL: 3600, timeout: 10_000 });
   };
 }
 
