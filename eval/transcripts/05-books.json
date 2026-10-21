@@ -1,0 +1,18 @@
+{
+  "name": "05-books",
+  "description": "Cierre del agendado tras confirmar: agenda el servicio y la hora acordados",
+  "history": [
+    { "role": "user", "text": "quiero una limpieza facial profunda para mañana" },
+    { "role": "assistant", "text": "¡Claro! Mañana en Escazú tengo libre a las 9:00, 10:00 y 14:00. ¿Cuál te sirve?" },
+    { "role": "user", "text": "a las 10" },
+    { "role": "assistant", "text": "Perfecto: Limpieza facial profunda mañana a las 10:00 en Escazú. ¿Te la confirmo?" }
+  ],
+  "user": "Sí, confirmado",
+  "expect": {
+    "tool": "book_appointment",
+    "argIncludes": { "tool": "book_appointment", "args": { "service_ids": ["$service:Limpieza facial profunda"], "time": "10:00" } },
+    "action": "appointment_booked",
+    "currentYearDates": true,
+    "handoff": false
+  }
+}

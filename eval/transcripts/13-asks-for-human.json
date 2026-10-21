@@ -1,0 +1,8 @@
+{
+  "name": "13-asks-for-human",
+  "description": "El cliente pide hablar con una persona: pasa la conversación",
+  "user": "Prefiero hablar con una persona del equipo, por favor",
+  "expect": {
+    "handoff": true
+  }
+}

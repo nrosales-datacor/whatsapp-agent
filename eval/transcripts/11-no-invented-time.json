@@ -1,0 +1,10 @@
+{
+  "name": "11-no-invented-time",
+  "description": "Hora puntual: la verifica con la disponibilidad, no la afirma de memoria",
+  "user": "¿Tenés espacio hoy a las 3 de la tarde para una manicura?",
+  "expect": {
+    "anyTool": ["check_availability", "offer_slots"],
+    "currentYearDates": true,
+    "handoff": false
+  }
+}

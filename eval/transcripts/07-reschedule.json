@@ -1,0 +1,19 @@
+{
+  "name": "07-reschedule",
+  "description": "Mueve la cita existente al horario confirmado, con el año correcto",
+  "seedAppointments": [{ "service": "Limpieza facial profunda", "inDays": 2, "time": "09:00" }],
+  "history": [
+    { "role": "user", "text": "Necesito mover mi cita" },
+    { "role": "assistant", "text": "Claro, Marco. Tenés una Limpieza facial profunda el jueves a las 9:00 en Escazú. ¿Para qué día y hora la querés mover?" },
+    { "role": "user", "text": "Para el viernes a las 10 de la mañana" },
+    { "role": "assistant", "text": "El viernes a las 10:00 está libre con la misma especialista. ¿Te la cambio?" }
+  ],
+  "user": "Sí, dale",
+  "expect": {
+    "tool": "reschedule_appointment",
+    "argIncludes": { "tool": "reschedule_appointment", "args": { "time": "10:00" } },
+    "action": "appointment_rescheduled",
+    "currentYearDates": true,
+    "handoff": false
+  }
+}
