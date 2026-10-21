@@ -20,6 +20,7 @@ export {
   type BackoffOptions,
   type JobErrorKind,
 } from "./errors";
+export { hasNewerGroupJob, type NewerGroupJobQuery } from "./groups";
 export { registerJobHandler, type JobContext, type JobHandler, type JobHandlerOptions } from "./handlers";
 // La tabla `jobs` no se exporta: los módulos usan estas funciones, no la leen directo.
 export { JOB_STATUSES, type JobStatus } from "./schema";
