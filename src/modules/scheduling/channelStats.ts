@@ -43,19 +43,22 @@ export async function nextAppointmentsForClients(
 /**
  * Citas CREADAS por un canal en [from, to) (p. ej. las que agendó el agente de WhatsApp),
  * con el desglose por día local de `timeZone` ("AAAA-MM-DD"). Cuentan todas, aunque
- * después se hayan cancelado: mide lo que el canal agendó.
+ * después se hayan cancelado: mide lo que el canal agendó. `locationIds` acota a esas
+ * sucursales (null = todas).
  */
 export async function countBookingsByChannel(
   executor: Executor,
   businessId: string,
-  input: { channel: AppointmentChannel; from: Date; to: Date; timeZone: string },
+  input: { channel: AppointmentChannel; from: Date; to: Date; timeZone: string; locationIds?: readonly string[] | null },
 ): Promise<{ total: number; byDay: { date: string; count: number }[] }> {
+  if (input.locationIds && input.locationIds.length === 0) return { total: 0, byDay: [] };
   return withTenant(executor, businessId, async (tx) => {
     const scope = and(
       eq(appointments.businessId, businessId),
       eq(appointments.channel, input.channel),
       gte(appointments.createdAt, input.from),
       lt(appointments.createdAt, input.to),
+      input.locationIds ? inArray(appointments.locationId, [...input.locationIds]) : undefined,
     );
     const [total] = await tx.select({ n: count() }).from(appointments).where(scope);
     const byDay = rowsOf<{ day: string; n: number | string }>(
