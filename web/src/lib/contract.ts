@@ -76,6 +76,8 @@ export interface Me {
   memberships: Membership[];
   /** Módulos habilitados por el plan (y los extras) del negocio activo. */
   modules: string[];
+  /** Profesional vinculado a esta cuenta (su carril en "Mi agenda"), o null. */
+  staffId?: string | null;
 }
 
 export type LoginResult = { status: "ok"; me: Me } | { status: "totp_required" };
