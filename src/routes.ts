@@ -4,6 +4,7 @@ import { clientsRoutes } from "./modules/clients";
 import { catalogRoutes, isLocationRestrictingServices } from "./modules/catalog";
 import { schedulingRoutes } from "./modules/scheduling";
 import { isLocationAssigned, staffRoutes, teamRoutes, type EnabledModules } from "./modules/team";
+import { settingsRoutes as whatsappSettingsRoutes } from "./modules/whatsapp/settingsRoutes";
 import type { Executor } from "./platform/db/scope";
 import type { Route } from "./platform/http/routeTypes";
 import { systemRoutes } from "./platform/http/systemRoutes";
@@ -58,5 +59,7 @@ export function panelRoutes(deps: RouteDeps): Route[] {
     // Agenda e Inicio básico (I1): /availability, /appointments/*, /clients/:id/appointments
     // y /home/today.
     ...schedulingRoutes(deps),
+    // WhatsApp IA > Configuración del bot (I2): /whatsapp/settings.
+    ...whatsappSettingsRoutes(deps),
   ];
 }
