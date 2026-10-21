@@ -16,7 +16,10 @@ import SalesPage from "../modules/sales/SalesPage";
 import AgendaPage from "../modules/scheduling/AgendaPage";
 import SettingsLayout from "../modules/settings/SettingsLayout";
 import SettingsSubPage from "../modules/settings/SettingsSubPage";
-import WhatsappPage from "../modules/whatsapp/WhatsappPage";
+import AgentSettingsPage from "../modules/whatsapp/AgentSettingsPage";
+import InboxPage from "../modules/whatsapp/InboxPage";
+import MetricsPage from "../modules/whatsapp/MetricsPage";
+import WhatsappLayout from "../modules/whatsapp/WhatsappLayout";
 import AppLayout from "./layout/AppLayout";
 import NotFoundPage from "./NotFoundPage";
 import SectionGate from "./SectionGate";
@@ -29,8 +32,9 @@ import { PublicOnly, RequireAuth } from "./session";
 //   Acceso:      /login · /forgot-password · /reset-password?token= (enlace del correo)
 //                /accept-invitation?token= (enlace del correo; /invite/:token es alias)
 //                /change-password (obligatorio con clave temporal)
-//   Panel:       / · /agenda · /clients · /clients/:id · /sales · /reports · /whatsapp
-//                /campaigns · /settings/:page
+//   Panel:       / · /agenda · /clients · /clients/:id · /sales · /reports · /campaigns
+//                /whatsapp · /whatsapp/conversations/:id · /whatsapp/metrics · /whatsapp/settings
+//                /settings/:page
 //   Superadmin:  /admin/login · /admin
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -118,10 +122,19 @@ export default function App() {
             path="whatsapp"
             element={
               <SectionGate id="whatsapp">
-                <WhatsappPage />
+                <WhatsappLayout />
               </SectionGate>
             }
-          />
+          >
+            {/* Bandeja: la misma pantalla con o sin chat abierto (no se vuelve a montar la lista). */}
+            <Route element={<InboxPage />}>
+              <Route index element={null} />
+              <Route path="conversations/:id" element={null} />
+            </Route>
+            <Route path="metrics" element={<MetricsPage />} />
+            <Route path="settings" element={<AgentSettingsPage />} />
+            <Route path="*" element={<Navigate to="/whatsapp" replace />} />
+          </Route>
           <Route
             path="campaigns"
             element={
