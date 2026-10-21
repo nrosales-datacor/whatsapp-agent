@@ -22,7 +22,7 @@ process.env.PANEL_LOGIN_LOCKOUT_THRESHOLD = "5";
 
 const { createAppHandler } = await import("../../src/app");
 const { createSessionResolver } = await import("../../src/modules/team");
-const { ALL_MODULES } = await import("../../src/planModules");
+const { MODULES: ALL_MODULES } = await import("../../src/modules/billing");
 const { createRouter, route } = await import("../../src/platform/http/router");
 const { decodeBase32, totp, _resetForTests: resetTotpReplay } = await import("../../src/platform/auth/totp");
 const { withTenant } = await import("../../src/platform/db/scope");
@@ -155,6 +155,17 @@ test("login: clave mala, cuenta inexistente, inactiva o sin clave → el MISMO 4
 
 test("login: con la clave correcta pero sin membresía activa en un negocio activo → 403 no_active_business", async () => {
   const biz = await createTestBusiness(db);
+  const user = await createTestUser(db);
+  await addTestMembership(db, { businessId: biz.businessId, userId: user.userId, role: "staff", active: false });
+
+  const res = await browser().post("/api/panel/auth/login", { email: user.email, password: user.password });
+  assert.equal(res.status, 403);
+  assert.equal(res.body.code, "no_active_business");
+  assert.equal(res.setCookies.length, 0);
+});
+
+test("login: si su único negocio está pausado → 403 business_paused (el panel muestra \"Cuenta pausada\")", async () => {
+  const biz = await createTestBusiness(db);
   const paused = await createTestBusiness(db, { status: "paused" });
   const user = await createTestUser(db);
   await addTestMembership(db, { businessId: biz.businessId, userId: user.userId, role: "staff", active: false });
@@ -162,7 +173,7 @@ test("login: con la clave correcta pero sin membresía activa en un negocio acti
 
   const res = await browser().post("/api/panel/auth/login", { email: user.email, password: user.password });
   assert.equal(res.status, 403);
-  assert.equal(res.body.code, "no_active_business");
+  assert.equal(res.body.code, "business_paused");
   assert.equal(res.setCookies.length, 0);
 });
 

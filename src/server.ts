@@ -38,7 +38,7 @@ for (const warning of productionConfigWarnings()) console.warn(`⚠️  ${warnin
 // chequeo de arriba corre antes que cualquier módulo que lea los secretos al importarse
 // (src/jobs.ts trae los módulos del dominio, y con ellos la sesión).
 const { createAppHandler, createWorkerHandler } = await import("./app");
-const { registerJobHandlers, startModuleSchedulers } = await import("./jobs");
+const { createJobGate, registerJobHandlers, startModuleSchedulers } = await import("./jobs");
 
 const PORT = Number(process.env.PORT ?? 3000);
 
@@ -100,7 +100,8 @@ server.listen(PORT, () => {
   if (RUNS_BACKGROUND) {
     loops.push(startMetricsReport(db));
     registerJobHandlers();
-    queueWorker = startQueueWorker({ db });
+    // Un negocio pausado (cobro manual) no procesa trabajo nuevo: la cola lo posterga.
+    queueWorker = startQueueWorker({ db, canRunJob: createJobGate(db) });
     loops.push(...startModuleSchedulers(db));
   }
 });

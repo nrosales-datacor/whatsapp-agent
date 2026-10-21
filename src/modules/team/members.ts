@@ -1,9 +1,10 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, count, eq, inArray } from "drizzle-orm";
 import { isRole, type Role, type SessionClaims } from "../../platform/auth/sessionToken";
 import { recordAudit, userActor } from "../../platform/audit/auditLog";
 import { withTenant, type Executor, type Tx } from "../../platform/db/scope";
 import { HttpError, ValidationError } from "../../platform/http/errors";
 import type { Session } from "../../platform/http/routeTypes";
+import { assertQuota } from "../../platform/plan/planHooks";
 import { getBusinessContext } from "../business";
 import { bumpSessionEpoch } from "./identity";
 import { membershipLocations, memberships, users } from "./schema";
@@ -18,6 +19,9 @@ import { membershipLocations, memberships, users } from "./schema";
 //   • Siempre queda al menos un dueño activo: el negocio no puede quedar sin nadie que
 //     administre el equipo. El chequeo bloquea las filas de los dueños (FOR UPDATE, en
 //     orden de id) para que dos dueños que se bajan a la vez no dejen cero.
+//   • Cupo del plan (`userLimit`): usuarios = membresías ACTIVAS (también las invitaciones
+//     sin aceptar, que ocupan su lugar). Reactivar a alguien pasando el tope → 403
+//     `plan_limit_reached`; invitar se controla en ./invitations.ts.
 //   • Cambiar rol o estado sube el epoch de esa persona: sus sesiones abiertas (en todos
 //     sus negocios: el epoch es de la cuenta) se cierran y vuelve a entrar con lo nuevo.
 //     Las sucursales no lo necesitan: la sesión las lee de la base en cada request.
@@ -129,6 +133,20 @@ export async function readMembers(tx: Tx, businessId: string, membershipIds?: re
     });
 }
 
+/** Membresías activas del negocio (usuarios del plan), contadas con `tx`. */
+export async function countActiveMembersIn(tx: Tx, businessId: string): Promise<number> {
+  const [row] = await tx
+    .select({ n: count() })
+    .from(memberships)
+    .where(and(eq(memberships.businessId, businessId), eq(memberships.active, true)));
+  return Number(row?.n ?? 0);
+}
+
+/** Usuarios activos del negocio (uso del plan). */
+export function countActiveMembers(executor: Executor, businessId: string): Promise<number> {
+  return withTenant(executor, businessId, (tx) => countActiveMembersIn(tx, businessId));
+}
+
 export function listMembers(db: Executor, businessId: string): Promise<Member[]> {
   return withTenant(db, businessId, (tx) => readMembers(tx, businessId));
 }
@@ -147,7 +165,13 @@ export interface MemberUpdate {
 
 const notFound = () => new HttpError(404, "Esa persona no es parte del equipo.", "not_found");
 
-export async function updateMember(db: Executor, session: Session, membershipId: string, patch: MemberPatch): Promise<MemberUpdate> {
+export async function updateMember(
+  db: Executor,
+  session: Session,
+  membershipId: string,
+  patch: MemberPatch,
+  userLimit?: number | null,
+): Promise<MemberUpdate> {
   const { businessId } = session;
   if (patch.locationIds) await assertLocationsOfBusiness(db, businessId, patch.locationIds);
 
@@ -171,6 +195,9 @@ export async function updateMember(db: Executor, session: Session, membershipId:
     const nextActive = patch.active ?? current.active;
     if ((current.role === "owner" || nextRole === "owner") && session.role !== "owner") {
       throw new HttpError(403, "Solo un dueño puede cambiar a otro dueño o nombrar dueños.", "forbidden_role");
+    }
+    if (nextActive && !current.active) {
+      await assertQuota(tx, { businessId, resource: "users", limit: userLimit, count: () => countActiveMembersIn(tx, businessId) });
     }
     const losesOwner = current.role === "owner" && current.active && (nextRole !== "owner" || !nextActive);
     if (losesOwner && !owners.some((o) => o.id !== current.id)) {
