@@ -43,7 +43,7 @@ test("lista: busca sin tildes, pagina con Ver más y abre la ficha", async ({ pa
   await names.first().click();
   await expect(page).toHaveURL(/\/panel\/clients\/[0-9a-f-]{36}$/);
   await expect(heading(page, "Historial de citas", 2)).toBeVisible();
-  await expect(page.getByText("Llega con la Agenda")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Agendar cita" })).toBeVisible();
   await page.getByRole("link", { name: "Volver a Pacientes" }).click();
   await expect(page).toHaveURL(/sort=last_visit/);
 });
