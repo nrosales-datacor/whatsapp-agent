@@ -1,152 +1,186 @@
-# Agente de WhatsApp con IA — soporte + agenda
+# Selyon CRM
 
-> **En reestructura (rama `carril-i`):** este proyecto pasa a ser **Selyon CRM** (nombre provisional), software de
-> gestión para negocios con cita con el agente de WhatsApp como módulo. Plan en [`PLAN-GESTION.md`](PLAN-GESTION.md).
-> Lo que sigue describe la versión congelada (tag `whatsapp-agent-final`) y se reescribe al cerrar I0.
+> **Nombre provisional.** Software de gestión para negocios de servicios con cita (dentistas, estéticas, uñas y
+> similares), multi-sucursal, con un **agente de WhatsApp con IA** como módulo. Está en reestructura (Carril I): el
+> plan, la arquitectura y las fases están en [`PLAN-GESTION.md`](PLAN-GESTION.md) y el estado de cada ítem en
+> [`ROADMAP.md`](ROADMAP.md). La versión anterior (agente de WhatsApp para lavacar) quedó en el tag
+> `whatsapp-agent-final`.
 
-Proyecto **individual y ejecutable**: un agente de atención por WhatsApp para un
-lavacar (o cualquier negocio de servicios), potenciado con IA. Responde dudas de
-precios/horarios/servicios y agenda pulidos. Tenant cargado: **Lavacar Rosales**.
+**Stack:** TypeScript · Node 24 (`node:http`, sin framework) · Postgres (Supabase en producción, PGlite en desarrollo y
+tests) · Drizzle · Zod · React 19 + Vite + TanStack Query (PWA) · OpenAI · WhatsApp Cloud API.
 
-Cumple la política de Meta: es un agente de **soporte acotado**, no un asistente
-general. Si le piden algo fuera de alcance, redirige con amabilidad.
+---
 
-## Documentación del proyecto
+## Entorno de prueba local
 
-- **`ROADMAP.md`** — fuente de verdad del plan de arquitectura/producto y qué está ✅/🔵/⬜. Empezá acá.
-- **`CLAUDE.md`** — convenciones del repo y política de dependencias.
-- **`DEPLOY.md`** — cómo desplegar/operar el droplet. **`TESTING.md`** — estrategia y estado de pruebas.
-- **`GUIA-META.md`** — trámites pendientes con Meta (plantillas, Embedded Signup).
-- **`PLAN-FEATURES-FALTANTES.md`** — plan comercial vigente (Carril D: planes Básico/Pro).
-- **`PLAN-ESCALA-MULTITENANT.md`** — plan de escala vigente (Carril F: aislamiento, capacidad y costo para llegar a 50 negocios).
-- **`AUDIT.md`** — auditoría de sale-readiness (2026-07-27); origen del Carril E y de varios ítems del F.
-- **`PLAN-PREVENTA.md`** — checklist de preparación pre-venta (parcialmente desactualizado, ver nota al inicio del archivo).
-- **`PROCESO-COBRO-MANUAL.md`** — proceso operativo de cobro mientras no hay Stripe.
-- **`docs/FUNCIONALIDADES.md`** — resumen de funcionalidades con capturas (cara comercial del producto).
-- **`docs/archivo/`** — planes de ejecución ya completados (quedan como bitácora histórica; el
-  estado vigente de cada ítem vive en `ROADMAP.md`, no en estos archivos).
+### 1. Requisitos e instalación
 
-## Cómo correrlo (rápido, sin base de datos)
+- Node 24 (`.nvmrc`) y Git.
 
-1. Instalá dependencias:
-   ```
-   npm install
-   ```
-2. Copiá `.env.example` a `.env` y llená:
-   - `OPENAI_API_KEY` (tu llave de OpenAI)
-   - las credenciales del **número de prueba** de Meta (`WHATSAPP_*`)
-3. Levantá el servidor:
-   ```
-   npm run dev
-   ```
-   Vas a ver: `Agente escuchando en http://localhost:3000` y el webhook en `/webhook`.
-4. Exponé el `localhost` con un túnel para que Meta lo alcance:
-   ```
-   npx ngrok http 3000
-   ```
-5. En el panel de Meta, configurá el webhook con la URL de ngrok + `/webhook` y tu
-   `WHATSAPP_VERIFY_TOKEN`. Escribile al número de prueba desde tu WhatsApp. ✅
-
-> Sin `DATABASE_URL` (solo en desarrollo), el server levanta un **Postgres local en el mismo
-> proceso** (PGlite) con las migraciones reales: mismo SQL que producción, sin instalar nada.
-> Por default vive en memoria (se borra al reiniciar); con `PGLITE_DIR=.pglite` persiste.
-> En producción `DATABASE_URL` es obligatoria.
-
-## Cómo funciona
-
-```
-WhatsApp → POST al webhook (src/server.ts)
-             │  valida la firma, responde 200 rápido
-             ▼
-        handleWebhook.ts ── rutea por número, opt-in, escotilla a humano
-             ▼
-        runAgent.ts ──▶ OpenAI (gpt-4o-mini) + herramientas
-             │              ├─ consultar_disponibilidad (pulidos)
-             │              └─ agendar_cita (pulidos) ──▶ Google Calendar (opcional)
-             ▼
-        Repositorio (PostgreSQL/Drizzle; PGlite en desarrollo)
-             ▲
-        reminders/scheduler.ts ── recordatorios por WhatsApp (día antes + mismo día)
+```bash
+npm ci
 ```
 
-Regla de negocio: los **lavados son por orden de llegada** (sin cita); solo los
-**pulidos se agendan**.
+```bash
+npm --prefix web ci
+```
 
-## Mapa de archivos
+### 2. Configuración (`.env`)
 
-| Archivo | Qué hace |
+Copiá `.env.example` a `.env`. **Sin `DATABASE_URL` la app usa un Postgres dentro del proceso (PGlite)**: no hace falta
+instalar Postgres. Para que los datos sobrevivan entre arranques y que el seed y el servidor compartan la base, dejá
+en el `.env`:
+
+```dotenv
+PGLITE_DIR=.pglite
+# Sesiones estables entre reinicios (sin esto, cada arranque invalida las sesiones):
+PANEL_SESSION_SECRET=una-cadena-larga-al-azar-de-al-menos-32-caracteres
+# Necesaria para activar 2FA en local (64 caracteres hex):
+TOKENS_ENCRYPTION_KEY=
+```
+
+Para generar la clave de cifrado:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+### 3. Datos demo
+
+Crea (o recrea) un negocio de estética con 2 sucursales, profesionales con horario, servicios de la plantilla del
+rubro, clientes y citas de esta semana:
+
+```bash
+npm run seed:dev
+```
+
+### 4. Levantar la app
+
+Backend (API, landing y panel compilado) en `http://localhost:3000`, con recarga al guardar:
+
+```bash
+npm run dev
+```
+
+El panel en `http://localhost:3000/panel/` es el compilado: para verlo ahí, compilalo antes con
+`npm --prefix web run build`. Para trabajar en el panel conviene el modo desarrollo de abajo.
+
+Panel en modo desarrollo en `http://localhost:5173/panel/` (recarga en caliente; las llamadas a `/api` van al backend
+del puerto 3000, así que tiene que estar corriendo):
+
+```bash
+npm run web:dev
+```
+
+**Panel sin backend (modo mock):** API simulada en el navegador, ideal para revisar pantallas. Abre en
+`http://localhost:5173/panel/`:
+
+```bash
+npm --prefix web run dev:mock
+```
+
+### 5. Usuarios de prueba
+
+**Contra el backend real** (después de `npm run seed:dev`), en `http://localhost:5173/panel/login` o
+`http://localhost:3000/panel/login`:
+
+| Usuario | Clave | Rol |
+|---|---|---|
+| `owner@demo-estetica.test` | `demo1234` | Dueña (ve todo) |
+| `recepcion@demo-estetica.test` | `demo1234` | Recepción, solo sucursal Escazú |
+| `ana@demo-estetica.test` | `demo1234` | Especialista: solo su agenda |
+
+**En modo mock** (`dev:mock`), todas con clave `demo1234`; el código de 2FA es `123456`:
+
+| Usuario | Para probar |
 |---|---|
-| `src/server.ts` | Servidor HTTP. El punto de entrada (`npm run dev`). |
-| `src/handleWebhook.ts` | Orquestador: ruteo, opt-in, agente, envío, monitoreo. |
-| `src/config/tenants.ts` | Datos del negocio (Lavacar Rosales ya cargado). **Editá acá.** |
-| `src/agent/systemPrompt.ts` | Prompt acotado (cumplimiento Meta). |
-| `src/agent/tools.ts` | Herramientas (consultar disponibilidad, agendar). |
-| `src/agent/runAgent.ts` | Loop con OpenAI + candado de agendado. |
-| `src/booking/availability.ts` | Cálculo de espacios libres. |
-| `src/booking/drizzleRepository.ts` | Acceso a datos (PostgreSQL), cada operación acotada al negocio. |
-| `src/db/schema.ts` · `src/db/client.ts` | Tablas (con políticas RLS) y cliente de base de datos (PGlite en desarrollo). |
-| `src/db/alcance.ts` | `conTenant` / `conSistema`: el alcance de cada transacción (RLS, ROADMAP F1). |
-| `src/panel/router.ts` · `src/panel/rutas/*` | API del panel: orquestador y un módulo por recurso. |
-| `src/whatsapp/client.ts` | Verificación, firma, parseo y envío a Meta (texto y plantillas). |
-| `src/calendar/googleCalendar.ts` | Crea el evento de cada cita en Google Calendar. |
-| `src/reminders/scheduler.ts` | Recordatorios por WhatsApp: día antes y mismo día. |
+| `duena@demo.test` | Dueña, plan Pro, 2 sucursales y 2 negocios |
+| `basico@demo.test` | Plan Básico (Ventas, Reportes y Campañas con candado) |
+| `sinagente@demo.test` | Pro sin agente (sin WhatsApp IA) |
+| `recepcion@demo.test` | Recepción, fija a una sucursal |
+| `profesional@demo.test` | Profesional (Mi agenda) |
+| `2fa@demo.test` | Dueña con 2FA |
+| `temporal@demo.test` | Clave temporal (cambio obligatorio) |
+| `sinnegocio@demo.test` | Cuenta sin negocio activo (no entra) |
 
-## Google Calendar (opcional)
+Otros atajos del mock: invitación nueva en `/panel/accept-invitation?token=demo`, invitación a una cuenta existente con
+`?token=cuenta-existente`, link de recuperación vencido con `/panel/reset-password?token=vencido`, y superadmin en
+`/panel/admin/login` con usuario `admin` / `demo1234`.
 
-Cada cita agendada se crea como evento en el calendario del negocio, con el
-**nombre y teléfono del cliente**, el servicio y la placa, más alertas para el
-negocio (1 día antes y 2 h antes).
+**Superadmin contra el backend real** (alta de negocios): poné en el `.env` `PANEL_SUPERADMIN_USERNAME` y
+`PANEL_SUPERADMIN_HASH` con el hash que imprime este comando, y entrá en `/panel/admin/login`:
 
-Setup (una vez, ~10 min):
+```bash
+npx tsx scripts/hashPassword.ts "tu-clave"
+```
 
-1. En [Google Cloud Console](https://console.cloud.google.com): creá un proyecto
-   y habilitá la **Google Calendar API**.
-2. Creá una **Service Account** (IAM y administración → Cuentas de servicio) y
-   descargá su llave JSON.
-3. En el Google Calendar del negocio → Configuración → *Compartir con
-   determinadas personas* → agregá el email de la service account con permiso
-   **"Hacer cambios en eventos"**.
-4. En `.env` llená `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY` (la
-   `private_key` del JSON, en una línea con `\n`) y `GOOGLE_CALENDAR_ID` (el ID
-   del calendario; para el principal es el propio gmail).
+> En local el correo usa el proveedor `log`: los correos (invitaciones, recuperación, recordatorios) no salen ni se
+> muestran con su link. Para probar esos flujos de punta a punta están los tests.
 
-Si las variables no están, la integración queda apagada y todo lo demás funciona.
+### 6. Tests y chequeos
 
-## Recordatorios de cita (automáticos)
+Backend completo (unitarios, seguridad, confiabilidad y arquitectura, sobre PGlite):
 
-El servidor revisa las citas cada 5 min y envía por WhatsApp:
+```bash
+npm test
+```
 
-- **Día antes**: a partir de las 17:00 del día anterior (`RECORDATORIO_DIA_ANTES_HORA`).
-- **Mismo día**: 2 horas antes de la cita (`RECORDATORIO_HORAS_ANTES`), nunca antes de las 6 am.
+E2E del panel con Playwright (compila el panel; la primera vez instalá el navegador con
+`npx playwright install chromium`):
 
-Cada envío queda marcado en la cita para no duplicarse. Si el servidor estaba
-apagado a la hora del envío, lo manda al arrancar (si todavía tiene sentido).
+```bash
+npm run test:e2e
+```
 
-> ⚠️ **Ventana de 24 h de Meta**: fuera de las 24 h del último mensaje del
-> cliente, WhatsApp solo acepta **plantillas aprobadas**. Para producción, creá
-> en el WhatsApp Manager una plantilla (categoría *Utility*) con 3 variables —
-> `{{1}}` nombre, `{{2}}` servicio, `{{3}}` cuándo — y poné su nombre en
-> `WHATSAPP_TEMPLATE_RECORDATORIO`. Ejemplo de cuerpo:
-> *"¡Hola {{1}}! Te recordamos tu cita en Lavacar Rosales {{3}}: {{2}}. Si
-> necesitás reprogramar, escribinos por acá. ¡Te esperamos!"*
-> Sin plantilla configurada se intenta texto libre, que sirve para probar con
-> el número de prueba de Meta.
+Solo el E2E del panel en modo mock:
 
-## Usar base de datos (opcional, para producción)
+```bash
+npx playwright test --project panel-mock
+```
 
-1. Poné tu `DATABASE_URL` en `.env` (PostgreSQL).
-2. Creá las tablas:
-   ```
-   npm run db:generate
-   npm run db:migrate
-   ```
-3. Reiniciá: al detectar `DATABASE_URL`, el agente guarda en PostgreSQL solo.
+Chequeos que corre el CI:
 
-## Notas de seguridad
+```bash
+npm run typecheck
+```
 
-- `drizzle-orm` fijado en `^0.45.2` (cierra el CVE-2026-39356).
-- `openai` 6.x; los mensajes pasan por su API (no se usan para entrenar por
-  defecto, retención de 30 días). Valorar Zero Data Retention si se requiere.
-- El `.env` con secretos **no se sube al repo** (está en `.gitignore`).
-- Confirmá la versión vigente del Graph API (`GRAPH_API_VERSION`) y el costo por
-  mensaje de Meta antes de producción.
+```bash
+npm --prefix web run typecheck
+```
+
+```bash
+npm run db:check
+```
+
+```bash
+npm run ci:env
+```
+
+```bash
+npm run ci:versions
+```
+
+---
+
+## Estructura
+
+```
+src/
+  platform/   base técnica: http (router declarativo), db (RLS), cola, red, observabilidad, correo, auth
+  modules/    un módulo por dominio: business, team, catalog, clients, scheduling, sales,
+              commissions, reports, whatsapp, campaigns, billing
+  admin/      superadmin
+  routes.ts   composición de la API (/api/panel/*)
+  jobs.ts     composición de la cola y los loops de fondo
+web/src/      panel React: app (rutas, layout, sesión), modules (secciones), ui, lib
+drizzle/      migraciones
+legacy/       código del agente viejo, fuera del build, solo como referencia (se borra al cerrar I2)
+```
+
+## Documentación
+
+- [`PLAN-GESTION.md`](PLAN-GESTION.md): plan de la reestructura (arquitectura, modelo de datos, planes, fases).
+- [`ROADMAP.md`](ROADMAP.md): estado de cada ítem.
+- [`CLAUDE.md`](CLAUDE.md): convenciones del repo (identificadores en inglés, flujo con PRs, política de dependencias).
+- `DEPLOY.md` y `TESTING.md`: todavía describen la versión anterior; se actualizan antes del primer despliegue de
+  Selyon CRM.
