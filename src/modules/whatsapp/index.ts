@@ -12,6 +12,7 @@
 //   • `isWhatsAppConnected` y `queueWhatsAppReminder` → inyección en `handleReminderJob`.
 export type { AgentAction, AgentHistoryMessage, AgentReply, AgentRunner, AgentTurnInput, AgentTurnResult } from "./agentContract";
 export { channelForLocation, isWhatsAppConnected, listChannels, type ChannelView, type TokenStatus } from "./channels";
+export { createAgentRunner, type AgentRunnerDeps } from "./agent";
 export { createWhatsAppDeps, handoffAgentRunner, loadTextProfile, type WhatsAppDeps } from "./deps";
 export { WHATSAPP_MEDIA_ERASE_JOB, whatsappClientEraser } from "./eraser";
 export {
@@ -32,6 +33,8 @@ export type { AudioTranscriber, MediaStorage } from "./media";
 export type { PushTransport } from "./push";
 export { queueWhatsAppReminder, WHATSAPP_REMINDER_JOB } from "./reminders";
 export { whatsappRoutes, type WhatsAppRouteDeps } from "./routes";
+export { getAiSettings, updateAiSettings } from "./settings";
+export { settingsRoutes as whatsappSettingsRoutes } from "./settingsRoutes";
 export { PIPELINE_TEXT_KEYS, pipelineText, registerFor, type PipelineTextKey, type TextProfile } from "./texts";
 export { createWhatsAppWebhookHandler, WHATSAPP_WEBHOOK_PATH } from "./webhook";
 export type {

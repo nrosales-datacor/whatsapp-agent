@@ -4,8 +4,14 @@ import { clientsRoutes } from "./modules/clients";
 import { catalogRoutes, isLocationRestrictingServices } from "./modules/catalog";
 import { schedulingRoutes } from "./modules/scheduling";
 import { isLocationAssigned, staffRoutes, teamRoutes, type EnabledModules } from "./modules/team";
-import { countConversationsWaiting, createWhatsAppDeps, whatsappClientEraser, whatsappRoutes, type WhatsAppDeps } from "./modules/whatsapp";
-import { settingsRoutes as whatsappSettingsRoutes } from "./modules/whatsapp/settingsRoutes";
+import {
+  countConversationsWaiting,
+  createWhatsAppDeps,
+  whatsappClientEraser,
+  whatsappRoutes,
+  whatsappSettingsRoutes,
+  type WhatsAppDeps,
+} from "./modules/whatsapp";
 import type { Executor } from "./platform/db/scope";
 import type { Route } from "./platform/http/routeTypes";
 import { systemRoutes } from "./platform/http/systemRoutes";
