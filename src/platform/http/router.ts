@@ -47,7 +47,7 @@ import { validateInput, type InputSource } from "./validation";
 // datos; si escribe la respuesta él mismo (descarga, stream), el router no la toca.
 //
 // Sesión, superadmin y planes son INYECTABLES (la identidad real vive en
-// src/modules/team y src/admin, y la arma src/app.ts; los planes llegan en I2). Defaults
+// src/modules/team y src/admin, los planes en src/modules/billing, y los arma src/app.ts). Defaults
 // seguros: sin resolver configurado toda ruta `user` o
 // `superadmin` responde 401, y sin `moduleGate` toda ruta con `module` responde 403.
 //
