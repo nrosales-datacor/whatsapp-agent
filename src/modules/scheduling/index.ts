@@ -27,6 +27,7 @@ export type {
 } from "./appointments";
 export { bookingMinLeadMin, DEFAULT_SLOT_INTERVAL_MIN, findSlots, MAX_SERVICES_PER_APPOINTMENT } from "./availability";
 export type { FindSlotsInput, Slot, SlotStaff } from "./availability";
+export { getHomeToday, type HomeToday } from "./home";
 export {
   handleReminderJob,
   REMINDER_SEND_JOB,
@@ -36,6 +37,7 @@ export {
   type ReminderJobPayload,
   type ReminderOutcome,
 } from "./reminders";
+export { schedulingRoutes, type SchedulingRouteDeps } from "./routes";
 export type {
   Appointment,
   AppointmentChannel,
