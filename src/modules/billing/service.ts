@@ -135,6 +135,10 @@ export function createPlanService(db: Executor, options: PlanServiceOptions = {}
       return (await resolve(businessId))?.features.includes(feature) ?? false;
     },
 
+    async clientsTier(businessId: string) {
+      return (await resolve(businessId))?.clientsTier ?? "basic";
+    },
+
     async getPlanLimits(businessId) {
       const entitlements = await resolve(businessId);
       return entitlements ? { ...entitlements.limits } : null;
