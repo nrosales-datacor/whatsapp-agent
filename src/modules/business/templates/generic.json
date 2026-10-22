@@ -4,8 +4,9 @@
   "label": "Otro rubro",
   "terminology": {},
   "clientStatusRules": {
-    "newMaxVisits": 1,
+    "newDays": 30,
     "vipMinVisits": 10,
+    "atRiskMode": "fixed",
     "atRiskAfterDays": 60,
     "inactiveAfterDays": 120
   },

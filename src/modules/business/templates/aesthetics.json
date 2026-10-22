@@ -7,10 +7,12 @@
     "staff": "especialistas"
   },
   "clientStatusRules": {
-    "newMaxVisits": 1,
+    "newDays": 45,
     "vipMinVisits": 10,
+    "atRiskMode": "frequency",
     "atRiskAfterDays": 60,
-    "inactiveAfterDays": 120
+    "atRiskFrequencyFactor": 2,
+    "inactiveAfterDays": 150
   },
   "customFields": [
     { "entity": "client", "key": "skin_type", "label": "Tipo de piel", "type": "select", "options": ["Seca", "Grasa", "Mixta", "Normal", "Sensible"] },
