@@ -1,9 +1,9 @@
 import { adminRoutes } from "./admin/routes";
 import type { PlanService } from "./modules/billing";
-import { businessRoutes, type LocationReferenceCheck } from "./modules/business";
+import { businessRoutes, clientSettingsRoutes, type LocationReferenceCheck } from "./modules/business";
 import { clientsRoutes } from "./modules/clients";
 import { catalogRoutes, isLocationRestrictingServices } from "./modules/catalog";
-import { schedulingRoutes } from "./modules/scheduling";
+import { clientIdsWithStaffAppointments, schedulingRoutes } from "./modules/scheduling";
 import { isLocationAssigned, staffRoutes, teamRoutes } from "./modules/team";
 import {
   countConversationsWaiting,
@@ -63,16 +63,24 @@ export function panelRoutes(deps: RouteDeps): Route[] {
     // Configuración (I1): /settings/business, /settings/locations, /settings/services,
     // /settings/service-categories, /settings/staff y /settings/time-off.
     ...businessRoutes({ db: deps.db, isLocationReferenced, plans: deps.plans }),
+    // Configuración del CRM de clientes (I3, Pro): /settings/client-rules y /settings/custom-fields.
+    ...clientSettingsRoutes({ db: deps.db, plans: deps.plans }),
     ...catalogRoutes(deps),
     ...staffRoutes(deps),
     // Superadmin: /admin/*.
     ...adminRoutes(deps),
     // Clientes: /clients/*. Los módulos de afuera del núcleo suman acá sus borradores de
-    // datos personales para la anonimización (WhatsApp: conversaciones y mensajes).
-    ...clientsRoutes({ db: deps.db, clientErasers: [whatsappClientEraser] }),
+    // datos personales para la anonimización (WhatsApp: conversaciones y mensajes). "Mis
+    // clientes" del profesional: la subconsulta de sus citas la arma scheduling.
+    ...clientsRoutes({
+      db: deps.db,
+      plans: deps.plans,
+      clientErasers: [whatsappClientEraser],
+      staffClients: clientIdsWithStaffAppointments,
+    }),
     // Agenda e Inicio básico (I1): /availability, /appointments/*, /clients/:id/appointments
     // y /home/today (con las conversaciones esperando a una persona, del módulo WhatsApp).
-    ...schedulingRoutes({ db: deps.db, countConversationsWaiting }),
+    ...schedulingRoutes({ db: deps.db, countConversationsWaiting, plans: deps.plans }),
     // WhatsApp IA (I2): canales, bandeja, resumen, métricas y push (/whatsapp/*, /push/*) y
     // el alta manual de un número del superadmin (/admin/businesses/:id/whatsapp).
     ...whatsappRoutes({ db: deps.db, deps: whatsapp }),

@@ -147,9 +147,13 @@ test("alta y ficha: teléfono E.164 con el país del negocio, correo validado, e
   assert.equal(created.visitCount, 0);
   assert.equal(created.anonymized, false);
   assert.equal("businessId" in created, false, "la vista no expone columnas internas");
-  assert.equal("customData" in created, false);
+  assert.deepEqual(created.customData, {});
+  assert.equal(created.anonymizedAt, null);
+  // Negocio Pro (CRM completo): la ficha trae el estado calculado.
+  assert.equal(created.status, "new");
+  assert.equal(created.isVip, false);
 
-  const detail = await t.staffMember.get(`/api/panel/clients/${created.id}`);
+  const detail = await t.frontDesk.get(`/api/panel/clients/${created.id}`);
   assert.equal(detail.status, 200);
   assert.deepEqual(detail.body.data, { ...created, guardian: null, dependents: [] });
 
@@ -220,7 +224,7 @@ test("búsqueda: nombre sin tildes ni mayúsculas, varias palabras, dígitos del
   await createClientVia(t.owner, { name: "Ana 100% Real_", phone: "6000-0000" });
 
   const search = async (q: string) => {
-    const res = await t.staffMember.get(`/api/panel/clients?q=${encodeURIComponent(q)}`);
+    const res = await t.frontDesk.get(`/api/panel/clients?q=${encodeURIComponent(q)}`);
     assert.equal(res.status, 200, JSON.stringify(res.body));
     return res.body.data.items.map((c: { name: string }) => c.name).sort((x: string, y: string) => x.localeCompare(y, "es"));
   };
@@ -272,15 +276,17 @@ test("paginación por cursor: por nombre (sin tildes) y por última visita, sin 
 
 // ─── Permisos ───────────────────────────────────────────────────────────────
 
-test("permisos: todos leen; owner, admin y front_desk crean y editan; staff no; solo owner anonimiza", async () => {
+test("permisos: todos leen (el profesional, solo sus clientes); owner, admin y front_desk crean y editan; staff no; solo owner anonimiza", async () => {
   const t = await createTeam();
   const c = await createClientVia(t.owner, { name: "Valeria Solís", phone: "8888-3333" });
 
   for (const b of [t.owner, t.admin, t.frontDesk, t.staffMember]) {
     assert.equal((await b.get("/api/panel/clients")).status, 200);
-    assert.equal((await b.get(`/api/panel/clients/${c.id}`)).status, 200);
     assert.equal((await b.get("/api/panel/clients/form-options")).status, 200);
   }
+  for (const b of [t.owner, t.admin, t.frontDesk]) assert.equal((await b.get(`/api/panel/clients/${c.id}`)).status, 200);
+  // El profesional solo ve "Mis clientes" (con citas suyas): este no lo es (test/security/crmClients.test.ts).
+  assert.equal((await t.staffMember.get(`/api/panel/clients/${c.id}`)).status, 404);
   for (const b of [t.admin, t.frontDesk]) {
     assert.equal((await b.patch(`/api/panel/clients/${c.id}`, { notes: "ok" })).status, 200);
     assert.equal((await b.post("/api/panel/clients", { name: `Nuevo ${randomUUID().slice(0, 4)}` })).status, 201);
@@ -423,8 +429,10 @@ test("anonimizar: confirmación con el teléfono, no quedan datos personales, el
   }
   assert.deepEqual(row.tags, []);
   assert.equal(row.vip, false);
-  assert.deepEqual(Object.keys(row.customData), ["$anonymizedAt"], "los campos personalizados se borran (queda solo la marca)");
-  const { id: _id, businessId: _biz, createdAt: _c, updatedAt: _u, ...rest } = row;
+  assert.deepEqual(row.customData, {}, "los campos personalizados se borran");
+  assert.ok(row.anonymizedAt instanceof Date, "la marca vive en anonymized_at");
+  assert.equal(d.anonymizedAt, row.anonymizedAt.toISOString());
+  const { id: _id, businessId: _biz, createdAt: _c, updatedAt: _u, anonymizedAt: _a, ...rest } = row;
   const rowText = JSON.stringify(rest);
   for (const pii of ["Gabriela", "+50688885555", "gabriela@example.com", "1985-01-02", "látex", "VIP", "Referido"]) {
     assert.equal(rowText.includes(pii), false, `queda "${pii}" en la fila: ${rowText}`);
