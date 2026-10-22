@@ -270,6 +270,21 @@ function seed(state: State, session: MockSchedulingSession): Stored[] {
   return out;
 }
 
+/**
+ * Clientes con citas del profesional de la sesión (pasadas o futuras, sin las canceladas):
+ * "Mis clientes" del rol staff en la Clientes simulada. Siembra la agenda si hace falta.
+ */
+export function mockClientIdsForStaff(session: MockSchedulingSession): string[] {
+  if (!session.staffId) return [];
+  const state = loadState();
+  if (!state.businesses[session.businessId]) {
+    state.businesses[session.businessId] = seed(state, session);
+    saveState(state);
+  }
+  const ids = state.businesses[session.businessId].filter((a) => a.staffId === session.staffId && a.status !== "cancelled").map((a) => a.clientId);
+  return [...new Set(ids)];
+}
+
 // ── Rutas ───────────────────────────────────────────────────────────────────
 
 /** Rutas de la Agenda y del Inicio del mock; null si la ruta no es suya. */

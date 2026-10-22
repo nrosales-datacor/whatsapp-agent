@@ -23,8 +23,10 @@ interface Gate {
   roles: readonly Role[];
   /** Módulo del plan que hace falta, según el rol. Sin módulo = núcleo, siempre incluido. */
   module?: (role: Role) => string | undefined;
-  /** Solo en el plan Pro, aunque no tenga un módulo propio (p. ej. campos personalizados). */
+  /** Solo en el plan Pro, aunque no tenga un módulo propio. */
   proOnly?: boolean;
+  /** Solo con el CRM completo de clientes (`me.plan.clientsTier = full`, plan Pro). */
+  crm?: boolean;
   /** Si el plan Básico no trae el módulo: candado (true) u oculto (false). */
   upsell?: boolean;
 }
@@ -169,7 +171,8 @@ export function getSection(id: SectionId): SectionDef {
 export function accessFor(me: Me, gate: Gate): Access {
   if (!gate.roles.includes(me.role)) return "hidden";
   const required = gate.module?.(me.role);
-  const inPlan = (!required || me.modules.includes(required)) && (!gate.proOnly || me.business.plan === "pro");
+  const inPlan =
+    (!required || me.modules.includes(required)) && (!gate.proOnly || me.business.plan === "pro") && (!gate.crm || me.plan.clientsTier === "full");
   if (inPlan) return "open";
   return gate.upsell && me.business.plan !== "pro" ? "locked" : "hidden";
 }
@@ -236,11 +239,19 @@ export const SETTINGS_PAGES: readonly SettingsPageDef[] = [
   {
     slug: "custom-fields",
     roles: MANAGERS,
-    proOnly: true,
+    crm: true,
     upsell: true,
-    comingSoon: true,
     label: () => "Campos personalizados",
     description: (t) => `Datos extra para la ficha de cada ${t.client} y para cada ${t.appointment}.`,
+  },
+  {
+    slug: "client-rules",
+    roles: MANAGERS,
+    crm: true,
+    upsell: true,
+    label: (t) => `Reglas de ${t.clients}`,
+    description: (t) =>
+      `Cuándo un ${t.client} es nuevo, VIP, está en riesgo o inactivo. Los estados se calculan solos con sus visitas y su gasto.`,
   },
   {
     slug: "payment-methods",

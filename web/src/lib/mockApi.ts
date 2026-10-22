@@ -1,7 +1,8 @@
 import { mockAgendaSetup, mockPlanUsage, settingsMockRoute, settingsOverlay, type MockMemberSeed } from "../modules/settings/settingsMock";
 import type { TransportRequest, TransportResponse } from "./api";
 import { mockClientsOf, routeClientsMock } from "../modules/clients/clientsMock";
-import { routeSchedulingMock } from "../modules/scheduling/schedulingMock";
+import { routeCrmSettingsMock } from "../modules/clients/crmMock";
+import { mockClientIdsForStaff, routeSchedulingMock } from "../modules/scheduling/schedulingMock";
 import { routeWhatsappMock } from "../modules/whatsapp/whatsappMock";
 import type {
   AdminBusiness,
@@ -650,11 +651,25 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
     );
   }
 
-  // Clientes (I1): su propio archivo, con la sesión ya resuelta.
+  // Clientes (I1 + CRM del Pro en I3): su propio archivo, con la sesión ya resuelta.
   if (path === "/clients" || path.startsWith("/clients/")) {
     const me = sessionMe();
-    if (!me) return unauthorized();
+    if (!me || !sessionUser) return unauthorized();
     const b = businessOf(state, me.business.id);
+    const membership = sessionUser.memberships.find((m) => m.businessId === b.id);
+    // "Mis clientes" del profesional: los que tienen citas suyas en la Agenda simulada.
+    const staffClientIds =
+      me.role === "staff"
+        ? mockClientIdsForStaff({
+            businessId: b.id,
+            userId: me.user.id,
+            role: me.role,
+            locationIds: membership?.locationIds,
+            staffId: me.staffId ?? null,
+            setup: mockAgendaSetup(settingsSeedOf(state, b.id), membersOf(state, b.id)),
+            clients: mockClientsOf(b.id, b.locations),
+          })
+        : null;
     return (
       routeClientsMock(req, {
         businessId: b.id,
@@ -662,7 +677,24 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
         locations: b.locations,
         country: b.country,
         clientTerm: b.terminology.client ?? "cliente",
+        clientsTerm: b.terminology.clients ?? "clientes",
+        crm: me.plan.clientsTier === "full",
+        industry: b.industry,
+        currency: b.currency,
+        timezone: b.timezone,
+        staffClientIds,
       }) ?? fail(404, "not_found", "Ruta inexistente en el mock.")
+    );
+  }
+
+  // CRM de clientes (I3): Configuración › Campos personalizados y › Reglas de clientes.
+  if (path === "/settings/client-rules" || path === "/settings/custom-fields" || path.startsWith("/settings/custom-fields/")) {
+    const me = sessionMe();
+    if (!me) return unauthorized();
+    const b = businessOf(state, me.business.id);
+    return (
+      routeCrmSettingsMock(req, { businessId: b.id, industry: b.industry, role: me.role, crm: me.plan.clientsTier === "full" }) ??
+      fail(404, "not_found", "Ruta inexistente en el mock.")
     );
   }
 
