@@ -5,10 +5,9 @@ import { accessFor, capitalize, getSection, terminologyOf } from "../navigation"
 import { useSession } from "../session";
 
 /**
- * Botón global "+ Nuevo" (cita, cliente, cobro). Lo que todavía no existe está
- * deshabilitado con "Próximamente": llega con su módulo en I1–I4. Solo ofrece lo que la sesión puede
- * usar (un profesional no registra cobros; el Básico no tiene Ventas). "Cita" abre el
- * diálogo de la Agenda (`/agenda?new=1`).
+ * Botón global "+ Nuevo" (cita, cliente, cobro). Solo ofrece lo que la sesión puede usar
+ * (un profesional no registra cobros; el Básico no tiene Ventas). "Cita" abre el diálogo de
+ * la Agenda (`/agenda?new=1`) y "Cobro" el cobro suelto de Ventas (`/sales?new=1`).
  */
 export default function NewMenu() {
   const me = useSession();
@@ -24,8 +23,9 @@ export default function NewMenu() {
   if (me.role !== "staff" && accessFor(me, getSection("clients")) === "open") {
     items.push({ key: "client", label: capitalize(t.client), icon: "user", onSelect: () => navigate("/clients?new=1") });
   }
+  // Cobro: abre "Nuevo cobro" de Ventas › Cobros (`/sales?new=1`).
   if (me.role !== "staff" && accessFor(me, getSection("sales")) === "open") {
-    items.push({ key: "payment", label: "Cobro", icon: "receipt", disabled: true, hint: "Próximamente" });
+    items.push({ key: "payment", label: "Cobro", icon: "receipt", onSelect: () => navigate("/sales?new=1") });
   }
   if (items.length === 0) return null;
 

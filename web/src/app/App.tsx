@@ -13,7 +13,11 @@ import ClientDetailPage from "../modules/clients/ClientDetailPage";
 import ClientsPage from "../modules/clients/ClientsPage";
 import HomePage from "../modules/home/HomePage";
 import ReportsPage from "../modules/reports/ReportsPage";
-import SalesPage from "../modules/sales/SalesPage";
+import CommissionsPage from "../modules/sales/CommissionsPage";
+import DailySummaryPage from "../modules/sales/DailySummaryPage";
+import PaymentsPage from "../modules/sales/PaymentsPage";
+import PendingPage from "../modules/sales/PendingPage";
+import SalesLayout from "../modules/sales/SalesLayout";
 import AgendaPage from "../modules/scheduling/AgendaPage";
 import SettingsLayout from "../modules/settings/SettingsLayout";
 import SettingsSubPage from "../modules/settings/SettingsSubPage";
@@ -33,7 +37,8 @@ import { PublicOnly, RequireAuth } from "./session";
 //   Acceso:      /login · /forgot-password · /reset-password?token= (enlace del correo)
 //                /accept-invitation?token= (enlace del correo; /invite/:token es alias)
 //                /change-password (obligatorio con clave temporal)
-//   Panel:       / · /agenda · /clients · /clients/:id · /sales · /reports · /campaigns
+//   Panel:       / · /agenda · /clients · /clients/:id · /reports · /campaigns
+//                /sales · /sales/pending · /sales/today · /sales/commissions
 //                /whatsapp · /whatsapp/conversations/:id · /whatsapp/metrics · /whatsapp/settings
 //                /settings/:page
 //   Superadmin:  /admin/login · /admin · /admin/businesses/:id (plan, cobro y pausa)
@@ -108,10 +113,17 @@ export default function App() {
             path="sales"
             element={
               <SectionGate id="sales">
-                <SalesPage />
+                <SalesLayout />
               </SectionGate>
             }
-          />
+          >
+            {/* Cobros · Pendientes · Resumen del día · Comisiones ("Mis comisiones" para el profesional). */}
+            <Route index element={<PaymentsPage />} />
+            <Route path="pending" element={<PendingPage />} />
+            <Route path="today" element={<DailySummaryPage />} />
+            <Route path="commissions" element={<CommissionsPage />} />
+            <Route path="*" element={<Navigate to="/sales" replace />} />
+          </Route>
           <Route
             path="reports"
             element={
