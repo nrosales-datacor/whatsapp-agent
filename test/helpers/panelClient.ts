@@ -80,6 +80,24 @@ export class Browser {
     return this.request<T>("PATCH", path, body, headers);
   }
 
+  put<T = any>(path: string, body?: unknown, headers?: Record<string, string>) {
+    return this.request<T>("PUT", path, body, headers);
+  }
+
+  delete<T = any>(path: string, headers?: Record<string, string>) {
+    return this.request<T>("DELETE", path, undefined, headers);
+  }
+
+  /** GET de algo que no es JSON (p. ej. una descarga CSV): el cuerpo como texto, sin parsear (con el BOM si viene). */
+  async getText(path: string): Promise<{ status: number; text: string; headers: Headers }> {
+    const h: Record<string, string> = { "x-forwarded-for": this.ip };
+    if (this.cookies.size > 0) h.cookie = [...this.cookies].map(([k, v]) => `${k}=${v}`).join("; ");
+    const res = await fetch(`${this.baseUrl}${path}`, { headers: h });
+    // `ignoreBOM`: el BOM de UTF-8 queda en el texto (los tests de exportación lo verifican).
+    const text = new TextDecoder("utf-8", { ignoreBOM: true }).decode(await res.arrayBuffer());
+    return { status: res.status, text, headers: res.headers };
+  }
+
   /** Otro navegador con las mismas cookies (otro dispositivo con la misma sesión). */
   clone(): Browser {
     const other = new Browser(this.baseUrl, this.ip);

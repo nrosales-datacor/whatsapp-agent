@@ -270,14 +270,29 @@ function seed(state: State, session: MockSchedulingSession): Stored[] {
   return out;
 }
 
-/** Citas del negocio (todas las sucursales) para otros mocks (Ventas); las siembra si hace falta. */
-export function mockAppointmentsOf(session: MockSchedulingSession): Appointment[] {
+/** Citas guardadas del negocio; las siembra si hace falta. */
+function seededAppointments(session: MockSchedulingSession): Stored[] {
   const state = loadState();
   if (!state.businesses[session.businessId]) {
     state.businesses[session.businessId] = seed(state, session);
     saveState(state);
   }
-  return state.businesses[session.businessId].map((a) => view(session, a));
+  return state.businesses[session.businessId];
+}
+
+/** Citas del negocio (todas las sucursales) para otros mocks (Ventas); las siembra si hace falta. */
+export function mockAppointmentsOf(session: MockSchedulingSession): Appointment[] {
+  return seededAppointments(session).map((a) => view(session, a));
+}
+
+/**
+ * Clientes con citas del profesional de la sesión (pasadas o futuras, sin las canceladas):
+ * "Mis clientes" del rol staff en la Clientes simulada. Siembra la agenda si hace falta.
+ */
+export function mockClientIdsForStaff(session: MockSchedulingSession): string[] {
+  if (!session.staffId) return [];
+  const ids = seededAppointments(session).filter((a) => a.staffId === session.staffId && a.status !== "cancelled").map((a) => a.clientId);
+  return [...new Set(ids)];
 }
 
 // ── Rutas ───────────────────────────────────────────────────────────────────

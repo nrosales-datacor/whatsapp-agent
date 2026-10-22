@@ -6,6 +6,7 @@ export {
   bookAppointment,
   cancelAppointment,
   canTransition,
+  clientIdsWithStaffAppointments,
   completeAppointment,
   confirmAppointment,
   getAppointment,
@@ -16,10 +17,12 @@ export {
   markNoShow,
   reassignStaff,
   rescheduleAppointment,
+  updateAppointmentDetails,
   updateAppointmentNotes,
 } from "./appointments";
 export type {
   AppointmentCompletedHook,
+  AppointmentDetailsPatch,
   AppointmentLineView,
   AppointmentView,
   BookAppointmentInput,

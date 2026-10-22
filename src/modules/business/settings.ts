@@ -33,28 +33,44 @@ export const DEFAULT_TERMINOLOGY: Terminology = {
 };
 
 /**
+ * Cómo se decide "en riesgo" (§4):
+ *   • `fixed`: más de `atRiskAfterDays` días sin volver, para todos igual.
+ *   • `frequency`: relativo a la frecuencia de cada cliente: más de
+ *     `atRiskFrequencyFactor` veces su intervalo promedio entre visitas (quien viene cada
+ *     3 semanas está en riesgo antes que quien viene cada 6 meses). Con menos de dos
+ *     visitas no hay frecuencia: se usa `atRiskAfterDays`.
+ */
+export const AT_RISK_MODES = ["fixed", "frequency"] as const;
+export type AtRiskMode = (typeof AT_RISK_MODES)[number];
+
+/**
  * Umbrales del estado del cliente (§4: `new` / `active` / `vip` / `at_risk` /
  * `inactive`). El estado NO se guarda: se calcula al consultar desde la caché de `clients`
- * (visitas, última visita, gasto) y estas reglas.
+ * (visitas, primera y última visita, gasto) y estas reglas (src/modules/clients/status.ts).
  */
 export interface ClientStatusRules {
-  /** Sigue siendo "nuevo" mientras tenga a lo sumo estas visitas completadas. */
-  newMaxVisits: number;
+  /** "Nuevo" durante estos días desde su primera visita (o desde el alta, si todavía no vino). */
+  newDays: number;
   /** VIP desde estas visitas (null = no se usa este criterio). */
   vipMinVisits: number | null;
   /** VIP desde este gasto total en céntimos (null = no se usa este criterio). */
   vipMinSpentCents: number | null;
-  /** "En riesgo" si la última visita fue hace más de estos días. */
+  atRiskMode: AtRiskMode;
+  /** "En riesgo" si la última visita fue hace más de estos días (modo fijo, o sin frecuencia todavía). */
   atRiskAfterDays: number;
+  /** Modo frecuencia: "en riesgo" pasadas estas veces su intervalo promedio entre visitas. */
+  atRiskFrequencyFactor: number;
   /** "Inactivo" si la última visita fue hace más de estos días. */
   inactiveAfterDays: number;
 }
 
 export const DEFAULT_CLIENT_STATUS_RULES: ClientStatusRules = {
-  newMaxVisits: 1,
+  newDays: 30,
   vipMinVisits: 10,
   vipMinSpentCents: null,
+  atRiskMode: "fixed",
   atRiskAfterDays: 60,
+  atRiskFrequencyFactor: 2,
   inactiveAfterDays: 120,
 };
 

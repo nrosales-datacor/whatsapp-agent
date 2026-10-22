@@ -29,6 +29,20 @@ export {
 } from "./provisioning";
 export type { BusinessSummary, CreatedBusiness, NewBusinessInput, ProvisioningSteps } from "./provisioning";
 export { businessRoutes, type BusinessRouteDeps } from "./routes";
+// CRM de clientes (I3, Pro): reglas del estado y campos personalizados.
+export { clientSettingsRoutes, type ClientSettingsRouteDeps } from "./clientSettingsRoutes";
+export { ClientStatusRulesInput, readClientStatusRules } from "./statusRules";
+export {
+  applyCustomDataPatch,
+  CustomDataInput,
+  formatCustomFieldValue,
+  hasCustomValue,
+  listCustomFields,
+  normalizeCustomValue,
+  parseCustomFieldText,
+  parseDateText,
+} from "./customFields";
+export type { CustomDataPatchOptions, CustomFieldView, ListCustomFieldsOptions } from "./customFields";
 // Lo contractual (plan, extras, pausa, cobro): lo escribe el superadmin vía modules/billing.
 export { countActiveLocationsOf, getBusinessRow, updateBusinessSubscription } from "./subscription";
 export type { SubscriptionChanges } from "./subscription";
@@ -50,7 +64,7 @@ export type {
   TemplateCustomField,
   TemplateService,
 } from "./templates";
-export { BILLING_STATUSES, BUSINESS_STATUSES, PLANS } from "./schema";
+export { BILLING_STATUSES, BUSINESS_STATUSES, CUSTOM_FIELD_ENTITIES, CUSTOM_FIELD_TYPES, PLANS } from "./schema";
 export type {
   BillingStatus,
   Business,
@@ -66,4 +80,5 @@ export type {
   NewLocationHour,
   Plan,
 } from "./schema";
-export type { Branding, ClientStatusRules, ExtraModules, ReminderChannel, Terminology } from "./settings";
+export { AT_RISK_MODES, DEFAULT_CLIENT_STATUS_RULES } from "./settings";
+export type { AtRiskMode, Branding, ClientStatusRules, ExtraModules, ReminderChannel, Terminology } from "./settings";

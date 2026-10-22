@@ -9,8 +9,9 @@
     "staff": "especialistas"
   },
   "clientStatusRules": {
-    "newMaxVisits": 1,
+    "newDays": 90,
     "vipMinVisits": 8,
+    "atRiskMode": "fixed",
     "atRiskAfterDays": 210,
     "inactiveAfterDays": 400
   },

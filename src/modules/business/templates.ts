@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 import { z } from "zod";
 import { spanishErrorMap } from "../../platform/http/validation";
+import { ClientStatusRulesOverridesSchema } from "./statusRules";
 import { CUSTOM_FIELD_ENTITIES, CUSTOM_FIELD_TYPES } from "./schema";
-import { DEFAULT_CLIENT_STATUS_RULES, DEFAULT_TERMINOLOGY, type Terminology } from "./settings";
+import { DEFAULT_TERMINOLOGY, type Terminology } from "./settings";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Plantillas de rubro (PLAN-GESTION.md §3, opción B): un JSON por rubro en ./templates/
@@ -45,21 +46,6 @@ const Term = z
   .refine((s) => s === s.toLocaleLowerCase("es"), "La terminología va en minúscula (la UI la capitaliza).");
 
 const TerminologySchema = z.partialRecord(z.enum(TERMINOLOGY_KEYS), Term);
-
-const ClientStatusRulesSchema = z
-  .object({
-    newMaxVisits: z.int().min(0).max(100),
-    vipMinVisits: z.int().min(1).max(10_000).nullable(),
-    vipMinSpentCents: z.int().min(0).nullable(),
-    atRiskAfterDays: z.int().min(1).max(3650),
-    inactiveAfterDays: z.int().min(1).max(3650),
-  })
-  .partial()
-  .strict()
-  .refine((r) => {
-    const merged = { ...DEFAULT_CLIENT_STATUS_RULES, ...r };
-    return merged.inactiveAfterDays > merged.atRiskAfterDays;
-  }, "inactiveAfterDays tiene que ser mayor que atRiskAfterDays.");
 
 const CustomFieldSchema = z
   .object({
@@ -113,7 +99,7 @@ const IndustryTemplateSchema = z
     /** Nombre del rubro para mostrar ("Odontología"). */
     label: z.string().trim().min(1).max(60),
     terminology: TerminologySchema,
-    clientStatusRules: ClientStatusRulesSchema,
+    clientStatusRules: ClientStatusRulesOverridesSchema,
     customFields: z.array(CustomFieldSchema).max(30),
     catalog: z.object({ categories: z.array(TemplateCategorySchema).min(1).max(20) }).strict(),
     ai: z
