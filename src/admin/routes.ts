@@ -17,8 +17,8 @@ import {
   type PlanService,
 } from "../modules/billing";
 import { createBusiness, INDUSTRIES, isValidTimeZone, summarizeBusiness } from "../modules/business";
-import { applyCatalogTemplate } from "../modules/catalog";
 import { inviteMember } from "../modules/team";
+import { PROVISIONING_STEPS } from "../provisioning";
 import { adminLogin, clearAdminSessionCookie, setAdminSessionCookie, superadminUsername } from "./session";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -98,7 +98,8 @@ export function adminRoutes({ db, plans }: AdminRouteDeps): Route[] {
     route({ method: "POST", path: "/admin/businesses", auth: "superadmin", body: CreateBusinessBody }, async ({ session, body, log }) => {
       const actor = superadminActor(session.adminId);
       const summary = await withSystem(db, async (tx) => {
-        // La plantilla del rubro precarga terminología, campos y el catálogo de ejemplo.
+        // La plantilla del rubro precarga terminología, campos y el catálogo de ejemplo; el
+        // negocio nace además con los métodos de pago default (src/provisioning.ts).
         const { business } = await createBusiness(
           tx,
           {
@@ -109,7 +110,7 @@ export function adminRoutes({ db, plans }: AdminRouteDeps): Route[] {
             country: body.country,
             locationName: body.locationName,
           },
-          { seedCatalog: applyCatalogTemplate },
+          PROVISIONING_STEPS,
         );
         await inviteMember(tx, {
           business: { id: business.id, name: business.name },
