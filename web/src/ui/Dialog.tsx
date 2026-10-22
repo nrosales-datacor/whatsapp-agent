@@ -33,7 +33,11 @@ export default function Dialog({ open, onClose, title, children, variant = "cent
       ref={ref}
       className={"dialog" + (variant === "sheet" ? " dialog-sheet" : "") + (wide ? " dialog-wide" : "")}
       aria-labelledby={titleId}
-      onClose={onClose}
+      // React propaga `close` por el árbol de componentes: el cierre de un diálogo abierto
+      // ADENTRO de este no tiene que cerrarlo.
+      onClose={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       // Clic en el fondo (fuera de la caja): el target es el propio <dialog>.
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
