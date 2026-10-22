@@ -9,6 +9,7 @@ export {
   completeAppointment,
   confirmAppointment,
   getAppointment,
+  getAppointmentsByIds,
   listAppointments,
   listClientAppointments,
   listUpcomingAppointmentsForClient,
@@ -18,6 +19,7 @@ export {
   updateAppointmentNotes,
 } from "./appointments";
 export type {
+  AppointmentCompletedHook,
   AppointmentLineView,
   AppointmentView,
   BookAppointmentInput,
