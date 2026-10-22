@@ -353,7 +353,7 @@ export async function listClientTags(executor: Executor, businessId: string, opt
         FROM ${clients}, jsonb_array_elements_text(${clients.tags}) AS t(tag)
        WHERE ${and(eq(clients.businessId, businessId), notAnonymized, scopeCondition(options.scope))}
        GROUP BY t.tag
-       ORDER BY count(*) DESC, t.tag ASC
+       ORDER BY count(*) DESC, lower(t.tag) ASC, t.tag ASC
        LIMIT 200`),
   );
   return rowsOf<{ tag: string; count: number | string }>(rows).map((r) => ({ tag: r.tag, count: Number(r.count) }));
