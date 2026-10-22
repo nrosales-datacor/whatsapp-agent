@@ -7,6 +7,7 @@ import { forgetPushOnLogout } from "../lib/push";
 import type { Me } from "../lib/contract";
 import FullPageStatus from "../ui/FullPageStatus";
 import { useToast } from "../ui/Toast";
+import AccountPausedPage from "./AccountPausedPage";
 import { homePathFor } from "./navigation";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -16,6 +17,9 @@ import { homePathFor } from "./navigation";
 //     guarda `RequireAuth` manda al login, recordando adónde iba.
 //   • Login, aceptar invitación y cambiar de negocio escriben el Me nuevo directo en la
 //     query (el backend ya lo devuelve), sin otro viaje.
+//   • Negocio pausado por el superadmin: `/auth/me` responde 403 `business_paused` y
+//     `RequireAuth` muestra "Cuenta pausada" (main.tsx vuelve a pedir la sesión si el 403
+//     llega en cualquier otra llamada).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const ME_QUERY_KEY = ["me"] as const;
@@ -53,6 +57,7 @@ export function RequireAuth() {
   const query = useMeQuery();
 
   if (query.isPending) return <FullPageStatus message="Cargando tu panel…" />;
+  if (isApiError(query.error, "business_paused")) return <AccountPausedPage onRetry={() => void query.refetch()} />;
   if (query.isError) {
     return (
       <FullPageStatus

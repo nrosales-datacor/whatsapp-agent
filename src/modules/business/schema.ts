@@ -28,6 +28,13 @@ export type Plan = (typeof PLANS)[number];
 export const BUSINESS_STATUSES = ["active", "paused", "closed"] as const;
 export type BusinessStatus = (typeof BUSINESS_STATUSES)[number];
 
+/**
+ * Estado del cobro manual (PROCESO-COBRO-MANUAL.md) que lleva el superadmin: prueba, al
+ * día, atrasado o cancelado. Es informativo: lo que corta el servicio es `status = paused`.
+ */
+export const BILLING_STATUSES = ["trial", "active", "past_due", "cancelled"] as const;
+export type BillingStatus = (typeof BILLING_STATUSES)[number];
+
 export const CUSTOM_FIELD_ENTITIES = ["client", "appointment"] as const;
 export type CustomFieldEntity = (typeof CUSTOM_FIELD_ENTITIES)[number];
 
@@ -59,6 +66,7 @@ export const businesses = pgTable(
     plan: text("plan").notNull().default("basic"),
     extraModules: jsonb("extra_modules").$type<ExtraModules>().notNull().default({}),
     status: text("status").notNull().default("active"),
+    billingStatus: text("billing_status").notNull().default("trial"),
     // ISO 4217 (montos en céntimos de esta moneda) e ISO 3166-1 alfa-2.
     currency: text("currency").notNull().default("CRC"),
     country: text("country").notNull().default("CR"),
@@ -85,6 +93,7 @@ export const businesses = pgTable(
     check("businesses_slug_check", sql`${t.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`),
     check("businesses_plan_check", oneOf(t.plan, PLANS)),
     check("businesses_status_check", oneOf(t.status, BUSINESS_STATUSES)),
+    check("businesses_billing_status_check", oneOf(t.billingStatus, BILLING_STATUSES)),
     check("businesses_currency_check", sql`${t.currency} ~ '^[A-Z]{3}$'`),
     check("businesses_country_check", sql`${t.country} ~ '^[A-Z]{2}$'`),
     check(

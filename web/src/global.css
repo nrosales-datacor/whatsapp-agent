@@ -181,6 +181,7 @@ form > .btn { margin-top: var(--space-lg); }
 .chip { font-size: var(--step--1); font-weight: 600; color: var(--text-2); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-pill); padding: 4px 12px; }
 
 .full-page-status { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-md); padding: var(--space-lg); text-align: center; color: var(--text-2); }
+.account-paused-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-sm); }
 .spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--accent-soft); border-top-color: var(--accent); animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
@@ -382,6 +383,32 @@ form > .btn { margin-top: var(--space-lg); }
 .business-row-name { font-weight: 700; overflow-wrap: anywhere; }
 .business-row-slug { font-size: var(--step--1); color: var(--text-3); overflow-wrap: anywhere; }
 .business-row-meta { display: flex; align-items: center; gap: var(--space-xs) var(--space-sm); flex-wrap: wrap; font-size: var(--step--1); color: var(--text-2); }
+.business-row-manage { margin-left: auto; }
+
+/* Superadmin › un negocio (plan, cobro, pausa). */
+.admin-back { display: inline-block; margin-bottom: var(--space-sm); }
+.admin-main .admin-business-sub { display: flex; align-items: center; gap: var(--space-xs) var(--space-sm); flex-wrap: wrap; font-size: var(--step--1); color: var(--text-2); margin: calc(-1 * var(--space-md)) 0 var(--space-lg); }
+.admin-plan-form .check-row, .admin-plan-form .check-row input { cursor: pointer; }
+.admin-plan-form .check-row { display: flex; align-items: flex-start; gap: var(--space-xs); min-height: 32px; padding: 4px 0; font-size: var(--step--1); color: var(--text); }
+.admin-plan-form .check-row input { width: 18px; height: 18px; margin-top: 1px; accent-color: var(--accent); flex-shrink: 0; }
+.admin-plan-form .check-row small { display: block; color: var(--text-2); }
+.admin-plan-form fieldset.field { border: none; padding: 0; min-width: 0; }
+.admin-module-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 0 var(--space-md); }
+.admin-limit-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap: 0 var(--space-md); }
+.admin-limit .field { margin-top: var(--space-sm); }
+.admin-limit .input:disabled { background: var(--surface-2); color: var(--text-2); }
+.admin-plan-form .form-actions, .dialog .form-actions { display: flex; flex-wrap: wrap; gap: var(--space-xs); justify-content: flex-end; margin-top: var(--space-lg); }
+.admin-service-status { display: flex; align-items: flex-start; gap: var(--space-xs); flex-wrap: wrap; font-size: var(--step--1); color: var(--text-2); margin-bottom: var(--space-md); }
+.admin-usage { display: flex; flex-direction: column; gap: var(--space-xs); font-size: var(--step--1); }
+.admin-usage-row { display: flex; justify-content: space-between; gap: var(--space-sm); border-bottom: 1px solid var(--border-2); padding-bottom: var(--space-xs); }
+.admin-usage-row:last-child { border-bottom: none; padding-bottom: 0; }
+.admin-usage dt { color: var(--text-2); }
+.admin-usage dd { font-weight: 600; text-align: right; }
+.admin-history { display: flex; flex-direction: column; gap: var(--space-sm); font-size: var(--step--1); }
+.admin-history li { display: flex; flex-direction: column; gap: 2px; border-bottom: 1px solid var(--border-2); padding-bottom: var(--space-xs); }
+.admin-history li:last-child { border-bottom: none; padding-bottom: 0; }
+.admin-history-action { font-weight: 700; }
+.admin-history-meta, .admin-history-detail { color: var(--text-2); overflow-wrap: anywhere; }
 
 /* ══════════════════════════════════════════════════════════════════════════════
    RESPONSIVE

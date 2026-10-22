@@ -1,16 +1,12 @@
-import { useLayoutEffect } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
-import { documentTitle, PRODUCT_NAME } from "../../lib/branding";
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import type { AdminBusiness } from "../../lib/contract";
+import { BILLING_STATUS_LABELS, BUSINESS_STATUS_LABELS } from "../../lib/plans";
 import EmptyState from "../../ui/EmptyState";
 import ErrorState from "../../ui/ErrorState";
-import Icon from "../../ui/Icons";
-import { ADMIN_BUSINESSES_QUERY_KEY, ADMIN_ME_QUERY_KEY, adminLogout, fetchAdminMe, listBusinesses } from "./adminApi";
+import { ADMIN_BUSINESSES_QUERY_KEY, listBusinesses } from "./adminApi";
+import AdminShell from "./AdminShell";
 import CreateBusinessForm, { INDUSTRY_OPTIONS } from "./CreateBusinessForm";
-
-const PLAN_LABELS: Record<string, string> = { basic: "Básico", pro: "Pro" };
-const STATUS_LABELS: Record<string, string> = { active: "Activo", paused: "Pausado", closed: "Dado de baja" };
 
 function formatDate(iso: string): string | null {
   const date = new Date(iso);
@@ -27,12 +23,16 @@ function BusinessRow({ business }: { business: AdminBusiness }) {
       <div className="business-row-main">
         <span className="business-row-name">{business.name}</span>
         <span className="business-row-slug">{business.slug}</span>
+        <Link className="link business-row-manage" to={`/admin/businesses/${business.id}`} aria-label={`Gestionar plan de ${business.name}`}>
+          Gestionar
+        </Link>
       </div>
       <div className="business-row-meta">
-        <span className="badge">{PLAN_LABELS[business.plan] ?? business.plan}</span>
+        <span className="badge">{business.planLabel}</span>
         {business.status !== "active" && (
-          <span className="badge badge-warning">{STATUS_LABELS[business.status] ?? business.status}</span>
+          <span className="badge badge-warning">{BUSINESS_STATUS_LABELS[business.status] ?? business.status}</span>
         )}
+        <span>Cobro: {BILLING_STATUS_LABELS[business.billingStatus] ?? business.billingStatus}</span>
         <span>{industry}</span>
         <span>
           {business.country} · {business.currency}
@@ -46,66 +46,34 @@ function BusinessRow({ business }: { business: AdminBusiness }) {
 
 /** Área de superadmin (/admin): negocios de la plataforma y alta de uno nuevo. */
 export default function AdminHomePage() {
-  const qc = useQueryClient();
-  const navigate = useNavigate();
-  const adminMe = useQuery({ queryKey: ADMIN_ME_QUERY_KEY, queryFn: fetchAdminMe, staleTime: 60_000 });
   const businesses = useQuery({ queryKey: ADMIN_BUSINESSES_QUERY_KEY, queryFn: listBusinesses });
-  const logout = useMutation({
-    mutationFn: adminLogout,
-    onSettled: () => {
-      qc.removeQueries({ queryKey: ["admin"] });
-      qc.setQueryData(ADMIN_ME_QUERY_KEY, null);
-      navigate("/admin/login", { replace: true });
-    },
-  });
-
-  useLayoutEffect(() => {
-    document.title = documentTitle("Superadmin");
-  }, []);
 
   return (
-    <div className="admin-shell">
-      <header className="admin-topbar">
-        <span className="brand-chip" aria-hidden="true">
-          SC
-        </span>
-        <div className="admin-topbar-title">
-          <span className="admin-topbar-product">{PRODUCT_NAME}</span>
-          <span className="admin-topbar-sub">Superadmin</span>
-        </div>
-        {adminMe.data && <span className="admin-topbar-user">{adminMe.data.username}</span>}
-        <button type="button" className="btn btn-ghost-inverse" onClick={() => logout.mutate()} disabled={logout.isPending}>
-          <Icon id="logout" size={18} />
-          <span>Salir</span>
-        </button>
-      </header>
-
-      <main className="admin-main" id="main">
-        <h1 className="page-title">Negocios</h1>
-        <div className="admin-grid">
-          <section className="card" aria-labelledby="business-list-title">
-            <h2 id="business-list-title" className="card-title">
-              Negocios de la plataforma{businesses.data ? ` (${businesses.data.length})` : ""}
-            </h2>
-            {businesses.isPending ? (
-              <p className="muted" role="status">
-                Cargando negocios…
-              </p>
-            ) : businesses.isError ? (
-              <ErrorState message="No pudimos cargar los negocios." onRetry={() => void businesses.refetch()} />
-            ) : businesses.data.length === 0 ? (
-              <EmptyState icon="building" title="Todavía no hay negocios" help="Cuando des de alta el primero, aparece acá." />
-            ) : (
-              <ul className="business-list">
-                {businesses.data.map((b) => (
-                  <BusinessRow key={b.id} business={b} />
-                ))}
-              </ul>
-            )}
-          </section>
-          <CreateBusinessForm />
-        </div>
-      </main>
-    </div>
+    <AdminShell title="Superadmin">
+      <h1 className="page-title">Negocios</h1>
+      <div className="admin-grid">
+        <section className="card" aria-labelledby="business-list-title">
+          <h2 id="business-list-title" className="card-title">
+            Negocios de la plataforma{businesses.data ? ` (${businesses.data.length})` : ""}
+          </h2>
+          {businesses.isPending ? (
+            <p className="muted" role="status">
+              Cargando negocios…
+            </p>
+          ) : businesses.isError ? (
+            <ErrorState message="No pudimos cargar los negocios." onRetry={() => void businesses.refetch()} />
+          ) : businesses.data.length === 0 ? (
+            <EmptyState icon="building" title="Todavía no hay negocios" help="Cuando des de alta el primero, aparece acá." />
+          ) : (
+            <ul className="business-list">
+              {businesses.data.map((b) => (
+                <BusinessRow key={b.id} business={b} />
+              ))}
+            </ul>
+          )}
+        </section>
+        <CreateBusinessForm />
+      </div>
+    </AdminShell>
   );
 }

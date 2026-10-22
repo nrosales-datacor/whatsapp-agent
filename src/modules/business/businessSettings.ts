@@ -21,6 +21,10 @@ import { DEFAULT_TERMINOLOGY, REMINDER_CHANNELS, type Branding, type ReminderCha
 //   • Cada cambio deja su snapshot en config_history (misma transacción) e invalida el
 //     caché del contexto del negocio al confirmar (`me`, agenda y agente lo ven al toque
 //     en este proceso; en los demás, al vencer el TTL).
+//   • La marca propia es del plan Pro (PLAN-GESTION.md §5, "Crecimiento"): la ruta pregunta
+//     al plan (`PlanHooks.hasFeature`, lo inyecta la composición desde modules/billing) y
+//     pasa la respuesta; sin ella, el PATCH con `branding` responde 403 `module_not_in_plan`.
+//     La marca guardada se conserva (vuelve si el negocio pasa a Pro).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface BusinessLegalInfo {
@@ -45,18 +49,11 @@ export interface BusinessSettings {
   /** Canales activos de recordatorio, en orden de preferencia (vacío = no manda). */
   reminderChannels: ReminderChannel[];
   branding: Branding;
-  /** ¿El plan permite editar la marca? (provisional: siempre sí, ver TODO(I2)). */
+  /** ¿El plan incluye la marca propia? (Pro). */
   brandingEditable: boolean;
   /** Datos legales y de facturación; null para quien no edita la configuración. */
   legal: BusinessLegalInfo | null;
   updatedAt: string;
-}
-
-// TODO(I2): marca propia es del plan Pro (PLAN-GESTION.md §5, "Crecimiento"). Cuando
-// existan los planes en modules/billing, la composición inyecta este chequeo y el PATCH
-// rechaza `branding` con 403 `module_not_in_plan` si el plan no lo incluye.
-function brandingEditable(_business: Business): boolean {
-  return true;
 }
 
 function terminologyOf(business: Business): Terminology {
@@ -68,7 +65,7 @@ function terminologyOf(business: Business): Terminology {
   return merged;
 }
 
-function toSettings(business: Business, withLegal: boolean): BusinessSettings {
+function toSettings(business: Business, withLegal: boolean, brandingEditable: boolean): BusinessSettings {
   return {
     id: business.id,
     slug: business.slug,
@@ -82,7 +79,7 @@ function toSettings(business: Business, withLegal: boolean): BusinessSettings {
     terminology: terminologyOf(business),
     reminderChannels: business.reminderChannels.filter((c): c is ReminderChannel => (REMINDER_CHANNELS as readonly string[]).includes(c)),
     branding: { ...business.branding },
-    brandingEditable: brandingEditable(business),
+    brandingEditable,
     legal: withLegal ? { legalName: business.legalName, taxId: business.taxId, billingEmail: business.billingEmail } : null,
     updatedAt: business.updatedAt.toISOString(),
   };
@@ -174,12 +171,12 @@ export type BusinessSettingsPatchInput = z.output<typeof BusinessSettingsPatch>;
 
 const notFound = () => new HttpError(404, "Negocio no encontrado.", "not_found");
 
-export async function getBusinessSettings(db: Executor, session: Session): Promise<BusinessSettings> {
+export async function getBusinessSettings(db: Executor, session: Session, brandingEditable: boolean): Promise<BusinessSettings> {
   const [business] = await withTenant(db, session.businessId, (tx) =>
     tx.select().from(businesses).where(eq(businesses.id, session.businessId)).limit(1),
   );
   if (!business) throw notFound();
-  return toSettings(business, canManage(session.role));
+  return toSettings(business, canManage(session.role), brandingEditable);
 }
 
 function mergeTerminology(current: Partial<Terminology>, patch: Partial<Record<keyof Terminology, string>>): Partial<Terminology> {
@@ -200,14 +197,19 @@ function mergeBranding(current: Branding, patch: Partial<Record<keyof Branding, 
   return next;
 }
 
-export async function updateBusinessSettings(db: Executor, session: Session, patch: BusinessSettingsPatchInput): Promise<BusinessSettings> {
+export async function updateBusinessSettings(
+  db: Executor,
+  session: Session,
+  patch: BusinessSettingsPatchInput,
+  brandingEditable: boolean,
+): Promise<BusinessSettings> {
   const { businessId } = session;
+  if (patch.branding && !brandingEditable) {
+    throw new HttpError(403, "La marca propia es parte del plan Pro.", "module_not_in_plan");
+  }
   const updated = await withTenant(db, businessId, async (tx) => {
     const [current] = await tx.select().from(businesses).where(eq(businesses.id, businessId)).for("update");
     if (!current) throw notFound();
-    if (patch.branding && !brandingEditable(current)) {
-      throw new HttpError(403, "La marca propia no está incluida en el plan del negocio.", "module_not_in_plan");
-    }
     const changes: Partial<typeof businesses.$inferInsert> = {};
     if (patch.name !== undefined) changes.name = patch.name;
     if (patch.legalName !== undefined) changes.legalName = patch.legalName;
@@ -225,5 +227,5 @@ export async function updateBusinessSettings(db: Executor, session: Session, pat
     return row;
   });
   invalidateBusinessContext(businessId);
-  return toSettings(updated, canManage(session.role));
+  return toSettings(updated, canManage(session.role), brandingEditable);
 }

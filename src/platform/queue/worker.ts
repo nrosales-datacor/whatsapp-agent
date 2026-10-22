@@ -12,6 +12,7 @@ import { getJobHandler, registeredJobHandlers, type JobContext, type RegisteredH
 import { recordJobEvent, trackDeadJob } from "./stats";
 import {
   claimJob,
+  deferJob,
   heartbeatJobs,
   markJobDead,
   markJobDone,
@@ -45,6 +46,11 @@ import {
 // se devuelve a la cola sin correrlo. Lo que no termine dentro del tope lo rescata la
 // recuperación cuando vence su lock.
 //
+// Negocio sin servicio (pausado por cobro, dado de baja): si la composición pasa
+// `canRunJob`, un job de un negocio que no puede correr se POSTERGA (`deferredDelayMs`) sin
+// gastar el intento; corre cuando el negocio se reactiva. La cola no conoce los planes: el
+// chequeo lo inyecta src/jobs.ts desde modules/billing.
+//
 // Escalar: subir QUEUE_CONCURRENCY o sumar réplicas `ROLE=worker`. Cada slot usa una
 // conexión del pool solo mientras consulta (no mientras corre el handler).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -73,6 +79,10 @@ export interface QueueWorkerOptions {
   purgeIntervalMs?: number;
   /** Id de este worker en `locked_by` (default "host:pid:azar"). */
   workerId?: string;
+  /** ¿Puede correr ya este job de este negocio? false → se posterga (los de sistema no pasan por acá). */
+  canRunJob?: (businessId: string, jobType: string) => boolean | Promise<boolean>;
+  /** Cuánto se posterga un job que no puede correr (default 5 min). */
+  deferredDelayMs?: number;
 }
 
 export interface QueueWorker {
@@ -129,6 +139,8 @@ export function startQueueWorker(options: QueueWorkerOptions): QueueWorker {
   const retentionDays = Math.max(0, options.retentionDays ?? env.retentionDays);
   const purgeIntervalMs = Math.max(1, Math.floor(options.purgeIntervalMs ?? 60 * 60_000));
   const workerId = options.workerId ?? `${hostname()}:${process.pid}:${randomUUID().slice(0, 8)}`;
+  const canRunJob = options.canRunJob;
+  const deferredDelayMs = Math.max(0, Math.floor(options.deferredDelayMs ?? 5 * 60_000));
 
   let stopping = false;
   const shouldStop = (): boolean => stopping || isShuttingDown();
@@ -267,6 +279,13 @@ export function startQueueWorker(options: QueueWorkerOptions): QueueWorker {
         // Llegó el apagado durante el claim: se devuelve sin correrlo.
         await releaseJob(db, job, workerId);
         return false;
+      }
+      if (job.businessId && canRunJob && !(await canRunJob(job.businessId, job.type))) {
+        // Negocio sin servicio (pausado): se posterga sin correrlo ni gastar el intento.
+        await deferJob(db, job, workerId, deferredDelayMs);
+        recordJobEvent(job.type, "deferred");
+        log.info("job_deferred", { ...jobFields(job), delayMs: deferredDelayMs, reason: "business_inactive" });
+        return true;
       }
       await runJob(job);
       return true;
