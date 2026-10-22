@@ -10,7 +10,8 @@ export type IconId =
   | "lock" | "key" | "shield" | "logout" | "sun" | "moon" | "mapPin" | "building"
   | "user" | "mail" | "eye" | "eyeOff" | "alert" | "cloudOff" | "refresh" | "sparkles"
   | "search" | "clock" | "chevronUp" | "trash" | "pencil" | "chevronRight" | "bell" | "bellOff"
-  | "send" | "bot" | "image" | "mic" | "phone" | "checkCheck" | "hand" | "book";
+  | "send" | "bot" | "image" | "mic" | "phone" | "checkCheck" | "hand" | "book"
+  | "star" | "upload" | "download" | "filter";
 
 // Literales hardcodeados en este módulo: nunca llevan datos del usuario.
 const PATHS: Record<IconId, string> = {
@@ -61,6 +62,11 @@ const PATHS: Record<IconId, string> = {
   checkCheck: '<path d="M18 6 7 17l-5-5"/><path d="m22 10-7.5 7.5L13 16"/>',
   hand: '<path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>',
   book: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
+  // CRM de clientes (I3)
+  star: '<path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/>',
+  upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
+  filter: '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>',
 };
 
 interface Props {

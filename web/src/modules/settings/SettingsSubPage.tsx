@@ -6,6 +6,8 @@ import { useSession } from "../../app/session";
 import EmptyState from "../../ui/EmptyState";
 import PageHeader from "../../ui/PageHeader";
 import BusinessSettingsPage from "./BusinessSettingsPage";
+import ClientRulesPage from "./ClientRulesPage";
+import CustomFieldsPage from "./CustomFieldsPage";
 import LocationsPage from "./LocationsPage";
 import PlanPage from "./PlanPage";
 import ServicesPage from "./ServicesPage";
@@ -14,14 +16,16 @@ import UsersPage from "./UsersPage";
 import "./settings.css";
 
 // Una subsección de Configuración (/settings/:page): encabezado + la pantalla de esa
-// sección. Las del plan Pro que todavía no tienen pantalla (campos personalizados,
-// métodos de pago) muestran el candado; en el Básico, el aviso del plan Pro.
+// sección. Las del plan Pro que todavía no tienen pantalla (métodos de pago) muestran el
+// candado; en el Básico, el aviso del plan Pro.
 
 const PAGES: Record<string, ComponentType> = {
   business: BusinessSettingsPage,
   locations: LocationsPage,
   services: ServicesPage,
   team: TeamPage,
+  "custom-fields": CustomFieldsPage,
+  "client-rules": ClientRulesPage,
   users: UsersPage,
   plan: PlanPage,
 };
