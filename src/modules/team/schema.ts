@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  date,
   index,
   integer,
   pgPolicy,
@@ -96,6 +97,10 @@ export const memberships = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     role: text("role").notNull(),
     active: boolean("active").notNull().default(true),
+    // Último día local (zona del negocio) en que la persona usó el panel de este negocio.
+    // Lo marca la sesión (`markMemberActive`) una vez por día: así "usuarios activos" de
+    // `daily_usage` cuenta a cada persona una sola vez por día aunque haya varias réplicas.
+    lastActiveOn: date("last_active_on"),
     ...timestamps(),
   },
   (t) => [

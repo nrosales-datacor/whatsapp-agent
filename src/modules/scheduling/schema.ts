@@ -93,6 +93,8 @@ export const appointments = pgTable(
     index("appointments_staff_starts_idx").on(t.staffId, t.startsAt),
     // Historial de un cliente (ficha, agente).
     index("appointments_client_starts_idx").on(t.clientId, t.startsAt),
+    // Citas CREADAS en un rango (lo que agendó cada canal, Inicio y reportes de canales).
+    index("appointments_business_created_idx").on(t.businessId, t.createdAt),
     check("appointments_range_check", sql`${t.endsAt} > ${t.startsAt}`),
     check("appointments_status_check", oneOf(t.status, APPOINTMENT_STATUSES)),
     check("appointments_channel_check", oneOf(t.channel, APPOINTMENT_CHANNELS)),

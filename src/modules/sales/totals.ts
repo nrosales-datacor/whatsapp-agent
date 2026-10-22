@@ -1,26 +1,30 @@
-import { and, eq, gte, inArray, lt, type SQL } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
+import { rowsOf } from "../../platform/db/rows";
 import { withTenant, type Executor } from "../../platform/db/scope";
 import { getBusinessContext, listLocations } from "../business";
-import { getAppointmentsByIds, localDate, type AppointmentLineView, type AppointmentView } from "../scheduling";
+import { attributeAmounts, CHANNEL_LABELS, type AppointmentChannel, type AppointmentLineView, type AttributionKey } from "../scheduling";
+import { listStaff } from "../team";
 import { listPaymentMethods } from "./paymentMethods";
 import { payments, type PaymentKind } from "./schema";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // API pública de ingresos para Reportes e Inicio (I5): totales COBRADOS (no facturados)
-// por rango, con filtros y agrupados por método, sucursal, profesional, servicio o día.
+// por rango, con filtros y agrupados por método, sucursal, profesional, servicio, canal o
+// día. TODO en SQL (agregados con los índices de `payments`), nada en memoria.
 //
 //   • Cobrado = señas + cobros; neto = cobrado − devoluciones. Una devolución cuenta el
 //     día que se hizo (no el del pago que devuelve), igual que en la caja.
-//   • Profesional y servicio salen de la cita del pago. Lo cobrado de una cita con varios
-//     servicios se reparte entre sus líneas en proporción al precio (el mismo prorrateo que
-//     las comisiones). Los pagos sueltos (sin cita) van al grupo `null` ("Sin cita").
+//   • Profesional, servicio y canal salen de la cita del pago. Lo cobrado de una cita con
+//     varios servicios se reparte entre sus líneas en proporción al precio (el mismo
+//     prorrateo que las comisiones, `prorateByPrice`). Los pagos sueltos (sin cita) van al
+//     grupo `null` ("Sin cita"). Ese cruce lo hace scheduling (`attributeAmounts`) con la
+//     subconsulta de montos de acá: cada módulo lee solo sus tablas.
 //   • Día: el día local en `timeZone` (default: la zona del negocio).
-//
-// Lee las citas por la API de scheduling (no sus tablas). Pensado para rangos de reportes
-// (un mes, un trimestre); el tope de filas protege de un rango desbocado.
+//   • Tickets: citas distintas con alguna seña o cobro, más cada cobro suelto (para el
+//     ticket promedio).
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type CollectedGroupBy = "method" | "location" | "staff" | "service" | "day";
+export type CollectedGroupBy = "method" | "location" | "staff" | "service" | "channel" | "day";
 
 export interface CollectedTotalsInput {
   /** Cobrados en [from, to). */
@@ -39,7 +43,7 @@ export interface CollectedTotalsInput {
 }
 
 export interface CollectedGroup {
-  /** Id del método/sucursal/profesional/servicio, "AAAA-MM-DD" por día, o null (sin cita). */
+  /** Id del método/sucursal/profesional/servicio, el canal, "AAAA-MM-DD" por día, o null (sin cita). */
   key: string | null;
   label: string;
   collectedCents: number;
@@ -59,13 +63,14 @@ export interface CollectedTotals {
   netCents: number;
   /** Movimientos que entraron en el total. */
   count: number;
+  /** Citas distintas con seña o cobro + cobros sueltos (base del ticket promedio). */
+  tickets: number;
   groupBy: CollectedGroupBy | null;
   /** Ordenados por neto, de mayor a menor (por día: cronológico). */
   groups: CollectedGroup[];
 }
 
-/** Tope de movimientos que se leen por consulta. */
-const MAX_ROWS = 50_000;
+const NO_APPOINTMENT = "Sin cita";
 
 /** Reparte `amount` entre las líneas en proporción a su precio (resto mayor: la suma da exacto). */
 export function prorateByPrice(amount: number, lines: readonly Pick<AppointmentLineView, "priceCents">[]): number[] {
@@ -80,113 +85,173 @@ export function prorateByPrice(amount: number, lines: readonly Pick<AppointmentL
   return out;
 }
 
-interface Portion {
+const num = (v: unknown): number => (v === null || v === undefined ? 0 : Number(v));
+
+/** Fila agregada: clave del grupo, tipo de movimiento, monto y cantidad. */
+interface KindRow {
+  key: string | null;
+  /** Nombre que trae el agregado (líneas de un servicio que ya no existe). */
+  name: string | null;
   kind: PaymentKind;
   amount: number;
-  key: string | null;
-  label: string;
+  count: number;
+}
+
+/** Condiciones sobre `payments` del rango y los filtros propios de sales. */
+function paymentScope(businessId: string, input: CollectedTotalsInput): SQL {
+  const parts: SQL[] = [
+    sql`${payments.businessId} = ${businessId}::uuid`,
+    sql`${payments.paidAt} >= ${input.from.toISOString()}::timestamptz`,
+    sql`${payments.paidAt} < ${input.to.toISOString()}::timestamptz`,
+  ];
+  if (input.locationIds && input.locationIds.length > 0) {
+    parts.push(sql`${payments.locationId} IN (${sql.join(input.locationIds.map((id) => sql`${id.toLowerCase()}::uuid`), sql`, `)})`);
+  }
+  if (input.methodId) parts.push(sql`${payments.paymentMethodId} = ${input.methodId.toLowerCase()}::uuid`);
+  return sql.join(parts, sql` AND `);
+}
+
+/** Identidad de "ticket": la cita, o el pago suelto; las devoluciones no cuentan. */
+const ticketOf = sql`CASE WHEN ${payments.kind} <> 'refund' THEN coalesce(${payments.appointmentId}, ${payments.id})::text END`;
+
+/** Clave propia de sales para agrupar (método, sucursal o día); NULL para el resto. */
+function ownKey(groupBy: CollectedGroupBy | undefined, timeZone: string): SQL {
+  switch (groupBy) {
+    case "method":
+      return sql`${payments.paymentMethodId}::text`;
+    case "location":
+      return sql`${payments.locationId}::text`;
+    case "day":
+      return sql`to_char(${payments.paidAt} AT TIME ZONE ${timeZone}, 'YYYY-MM-DD')`;
+    default:
+      return sql`NULL::text`;
+  }
+}
+
+/** Agregado directo sobre `payments` (sin cruzar con citas): método, sucursal, día o nada. */
+async function aggregateOwn(
+  executor: Executor,
+  businessId: string,
+  input: CollectedTotalsInput,
+  timeZone: string,
+): Promise<{ rows: KindRow[]; count: number; tickets: number }> {
+  const scope = paymentScope(businessId, input);
+  const key = ownKey(input.groupBy, timeZone);
+  return withTenant(executor, businessId, async (tx) => {
+    const rows = rowsOf<{ key: string | null; kind: PaymentKind; amount: unknown; n: unknown }>(
+      await tx.execute(sql`
+        SELECT ${key} AS key, ${payments.kind} AS kind, sum(${payments.amountCents}) AS amount, count(*) AS n
+          FROM ${payments}
+         WHERE ${scope}
+         GROUP BY 1, 2
+      `),
+    );
+    const [overall] = rowsOf<{ n: unknown; tickets: unknown }>(
+      await tx.execute(sql`SELECT count(*) AS n, count(DISTINCT ${ticketOf}) AS tickets FROM ${payments} WHERE ${scope}`),
+    );
+    return {
+      rows: rows.map((r) => ({ key: r.key, name: null, kind: r.kind, amount: num(r.amount), count: num(r.n) })),
+      count: num(overall?.n),
+      tickets: num(overall?.tickets),
+    };
+  });
+}
+
+/**
+ * Cruce con las citas (profesional, servicio o canal, o un filtro por profesional o
+ * servicio): lo hace scheduling con nuestra subconsulta. Método, sucursal o día viajan
+ * como `group_key` cuando además hay filtro.
+ */
+async function aggregateByAppointment(
+  executor: Executor,
+  businessId: string,
+  input: CollectedTotalsInput,
+  timeZone: string,
+): Promise<{ rows: KindRow[]; count: number; tickets: number }> {
+  const amounts = sql`
+    SELECT ${payments.id} AS movement_id, ${payments.appointmentId} AS appointment_id, ${payments.kind} AS kind,
+           ${payments.amountCents} AS amount, ${ticketOf} AS ticket, ${ownKey(input.groupBy, timeZone)} AS group_key
+      FROM ${payments}
+     WHERE ${paymentScope(businessId, input)}`;
+  const groupBy: AttributionKey | null =
+    input.groupBy === "staff" || input.groupBy === "service" || input.groupBy === "channel"
+      ? input.groupBy
+      : input.groupBy
+        ? "source"
+        : null;
+  const result = await attributeAmounts(executor, businessId, {
+    amounts,
+    splitByService: Boolean(input.serviceId) || input.groupBy === "service",
+    groupBy,
+    staffId: input.staffId ?? null,
+    serviceId: input.serviceId ?? null,
+  });
+  return {
+    rows: result.groups.map((g) => ({ key: g.key, name: g.name, kind: g.kind as PaymentKind, amount: g.amountCents, count: g.portions })),
+    count: result.movements,
+    tickets: result.tickets,
+  };
+}
+
+/** Nombres de los grupos (solo se leen los catálogos que hacen falta). */
+async function labeler(executor: Executor, businessId: string, groupBy: CollectedGroupBy | undefined): Promise<(row: KindRow) => string> {
+  switch (groupBy) {
+    case "method": {
+      const names = new Map((await listPaymentMethods(executor, businessId)).map((m) => [m.id, m.name]));
+      return (r) => (r.key ? (names.get(r.key) ?? "Método eliminado") : "");
+    }
+    case "location": {
+      const names = new Map((await listLocations(executor, businessId)).map((l) => [l.id, l.name]));
+      return (r) => (r.key ? (names.get(r.key) ?? "Sucursal") : "");
+    }
+    case "staff": {
+      const names = new Map((await listStaff(executor, businessId)).map((s) => [s.id, s.name]));
+      return (r) => (r.key ? (names.get(r.key) ?? "Profesional") : NO_APPOINTMENT);
+    }
+    case "channel":
+      return (r) => (r.key ? (CHANNEL_LABELS[r.key as AppointmentChannel] ?? r.key) : NO_APPOINTMENT);
+    case "service":
+      // El nombre copiado en la línea (el servicio pudo cambiar de nombre o borrarse).
+      return (r) => r.name ?? (r.key ? "Servicio" : NO_APPOINTMENT);
+    case "day":
+      return (r) => r.key ?? "";
+    default:
+      return () => "";
+  }
 }
 
 /** Totales cobrados del negocio por rango (API pública para Reportes e Inicio). */
 export async function getCollectedTotals(executor: Executor, businessId: string, input: CollectedTotalsInput): Promise<CollectedTotals> {
-  const conditions: SQL[] = [eq(payments.businessId, businessId), gte(payments.paidAt, input.from), lt(payments.paidAt, input.to)];
-  const empty = input.locationIds && input.locationIds.length === 0;
-  if (input.locationIds && input.locationIds.length > 0) conditions.push(inArray(payments.locationId, [...input.locationIds]));
-  if (input.methodId) conditions.push(eq(payments.paymentMethodId, input.methodId));
-  const rows = empty
-    ? []
-    : await withTenant(executor, businessId, (tx) =>
-        tx
-          .select({
-            kind: payments.kind,
-            amount: payments.amountCents,
-            paidAt: payments.paidAt,
-            methodId: payments.paymentMethodId,
-            locationId: payments.locationId,
-            appointmentId: payments.appointmentId,
-          })
-          .from(payments)
-          .where(and(...conditions))
-          .limit(MAX_ROWS),
-      );
+  const groupBy = input.groupBy ?? null;
+  const empty = Boolean(input.locationIds && input.locationIds.length === 0);
+  const viaAppointments = Boolean(input.staffId || input.serviceId || groupBy === "staff" || groupBy === "service" || groupBy === "channel");
+  const timeZone =
+    input.timeZone ?? (groupBy === "day" ? ((await getBusinessContext(executor, businessId))?.business.timezone ?? "America/Costa_Rica") : "UTC");
+  const { rows, count, tickets } = empty
+    ? { rows: [], count: 0, tickets: 0 }
+    : viaAppointments
+      ? await aggregateByAppointment(executor, businessId, input, timeZone)
+      : await aggregateOwn(executor, businessId, input, timeZone);
 
-  const needsAppointments = Boolean(input.staffId || input.serviceId || input.groupBy === "staff" || input.groupBy === "service");
-  const appointments = new Map<string, AppointmentView>();
-  if (needsAppointments) {
-    const ids = [...new Set(rows.map((r) => r.appointmentId).filter((id): id is string => Boolean(id)))];
-    for (let i = 0; i < ids.length; i += 500) {
-      for (const a of await getAppointmentsByIds(executor, businessId, ids.slice(i, i + 500))) appointments.set(a.id, a);
-    }
-  }
-  const timeZone = input.timeZone ?? (await getBusinessContext(executor, businessId))?.business.timezone ?? "America/Costa_Rica";
-  const methodName = new Map((await listPaymentMethods(executor, businessId)).map((m) => [m.id, m.name]));
-  const locationName = new Map((await listLocations(executor, businessId)).map((l) => [l.id, l.name]));
-
-  // Cada movimiento se parte en porciones (una por línea si hace falta saber el servicio).
-  const portions: Portion[] = [];
-  let counted = 0;
-  for (const r of rows) {
-    const before = portions.length;
-    pushPortions(r);
-    if (portions.length > before) counted++;
-  }
-
-  function pushPortions(r: (typeof rows)[number]): void {
-    const kind = r.kind as PaymentKind;
-    const appointment = r.appointmentId ? appointments.get(r.appointmentId) : undefined;
-    if (input.staffId && appointment?.staffId !== input.staffId) return;
-    if (input.serviceId || input.groupBy === "service") {
-      if (!appointment) {
-        if (!input.serviceId) portions.push({ kind, amount: r.amount, key: null, label: "Sin cita" });
-        return;
-      }
-      const shares = prorateByPrice(r.amount, appointment.services);
-      appointment.services.forEach((line, i) => {
-        if (input.serviceId && line.serviceId !== input.serviceId) return;
-        if (shares[i] > 0) portions.push({ kind, amount: shares[i], key: line.serviceId, label: line.name });
-      });
-      return;
-    }
-    let key: string | null = null;
-    let label = "";
-    switch (input.groupBy) {
-      case "method":
-        key = r.methodId;
-        label = methodName.get(r.methodId) ?? "Método eliminado";
-        break;
-      case "location":
-        key = r.locationId;
-        label = locationName.get(r.locationId) ?? "Sucursal";
-        break;
-      case "staff":
-        key = appointment?.staffId ?? null;
-        label = appointment ? (appointment.staff?.name ?? "Profesional") : "Sin cita";
-        break;
-      case "day":
-        key = localDate(r.paidAt, timeZone);
-        label = key;
-        break;
-    }
-    portions.push({ kind, amount: r.amount, key, label });
-  }
-
+  const labelOf = rows.length > 0 && groupBy ? await labeler(executor, businessId, input.groupBy) : () => "";
   const sums = { depositsCents: 0, paymentsCents: 0, refundsCents: 0 };
   const groups = new Map<string, CollectedGroup>();
-  for (const p of portions) {
-    if (p.kind === "deposit") sums.depositsCents += p.amount;
-    else if (p.kind === "payment") sums.paymentsCents += p.amount;
-    else sums.refundsCents += p.amount;
-    if (!input.groupBy) continue;
-    const id = p.key ?? "\u0000none";
-    const g = groups.get(id) ?? { key: p.key, label: p.label, collectedCents: 0, refundsCents: 0, netCents: 0, count: 0 };
-    if (p.kind === "refund") g.refundsCents += p.amount;
-    else g.collectedCents += p.amount;
+  for (const r of rows) {
+    if (r.kind === "deposit") sums.depositsCents += r.amount;
+    else if (r.kind === "payment") sums.paymentsCents += r.amount;
+    else sums.refundsCents += r.amount;
+    if (!groupBy) continue;
+    const label = labelOf(r);
+    const id = r.key ?? `\u0000${label}`;
+    const g = groups.get(id) ?? { key: r.key, label, collectedCents: 0, refundsCents: 0, netCents: 0, count: 0 };
+    if (r.kind === "refund") g.refundsCents += r.amount;
+    else g.collectedCents += r.amount;
     g.netCents = g.collectedCents - g.refundsCents;
-    g.count += 1;
+    g.count += r.count;
     groups.set(id, g);
   }
   const list = [...groups.values()];
-  if (input.groupBy === "day") list.sort((a, b) => String(a.key).localeCompare(String(b.key)));
+  if (groupBy === "day") list.sort((a, b) => String(a.key).localeCompare(String(b.key)));
   else list.sort((a, b) => b.netCents - a.netCents || a.label.localeCompare(b.label, "es"));
   const collected = sums.depositsCents + sums.paymentsCents;
   return {
@@ -195,8 +260,9 @@ export async function getCollectedTotals(executor: Executor, businessId: string,
     ...sums,
     collectedCents: collected,
     netCents: collected - sums.refundsCents,
-    count: counted,
-    groupBy: input.groupBy ?? null,
+    count,
+    tickets,
+    groupBy,
     groups: list,
   };
 }

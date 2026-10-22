@@ -20,6 +20,7 @@ import {
   reassignStaff,
   rescheduleAppointment,
   updateAppointmentNotes,
+  type AppointmentBookedHook,
   type AppointmentCompletedHook,
   type AppointmentView,
 } from "./appointments";
@@ -58,6 +59,8 @@ export interface SchedulingRouteDeps {
   countConversationsWaiting?: ConversationsWaitingCounter;
   /** Efectos internos de completar una cita, en su transacción (la composición inyecta las comisiones). */
   onAppointmentCompleted?: AppointmentCompletedHook;
+  /** Aviso de cita creada desde el panel, ya confirmada (la composición cuenta el uso en `daily_usage`). */
+  onAppointmentBooked?: AppointmentBookedHook;
 }
 
 const DESK: readonly Role[] = ["owner", "admin", "front_desk"];
@@ -161,7 +164,7 @@ function slotJson(slot: Slot) {
   };
 }
 
-export function schedulingRoutes({ db, countConversationsWaiting, onAppointmentCompleted }: SchedulingRouteDeps): Route[] {
+export function schedulingRoutes({ db, countConversationsWaiting, onAppointmentCompleted, onAppointmentBooked }: SchedulingRouteDeps): Route[] {
   return [
     route({ method: "GET", path: "/availability", auth: "user", query: AvailabilityQuery }, async ({ session, query }) => {
       assertLocationAccess(session, query.locationId);
@@ -223,6 +226,7 @@ export function schedulingRoutes({ db, countConversationsWaiting, onAppointmentC
           notes: body.notes ?? null,
           createdBy: session.userId,
           allowOutsideHours: body.allowOutsideHours,
+          onBooked: onAppointmentBooked,
         }),
       );
     }),
