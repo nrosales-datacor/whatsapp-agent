@@ -1,4 +1,4 @@
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, eq, isNotNull, ne } from "drizzle-orm";
 import { recordAudit } from "../../platform/audit/auditLog";
 import { decrypt, encrypt } from "../../platform/crypto/secrets";
 import { isTenantId, withSystem, withTenant, type Executor } from "../../platform/db/scope";
@@ -96,6 +96,20 @@ export async function getChannelRow(db: Executor, businessId: string, channelId:
 export async function isWhatsAppConnected(db: Executor, businessId: string): Promise<boolean> {
   const rows = await listChannelRows(db, businessId);
   return rows.some((r) => r.status === "active" && r.accessTokenEncrypted);
+}
+
+/**
+ * Negocios con al menos un número conectado (activo y con token), de toda la plataforma:
+ * lo usa el superadmin para "agente encendido" en las métricas de producto (I5).
+ */
+export async function listConnectedWhatsAppBusinessIds(db: Executor): Promise<Set<string>> {
+  const rows = await withSystem(db, (tx) =>
+    tx
+      .selectDistinct({ businessId: whatsappChannels.businessId })
+      .from(whatsappChannels)
+      .where(and(eq(whatsappChannels.status, "active"), isNotNull(whatsappChannels.accessTokenEncrypted))),
+  );
+  return new Set(rows.map((r) => r.businessId));
 }
 
 /**

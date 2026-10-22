@@ -4,6 +4,7 @@ import { businessRoutes, type LocationReferenceCheck } from "./modules/business"
 import { clientsRoutes } from "./modules/clients";
 import { catalogRoutes, isLocationRestrictingServices } from "./modules/catalog";
 import { commissionsRoutes, recalculateAppointmentCommissions } from "./modules/commissions";
+import { reportsRoutes } from "./modules/reports";
 import { salesRoutes } from "./modules/sales";
 import { schedulingRoutes } from "./modules/scheduling";
 import { isLocationAssigned, staffRoutes, teamRoutes } from "./modules/team";
@@ -18,6 +19,7 @@ import {
 import type { Executor } from "./platform/db/scope";
 import type { Route } from "./platform/http/routeTypes";
 import { systemRoutes } from "./platform/http/systemRoutes";
+import { createUsageTracker, type UsageTracker } from "./usage";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Punto ÚNICO de composición de la API del panel (/api/panel/*).
@@ -46,6 +48,8 @@ export interface RouteDeps {
   plans: PlanService;
   /** Dependencias del módulo WhatsApp (Graph, Storage, push…). Default: las reales. */
   whatsapp?: WhatsAppDeps;
+  /** Métricas de producto en `daily_usage` (src/usage.ts). Default: uno nuevo. */
+  usage?: UsageTracker;
 }
 
 /**
@@ -67,10 +71,11 @@ const onCommissionableChange = (tx: Executor, businessId: string, appointmentId:
 
 export function panelRoutes(deps: RouteDeps): Route[] {
   const whatsapp = deps.whatsapp ?? createWhatsAppDeps(deps.db);
+  const usage = deps.usage ?? createUsageTracker();
   return [
     ...systemRoutes(),
-    // Identidad y equipo: /auth/* y /team/*.
-    ...teamRoutes(deps),
+    // Identidad y equipo: /auth/* y /team/* (cada login suma a `daily_usage`).
+    ...teamRoutes({ db: deps.db, plans: deps.plans, onLogin: usage.login }),
     // Configuración (I1): /settings/business, /settings/locations, /settings/services,
     // /settings/service-categories, /settings/staff y /settings/time-off.
     ...businessRoutes({ db: deps.db, isLocationReferenced, plans: deps.plans }),
@@ -83,13 +88,22 @@ export function panelRoutes(deps: RouteDeps): Route[] {
     ...clientsRoutes({ db: deps.db, clientErasers: [whatsappClientEraser] }),
     // Agenda e Inicio básico (I1): /availability, /appointments/*, /clients/:id/appointments
     // y /home/today (con las conversaciones esperando a una persona, del módulo WhatsApp).
-    ...schedulingRoutes({ db: deps.db, countConversationsWaiting, onAppointmentCompleted: onCommissionableChange }),
+    // Cada cita creada suma a `daily_usage`.
+    ...schedulingRoutes({
+      db: deps.db,
+      countConversationsWaiting,
+      onAppointmentCompleted: onCommissionableChange,
+      onAppointmentBooked: usage.appointmentBooked,
+    }),
     // Ventas (I4, Pro): métodos de pago, cobros y señas, devoluciones, pendientes y caja
-    // (/settings/payment-methods, /appointments/:id/payments|balance, /sales/*).
-    ...salesRoutes({ db: deps.db, onPaymentsChanged: onCommissionableChange }),
+    // (/settings/payment-methods, /appointments/:id/payments|balance, /sales/*). Cada seña o
+    // cobro suma a `daily_usage`.
+    ...salesRoutes({ db: deps.db, onPaymentsChanged: onCommissionableChange, onPaymentRecorded: usage.paymentRecorded }),
     // Comisiones (I4, Pro): reglas, movimientos, resumen y liquidaciones
     // (/settings/commission-rules, /commissions/*).
     ...commissionsRoutes({ db: deps.db }),
+    // Reportes e Inicio completo (I5, Pro): /reports/* (con su .csv) y /home/overview.
+    ...reportsRoutes({ db: deps.db, countConversationsWaiting }),
     // WhatsApp IA (I2): canales, bandeja, resumen, métricas y push (/whatsapp/*, /push/*) y
     // el alta manual de un número del superadmin (/admin/businesses/:id/whatsapp).
     ...whatsappRoutes({ db: deps.db, deps: whatsapp }),

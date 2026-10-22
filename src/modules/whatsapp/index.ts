@@ -14,7 +14,14 @@
 //   • `whatsappJobHandlers(deps)` y `startWhatsAppSchedulers(db)` → cola y loops.
 //   • `isWhatsAppConnected` y `queueWhatsAppReminder` → inyección en `handleReminderJob`.
 export type { AgentAction, AgentHistoryMessage, AgentReply, AgentRunner, AgentTurnInput, AgentTurnResult } from "./agentContract";
-export { channelForLocation, isWhatsAppConnected, listChannels, type ChannelView, type TokenStatus } from "./channels";
+export {
+  channelForLocation,
+  isWhatsAppConnected,
+  listChannels,
+  listConnectedWhatsAppBusinessIds,
+  type ChannelView,
+  type TokenStatus,
+} from "./channels";
 export { createAgentRunner, type AgentRunnerDeps } from "./agent";
 export { createWhatsAppDeps, handoffAgentRunner, loadTextProfile, type WhatsAppDeps } from "./deps";
 export { WHATSAPP_MEDIA_ERASE_JOB, whatsappClientEraser } from "./eraser";

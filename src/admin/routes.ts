@@ -19,6 +19,7 @@ import {
 import { createBusiness, INDUSTRIES, isValidTimeZone, summarizeBusiness } from "../modules/business";
 import { inviteMember } from "../modules/team";
 import { PROVISIONING_STEPS } from "../provisioning";
+import { getBusinessUsage, getPlatformMetrics, resolveUsageRange, UsageRangeQuery } from "./metrics";
 import { adminLogin, clearAdminSessionCookie, setAdminSessionCookie, superadminUsername } from "./session";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -34,8 +35,11 @@ import { adminLogin, clearAdminSessionCookie, setAdminSessionCookie, superadminU
 //   POST   /admin/businesses/:id/pause       { reason? } → la API del negocio responde 403
 //                                            `business_paused` y la cola posterga su trabajo
 //   POST   /admin/businesses/:id/reactivate
+//   GET    /admin/metrics?from&to            métricas de producto (I5): activación y uso por negocio
+//   GET    /admin/businesses/:id/usage?from&to  uso diario de un negocio (I5)
 //
-// Plan, pausa y cobro viven en modules/billing (con su auditoría en la misma transacción).
+// Plan, pausa y cobro viven en modules/billing (con su auditoría en la misma transacción);
+// las métricas de producto, en ./metrics.ts (sobre `daily_usage`).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface AdminRouteDeps {
@@ -147,6 +151,15 @@ export function adminRoutes({ db, plans }: AdminRouteDeps): Route[] {
         log.info("business_paused", { businessId: params.id });
         return getAdminBusinessDetail(db, plans, params.id);
       },
+    ),
+
+    route({ method: "GET", path: "/admin/metrics", auth: "superadmin", query: UsageRangeQuery }, ({ query }) =>
+      getPlatformMetrics(db, resolveUsageRange(query)),
+    ),
+
+    route(
+      { method: "GET", path: "/admin/businesses/:id/usage", auth: "superadmin", params: BusinessParams, query: UsageRangeQuery },
+      ({ params, query }) => getBusinessUsage(db, params.id, resolveUsageRange(query)),
     ),
 
     route(

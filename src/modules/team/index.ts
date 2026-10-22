@@ -6,9 +6,11 @@ export type { Me } from "./me";
 export { activeMemberSessionEpochs, countActiveMembers, isLocationAssigned } from "./members";
 export type { Member, MemberStatus } from "./members";
 export { RESET_PASSWORD_PATH } from "./recovery";
-export { createSessionResolver } from "./session";
+export { createSessionResolver, type SessionSeenHook } from "./session";
+// Reportes e Inicio (I5): minutos disponibles por profesional (ocupación) y último día de actividad.
+export { getStaffAvailableMinutes, markMemberActive, type LocationSchedule } from "./availability";
 export { getStaffIdForUser, listStaffOptions, type StaffOption } from "./staffDirectory";
-export { teamRoutes, type TeamRouteDeps } from "./routes";
+export { teamRoutes, type LoginHook, type TeamRouteDeps } from "./routes";
 // Profesionales, horarios y ausencias (Configuración > Equipo y API pública de la agenda).
 export { countActiveStaff, getStaffMember, getStaffWeeklyHours, listStaff, STAFF_COLORS } from "./staff";
 export type { DeleteStaffResult, StaffMember, StaffView, StaffWeeklyBlock } from "./staff";

@@ -12,6 +12,7 @@ import type { HttpHandler } from "./platform/net/http";
 import { withSecurityHeaders } from "./platform/net/securityHeaders";
 import { createPlans } from "./plans";
 import { panelRoutes } from "./routes";
+import { createUsageTracker, type UsageTracker } from "./usage";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Composición del handler HTTP: qué sirve cada tipo de proceso. Separado de server.ts
@@ -37,8 +38,13 @@ export type PanelApiAccess = Pick<RouterOptions, "resolveSession" | "resolveSupe
  * la del superadmin por cookie firmada (src/admin/session.ts) y los módulos del plan
  * (src/modules/billing, compuesto en src/plans.ts).
  */
-export function defaultPanelApiAccess(db: Executor, plans: PlanService = createPlans(db)): Required<PanelApiAccess> {
-  return { resolveSession: createSessionResolver(db), resolveSuperadmin, moduleGate: plans.moduleGate };
+export function defaultPanelApiAccess(
+  db: Executor,
+  plans: PlanService = createPlans(db),
+  usage: UsageTracker = createUsageTracker(),
+): Required<PanelApiAccess> {
+  // Cada request con sesión marca a la persona como activa hoy (`daily_usage`, src/usage.ts).
+  return { resolveSession: createSessionResolver(db, { onSession: usage.sessionSeen }), resolveSuperadmin, moduleGate: plans.moduleGate };
 }
 
 export interface AppOptions {
@@ -65,10 +71,12 @@ function requestUrl(rawUrl: string | undefined): URL {
  * estático en `/panel`.
  */
 export function createAppHandler({ db, role, panelApi = {}, whatsapp, plans = createPlans(db) }: AppOptions): HttpHandler {
+  // Métricas de producto (`daily_usage`): un solo rastreador para las rutas y la sesión.
+  const usage = createUsageTracker();
   // Se arma una vez por proceso: una declaración de rutas incoherente rompe el arranque.
   const panelApiHandler = createRouter({
-    routes: panelRoutes({ db, plans, whatsapp }),
-    ...defaultPanelApiAccess(db, plans),
+    routes: panelRoutes({ db, plans, whatsapp, usage }),
+    ...defaultPanelApiAccess(db, plans, usage),
     ...panelApi,
   });
   // Webhook de WhatsApp: lo llama Meta (firma propia; sin sesión ni CSRF del panel).
