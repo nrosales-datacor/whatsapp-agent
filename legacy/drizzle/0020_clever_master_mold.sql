@@ -1,2 +1,0 @@
-ALTER TABLE "wa_citas" ADD COLUMN "addons" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
-ALTER TABLE "wa_conversaciones" ADD COLUMN "upsells_rechazados" jsonb DEFAULT '[]'::jsonb NOT NULL;

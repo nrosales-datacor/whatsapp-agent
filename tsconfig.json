@@ -11,5 +11,5 @@
     "types": ["node"]
   },
   "include": ["src/**/*.ts", "test/**/*.ts", "eval/**/*.ts"],
-  "exclude": ["drizzle.config.ts", "legacy", "web", "node_modules"]
+  "exclude": ["drizzle.config.ts", "web", "node_modules"]
 }
