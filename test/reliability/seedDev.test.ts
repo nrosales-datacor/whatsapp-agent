@@ -6,6 +6,7 @@ import { businesses, customFields } from "../../src/modules/business/schema";
 import { getServices } from "../../src/modules/catalog";
 import { clients } from "../../src/modules/clients/schema";
 import { commissionEntries } from "../../src/modules/commissions/schema";
+import { clientIdsWithStaffAppointments } from "../../src/modules/scheduling";
 import { appointments } from "../../src/modules/scheduling/schema";
 import { memberships, staff, users } from "../../src/modules/team/schema";
 import { verifyPassword } from "../../src/platform/auth/password";
@@ -61,6 +62,31 @@ test("seed:dev: crea el negocio demo completo con citas de esta semana, y es ide
   const entries = await withTenant(db, first.businessId, (tx) => tx.select().from(commissionEntries));
   assert.equal(entries.length, 4);
   assert.ok(entries.some((e) => e.rule.value === 1500), "Ana en la limpieza facial: 15 %");
+
+  // Ventas × CRM (I4 + I3): los clientes de "Mis comisiones" de Ana están en sus "Mis
+  // clientes" (los que tienen citas suyas, sin las canceladas), que es lo que ve el rol staff.
+  const [ana] = await withTenant(db, first.businessId, (tx) => tx.select({ id: staff.id }).from(staff).where(eq(staff.name, "Ana Rojas")));
+  const anaClients = await withTenant(db, first.businessId, (tx) =>
+    tx
+      .select({ name: clients.name })
+      .from(clients)
+      .where(sql`${clients.id} IN (${clientIdsWithStaffAppointments(first.businessId, ana.id)})`),
+  );
+  assert.deepEqual(
+    anaClients.map((c) => c.name).sort(),
+    ["Andrea Quesada", "María Fernández", "Natalia Brenes", "Valeria Solís"],
+    "sus citas (también el no-show) sin la cancelada de Gabriela",
+  );
+  const anaCommissionClients = await withTenant(db, first.businessId, (tx) =>
+    tx
+      .select({ name: clients.name })
+      .from(commissionEntries)
+      .innerJoin(appointments, eq(appointments.id, commissionEntries.appointmentId))
+      .innerJoin(clients, eq(clients.id, appointments.clientId))
+      .where(eq(commissionEntries.staffId, ana.id)),
+  );
+  assert.ok(anaCommissionClients.length > 0, "Ana tiene comisiones de demo");
+  for (const c of anaCommissionClients) assert.ok(anaClients.some((a) => a.name === c.name), `${c.name} está en Mis clientes de Ana`);
 
   // Los usuarios demo entran con la clave conocida de desarrollo.
   assert.equal(first.password, DEMO_PASSWORD);
