@@ -247,7 +247,6 @@ export const SETTINGS_PAGES: readonly SettingsPageDef[] = [
     roles: MANAGERS,
     module: () => "sales",
     upsell: true,
-    comingSoon: true,
     label: () => "Métodos de pago",
     description: () => "Efectivo, SINPE, tarjeta, transferencia: los que aceptás en tu negocio.",
   },

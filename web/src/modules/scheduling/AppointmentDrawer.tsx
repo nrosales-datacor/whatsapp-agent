@@ -9,6 +9,7 @@ import Drawer from "../../ui/Drawer";
 import { FormError, SelectField, TextField } from "../../ui/Field";
 import { useToast } from "../../ui/Toast";
 import { formatPhone } from "../clients/format";
+import AppointmentBalance from "../sales/AppointmentBalance";
 import type { StaffView } from "../settings/settingsApi";
 import { isoToZoned } from "../settings/zonedTime";
 import { CHANNEL_LABEL, formatLongDate, formatMinutes, formatTime, formatWhen, isActive, STATUS_LABEL } from "./format";
@@ -179,6 +180,9 @@ function AppointmentDetail({
           <span className="tnum">{formatCents(appointment.totalCents, me.business.currency)}</span>
         </p>
       </div>
+
+      {/* Saldo y "Cobrar" (I4): solo con el módulo Ventas en el plan. */}
+      {me.modules.includes("sales") && <AppointmentBalance appointment={appointment} />}
 
       {appointment.status === "cancelled" && (
         <p className="appt-note">
