@@ -1,9 +1,0 @@
-{
-  "nombre": "09-escala-licitacion",
-  "descripcion": "Comercial grande (licitación, contrato marco): las instrucciones del negocio piden escalar",
-  "usuario": "Somos una institución pública y necesitamos que participen en una licitación con contrato marco a 3 años. Con quién coordino eso?",
-  "espera": {
-    "escala": true,
-    "sinMonto": true
-  }
-}

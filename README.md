@@ -4,7 +4,7 @@
 > similares), multi-sucursal, con un **agente de WhatsApp con IA** como módulo. Está en reestructura (Carril I): el
 > plan, la arquitectura y las fases están en [`PLAN-GESTION.md`](PLAN-GESTION.md) y el estado de cada ítem en
 > [`ROADMAP.md`](ROADMAP.md). La versión anterior (agente de WhatsApp para lavacar) quedó en el tag
-> `whatsapp-agent-final`.
+> `whatsapp-agent-final` (los comentarios que citan `legacy/…` se refieren a ese tag).
 
 **Stack:** TypeScript · Node 24 (`node:http`, sin framework) · Postgres (Supabase en producción, PGlite en desarrollo y
 tests) · Drizzle · Zod · React 19 + Vite + TanStack Query (PWA) · OpenAI · WhatsApp Cloud API.
@@ -174,7 +174,6 @@ src/
   jobs.ts     composición de la cola y los loops de fondo
 web/src/      panel React: app (rutas, layout, sesión), modules (secciones), ui, lib
 drizzle/      migraciones
-legacy/       código del agente viejo, fuera del build, solo como referencia (se borra al cerrar I2)
 ```
 
 ## Documentación

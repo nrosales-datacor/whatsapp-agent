@@ -1,1 +1,0 @@
-ALTER TABLE "wa_citas" ADD COLUMN "confirmada_en" timestamp with time zone;

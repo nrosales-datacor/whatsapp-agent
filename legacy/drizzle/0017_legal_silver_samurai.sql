@@ -1,1 +1,0 @@
-ALTER TABLE "wa_tenants" ADD COLUMN "plantilla_reapertura" text;
