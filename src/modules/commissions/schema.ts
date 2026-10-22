@@ -2,9 +2,9 @@ import { sql } from "drizzle-orm";
 import { bigint, boolean, check, date, index, jsonb, pgTable, text, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { instant, oneOf, timestamps, uuidPk } from "../../platform/db/columns";
 import { tenantPolicy } from "../../platform/db/rls";
-import { businesses } from "../business/schema";
+import { businesses, locations } from "../business/schema";
 import { serviceCategories, services } from "../catalog/schema";
-import { appointmentServices } from "../scheduling/schema";
+import { appointments, appointmentServices } from "../scheduling/schema";
 import { staff, users } from "../team/schema";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -89,9 +89,20 @@ export const payouts = pgTable(
 ).enableRLS();
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Movimientos: la comisión de UNA línea de servicio para el profesional que la atendió.
-// `pending` hasta que entra en una liquidación (`paid`, con `payout_id`). NO ACTION hacia
-// la línea y el profesional: no se pierde una comisión porque se editó la cita.
+// Movimientos: la comisión de UNA línea de servicio para el profesional que la atendió,
+// sobre lo cobrado de esa línea (lo cobrado de la cita prorrateado por precio).
+//
+//   • Abierto (`payout_id` null): se recalcula con cada cobro o devolución de la cita.
+//     Hay a lo sumo UNO por línea (índice único parcial).
+//   • Liquidado (`payout_id` puesto): entró en una liquidación y NO se toca más; al pagarse
+//     la liquidación pasa a `paid`. Si después de liquidar se cobra el resto o se devuelve
+//     algo, la diferencia va en un movimiento abierto nuevo de la misma línea (un ajuste,
+//     negativo si fue una devolución) que entra en la liquidación siguiente.
+//   • `earned_at`: cuándo se ganó (el inicio de la cita; en un ajuste, cuándo se generó).
+//     Ordena "Mis comisiones" y decide qué entra en una liquidación.
+//
+// NO ACTION hacia la línea, la cita y el profesional: no se pierde una comisión porque se
+// editó la cita (las líneas de una cita completada no cambian).
 // ─────────────────────────────────────────────────────────────────────────────
 export const commissionEntries = pgTable(
   "commission_entries",
@@ -104,7 +115,16 @@ export const commissionEntries = pgTable(
     appointmentServiceId: uuid("appointment_service_id")
       .notNull()
       .references(() => appointmentServices.id),
-    // Lo cobrado de la línea, sobre lo que se calcula.
+    // Copias de la cita (filtros por sucursal y período sin ir a la agenda).
+    appointmentId: uuid("appointment_id")
+      .notNull()
+      .references(() => appointments.id),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id),
+    earnedAt: instant("earned_at").notNull(),
+    // Lo cobrado de la línea sobre lo que se calcula (en un ajuste, la diferencia; puede
+    // ser negativa, igual que el monto).
     baseCents: bigint("base_cents", { mode: "number" }).notNull(),
     amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
     rule: jsonb("rule").$type<AppliedCommissionRule>().notNull(),
@@ -114,13 +134,16 @@ export const commissionEntries = pgTable(
     ...timestamps(),
   },
   (t) => [
-    // Una comisión por línea: recalcular es actualizar, no duplicar.
-    uniqueIndex("commission_entries_line_uq").on(t.appointmentServiceId),
-    // "Mis comisiones" y la liquidación: pendientes de un profesional.
-    index("commission_entries_staff_status_idx").on(t.staffId, t.status, t.createdAt),
+    // Un movimiento ABIERTO por línea: recalcular es actualizar, no duplicar.
+    uniqueIndex("commission_entries_open_line_uq").on(t.appointmentServiceId).where(sql`${t.payoutId} IS NULL`),
+    // Todos los movimientos de una línea (recálculo: lo ya liquidado).
+    index("commission_entries_line_idx").on(t.appointmentServiceId),
+    // "Mis comisiones" y la liquidación: lo de un profesional por período.
+    index("commission_entries_staff_earned_idx").on(t.businessId, t.staffId, t.earnedAt),
+    // Resumen del negocio por período.
+    index("commission_entries_business_earned_idx").on(t.businessId, t.earnedAt),
     index("commission_entries_payout_idx").on(t.payoutId),
     check("commission_entries_status_check", oneOf(t.status, COMMISSION_ENTRY_STATUSES)),
-    check("commission_entries_amounts_check", sql`${t.baseCents} >= 0 AND ${t.amountCents} >= 0`),
     check("commission_entries_paid_check", sql`${t.status} <> 'paid' OR ${t.payoutId} IS NOT NULL`),
     tenantPolicy(),
   ],

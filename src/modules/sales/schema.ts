@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { bigint, boolean, check, index, integer, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, check, index, integer, pgTable, text, uniqueIndex, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { instant, oneOf, timestamps, uuidPk } from "../../platform/db/columns";
 import { tenantPolicy } from "../../platform/db/rls";
 import { businesses, locations } from "../business/schema";
@@ -13,6 +13,8 @@ import { users } from "../team/schema";
 //   • Saldo de una cita = appointments.total_cents − pagos de la cita (las devoluciones
 //     restan).
 //   • Caja = resumen del día por método, sin apertura ni cierre.
+//   • Una devolución apunta al pago que devuelve (`refund_of_id`): así se sabe cuánto
+//     queda por devolver de cada pago (nunca más de lo cobrado).
 // Los pagos son registro contable: sus FKs a sucursal, cliente, cita y método son
 // NO ACTION (ver el comentario de scheduling/schema.ts).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -64,6 +66,10 @@ export const payments = pgTable(
     recordedBy: uuid("recorded_by").references(() => users.id, { onDelete: "set null" }),
     // Cuándo se cobró (puede ser anterior a cuándo se registró). Manda en caja y reportes.
     paidAt: instant("paid_at").notNull().defaultNow(),
+    // Devolución: el pago (seña o cobro) que devuelve, en parte o entero. Solo y siempre en
+    // `kind = 'refund'`. NO ACTION: un pago con devoluciones no se borra.
+    refundOfId: uuid("refund_of_id").references((): AnyPgColumn => payments.id),
+    // Nota del cobro; en una devolución, el motivo (obligatorio).
     note: text("note"),
     ...timestamps(),
   },
@@ -76,8 +82,11 @@ export const payments = pgTable(
     index("payments_appointment_idx").on(t.appointmentId),
     // Historial de pagos del cliente (ficha).
     index("payments_client_paid_idx").on(t.clientId, t.paidAt),
+    // Devoluciones de un pago (cuánto queda por devolver).
+    index("payments_refund_of_idx").on(t.refundOfId),
     check("payments_kind_check", oneOf(t.kind, PAYMENT_KINDS)),
     check("payments_amount_check", sql`${t.amountCents} > 0`),
+    check("payments_refund_of_check", sql`(${t.kind} = 'refund') = (${t.refundOfId} IS NOT NULL)`),
     tenantPolicy(),
   ],
 ).enableRLS();
