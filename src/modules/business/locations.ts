@@ -6,10 +6,12 @@ import { withTenant, type Executor, type Tx } from "../../platform/db/scope";
 import { assertAllLocationsAccess, assertLocationAccess, hasLocationAccess } from "../../platform/http/access";
 import { HttpError, ValidationError } from "../../platform/http/errors";
 import type { Session } from "../../platform/http/routeTypes";
+import { assertQuota } from "../../platform/plan/planHooks";
 import { getBusinessContext, invalidateBusinessContext, type LocationWithHours } from "./context";
 import { fromDbTime, sortBlocks, WeeklyHoursSchema, type WeeklyBlock } from "./hours";
 import { DEFAULT_LOCATION_HOURS, isValidTimeZone } from "./provisioning";
 import { businesses, locationHours, locations, type Location, type LocationHour } from "./schema";
+import { countActiveLocations } from "./subscription";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sucursales y su horario semanal: Configuración > Sucursales y la API pública que usa
@@ -23,6 +25,9 @@ import { businesses, locationHours, locations, type Location, type LocationHour 
 //   • Cada cambio: snapshot en config_history (misma transacción) e invalidación del
 //     caché del contexto al confirmar.
 //   • Una sesión limitada a algunas sucursales solo edita esas, y no crea sucursales.
+//   • Cupo del plan (`locationLimit`, sucursales ACTIVAS): crear una o reactivar una
+//     desactivada pasando el tope → 403 `plan_limit_reached`. El cupo lo resuelve la ruta
+//     antes de la transacción (src/platform/plan/planHooks.ts); null/undefined = sin tope.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Sucursal tal como la ven la API y la API pública. */
@@ -219,10 +224,16 @@ async function lockActiveLocations(tx: Tx, businessId: string): Promise<string[]
   return rows.map((r) => r.id);
 }
 
-export async function createLocation(db: Executor, session: Session, input: z.output<typeof NewLocationInput>): Promise<LocationView> {
+export async function createLocation(
+  db: Executor,
+  session: Session,
+  input: z.output<typeof NewLocationInput>,
+  locationLimit?: number | null,
+): Promise<LocationView> {
   assertAllLocationsAccess(session);
   const { businessId } = session;
   const view = await withTenant(db, businessId, async (tx) => {
+    await assertQuota(tx, { businessId, resource: "locations", limit: locationLimit, count: () => countActiveLocations(tx, businessId) });
     const [business] = await tx.select({ timezone: businesses.timezone }).from(businesses).where(eq(businesses.id, businessId));
     if (!business) throw new HttpError(404, "Negocio no encontrado.", "not_found");
     const [{ last }] = await tx
@@ -251,13 +262,30 @@ export async function createLocation(db: Executor, session: Session, input: z.ou
   return view;
 }
 
-export async function updateLocation(db: Executor, session: Session, locationId: string, patch: z.output<typeof LocationPatch>): Promise<LocationView> {
+export async function updateLocation(
+  db: Executor,
+  session: Session,
+  locationId: string,
+  patch: z.output<typeof LocationPatch>,
+  locationLimit?: number | null,
+): Promise<LocationView> {
   assertLocationAccess(session, locationId);
   const { businessId } = session;
   const view = await withTenant(db, businessId, async (tx) => {
     if (patch.active === false) {
       const active = await lockActiveLocations(tx, businessId);
       if (active.length === 1 && active[0] === locationId.toLowerCase()) throw lastLocation();
+    }
+    if (patch.active === true) {
+      // Reactivar una desactivada suma una activa: cuenta para el cupo del plan.
+      const [current] = await tx
+        .select({ active: locations.active })
+        .from(locations)
+        .where(and(eq(locations.id, locationId), eq(locations.businessId, businessId)))
+        .for("update");
+      if (current && !current.active) {
+        await assertQuota(tx, { businessId, resource: "locations", limit: locationLimit, count: () => countActiveLocations(tx, businessId) });
+      }
     }
     const [row] = await tx
       .update(locations)

@@ -3,6 +3,7 @@ import type { Executor } from "../../platform/db/scope";
 import { MANAGER_ROLES } from "../../platform/http/access";
 import { created, noContent, route } from "../../platform/http/router";
 import type { Route } from "../../platform/http/routeTypes";
+import type { PlanHooks } from "../../platform/plan/planHooks";
 import {
   createStaff,
   deleteStaff,
@@ -34,22 +35,28 @@ import { createTimeOff, deleteTimeOff, listTimeOff, NewTimeOffInput, TimeOffPatc
 //
 // Los servicios que hace cada profesional (`/settings/staff/:id/services`) son tablas
 // del catálogo: sus rutas viven en modules/catalog.
+//
+// Cupo del plan (inyectado desde modules/billing): crear un profesional activo o
+// reactivar a uno inactivo pasando el tope → 403 `plan_limit_reached`.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface StaffRouteDeps {
   db: Executor;
+  /** Cupo de profesionales activos del plan. */
+  plans: Pick<PlanHooks, "quota">;
 }
 
 const IdParams = z.object({ id: z.uuid() });
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export function staffRoutes({ db }: StaffRouteDeps): Route[] {
+export function staffRoutes({ db, plans }: StaffRouteDeps): Route[] {
   return [
     route({ method: "GET", path: "/settings/staff", auth: "user" }, ({ session }) => listStaffViews(db, session.businessId)),
 
     route(
       { method: "POST", path: "/settings/staff", auth: "user", roles: MANAGER_ROLES, body: NewStaffInput },
-      async ({ session, body }) => created(await createStaff(db, session, body)),
+      async ({ session, body }) =>
+        created(await createStaff(db, session, body, (body.active ?? true) ? await plans.quota(session.businessId, "staff") : null)),
     ),
 
     route(
@@ -59,7 +66,8 @@ export function staffRoutes({ db }: StaffRouteDeps): Route[] {
 
     route(
       { method: "PATCH", path: "/settings/staff/:id", auth: "user", roles: MANAGER_ROLES, params: IdParams, body: StaffPatch },
-      ({ session, params, body }) => updateStaff(db, session, params.id, body),
+      async ({ session, params, body }) =>
+        updateStaff(db, session, params.id, body, body.active === true ? await plans.quota(session.businessId, "staff") : null),
     ),
 
     route(

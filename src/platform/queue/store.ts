@@ -213,6 +213,22 @@ export function releaseJob(db: Executor, job: ClaimedJob, workerId: string): Pro
 }
 
 /**
+ * Posterga un job reclamado SIN correrlo (p. ej. su negocio está pausado): como
+ * `releaseJob` (descuenta el intento: postergar no gasta reintentos), pero reclamable
+ * recién dentro de `delayMs`.
+ */
+export function deferJob(db: Executor, job: ClaimedJob, workerId: string, delayMs: number): Promise<boolean> {
+  return updateOwned(
+    db,
+    job,
+    workerId,
+    sql`status = CASE WHEN attempts > 1 THEN 'failed' ELSE 'pending' END,
+        locked_by = NULL, attempts = attempts - 1,
+        run_after = now() + ${Math.max(0, Math.round(delayMs))} * interval '1 millisecond'`,
+  );
+}
+
+/**
  * Latido: renueva `locked_at` de los jobs que este worker sigue corriendo, para que la
  * recuperación no se los saque a un job lento pero vivo. Devuelve cuántos renovó.
  */

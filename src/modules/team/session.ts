@@ -8,6 +8,7 @@ import {
   type SessionClaims,
 } from "../../platform/auth/sessionToken";
 import { withTenant, type Executor } from "../../platform/db/scope";
+import { HttpError } from "../../platform/http/errors";
 import { parseCookies, SESSION_COOKIE, sessionCookie } from "../../platform/http/http";
 import type { Session, SessionResolver } from "../../platform/http/routeTypes";
 import { getBusinessContext } from "../business";
@@ -19,7 +20,10 @@ import { membershipLocations, memberships, users } from "./schema";
 // request. La firma sola no alcanza: un dueño puede haber desactivado a alguien hace 5
 // segundos y el token seguiría firmado y vigente 7 días. Por eso `loadSession` exige:
 //
-//   • el negocio existe y está activo (caché de getBusinessContext, TTL corto);
+//   • el negocio existe y está activo (caché de getBusinessContext, TTL corto). Si está
+//     PAUSADO (cobro manual, ver modules/billing) la sesión no se acepta pero tampoco se
+//     trata como vencida: 403 `business_paused`, y el panel muestra "Cuenta pausada". Dado
+//     de baja (`closed`) = sin sesión (401);
 //   • el usuario existe y está activo, y su epoch es el del token (cambio de clave, de rol
 //     o de estado lo suben → toda sesión vieja muere);
 //   • la membresía en ESE negocio existe y está activa.
@@ -37,12 +41,19 @@ export function readSessionClaims(req: IncomingMessage): SessionClaims | null {
   return verifySessionToken(parseCookies(req)[SESSION_COOKIE]);
 }
 
-/** Valida los claims contra la base y arma la sesión, o null si ya no vale. */
+/** 403 de un negocio pausado (lo usan la sesión y el login). */
+export const businessPaused = () =>
+  new HttpError(403, "La cuenta de este negocio está pausada. Escribinos para reactivarla.", "business_paused");
+
+/**
+ * Valida los claims contra la base y arma la sesión, o null si ya no vale. Lanza 403
+ * `business_paused` si el negocio está pausado.
+ */
 export async function loadSession(db: Executor, claims: SessionClaims): Promise<Session | null> {
   const ctx = await getBusinessContext(db, claims.businessId);
-  if (!ctx || ctx.business.status !== "active") return null;
+  if (!ctx || (ctx.business.status !== "active" && ctx.business.status !== "paused")) return null;
 
-  return withTenant(db, claims.businessId, async (tx) => {
+  const session = await withTenant(db, claims.businessId, async (tx): Promise<Session | null> => {
     // `users` solo es visible desde un negocio si la persona tiene membresía en él
     // (política member_or_system): el join ya filtra a los de afuera.
     const [row] = await tx
@@ -77,6 +88,9 @@ export async function loadSession(db: Executor, claims: SessionClaims): Promise<
       sessionEpoch: row.sessionEpoch,
     };
   });
+  // Recién con la sesión validada: alguien que ya no es miembro ve un 401, no el estado del negocio.
+  if (session && ctx.business.status === "paused") throw businessPaused();
+  return session;
 }
 
 /** El `SessionResolver` del router: cookie → claims → sesión validada contra la base. */

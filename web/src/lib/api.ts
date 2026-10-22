@@ -10,6 +10,8 @@
 //   • 401 `unauthorized` (sesión vencida o inexistente) → avisa al manejador registrado
 //     con `onUnauthorized`, que limpia la sesión y la app cae al login. Un 401 con otro
 //     código (p. ej. `invalid_credentials` del login) es un error normal del formulario.
+//   • 403 `business_paused` (el superadmin pausó el negocio) → avisa a `onBusinessPaused`,
+//     que vuelve a pedir la sesión y la app muestra "Cuenta pausada".
 //   • Modo mock (`VITE_MOCK_API=1`): las respuestas salen de ./mockApi.ts con la misma
 //     forma del contrato, sin red. En el build normal esa rama se elimina (la variable se
 //     reemplaza en compilación) y el mock no viaja en el bundle.
@@ -42,6 +44,12 @@ export const ERROR_MESSAGES: Readonly<Record<string, string>> = {
   not_found: "No encontramos lo que buscabas.",
   too_many_attempts: "Demasiados intentos. Probá de nuevo en unos minutos.",
   module_not_in_plan: "Esta función no está incluida en tu plan.",
+  // Planes y cobro (I2)
+  plan_limit_reached: "Llegaste al tope de tu plan. Para sumar más, ampliá tu plan en Configuración › Plan.",
+  business_paused: "La cuenta de este negocio está pausada. Escribinos para reactivarla.",
+  already_paused: "El negocio ya estaba pausado.",
+  already_active: "El negocio ya estaba activo.",
+  business_closed: "El negocio está dado de baja.",
   // Identidad (I0.6)
   invalid_credentials: "Correo o clave incorrectos.",
   no_active_business: "Tu cuenta no tiene acceso a ningún negocio activo. Hablá con quien administra tu negocio.",
@@ -118,6 +126,17 @@ export function onUnauthorized(handler: UnauthorizedHandler): () => void {
   unauthorizedHandler = handler;
   return () => {
     if (unauthorizedHandler === handler) unauthorizedHandler = null;
+  };
+}
+
+type BusinessPausedHandler = () => void;
+let businessPausedHandler: BusinessPausedHandler | null = null;
+
+/** Registra quién reacciona a un negocio pausado (main.tsx). Devuelve cómo desregistrarlo. */
+export function onBusinessPaused(handler: BusinessPausedHandler): () => void {
+  businessPausedHandler = handler;
+  return () => {
+    if (businessPausedHandler === handler) businessPausedHandler = null;
   };
 }
 
@@ -209,6 +228,8 @@ export async function apiRequest<T>(method: HttpMethod, path: string, body?: unk
   }
 
   if (error.status === 401 && error.code === "unauthorized") unauthorizedHandler?.(path);
+  // `/auth/me` es quien muestra la pantalla: avisar desde ahí sería un bucle.
+  if (error.code === "business_paused" && path !== "/auth/me") businessPausedHandler?.();
   throw error;
 }
 

@@ -48,7 +48,7 @@ export type SessionResolver = (req: IncomingMessage) => Promise<Session | null>;
 /** Resuelve la sesión del superadmin desde el request. `null` = sin sesión válida → 401. */
 export type SuperadminResolver = (req: IncomingMessage) => Promise<SuperadminSession | null>;
 
-/** ¿El plan del negocio incluye este módulo? Los planes llegan en I2. */
+/** ¿El plan del negocio incluye este módulo? Lo implementa src/modules/billing (createPlanService). */
 export type ModuleGate = (businessId: string, module: string) => boolean | Promise<boolean>;
 
 type LogFields = Record<string, unknown>;

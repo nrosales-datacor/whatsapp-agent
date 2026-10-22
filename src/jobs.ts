@@ -1,3 +1,4 @@
+import { createPlanService } from "./modules/billing";
 import { handleReminderJob, REMINDER_SEND_JOB, startReminderScheduler, type ReminderJobPayload } from "./modules/scheduling";
 import {
   createAgentRunner,
@@ -66,4 +67,15 @@ export function registerJobHandlers(options: JobDeps = {}): void {
  */
 export function startModuleSchedulers(db: Executor): Loop[] {
   return [startReminderScheduler({ db }), ...startWhatsAppSchedulers(db)];
+}
+
+/**
+ * Chequeo del worker de la cola (`canRunJob`): un job de un negocio pausado o dado de baja
+ * se posterga sin correrlo (src/platform/queue/worker.ts) hasta que se reactive. Los planes
+ * viven en modules/billing; la cola no los conoce. `jobsAllowedWhilePaused` = tipos que
+ * igual corren con el negocio pausado (p. ej. guardar los mensajes que siguen entrando,
+ * cuando exista el módulo WhatsApp).
+ */
+export function createJobGate(db: Executor): (businessId: string, jobType: string) => Promise<boolean> {
+  return createPlanService(db, { jobsAllowedWhilePaused: [] }).canRunJob;
 }

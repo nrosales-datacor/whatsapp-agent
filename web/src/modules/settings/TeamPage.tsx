@@ -10,7 +10,7 @@ import ErrorState from "../../ui/ErrorState";
 import { FormError, SelectField, TextField } from "../../ui/Field";
 import Icon from "../../ui/Icons";
 import { useToast } from "../../ui/Toast";
-import { CheckRow, ConfirmDialog, fieldErrorOf, LoadingState, moveId, mutationError, OrderButtons, ReadOnlyNotice } from "./common";
+import { CheckRow, ConfirmDialog, fieldErrorOf, LoadingState, moveId, mutationError, OrderButtons, PlanQuotaHint, ReadOnlyNotice } from "./common";
 import { blocksFromDraft, draftFromBlocks, mapServerErrors, summarizeHours, validateDraft, type HoursDraft } from "./hoursDraft";
 import { durationLabel, priceLabel } from "./ServicesPage";
 import { canManageSettings, SETTINGS_KEYS, settingsApi, type LocationView, type StaffServiceItem, type StaffView } from "./settingsApi";
@@ -57,6 +57,7 @@ export default function TeamPage() {
     <div className="settings-stack">
       {!canEdit && <ReadOnlyNotice />}
       <div className="settings-toolbar">
+        {canEdit && <PlanQuotaHint resource="staff" used={staff.filter((s) => s.active).length} />}
         {canEdit && (
           <button type="button" className="btn btn-primary" onClick={() => setDialog({ kind: "edit", staff: null })}>
             <Icon id="plus" size={16} />

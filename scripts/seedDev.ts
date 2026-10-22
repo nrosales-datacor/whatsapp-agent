@@ -89,6 +89,8 @@ export async function seedDev(db: Executor, options: { now?: Date } = {}): Promi
       name: "Estética Demo",
       industry: "aesthetics",
       plan: "pro",
+      // Pro por cantidad contratada: dos sucursales y lugar para sumar equipo en la demo.
+      extraModules: { limits: { locations: 3, staff: 10, users: 10 } },
       currency: "CRC",
       country: "CR",
       timezone: TIMEZONE,
