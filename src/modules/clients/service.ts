@@ -1,11 +1,12 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { recordAudit } from "../../platform/audit/auditLog";
 import { isTenantId, withTenant, type Executor, type Tx } from "../../platform/db/scope";
 import { HttpError, ValidationError } from "../../platform/http/errors";
-import { getBusinessContext, type BusinessContext } from "../business";
+import { applyCustomDataPatch, getBusinessContext, listCustomFields, type BusinessContext } from "../business";
 import { listStaffOptions } from "../team";
 import { DEFAULT_PHONE_COUNTRY, normalizePhone } from "./phone";
 import { clients, type Client, type ClientChannel } from "./schema";
+import { computeClientStatus, isVip, type ClientStatus } from "./status";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Servicio del módulo clients: alta, edición, lectura, "buscar o crear por teléfono" (lo
@@ -19,12 +20,6 @@ import { clients, type Client, type ClientChannel } from "./schema";
 
 /** Nombre con el que queda la fila de un cliente cuyos datos se eliminaron. */
 export const ANONYMIZED_CLIENT_NAME = "Cliente eliminado";
-
-// Marca de "datos eliminados" dentro de `custom_data`, sin columna propia para no migrar el
-// esquema en I1. Nunca choca con un campo personalizado: sus claves cumplen
-// `^[a-z][a-z0-9_]*$` (CHECK `custom_fields_key_check`). Si más adelante se suma una
-// columna `anonymized_at`, se migra esta marca.
-const ANONYMIZED_MARKER = "$anonymizedAt";
 
 const PHONE_UNIQUE_INDEX = "clients_business_phone_uq";
 
@@ -46,7 +41,10 @@ export interface ClientView {
   preferredStaffId: string | null;
   /** Canal preferido para recordatorios (null = el default del negocio). */
   preferredChannel: ClientChannel | null;
+  /** VIP manual (además del VIP que sale de las reglas, ver `ClientDetail.isVip`). */
   vip: boolean;
+  /** Valores de los campos personalizados (`clave → valor`; definiciones en Configuración). */
+  customData: Record<string, unknown>;
   marketingConsentAt: string | null;
   marketingOptOutAt: string | null;
   visitCount: number;
@@ -55,6 +53,8 @@ export interface ClientView {
   totalSpentCents: number;
   /** true = se eliminaron sus datos personales (queda la fila para el historial). */
   anonymized: boolean;
+  /** Cuándo se eliminaron (ISO 8601), o null. */
+  anonymizedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -69,6 +69,29 @@ export interface ClientRef {
 export interface ClientDetail extends ClientView {
   guardian: ClientRef | null;
   dependents: ClientRef[];
+  /** Estado calculado (./status.ts); null sin el CRM completo (plan Básico). */
+  status: ClientStatus | null;
+  /** VIP manual o por reglas; null sin el CRM completo. */
+  isVip: boolean | null;
+}
+
+/**
+ * Qué clientes ve quien consulta: todos (undefined), ninguno ("none") o los que cumplen
+ * una condición SQL sobre `clients` (p. ej. "Mis clientes" del profesional: los que tienen
+ * citas suyas; la subconsulta la arma scheduling y la inyecta la composición).
+ */
+export type ClientScope = SQL | "none" | undefined;
+
+/** Alcance "clientes cuyo id está en esta subconsulta" (p. ej. los que tienen citas con un profesional). */
+export function clientIdIn(subquery: SQL): SQL {
+  return sql`${clients.id} IN (${subquery})`;
+}
+
+/** Condición SQL del alcance (undefined = sin restricción). */
+export function scopeCondition(scope: ClientScope): SQL | undefined {
+  if (scope === undefined) return undefined;
+  if (scope === "none") return sql`false`;
+  return scope;
 }
 
 /** Caché de visitas y gasto (PLAN-GESTION.md §4): la base del estado del cliente. */
@@ -92,6 +115,10 @@ export interface ClientInput {
   preferredStaffId: string | null;
   preferredChannel: ClientChannel | null;
   guardianId: string | null;
+  /** VIP manual (CRM del Pro: la ruta lo permite solo con el nivel `full`). */
+  vip?: boolean;
+  /** Cambios de campos personalizados (CRM del Pro): solo las claves presentes; null/"" borra. */
+  customData?: Record<string, unknown>;
 }
 
 /** Cambios de un PATCH: solo las claves presentes se tocan. */
@@ -101,8 +128,8 @@ export type ClientPatch = Partial<ClientInput>;
 
 const iso = (d: Date | null): string | null => (d ? d.toISOString() : null);
 
-export function isAnonymized(row: Pick<Client, "customData">): boolean {
-  return typeof row.customData?.[ANONYMIZED_MARKER] === "string";
+export function isAnonymized(row: Pick<Client, "anonymizedAt">): boolean {
+  return row.anonymizedAt !== null && row.anonymizedAt !== undefined;
 }
 
 export function toClientView(row: Client): ClientView {
@@ -120,6 +147,7 @@ export function toClientView(row: Client): ClientView {
     preferredStaffId: row.preferredStaffId,
     preferredChannel: (row.preferredChannel as ClientChannel | null) ?? null,
     vip: row.vip,
+    customData: row.customData ?? {},
     marketingConsentAt: iso(row.marketingConsentAt),
     marketingOptOutAt: iso(row.marketingOptOutAt),
     visitCount: row.visitCount,
@@ -127,6 +155,7 @@ export function toClientView(row: Client): ClientView {
     lastVisitAt: iso(row.lastVisitAt),
     totalSpentCents: row.totalSpentCents,
     anonymized: isAnonymized(row),
+    anonymizedAt: iso(row.anonymizedAt),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -189,12 +218,30 @@ export async function getClientsByIds(executor: Executor, businessId: string, cl
   return rows.map(toClientView);
 }
 
-/** Ficha completa: el cliente con su responsable y sus menores a cargo. Lanza 404 si no existe. */
-export async function getClientDetail(executor: Executor, businessId: string, clientId: string): Promise<ClientDetail> {
+export interface ClientDetailOptions {
+  /** Con el CRM completo (Pro) la ficha trae estado y VIP calculados. Default false. */
+  crm?: boolean;
+  /** Alcance de quien consulta (un cliente fuera de alcance responde 404). */
+  scope?: ClientScope;
+  /** Reloj (tests). */
+  now?: Date;
+}
+
+/** Ficha completa: el cliente con su responsable y sus menores a cargo. Lanza 404 si no existe (o está fuera del alcance). */
+export async function getClientDetail(
+  executor: Executor,
+  businessId: string,
+  clientId: string,
+  options: ClientDetailOptions = {},
+): Promise<ClientDetail> {
   const ctx = await businessContext(executor, businessId);
   if (!isTenantId(clientId)) throw notFound(ctx);
   return withTenant(executor, businessId, async (tx) => {
-    const [row] = await tx.select().from(clients).where(sameBusiness(businessId, clientId)).limit(1);
+    const [row] = await tx
+      .select()
+      .from(clients)
+      .where(and(sameBusiness(businessId, clientId), scopeCondition(options.scope)))
+      .limit(1);
     if (!row) throw notFound(ctx);
     const guardian = row.guardianId
       ? ((await tx.select({ id: clients.id, name: clients.name }).from(clients).where(sameBusiness(businessId, row.guardianId)).limit(1))[0] ??
@@ -205,8 +252,29 @@ export async function getClientDetail(executor: Executor, businessId: string, cl
       .from(clients)
       .where(and(eq(clients.businessId, businessId), eq(clients.guardianId, clientId)))
       .orderBy(asc(clients.name));
-    return { ...toClientView(row), guardian, dependents };
+    const rules = ctx.clientStatusRules;
+    const crm = Boolean(options.crm) && !isAnonymized(row);
+    return {
+      ...toClientView(row),
+      guardian,
+      dependents,
+      status: crm ? computeClientStatus(row, rules, options.now) : null,
+      isVip: crm ? isVip(row, rules) : null,
+    };
   });
+}
+
+/** ¿El cliente existe y entra en el alcance? (p. ej. el profesional y sus clientes). */
+export async function isClientInScope(executor: Executor, businessId: string, clientId: string, scope: ClientScope): Promise<boolean> {
+  if (!isTenantId(clientId)) return false;
+  const [row] = await withTenant(executor, businessId, (tx) =>
+    tx
+      .select({ id: clients.id })
+      .from(clients)
+      .where(and(sameBusiness(businessId, clientId), scopeCondition(scope)))
+      .limit(1),
+  );
+  return Boolean(row);
 }
 
 /**
@@ -314,6 +382,16 @@ async function resolveChanges(
   if (patch.source !== undefined) changes.source = patch.source;
   if (patch.tags !== undefined) changes.tags = uniqueTags(patch.tags);
   if (patch.preferredChannel !== undefined) changes.preferredChannel = patch.preferredChannel;
+  if (patch.vip !== undefined) changes.vip = patch.vip;
+
+  // Campos personalizados: solo las claves enviadas, contra las definiciones activas; los
+  // obligatorios tienen que quedar cargados (el formulario de la ficha manda todos).
+  if (patch.customData !== undefined) {
+    const definitions = await listCustomFields(tx, businessId, { entity: "client" });
+    const { data, errors } = applyCustomDataPatch(definitions, current?.customData ?? {}, patch.customData);
+    if (Object.keys(errors).length > 0) Object.assign(fields, errors);
+    else changes.customData = data;
+  }
 
   if (patch.phone !== undefined) {
     if (patch.phone === null) changes.phone = null;
@@ -564,7 +642,8 @@ export async function anonymizeClient(
         notes: null,
         tags: [],
         source: null,
-        customData: { [ANONYMIZED_MARKER]: new Date().toISOString() },
+        customData: {},
+        anonymizedAt: new Date(),
         preferredLocationId: null,
         preferredStaffId: null,
         preferredChannel: null,
@@ -587,4 +666,4 @@ export async function anonymizeClient(
 }
 
 // SQL que comparten la búsqueda y la vista (ver ./search.ts).
-export const notAnonymized = sql`(${clients.customData} ->> ${ANONYMIZED_MARKER}::text) IS NULL`;
+export const notAnonymized = isNull(clients.anonymizedAt);

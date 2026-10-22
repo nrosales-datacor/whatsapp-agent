@@ -24,9 +24,9 @@ import { staff } from "../team/schema";
 // whatsapp) le pertenece a él.
 //
 // El ESTADO del cliente (new / active / vip / at_risk / inactive) no se guarda: se calcula
-// al consultar con la caché de abajo (visitas, última visita, gasto) y las reglas del
-// negocio (`businesses.client_status_rules`). La caché la mantiene el servicio que
-// completa citas y registra pagos, en la misma transacción.
+// al consultar con la caché de abajo (visitas, primera y última visita, gasto) y las reglas
+// del negocio (`businesses.client_status_rules`), ver ./status.ts. La caché la mantiene el
+// servicio que completa citas y registra pagos, en la misma transacción.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const CLIENT_CHANNELS = ["whatsapp", "email"] as const;
@@ -65,6 +65,9 @@ export const clients = pgTable(
     marketingOptOutAt: instant("marketing_opt_out_at"),
     // Cuándo se le preguntó por última vez (para no insistir).
     marketingConsentRequestedAt: instant("marketing_consent_requested_at"),
+    // Derecho de supresión (Ley 8968): cuándo se eliminaron sus datos personales. La fila
+    // queda (sin datos) para que citas y pagos cuadren; null = cliente normal.
+    anonymizedAt: instant("anonymized_at"),
     // Caché para el estado y los reportes (la mantiene scheduling/sales).
     visitCount: integer("visit_count").notNull().default(0),
     firstVisitAt: instant("first_visit_at"),
@@ -79,6 +82,8 @@ export const clients = pgTable(
     // Segmentos por recencia: en riesgo, inactivos, campañas.
     index("clients_business_last_visit_idx").on(t.businessId, t.lastVisitAt),
     index("clients_business_email_idx").on(t.businessId, t.email),
+    // Filtro y segmentos por etiqueta (`tags @> '["VIP"]'`).
+    index("clients_tags_idx").using("gin", t.tags),
     check("clients_phone_check", sql`${t.phone} ~ '^\\+[1-9][0-9]{6,14}$'`),
     check("clients_preferred_channel_check", oneOf(t.preferredChannel, CLIENT_CHANNELS)),
     check("clients_guardian_check", sql`${t.guardianId} <> ${t.id}`),

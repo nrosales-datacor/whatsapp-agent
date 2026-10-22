@@ -14,6 +14,9 @@ import { useToast } from "../../ui/Toast";
 import ClientAppointments from "../scheduling/ClientAppointments";
 import AnonymizeClient from "./AnonymizeClient";
 import { canEditClients, type ClientListState } from "./ClientsPage";
+import { hasCrm, STATUS_HELP, STATUS_LABELS, useCustomFields, type CustomField } from "./crmApi";
+import CustomFieldInput, { fromDraft, sameValue, toDraft, type FieldDraft } from "./CustomFieldInput";
+import { StatusBadge, VipMark } from "./StatusBadge";
 import {
   useClient,
   useClientFormOptions,
@@ -82,7 +85,14 @@ export default function ClientDetailPage() {
   return (
     <div className="page">
       <BackLink t={t} />
-      <PageHeader title={name} tabTitle={`${name} · ${capitalize(t.clients)}`} subtitle={client.anonymized ? "Datos eliminados" : formatPhone(client.phone) || "Sin teléfono"} />
+      <PageHeader title={name} tabTitle={`${name} · ${capitalize(t.clients)}`} subtitle={client.anonymized ? "Datos eliminados" : formatPhone(client.phone) || "Sin teléfono"}>
+        {client.status && (
+          <span className="client-header-status">
+            <StatusBadge status={client.status} />
+            {client.isVip && <VipMark />}
+          </span>
+        )}
+      </PageHeader>
 
       {client.anonymized ? (
         <EmptyState
@@ -115,9 +125,25 @@ interface FormState {
   preferredStaffId: string;
   preferredChannel: string;
   guardian: ClientRef | null;
+  /** VIP manual (CRM del Pro). */
+  vip: boolean;
+  /** Campos personalizados que se editaron (clave → borrador); los demás muestran lo guardado. */
+  custom: Record<string, FieldDraft>;
 }
 
-type FieldKey = "name" | "phone" | "email" | "birthDate" | "notes" | "tags" | "preferredLocationId" | "preferredStaffId" | "preferredChannel" | "guardianId";
+type FieldKey =
+  | "name"
+  | "phone"
+  | "email"
+  | "birthDate"
+  | "notes"
+  | "tags"
+  | "preferredLocationId"
+  | "preferredStaffId"
+  | "preferredChannel"
+  | "guardianId"
+  | "vip"
+  | `customData.${string}`;
 
 function initialState(c: ClientDetail): FormState {
   return {
@@ -131,14 +157,16 @@ function initialState(c: ClientDetail): FormState {
     preferredStaffId: c.preferredStaffId ?? "",
     preferredChannel: c.preferredChannel ?? "",
     guardian: c.guardian,
+    vip: c.vip,
+    custom: {},
   };
 }
 
 const orNull = (v: string) => (v.trim() === "" ? null : v.trim());
 const digits = (v: string) => v.replace(/\D/g, "");
 
-/** Solo lo que cambió respecto de lo guardado (PATCH parcial). */
-function diff(c: ClientDetail, f: FormState): ClientPatch {
+/** Solo lo que cambió respecto de lo guardado (PATCH parcial). Los campos personalizados inválidos van a `errors`. */
+function diff(c: ClientDetail, f: FormState, fields: readonly CustomField[] = [], errors: Partial<Record<FieldKey, string>> = {}): ClientPatch {
   const patch: ClientPatch = {};
   if (f.name.trim() !== c.name) patch.name = f.name.trim();
   // El teléfono se muestra con espacios: cambia solo si cambian los dígitos.
@@ -151,6 +179,16 @@ function diff(c: ClientDetail, f: FormState): ClientPatch {
   if (orNull(f.preferredStaffId) !== c.preferredStaffId) patch.preferredStaffId = orNull(f.preferredStaffId);
   if (orNull(f.preferredChannel) !== c.preferredChannel) patch.preferredChannel = orNull(f.preferredChannel) as ClientChannel | null;
   if ((f.guardian?.id ?? null) !== c.guardianId) patch.guardianId = f.guardian?.id ?? null;
+  if (f.vip !== c.vip) patch.vip = f.vip;
+  const customData: Record<string, unknown> = {};
+  for (const field of fields) {
+    const draft = f.custom[field.key];
+    if (draft === undefined || sameValue(field, draft, c.customData[field.key])) continue;
+    const parsed = fromDraft(field, draft);
+    if (parsed.ok) customData[field.key] = parsed.value;
+    else errors[`customData.${field.key}`] = parsed.error;
+  }
+  if (Object.keys(customData).length > 0) patch.customData = customData;
   return patch;
 }
 
@@ -167,6 +205,9 @@ function ClientForm({ client }: { client: ClientDetail }) {
   const { showToast } = useToast();
   const canEdit = canEditClients(me.role);
   const options = useClientFormOptions(me.business.id);
+  const crm = hasCrm(me);
+  const customFields = useCustomFields(me.business.id, "client", { enabled: crm });
+  const fields = crm ? (customFields.data ?? []) : [];
   const mutation = useUpdateClient(me.business.id, client.id);
   const [form, setForm] = useState<FormState>(() => initialState(client));
   const [localErrors, setLocalErrors] = useState<Partial<Record<FieldKey, string>>>({});
@@ -175,7 +216,7 @@ function ClientForm({ client }: { client: ClientDetail }) {
   const notesId = useId();
   const tagInputId = useId();
 
-  const patch = useMemo(() => diff(client, form), [client, form]);
+  const patch = useMemo(() => diff(client, form, fields), [client, form, fields]);
   const dirty = Object.keys(patch).length > 0;
   const tz = me.business.timezone;
   const showSpend = me.modules.includes("sales");
@@ -184,6 +225,12 @@ function ClientForm({ client }: { client: ClientDetail }) {
     setForm((f) => ({ ...f, [key]: value }));
     const errorKey = (key === "guardian" ? "guardianId" : key) as FieldKey;
     setLocalErrors((e) => ({ ...e, [errorKey]: undefined }));
+    if (mutation.isError) mutation.reset();
+  }
+
+  function setCustom(key: string, value: FieldDraft) {
+    setForm((f) => ({ ...f, custom: { ...f.custom, [key]: value } }));
+    setLocalErrors((e) => ({ ...e, [`customData.${key}`]: undefined }));
     if (mutation.isError) mutation.reset();
   }
 
@@ -220,6 +267,7 @@ function ClientForm({ client }: { client: ClientDetail }) {
     if (!form.name.trim()) errors.name = "Escribí el nombre.";
     if (form.email.trim() && !RE_EMAIL.test(form.email.trim())) errors.email = "Escribí un correo válido.";
     if (form.preferredChannel === "email" && !form.email.trim()) errors.preferredChannel = "Para avisarle por correo, primero cargá su correo.";
+    diff(client, form, fields, errors);
     setLocalErrors(errors);
     if (Object.keys(errors).length > 0) return;
     mutation.mutate(patch, { onSuccess: () => showToast("Cambios guardados.") });
@@ -364,7 +412,37 @@ function ClientForm({ client }: { client: ClientDetail }) {
                     onChange={(e) => set("preferredChannel", e.target.value)}
                   />
                 </div>
+                {crm && (
+                  <label className="check-row client-vip-toggle">
+                    <input type="checkbox" checked={form.vip} onChange={(e) => set("vip", e.target.checked)} />
+                    <span>
+                      Marcar como VIP
+                      <small>
+                        {client.isVip && !client.vip ? `Ya es VIP por sus visitas o su gasto (Configuración › Reglas de ${t.clients}).` : "Además de los VIP que salen de las reglas."}
+                      </small>
+                    </span>
+                  </label>
+                )}
               </section>
+
+              {fields.length > 0 && (
+                <section className="card client-section" aria-labelledby="client-custom-title">
+                  <h2 id="client-custom-title" className="card-title">
+                    Datos adicionales
+                  </h2>
+                  <div className="form-grid">
+                    {fields.map((field) => (
+                      <CustomFieldInput
+                        key={field.id}
+                        field={field}
+                        value={form.custom[field.key] ?? toDraft(field, client.customData[field.key])}
+                        error={errorFor(`customData.${field.key}`)}
+                        onChange={(value) => setCustom(field.key, value)}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
             </div>
 
             <div className="client-col">
@@ -373,6 +451,15 @@ function ClientForm({ client }: { client: ClientDetail }) {
                   Resumen
                 </h2>
                 <dl className="client-summary">
+                  {client.status && (
+                    <div className="client-summary-status">
+                      <dt>Estado</dt>
+                      <dd>
+                        {STATUS_LABELS[client.status]}
+                        <span className="client-summary-help">{STATUS_HELP[client.status]}</span>
+                      </dd>
+                    </div>
+                  )}
                   <div>
                     <dt>Visitas</dt>
                     <dd className="tnum">{client.visitCount}</dd>

@@ -7,6 +7,8 @@ import EmptyState from "../../ui/EmptyState";
 import PageHeader from "../../ui/PageHeader";
 import PaymentMethodsPage from "../sales/PaymentMethodsPage";
 import BusinessSettingsPage from "./BusinessSettingsPage";
+import ClientRulesPage from "./ClientRulesPage";
+import CustomFieldsPage from "./CustomFieldsPage";
 import LocationsPage from "./LocationsPage";
 import PlanPage from "./PlanPage";
 import ServicesPage from "./ServicesPage";
@@ -23,6 +25,8 @@ const PAGES: Record<string, ComponentType> = {
   locations: LocationsPage,
   services: ServicesPage,
   team: TeamPage,
+  "custom-fields": CustomFieldsPage,
+  "client-rules": ClientRulesPage,
   users: UsersPage,
   plan: PlanPage,
   // Del módulo Ventas (I4): vive en modules/sales.

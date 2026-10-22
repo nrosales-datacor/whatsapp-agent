@@ -1,8 +1,8 @@
-import { and, asc, count, desc, eq, gte, inArray, lt, max, min, or, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, lt, max, min, ne, or, sql, type SQL } from "drizzle-orm";
 import { hasPgCode } from "../../platform/db/errors";
 import { isTenantId, withTenant, type Executor, type Tx } from "../../platform/db/scope";
 import { HttpError, ValidationError } from "../../platform/http/errors";
-import { getBusinessContext, listLocations, type Terminology } from "../business";
+import { applyCustomDataPatch, getBusinessContext, listCustomFields, listLocations, type Terminology } from "../business";
 import { getClient, getClientsByIds, refreshClientStats } from "../clients";
 import { listStaff } from "../team";
 import {
@@ -98,6 +98,8 @@ export interface AppointmentView {
   channel: AppointmentChannel;
   totalCents: number;
   notes: string | null;
+  /** Valores de los campos personalizados de la cita (definiciones en Configuración, plan Pro). */
+  customData: Record<string, unknown>;
   createdBy: string | null;
   confirmedAt: string | null;
   cancelledAt: string | null;
@@ -150,6 +152,7 @@ async function toViews(executor: Executor, businessId: string, rows: readonly Ap
       channel: r.channel as AppointmentChannel,
       totalCents: r.totalCents,
       notes: r.notes,
+      customData: r.customData ?? {},
       createdBy: r.createdBy,
       confirmedAt: iso(r.confirmedAt),
       cancelledAt: iso(r.cancelledAt),
@@ -369,6 +372,8 @@ export interface BookAppointmentInput {
   startsAt: Date;
   channel: AppointmentChannel;
   notes?: string | null;
+  /** Campos personalizados de la cita (CRM del Pro: la ruta lo permite solo con el nivel `full`). */
+  customData?: Record<string, unknown>;
   /** Usuario del panel que la crea (null = el agente o el sistema). */
   createdBy?: string | null;
   /** Solo el equipo: cita fuera de horario o ya pasada (sigue sin poder encimarse). */
@@ -441,6 +446,7 @@ async function insertAppointment(
         channel: input.channel,
         totalCents: candidate.totalCents,
         notes: input.notes?.trim() || null,
+        customData: input.customData ?? {},
         createdBy: input.createdBy ?? null,
       })
       .returning();
@@ -471,6 +477,12 @@ export async function bookAppointment(executor: Executor, businessId: string, in
   const client = isTenantId(input.clientId) ? await getClient(executor, businessId, input.clientId) : null;
   if (!client) throw new ValidationError({ clientId: `Ese ${t.client} no existe.` });
   if (client.anonymized) throw new ValidationError({ clientId: `Los datos de este ${t.client} se eliminaron: no se le pueden agendar ${t.appointments}.` });
+  let customData: Record<string, unknown> | undefined;
+  if (input.customData !== undefined) {
+    const result = applyCustomDataPatch(await listCustomFields(executor, businessId, { entity: "appointment" }), {}, input.customData);
+    if (Object.keys(result.errors).length > 0) throw new ValidationError(result.errors);
+    customData = result.data;
+  }
 
   const rules = startRules(input);
   const fromClient = CLIENT_CHANNELS.includes(input.channel);
@@ -511,7 +523,7 @@ export async function bookAppointment(executor: Executor, businessId: string, in
       }
       let row: Appointment;
       try {
-        row = await insertAppointment(tx, businessId, input, candidate, inputs.location.id);
+        row = await insertAppointment(tx, businessId, { ...input, customData }, candidate, inputs.location.id);
       } catch (error) {
         if (!isOverlapViolation(error)) throw error;
         lastProblem = "busy";
@@ -774,21 +786,60 @@ export function cancelAppointment(
 }
 
 /** Notas de la cita (en cualquier estado: también sirven para lo que se hizo). */
-export async function updateAppointmentNotes(
+export function updateAppointmentNotes(executor: Executor, businessId: string, appointmentId: string, notes: string | null): Promise<AppointmentView> {
+  return updateAppointmentDetails(executor, businessId, appointmentId, { notes });
+}
+
+/** Lo editable de una cita que no mueve la agenda: notas y campos personalizados. */
+export interface AppointmentDetailsPatch {
+  notes?: string | null;
+  /** Cambios de campos personalizados: solo las claves presentes; null/"" borra. */
+  customData?: Record<string, unknown>;
+}
+
+/**
+ * Notas y campos personalizados de la cita (en cualquier estado). Los campos se validan
+ * contra las definiciones activas de citas; los obligatorios tienen que quedar cargados
+ * cuando se mandan (el formulario manda todos). Lo ya guardado de otras claves no se toca.
+ */
+export async function updateAppointmentDetails(
   executor: Executor,
   businessId: string,
   appointmentId: string,
-  notes: string | null,
+  patch: AppointmentDetailsPatch,
 ): Promise<AppointmentView> {
   const t = await terminology(executor, businessId);
   if (!isTenantId(appointmentId)) throw notFound(t);
-  const rows = await withTenant(executor, businessId, (tx) =>
-    tx
-      .update(appointments)
-      .set({ notes: notes?.trim() || null })
+  await withTenant(executor, businessId, async (tx) => {
+    const [current] = await tx
+      .select()
+      .from(appointments)
       .where(and(eq(appointments.businessId, businessId), eq(appointments.id, appointmentId)))
-      .returning({ id: appointments.id }),
-  );
-  if (rows.length === 0) throw notFound(t);
+      .limit(1)
+      .for("update");
+    if (!current) throw notFound(t);
+    const changes: Partial<Appointment> = {};
+    if (patch.notes !== undefined) changes.notes = patch.notes?.trim() || null;
+    if (patch.customData !== undefined) {
+      const definitions = await listCustomFields(tx, businessId, { entity: "appointment" });
+      const { data, errors } = applyCustomDataPatch(definitions, current.customData ?? {}, patch.customData);
+      if (Object.keys(errors).length > 0) throw new ValidationError(errors);
+      changes.customData = data;
+    }
+    if (Object.keys(changes).length === 0) return;
+    await tx
+      .update(appointments)
+      .set(changes)
+      .where(and(eq(appointments.businessId, businessId), eq(appointments.id, appointmentId)));
+  });
   return getOrThrow(executor, businessId, appointmentId);
+}
+
+/**
+ * Subconsulta con los ids de los clientes que tienen citas con este profesional, pasadas o
+ * futuras (las canceladas no cuentan): "Mis clientes" del rol `staff`. La consume el
+ * módulo clients (inyectada por la composición, src/routes.ts) sin leer esta tabla.
+ */
+export function clientIdsWithStaffAppointments(businessId: string, staffId: string): SQL {
+  return sql`SELECT ${appointments.clientId} FROM ${appointments} WHERE ${appointments.businessId} = ${businessId} AND ${appointments.staffId} = ${staffId} AND ${ne(appointments.status, "cancelled")}`;
 }

@@ -3,13 +3,13 @@ import { withTenant, type Executor } from "../../platform/db/scope";
 import { msFromEnv } from "../../platform/net/timeouts";
 import { businesses, locationHours, locations, type Business, type Location, type LocationHour } from "./schema";
 import {
-  DEFAULT_CLIENT_STATUS_RULES,
   DEFAULT_TERMINOLOGY,
   REMINDER_CHANNELS,
   type ClientStatusRules,
   type ReminderChannel,
   type Terminology,
 } from "./settings";
+import { readClientStatusRules } from "./statusRules";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Caché del contexto de UN negocio (PLAN-GESTION.md §1, "Se rehace"): lo que casi toda
@@ -101,7 +101,7 @@ function buildContext(business: Business, locs: Location[], hours: LocationHour[
     business,
     locations: locs.map((l) => ({ ...l, hours: byLocation.get(l.id) ?? [] })),
     terminology: { ...DEFAULT_TERMINOLOGY, ...definedOnly(business.terminology) },
-    clientStatusRules: { ...DEFAULT_CLIENT_STATUS_RULES, ...definedOnly(business.clientStatusRules) },
+    clientStatusRules: readClientStatusRules(business.clientStatusRules),
     // La base solo acepta canales conocidos (CHECK); el filtro es defensa extra. Vacío =
     // el negocio no manda recordatorios (no se completa con el default).
     reminderChannels: [...new Set(channels)],
