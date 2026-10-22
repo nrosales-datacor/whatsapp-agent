@@ -20,6 +20,7 @@ import {
   reassignStaff,
   rescheduleAppointment,
   updateAppointmentNotes,
+  type AppointmentCompletedHook,
   type AppointmentView,
 } from "./appointments";
 import { findSlots, MAX_SERVICES_PER_APPOINTMENT, type Slot } from "./availability";
@@ -55,6 +56,8 @@ export interface SchedulingRouteDeps {
   db: Executor;
   /** Conversaciones esperando a una persona para el Inicio (lo inyecta la composición desde whatsapp). */
   countConversationsWaiting?: ConversationsWaitingCounter;
+  /** Efectos internos de completar una cita, en su transacción (la composición inyecta las comisiones). */
+  onAppointmentCompleted?: AppointmentCompletedHook;
 }
 
 const DESK: readonly Role[] = ["owner", "admin", "front_desk"];
@@ -158,7 +161,7 @@ function slotJson(slot: Slot) {
   };
 }
 
-export function schedulingRoutes({ db, countConversationsWaiting }: SchedulingRouteDeps): Route[] {
+export function schedulingRoutes({ db, countConversationsWaiting, onAppointmentCompleted }: SchedulingRouteDeps): Route[] {
   return [
     route({ method: "GET", path: "/availability", auth: "user", query: AvailabilityQuery }, async ({ session, query }) => {
       assertLocationAccess(session, query.locationId);
@@ -240,7 +243,7 @@ export function schedulingRoutes({ db, countConversationsWaiting }: SchedulingRo
 
     route({ method: "POST", path: "/appointments/:id/complete", auth: "user", params: IdParams }, async ({ session, params }) => {
       await accessibleAppointment(db, session, params.id);
-      return completeAppointment(db, session.businessId, params.id);
+      return completeAppointment(db, session.businessId, params.id, { onCompleted: onAppointmentCompleted });
     }),
 
     route({ method: "POST", path: "/appointments/:id/no-show", auth: "user", params: IdParams }, async ({ session, params }) => {
