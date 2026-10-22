@@ -7,9 +7,11 @@
     "staff": "estilistas"
   },
   "clientStatusRules": {
-    "newMaxVisits": 1,
+    "newDays": 30,
     "vipMinVisits": 12,
+    "atRiskMode": "frequency",
     "atRiskAfterDays": 45,
+    "atRiskFrequencyFactor": 2,
     "inactiveAfterDays": 90
   },
   "customFields": [
