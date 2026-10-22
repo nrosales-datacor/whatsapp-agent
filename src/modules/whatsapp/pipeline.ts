@@ -33,7 +33,7 @@ import {
 import { loadTextProfile, notifyTeam, type WhatsAppDeps } from "./deps";
 import type { ChannelCredentials, ReplyButton } from "./graph";
 import type { InboundJobPayload } from "./ingest";
-import { capStatus, CLIENT_LIMIT_NOTICE_PREFIX, clientTurnsPerHour, detectLoop, loopRepeats, loopWindowMin } from "./limits";
+import { capStatus, CLIENT_LIMIT_NOTICE_PREFIX, clientTurnsPerHour, detectLoop, loopRepeats, loopWindowMin, type AiLimits } from "./limits";
 import { mediaObjectPath } from "./media";
 import { humanModeExpired } from "./rules";
 import type { Conversation, Message } from "./schema";
@@ -50,7 +50,9 @@ import { getAiUsage, incrementAiUsage, whisperCostMicros } from "./usage";
 //   2. Foto o audio: se descarga de Graph y se guarda en Storage (el operador la ve en la
 //      bandeja tanto si atiende el bot como una persona).
 //   3. Acciones directas, sin agente y en cualquier modo: "Confirmo"/"Cancelar" del
-//      recordatorio (sobre scheduling) y BAJA de promociones (sobre clients).
+//      recordatorio (sobre scheduling) y BAJA de promociones (sobre clients). Después,
+//      si el plan no trae el agente (Pro sin agente) el mensaje queda guardado sin
+//      respuesta automática.
 //   4. Modo humano: si venció (nadie del equipo actuó en N horas) vuelve al bot; si no, el
 //      bot NO responde y se avisa al equipo por push.
 //   5. Pedido explícito de una persona → modo humano + aviso.
@@ -66,6 +68,11 @@ import { getAiUsage, incrementAiUsage, whisperCostMicros } from "./usage";
 // reintente el turno ENTERO con backoff, mientras queden intentos y el turno no haya
 // dejado efectos que un reintento duplicaría (una respuesta enviada, una cita agendada).
 // En el último intento se le pide disculpas al cliente y se avisa al equipo.
+//
+// Negocio pausado (cobro manual) o dado de baja: la cola deja correr este job igual
+// (`WHATSAPP_JOBS_ALLOWED_WHILE_PAUSED`, ./jobs.ts) para que el mensaje quede completo
+// —se guarda la foto o el audio— pero nadie le responde, como el sistema viejo. Lo que
+// entra con el negocio ya pausado ni se encola (./ingest.ts).
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Mensajes del historial que recibe el agente. */
@@ -265,8 +272,7 @@ async function applyClientBrakes(turn: Turn): Promise<boolean> {
 }
 
 /** Topes mensuales del plan. true = no llamar al agente (ya se avisó y pasó a una persona). */
-async function applyMonthlyCaps(turn: Turn): Promise<boolean> {
-  const limits = await turn.deps.getAiLimits(turn.businessId);
+async function applyMonthlyCaps(turn: Turn, limits: AiLimits): Promise<boolean> {
   const usage = await getAiUsage(turn.db, turn.businessId, turn.now);
   const status = capStatus(limits, usage);
   if (!status.conversationsExceeded && !status.spendExceeded) return false;
@@ -407,12 +413,14 @@ export async function handleInboundJob(rawPayload: unknown, ctx: JobContext, dep
   const message = conversation ? await getMessage(db, businessId, payload.messageId) : null;
   if (!conversation || !message) return;
   const business = await getBusinessContext(db, businessId);
-  if (!business || business.business.status !== "active") return;
+  if (!business) return;
+  // Negocio pausado o dado de baja: se completa el mensaje (adjunto) y no se responde.
+  const serviceActive = business.business.status === "active";
   const client = await getClient(db, businessId, conversation.clientId);
   const channel = await getChannelRow(db, businessId, conversation.channelId);
   const credentials = channel ? credentialsOf(channel) : null;
   if (!client?.phone || !channel || !credentials) {
-    log.warn("whatsapp_inbound_unanswerable", { businessId, conversationId: conversation.id, hasChannelToken: Boolean(credentials) });
+    if (serviceActive) log.warn("whatsapp_inbound_unanswerable", { businessId, conversationId: conversation.id, hasChannelToken: Boolean(credentials) });
     return;
   }
 
@@ -439,9 +447,23 @@ export async function handleInboundJob(rawPayload: unknown, ctx: JobContext, dep
   // 2. Adjuntos: se bajan y guardan antes de mirar el modo (el operador también los ve).
   const media = payload.kind === "image" || payload.kind === "audio" ? await fetchMedia(turn) : null;
 
+  // Negocio sin servicio: el mensaje ya quedó guardado (con su adjunto); nadie le responde.
+  if (!serviceActive) {
+    log.info("whatsapp_inbound_stored_without_reply", { businessId, conversationId: conversation.id, reason: "business_inactive" });
+    return;
+  }
+
   // 3. Acciones directas (cualquier modo).
   if (payload.action === "appointment_reply") return handleAppointmentReply(turn);
   if (payload.action === "opt_out") return handleOptOut(turn);
+
+  // 3b. Agente apagado por el plan (Pro sin agente, módulo quitado): sin respuesta
+  // automática ni traspaso (el plan tampoco trae la bandeja); el mensaje queda guardado.
+  const limits = await deps.getAiLimits(businessId);
+  if (limits.agentEnabled === false) {
+    log.info("whatsapp_inbound_stored_without_reply", { businessId, conversationId: conversation.id, reason: limits.disabledReason ?? "agent_disabled" });
+    return;
+  }
 
   // 4. Modo humano (con vencimiento).
   if (turn.conversation.mode === "human") {
@@ -506,7 +528,7 @@ export async function handleInboundJob(rawPayload: unknown, ctx: JobContext, dep
   }
 
   // 7b. Topes mensuales del plan.
-  if (await applyMonthlyCaps(turn)) return;
+  if (await applyMonthlyCaps(turn, limits)) return;
 
   // 9–11. Turno del agente.
   await runAgentTurn(turn, operatorNote);

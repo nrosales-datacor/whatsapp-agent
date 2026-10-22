@@ -5,7 +5,7 @@ import { getBusinessContext } from "../business";
 import type { AgentRunner } from "./agentContract";
 import { recordTokenStatus } from "./channels";
 import { createGraphApi, type MetaSignupApi, type WhatsAppApi } from "./graph";
-import { defaultAiLimits, type AiLimitsResolver } from "./limits";
+import { noAiLimits, type AiLimitsResolver } from "./limits";
 import { supabaseMediaStorage, whisperTranscriber, type AudioTranscriber, type MediaStorage } from "./media";
 import { sendPushToBusiness, webPushTransport, type PushTransport } from "./push";
 import { aiSettings } from "./schema";
@@ -18,7 +18,8 @@ import { registerFor, type TextProfile } from "./texts";
 //
 // Punto de inyección del agente de IA: `agent`. Sin él, `handoffAgentRunner` pasa cada
 // conversación a una persona (el bot no inventa respuestas). Los límites del plan:
-// `getAiLimits` (default por env, ver ./limits.ts; TODO(billing)).
+// `getAiLimits` (la composición los saca del plan del negocio, src/plans.ts; sin
+// inyectar, sin tope: lo usan las rutas del panel y los tests, ver ./limits.ts).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface WhatsAppDeps {
@@ -46,7 +47,7 @@ export function createWhatsAppDeps(db: Executor, overrides: Partial<WhatsAppDeps
     transcribe: overrides.transcribe ?? whisperTranscriber,
     push: overrides.push ?? webPushTransport,
     agent: overrides.agent ?? handoffAgentRunner,
-    getAiLimits: overrides.getAiLimits ?? defaultAiLimits,
+    getAiLimits: overrides.getAiLimits ?? noAiLimits,
     now: overrides.now ?? (() => new Date()),
   };
 }

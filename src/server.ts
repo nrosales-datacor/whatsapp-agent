@@ -39,6 +39,7 @@ for (const warning of productionConfigWarnings()) console.warn(`⚠️  ${warnin
 // (src/jobs.ts trae los módulos del dominio, y con ellos la sesión).
 const { createAppHandler, createWorkerHandler } = await import("./app");
 const { createJobGate, registerJobHandlers, startModuleSchedulers } = await import("./jobs");
+const { createPlans } = await import("./plans");
 
 const PORT = Number(process.env.PORT ?? 3000);
 
@@ -69,13 +70,16 @@ if (!process.env.DATABASE_URL) {
 
 // Pool único del proceso, compartido por el HTTP y el trabajo de fondo.
 const db = getDb();
+// Planes del proceso (módulos, cupos, topes del agente, pausa): una sola instancia para el
+// router, el pipeline de WhatsApp y la cola.
+const plans = createPlans(db);
 
 function reportHttpError(e: unknown): void {
   console.error("[server] error no manejado en un request:", e);
   captureError(e, { route: "http" });
 }
 
-const handler = SERVES_WEB ? createAppHandler({ db, role: ROLE }) : createWorkerHandler({ db, role: ROLE });
+const handler = SERVES_WEB ? createAppHandler({ db, role: ROLE, plans }) : createWorkerHandler({ db, role: ROLE });
 const server = http.createServer(withSafetyNet(handler, reportHttpError));
 
 server.on("error", (e) => {
@@ -99,9 +103,10 @@ server.listen(PORT, () => {
   // que registren los módulos (src/platform/queue); sin ninguno registrado no reclama nada.
   if (RUNS_BACKGROUND) {
     loops.push(startMetricsReport(db));
-    registerJobHandlers();
-    // Un negocio pausado (cobro manual) no procesa trabajo nuevo: la cola lo posterga.
-    queueWorker = startQueueWorker({ db, canRunJob: createJobGate(db) });
+    registerJobHandlers({ plans });
+    // Un negocio pausado (cobro manual) no procesa trabajo nuevo: la cola lo posterga (salvo
+    // completar lo que ya entró por WhatsApp, sin responder).
+    queueWorker = startQueueWorker({ db, canRunJob: createJobGate(db, plans) });
     loops.push(...startModuleSchedulers(db));
   }
 });

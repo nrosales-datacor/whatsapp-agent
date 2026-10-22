@@ -1,5 +1,5 @@
 import { resolveSuperadmin } from "./admin/session";
-import { createPlanService, type PlanService } from "./modules/billing";
+import type { PlanService } from "./modules/billing";
 import { createSessionResolver } from "./modules/team";
 import { createWhatsAppWebhookHandler, WHATSAPP_WEBHOOK_PATH, type WhatsAppDeps } from "./modules/whatsapp";
 import type { Executor } from "./platform/db/scope";
@@ -10,6 +10,7 @@ import { createRouter, PANEL_API_PREFIX, type RouterOptions } from "./platform/h
 import { serveStaticPanel } from "./platform/http/staticPanel";
 import type { HttpHandler } from "./platform/net/http";
 import { withSecurityHeaders } from "./platform/net/securityHeaders";
+import { createPlans } from "./plans";
 import { panelRoutes } from "./routes";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -34,9 +35,9 @@ export type PanelApiAccess = Pick<RouterOptions, "resolveSession" | "resolveSupe
 /**
  * Acceso real: la sesión del equipo validada contra la base (src/modules/team/session.ts),
  * la del superadmin por cookie firmada (src/admin/session.ts) y los módulos del plan
- * (src/modules/billing).
+ * (src/modules/billing, compuesto en src/plans.ts).
  */
-export function defaultPanelApiAccess(db: Executor, plans: PlanService = createPlanService(db)): Required<PanelApiAccess> {
+export function defaultPanelApiAccess(db: Executor, plans: PlanService = createPlans(db)): Required<PanelApiAccess> {
   return { resolveSession: createSessionResolver(db), resolveSuperadmin, moduleGate: plans.moduleGate };
 }
 
@@ -47,8 +48,8 @@ export interface AppOptions {
   /** Dependencias del módulo WhatsApp (los tests inyectan dobles de Graph). Default: las reales. */
   whatsapp?: WhatsAppDeps;
   /**
-   * Planes (módulos, cupos, marca, `me.plan`). Default: el servicio real de billing. El
-   * módulo WhatsApp le suma su lector de uso del agente (`aiUsage`) cuando exista.
+   * Planes (módulos, cupos, marca, `me.plan`). Default: el servicio real de billing con el
+   * uso del agente de WhatsApp (src/plans.ts).
    */
   plans?: PlanService;
 }
@@ -63,7 +64,7 @@ function requestUrl(rawUrl: string | undefined): URL {
  * panel (router declarativo, rutas en src/routes.ts), la landing en `/` y el panel
  * estático en `/panel`.
  */
-export function createAppHandler({ db, role, panelApi = {}, whatsapp, plans = createPlanService(db) }: AppOptions): HttpHandler {
+export function createAppHandler({ db, role, panelApi = {}, whatsapp, plans = createPlans(db) }: AppOptions): HttpHandler {
   // Se arma una vez por proceso: una declaración de rutas incoherente rompe el arranque.
   const panelApiHandler = createRouter({
     routes: panelRoutes({ db, plans, whatsapp }),
