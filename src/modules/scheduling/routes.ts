@@ -5,7 +5,8 @@ import { assertLocationAccess } from "../../platform/http/access";
 import { HttpError, ValidationError } from "../../platform/http/errors";
 import { created, route } from "../../platform/http/router";
 import type { Route, Session } from "../../platform/http/routeTypes";
-import { getLocation } from "../business";
+import { assertFullClients, type ClientsTierHook } from "../../platform/plan/planHooks";
+import { CustomDataInput, getLocation } from "../business";
 import { getClient } from "../clients";
 import { getStaffIdForUser } from "../team";
 import {
@@ -19,7 +20,7 @@ import {
   markNoShow,
   reassignStaff,
   rescheduleAppointment,
-  updateAppointmentNotes,
+  updateAppointmentDetails,
   type AppointmentView,
 } from "./appointments";
 import { findSlots, MAX_SERVICES_PER_APPOINTMENT, type Slot } from "./availability";
@@ -33,7 +34,7 @@ import { localDayBounds } from "./time";
 //   GET   /appointments                    ?from&to[&staffId&clientId] (todos; sucursal por X-Location-Id)
 //   POST  /appointments                    (todos; el profesional, solo en su carril)
 //   GET   /appointments/:id                (todos)
-//   PATCH /appointments/:id                notas (todos)
+//   PATCH /appointments/:id                notas y campos personalizados (todos; campos: Pro)
 //   POST  /appointments/:id/confirm        (todos)
 //   POST  /appointments/:id/complete       (todos)
 //   POST  /appointments/:id/cancel         { reason } (todos)
@@ -43,7 +44,9 @@ import { localDayBounds } from "./time";
 //   GET   /clients/:id/appointments        historial para la ficha (todos)
 //   GET   /home/today                      Inicio básico (dueño, admin, recepción; X-Location-Id o todas)
 //
-// Sin `module`: la Agenda viene en los dos planes (núcleo). Acceso:
+// Sin `module`: la Agenda viene en los dos planes (núcleo). Los campos personalizados de la
+// cita (`customData`, al crearla o en el PATCH) son del CRM completo (plan Pro): sin el
+// nivel `full` de clientes, 403 `module_not_in_plan`. Acceso:
 //   • Sucursal: una sesión limitada a algunas sucursales solo ve y opera citas de esas
 //     (403 `location_forbidden`).
 //   • Rol `staff`: solo sus citas (las del profesional vinculado a su usuario), en
@@ -55,6 +58,8 @@ export interface SchedulingRouteDeps {
   db: Executor;
   /** Conversaciones esperando a una persona para el Inicio (lo inyecta la composición desde whatsapp). */
   countConversationsWaiting?: ConversationsWaitingCounter;
+  /** Nivel de clientes del plan (campos personalizados de la cita = CRM completo). Sin él, no se aceptan. */
+  plans?: ClientsTierHook;
 }
 
 const DESK: readonly Role[] = ["owner", "admin", "front_desk"];
@@ -112,11 +117,15 @@ const CreateBody = z
     startsAt: Instant,
     channel: z.enum(PANEL_CHANNELS).default("panel"),
     notes: Notes.optional(),
+    customData: CustomDataInput.optional(),
     allowOutsideHours: z.boolean().optional(),
   })
   .strict();
 
-const NotesBody = z.object({ notes: Notes }).strict();
+const DetailsBody = z
+  .object({ notes: Notes.optional(), customData: CustomDataInput.optional() })
+  .strict()
+  .refine((b) => b.notes !== undefined || b.customData !== undefined, { message: "Indicá qué cambiar." });
 const CancelBody = z.object({ reason: z.string().trim().max(500).nullable().optional() }).strict();
 const RescheduleBody = z.object({ startsAt: Instant, staffId: z.uuid().optional(), allowOutsideHours: z.boolean().optional() }).strict();
 const AssignBody = z.object({ staffId: z.uuid() }).strict();
@@ -158,7 +167,12 @@ function slotJson(slot: Slot) {
   };
 }
 
-export function schedulingRoutes({ db, countConversationsWaiting }: SchedulingRouteDeps): Route[] {
+export function schedulingRoutes({ db, countConversationsWaiting, plans }: SchedulingRouteDeps): Route[] {
+  /** Campos personalizados de la cita: CRM completo (sin el hook del plan, nunca). */
+  async function assertCustomFieldsAllowed(businessId: string): Promise<void> {
+    await assertFullClients(plans ?? { clientsTier: async () => "basic" }, businessId);
+  }
+
   return [
     route({ method: "GET", path: "/availability", auth: "user", query: AvailabilityQuery }, async ({ session, query }) => {
       assertLocationAccess(session, query.locationId);
@@ -203,6 +217,7 @@ export function schedulingRoutes({ db, countConversationsWaiting }: SchedulingRo
 
     route({ method: "POST", path: "/appointments", auth: "user", body: CreateBody }, async ({ session, body }) => {
       assertLocationAccess(session, body.locationId);
+      if (body.customData !== undefined) await assertCustomFieldsAllowed(session.businessId);
       let staffId = body.staffId ?? "any";
       const own = await ownStaffId(db, session);
       if (own !== undefined) {
@@ -218,6 +233,7 @@ export function schedulingRoutes({ db, countConversationsWaiting }: SchedulingRo
           startsAt: body.startsAt,
           channel: body.channel,
           notes: body.notes ?? null,
+          customData: body.customData,
           createdBy: session.userId,
           allowOutsideHours: body.allowOutsideHours,
         }),
@@ -228,9 +244,10 @@ export function schedulingRoutes({ db, countConversationsWaiting }: SchedulingRo
       accessibleAppointment(db, session, params.id),
     ),
 
-    route({ method: "PATCH", path: "/appointments/:id", auth: "user", params: IdParams, body: NotesBody }, async ({ session, params, body }) => {
+    route({ method: "PATCH", path: "/appointments/:id", auth: "user", params: IdParams, body: DetailsBody }, async ({ session, params, body }) => {
       await accessibleAppointment(db, session, params.id);
-      return updateAppointmentNotes(db, session.businessId, params.id, body.notes);
+      if (body.customData !== undefined) await assertCustomFieldsAllowed(session.businessId);
+      return updateAppointmentDetails(db, session.businessId, params.id, { notes: body.notes, customData: body.customData });
     }),
 
     route({ method: "POST", path: "/appointments/:id/confirm", auth: "user", params: IdParams }, async ({ session, params }) => {
