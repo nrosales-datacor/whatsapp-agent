@@ -1,21 +1,20 @@
-import { createPlanService } from "./modules/billing";
+import type { PlanService } from "./modules/billing";
 import { handleReminderJob, REMINDER_SEND_JOB, startReminderScheduler, type ReminderJobPayload } from "./modules/scheduling";
 import {
   createAgentRunner,
   createWhatsAppDeps,
-  defaultAiLimits,
   isWhatsAppConnected,
   queueWhatsAppReminder,
   startWhatsAppSchedulers,
   whatsappJobHandlers,
   type AgentRunner,
-  type AiLimitsResolver,
   type WhatsAppDeps,
 } from "./modules/whatsapp";
 import type { Executor } from "./platform/db/scope";
 import { handleSendEmailJob, SEND_EMAIL_JOB, type SendEmailJobPayload } from "./platform/email/job";
 import type { Loop } from "./platform/net/scheduler";
 import { registerJobHandler } from "./platform/queue";
+import { aiLimitsFromPlan, createPlans } from "./plans";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Punto único de composición de los handlers de la cola (el equivalente de src/routes.ts
@@ -33,12 +32,14 @@ import { registerJobHandler } from "./platform/queue";
  */
 const whatsappAgentRunner: AgentRunner | undefined = process.env.OPENAI_API_KEY ? createAgentRunner() : undefined;
 
-/** Límites de IA del plan (tope de conversaciones y de gasto). TODO(billing): los del plan del negocio. */
-const whatsappAiLimits: AiLimitsResolver = defaultAiLimits;
-
 export interface JobDeps {
   /** Dependencias del módulo WhatsApp (los tests inyectan dobles de Graph, OpenAI y el agente). */
   whatsapp?: WhatsAppDeps;
+  /**
+   * Planes del proceso (src/plans.ts): de acá salen los topes del agente de cada negocio
+   * (conversaciones y gasto del mes, agente apagado por plan o pausa). Default: los reales.
+   */
+  plans?: PlanService;
 }
 
 export function registerJobHandlers(options: JobDeps = {}): void {
@@ -54,10 +55,11 @@ export function registerJobHandlers(options: JobDeps = {}): void {
   });
 
   // WhatsApp: mensajes entrantes (pipeline + agente), recordatorios y borrado de adjuntos.
-  // Las dependencias se arman con el pool del proceso la primera vez que corre un job.
+  // Las dependencias se arman con el pool del proceso la primera vez que corre un job; los
+  // topes del agente son los del plan de cada negocio.
   let whatsapp = options.whatsapp;
   const whatsappDeps = (db: Executor): WhatsAppDeps =>
-    (whatsapp ??= createWhatsAppDeps(db, { agent: whatsappAgentRunner, getAiLimits: whatsappAiLimits }));
+    (whatsapp ??= createWhatsAppDeps(db, { agent: whatsappAgentRunner, getAiLimits: aiLimitsFromPlan(options.plans ?? createPlans(db)) }));
   for (const spec of whatsappJobHandlers(whatsappDeps)) registerJobHandler(spec.type, spec.handler, spec.options);
 }
 
@@ -71,11 +73,11 @@ export function startModuleSchedulers(db: Executor): Loop[] {
 
 /**
  * Chequeo del worker de la cola (`canRunJob`): un job de un negocio pausado o dado de baja
- * se posterga sin correrlo (src/platform/queue/worker.ts) hasta que se reactive. Los planes
- * viven en modules/billing; la cola no los conoce. `jobsAllowedWhilePaused` = tipos que
- * igual corren con el negocio pausado (p. ej. guardar los mensajes que siguen entrando,
- * cuando exista el módulo WhatsApp).
+ * se posterga sin correrlo (src/platform/queue/worker.ts) hasta que se reactive, salvo los
+ * tipos que completan lo que ya entró por WhatsApp sin responder (ver
+ * `JOBS_ALLOWED_WHILE_PAUSED` en src/plans.ts). Los planes viven en modules/billing; la cola
+ * no los conoce.
  */
-export function createJobGate(db: Executor): (businessId: string, jobType: string) => Promise<boolean> {
-  return createPlanService(db, { jobsAllowedWhilePaused: [] }).canRunJob;
+export function createJobGate(db: Executor, plans: Pick<PlanService, "canRunJob"> = createPlans(db)): (businessId: string, jobType: string) => Promise<boolean> {
+  return (businessId, jobType) => plans.canRunJob(businessId, jobType);
 }

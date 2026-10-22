@@ -1,6 +1,6 @@
 import { and, eq, gte, lte, sql } from "drizzle-orm";
 import { withTenant, type Executor } from "../../platform/db/scope";
-import { aiUsageMonthly } from "./schema";
+import { aiUsageMonthly, whatsappChannels } from "./schema";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Uso mensual del agente por negocio (`ai_usage_monthly`), portado de
@@ -113,6 +113,31 @@ export async function getAiUsage(executor: Executor, businessId: string, now: Da
       .limit(1),
   );
   return toSnapshot(row);
+}
+
+/**
+ * Uso del agente en un mes (`YYYY-MM`) para los planes: lo que la composición le pasa a
+ * billing como `aiUsage` (`me.plan.usage`, detalle del superadmin). null = el negocio no
+ * tiene WhatsApp conectado (todavía no se mide); con número y sin actividad en el mes,
+ * ceros. El mes de esta tabla es el calendario UTC (ver cabecera): en las primeras horas
+ * de un mes la vista del plan (mes de Costa Rica) puede ir unas horas atrasada.
+ */
+export async function readMonthlyAiUsage(
+  executor: Executor,
+  businessId: string,
+  month: string,
+): Promise<{ conversations: number; llmCostUsdMicros: number } | null> {
+  if (!/^\d{4}-\d{2}$/.test(month)) return null;
+  return withTenant(executor, businessId, async (tx) => {
+    const [row] = await tx
+      .select({ conversations: aiUsageMonthly.conversationsStarted, costMicros: aiUsageMonthly.estimatedCostUsdMicros })
+      .from(aiUsageMonthly)
+      .where(and(eq(aiUsageMonthly.businessId, businessId), eq(aiUsageMonthly.month, `${month}-01`)))
+      .limit(1);
+    if (row) return { conversations: row.conversations, llmCostUsdMicros: Number(row.costMicros) };
+    const [channel] = await tx.select({ id: whatsappChannels.id }).from(whatsappChannels).where(eq(whatsappChannels.businessId, businessId)).limit(1);
+    return channel ? { conversations: 0, llmCostUsdMicros: 0 } : null;
+  });
 }
 
 /** Costo del LLM sumado de los meses que tocan [from, to] (aproximación por mes completo). */

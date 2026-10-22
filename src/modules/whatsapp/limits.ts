@@ -13,9 +13,10 @@ import type { AiUsageSnapshot } from "./usage";
 //   3. Topes mensuales del plan: conversaciones y gasto de LLM. Al 100% el bot deja de
 //      llamar al LLM, avisa al cliente y pasa la conversación a una persona.
 //
-// Los límites del plan salen de `getAiLimits(businessId)`, inyectable desde la
-// composición. TODO(billing): reemplazar `defaultAiLimits` por los límites del plan del
-// negocio (src/modules/billing); hasta entonces, defaults por env iguales para todos.
+// Los límites del plan salen de `getAiLimits(businessId)`, que inyecta la composición
+// (src/plans.ts) desde el plan del negocio (src/modules/billing): este módulo no conoce
+// los planes. Ahí también llega `agentEnabled` (agente apagado por el plan, p. ej. un Pro
+// sin agente, o negocio pausado): el pipeline ni lo llama.
 // ─────────────────────────────────────────────────────────────────────────────
 
 function intFromEnv(name: string, fallback: number): number {
@@ -33,27 +34,28 @@ function numberFromEnv(name: string, fallback: number): number {
 // ── 3. Topes mensuales del plan ──────────────────────────────────────────────
 
 export interface AiLimits {
+  /**
+   * ¿El agente puede atender este negocio? false = apagado por el plan (Pro sin agente,
+   * módulo `whatsapp` quitado) o negocio sin servicio: el pipeline no lo llama y el
+   * mensaje queda guardado sin respuesta automática. Sin el campo = sí.
+   */
+  agentEnabled?: boolean;
+  /** Por qué está apagado (para los logs; p. ej. `module_not_in_plan`, `business_paused`). */
+  disabledReason?: string | null;
   /** Conversaciones iniciadas por mes (como cobra Meta: primer mensaje tras 24 h). null = sin tope. */
   monthlyConversations: number | null;
   /** Gasto estimado de LLM por mes, en millonésimos de dólar. null = sin tope. */
   monthlySpendMicros: number | null;
 }
 
-/** Límites de IA del negocio. Lo inyecta la composición (billing); ver cabecera. */
+/** Límites de IA del negocio. Los inyecta la composición desde el plan; ver cabecera. */
 export type AiLimitsResolver = (businessId: string) => AiLimits | Promise<AiLimits>;
 
 /**
- * Defaults por env, iguales para todos los negocios (0 = sin tope).
- * TODO(billing): los límites reales salen del plan del negocio (PLAN-GESTION.md §5).
+ * Sin topes: el default de `createWhatsAppDeps` cuando no se inyectan límites (rutas del
+ * panel y tests). El que corre los turnos (src/jobs.ts) siempre inyecta los del plan.
  */
-export const defaultAiLimits: AiLimitsResolver = () => {
-  const conversations = intFromEnv("WHATSAPP_MONTHLY_CONVERSATIONS_CAP", 500);
-  const spendUsd = numberFromEnv("WHATSAPP_MONTHLY_AI_SPEND_CAP_USD", 25);
-  return {
-    monthlyConversations: conversations === 0 ? null : conversations,
-    monthlySpendMicros: spendUsd === 0 ? null : Math.round(spendUsd * 1_000_000),
-  };
-};
+export const noAiLimits: AiLimitsResolver = () => ({ monthlyConversations: null, monthlySpendMicros: null });
 
 export interface CapStatus {
   conversationsExceeded: boolean;

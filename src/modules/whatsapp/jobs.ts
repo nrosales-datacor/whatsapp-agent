@@ -15,6 +15,18 @@ import { reingestRawPayload } from "./webhook";
 // quede explícito en src/jobs.ts, igual que el resto de los módulos.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Tipos de job del módulo que la cola corre aunque el negocio esté pausado (cobro manual)
+ * o dado de baja; el resto (recordatorios) se posterga hasta que se reactive. Se los da la
+ * composición a billing como `jobsAllowedWhilePaused` (src/plans.ts).
+ *   • `whatsapp.inbound`: completa lo que ya entró (guarda la foto o el audio) y NO
+ *     responde (./pipeline.ts). Postergarlo haría que el bot conteste días tarde al
+ *     reactivar; correrlo no gasta IA.
+ *   • `whatsapp.media.erase`: el borrado de adjuntos de un cliente anonimizado es una
+ *     obligación de datos personales (Ley 8968) que no espera al cobro.
+ */
+export const WHATSAPP_JOBS_ALLOWED_WHILE_PAUSED: readonly string[] = [WHATSAPP_INBOUND_JOB, WHATSAPP_MEDIA_ERASE_JOB];
+
 export interface WhatsAppJobSpec {
   type: string;
   handler: JobHandler<unknown>;
