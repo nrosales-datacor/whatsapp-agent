@@ -18,13 +18,19 @@ import ts from "typescript";
 //       el schema.ts de un módulo puede importar el schema.ts de otro, porque una FK de
 //       Drizzle necesita el objeto de la tabla referenciada. Con eso, ninguna otra pieza
 //       de un módulo puede leer las tablas de otro.
+//   (d) Nadie depende de reports (I5): arma sus reportes con lo que exponen los demás y
+//       solo la composición (src/routes.ts) lo usa. Así ningún módulo puede formar un
+//       ciclo a través de él, y reports (núcleo de gestión) tampoco importa whatsapp ni
+//       billing (regla a).
 //
 // Los imports se leen con el preprocesador de TypeScript (no con una regex): ve imports,
 // re-exports, `import type` e `import()` dinámicos, e ignora los comentarios.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const SRC = fileURLToPath(new URL("../../src/", import.meta.url));
-const CORE = ["business", "team", "catalog", "clients", "scheduling", "sales", "commissions"];
+const CORE = ["business", "team", "catalog", "clients", "scheduling", "sales", "commissions", "reports"];
+/** Módulos de los que ningún otro módulo puede depender (solo la composición). */
+const LEAVES = ["reports"];
 const OUTSIDE_CORE = ["whatsapp", "campaigns", "billing"];
 const SCHEMA_REGISTRY = "platform/db/schemaRegistry.ts";
 
@@ -46,6 +52,9 @@ function violations(from: SrcPath, to: SrcPath): string[] {
   }
   if (from.startsWith("platform/") && toModule && from !== SCHEMA_REGISTRY) {
     out.push(`(b) la plataforma no importa de src/modules: ${from} → ${to}`);
+  }
+  if (fromModule && toModule && fromModule !== toModule && LEAVES.includes(toModule)) {
+    out.push(`(d) nadie depende de ${toModule} (solo la composición): ${from} → ${to}`);
   }
   if (fromModule && toModule && fromModule !== toModule) {
     const viaIndex = to === `modules/${toModule}/index.ts`;
@@ -115,6 +124,11 @@ test("fronteras: las reglas mismas (casos armados a mano)", () => {
   assert.deepEqual(violations("modules/scheduling/book.ts", "modules/catalog/index.ts"), []);
   assert.deepEqual(violations("modules/scheduling/schema.ts", "modules/catalog/schema.ts"), [], "FK entre esquemas");
   assert.deepEqual(violations("modules/scheduling/book.ts", "modules/scheduling/schema.ts"), [], "dentro del mismo módulo");
+  // (d)
+  assert.equal(violations("modules/sales/totals.ts", "modules/reports/index.ts").length, 1, "nadie depende de reports");
+  assert.deepEqual(violations("modules/reports/reports.ts", "modules/sales/index.ts"), [], "reports sí usa el núcleo");
+  assert.deepEqual(violations("routes.ts", "modules/reports/index.ts"), [], "la composición sí");
+  assert.equal(violations("modules/reports/home.ts", "modules/whatsapp/index.ts").length, 1, "reports no importa whatsapp");
 });
 
 test("fronteras: el escaneo de src/ ve los imports entre módulos (no es un test vacío)", () => {
@@ -132,7 +146,7 @@ test("fronteras: el escaneo de src/ ve los imports entre módulos (no es un test
   for (const m of CORE) assert.ok(existsSync(path.join(SRC, "modules", m, "index.ts")), `modules/${m}/index.ts existe`);
 });
 
-test("fronteras: src/ respeta (a) núcleo sin whatsapp/campaigns/billing, (b) plataforma sin módulos, (c) solo por index.ts", () => {
+test("fronteras: src/ respeta (a) núcleo sin whatsapp/campaigns/billing, (b) plataforma sin módulos, (c) solo por index.ts, (d) nadie depende de reports", () => {
   const problems = importEdges().flatMap((e) => violations(e.from, e.to));
   assert.deepEqual(problems, []);
 });

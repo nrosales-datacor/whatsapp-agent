@@ -15,6 +15,7 @@ import { handleSendEmailJob, SEND_EMAIL_JOB, type SendEmailJobPayload } from "./
 import type { Loop } from "./platform/net/scheduler";
 import { registerJobHandler } from "./platform/queue";
 import { aiLimitsFromPlan, createPlans } from "./plans";
+import { createUsageTracker } from "./usage";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Punto único de composición de los handlers de la cola (el equivalente de src/routes.ts
@@ -30,7 +31,10 @@ import { aiLimitsFromPlan, createPlans } from "./plans";
  * en src/modules/whatsapp/agent). Sin `OPENAI_API_KEY` queda `undefined` y el pipeline pasa
  * cada conversación a una persona (`handoffAgentRunner`): el bot nunca inventa respuestas.
  */
-const whatsappAgentRunner: AgentRunner | undefined = process.env.OPENAI_API_KEY ? createAgentRunner() : undefined;
+const whatsappAgentRunner: AgentRunner | undefined = process.env.OPENAI_API_KEY
+  ? // Cada cita que agenda el agente suma a `daily_usage` (métricas de producto, src/usage.ts).
+    createAgentRunner({ onAppointmentBooked: createUsageTracker().appointmentBooked })
+  : undefined;
 
 export interface JobDeps {
   /** Dependencias del módulo WhatsApp (los tests inyectan dobles de Graph, OpenAI y el agente). */
