@@ -72,6 +72,11 @@ export const users = pgTable(
     // El panel exige elegir una clave nueva antes de seguir (p. ej. tras una clave
     // temporal puesta por soporte). Cambiarla o restablecerla lo apaga.
     mustChangePassword: boolean("must_change_password").notNull().default(false),
+    // Correo SIN verificar desde este instante (alta self-service, I6): no puede entrar al
+    // panel hasta abrir el enlace del correo (o restablecer la clave, que también prueba que
+    // el correo es suyo). null = verificado o nunca hizo falta (invitaciones: aceptar el
+    // enlace ya prueba el correo).
+    emailUnverifiedSince: instant("email_unverified_since"),
     active: boolean("active").notNull().default(true),
     ...timestamps(),
   },
@@ -216,8 +221,9 @@ export const timeOff = pgTable(
 ).enableRLS();
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tokens de un solo uso que viajan por correo: recuperación de clave (vence en 1 h) e
-// invitación al equipo de un negocio (vence en 7 días). En la base queda solo el sha256
+// Tokens de un solo uso que viajan por correo: recuperación de clave (vence en 1 h),
+// invitación al equipo de un negocio (vence en 7 días) y verificación del correo del alta
+// self-service (vence en 2 días). En la base queda solo el sha256
 // del token (un dump no permite usar ningún link vigente); el token en claro existe solo
 // en el correo. `used_at` lo marca un UPDATE atómico (`… WHERE used_at IS NULL`): dos
 // clics simultáneos en el mismo link no lo consumen dos veces.
@@ -225,7 +231,7 @@ export const timeOff = pgTable(
 // Solo de sistema: se leen ANTES de que exista una sesión (el link llega sin cookie) y
 // ningún negocio tiene por qué ver los tokens de nadie.
 // ─────────────────────────────────────────────────────────────────────────────
-export const AUTH_TOKEN_KINDS = ["password_reset", "invitation"] as const;
+export const AUTH_TOKEN_KINDS = ["password_reset", "invitation", "email_verification"] as const;
 export type AuthTokenKind = (typeof AUTH_TOKEN_KINDS)[number];
 
 export const authTokens = pgTable(
@@ -235,7 +241,7 @@ export const authTokens = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    // Negocio de la invitación (null en la recuperación de clave: la cuenta es de la plataforma).
+    // Negocio de la invitación o del alta (null en la recuperación de clave: la cuenta es de la plataforma).
     businessId: uuid("business_id").references(() => businesses.id, { onDelete: "cascade" }),
     kind: text("kind").notNull(),
     // sha256 (hex) del token que va en el link.

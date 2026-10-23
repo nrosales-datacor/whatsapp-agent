@@ -44,7 +44,9 @@ export {
 } from "./customFields";
 export type { CustomDataPatchOptions, CustomFieldView, ListCustomFieldsOptions } from "./customFields";
 // Lo contractual (plan, extras, pausa, cobro): lo escribe el superadmin vía modules/billing.
-export { countActiveLocationsOf, getBusinessRow, updateBusinessSubscription } from "./subscription";
+export { countActiveLocationsOf, findBusinessIdByStripe, getBusinessRow, listBillingSweepCandidates, updateBusinessSubscription } from "./subscription";
+// Checklist de primeros pasos del Inicio (I6): la marca de descartada.
+export { dismissOnboarding } from "./onboarding";
 export type { SubscriptionChanges } from "./subscription";
 export {
   AI_REGISTERS,
