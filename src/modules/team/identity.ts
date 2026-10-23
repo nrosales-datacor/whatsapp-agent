@@ -93,6 +93,27 @@ export async function hasMembershipInPausedBusiness(executor: Executor, userId: 
 }
 
 /**
+ * Negocio PAUSADO POR EL COBRO del que la persona es dueña activa (el primero), o null. El
+ * login le deja la sesión en ese negocio (sin acceso a nada salvo las rutas de pago): así
+ * puede pagar y reactivarlo. Una pausa del superadmin no entra acá.
+ */
+export async function billingPausedOwnedBusiness(executor: Executor, userId: string): Promise<string | null> {
+  const rows = await withSystem(executor, (tx) =>
+    tx
+      .select({ businessId: memberships.businessId, role: memberships.role })
+      .from(memberships)
+      .where(and(eq(memberships.userId, userId), eq(memberships.active, true)))
+      .orderBy(asc(memberships.createdAt)),
+  );
+  for (const m of rows) {
+    if (m.role !== "owner") continue;
+    const ctx = await getBusinessContext(executor, m.businessId);
+    if (ctx?.business.status === "paused" && ctx.business.billingPausedAt) return m.businessId;
+  }
+  return null;
+}
+
+/**
  * Sube el epoch de la cuenta: TODAS sus sesiones (en todos sus negocios y dispositivos)
  * dejan de valer en la request siguiente. Corre con el contexto de `tx` (sistema, o el
  * negocio del que la persona es miembro). Devuelve el epoch nuevo.
@@ -128,4 +149,10 @@ export function guardCredentialAttempt(ip: string, scope: CredentialScope, key: 
 /** Intento fallido (clave o código incorrecto): suma al lockout progresivo. */
 export function recordCredentialFailure(ip: string, scope: CredentialScope, key: string): void {
   recordLoginFailure(ip, scope, key);
+}
+
+/** Nombre y correo de una cuenta (p. ej. el correo de la dueña para el cobro), o null. */
+export async function getUserContact(executor: Executor, userId: string): Promise<{ name: string; email: string } | null> {
+  const user = await findUserById(executor, userId);
+  return user ? { name: user.name, email: user.email } : null;
 }

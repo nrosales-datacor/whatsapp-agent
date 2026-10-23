@@ -321,6 +321,74 @@ export function passwordResetEmail(data: PasswordResetEmailData): EmailContent {
   });
 }
 
+// ── Alta self-service (I6) ──
+
+export interface EmailVerificationEmailData {
+  userName?: string | null;
+  /** Nombre del negocio recién creado. */
+  businessName: string;
+  /** Link para confirmar el correo (entra al panel). */
+  verifyUrl: string;
+  /** Minutos de vigencia del link. */
+  expiresInMinutes: number;
+  /** Días de prueba gratis (si aplica). */
+  trialDays?: number | null;
+}
+
+/** Confirmación del correo del alta self-service: hasta abrirlo, la cuenta no entra. */
+export function emailVerificationEmail(data: EmailVerificationEmailData): EmailContent {
+  const business = required(data.businessName, "businessName");
+  const verifyUrl = safeUrl(data.verifyUrl, "verifyUrl");
+  const expires = formatDuration(data.expiresInMinutes);
+  const trial = data.trialDays && data.trialDays > 0 ? data.trialDays : null;
+  return render({
+    subject: `Confirmá tu correo para empezar con ${PRODUCT_NAME}`,
+    brand: { businessName: PRODUCT_NAME },
+    preheader: `Un clic y ${business} queda listo para usar.`,
+    heading: greeting(data.userName),
+    paragraphs: [
+      `Gracias por crear ${business} en ${PRODUCT_NAME}.`,
+      trial
+        ? `Confirmá tu correo con el botón de abajo y empezá tu prueba gratis de ${trial} días.`
+        : "Confirmá tu correo con el botón de abajo para entrar a tu panel.",
+    ],
+    actions: [{ label: "Confirmar mi correo", url: verifyUrl, primary: true }],
+    footnote: `Este enlace vence en ${expires}. Si no creaste esta cuenta, ignorá este correo: sin confirmar, nadie puede usarla.`,
+  });
+}
+
+export interface SignupExistingAccountEmailData {
+  userName?: string | null;
+  /** Link al login del panel. */
+  loginUrl: string;
+  /** Link para pedir una clave nueva. */
+  resetUrl: string;
+}
+
+/**
+ * Alguien intentó registrarse con un correo que ya tiene cuenta. La respuesta de la API es
+ * la misma que la de un alta nueva (no revela qué correos existen): el aviso va al correo.
+ */
+export function signupExistingAccountEmail(data: SignupExistingAccountEmailData): EmailContent {
+  const loginUrl = safeUrl(data.loginUrl, "loginUrl");
+  const resetUrl = safeUrl(data.resetUrl, "resetUrl");
+  return render({
+    subject: `Ya tenés una cuenta en ${PRODUCT_NAME}`,
+    brand: { businessName: PRODUCT_NAME },
+    preheader: "Alguien intentó crear una cuenta nueva con tu correo.",
+    heading: greeting(data.userName),
+    paragraphs: [
+      `Recibimos un pedido para crear un negocio nuevo en ${PRODUCT_NAME} con este correo, pero ya tenés una cuenta.`,
+      "Si fuiste vos, ingresá con tu clave (o restablecela si no la recordás). Para sumar otro negocio a tu cuenta, escribinos.",
+    ],
+    actions: [
+      { label: "Ingresar", url: loginUrl, primary: true },
+      { label: "Restablecer mi clave", url: resetUrl, primary: false },
+    ],
+    footnote: "Si no fuiste vos, ignorá este correo: no se creó nada y tu cuenta sigue igual.",
+  });
+}
+
 // ── Cliente final ──
 
 export interface AppointmentEmailData extends BrandOptions {
