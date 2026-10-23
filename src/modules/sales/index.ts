@@ -32,6 +32,7 @@ export type {
   ListPaymentsFilter,
   MethodSummary,
   PaymentList,
+  PaymentRecordedHook,
   PaymentsChangedHook,
   PaymentTotals,
   PaymentView,

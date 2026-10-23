@@ -10,6 +10,7 @@ import {
 import { withTenant, type Executor } from "../../platform/db/scope";
 import { HttpError } from "../../platform/http/errors";
 import { parseCookies, SESSION_COOKIE, sessionCookie } from "../../platform/http/http";
+import { log } from "../../platform/observability/log";
 import type { Session, SessionResolver } from "../../platform/http/routeTypes";
 import { getBusinessContext } from "../business";
 import { membershipLocations, memberships, users } from "./schema";
@@ -93,11 +94,25 @@ export async function loadSession(db: Executor, claims: SessionClaims): Promise<
   return session;
 }
 
+/**
+ * Aviso de cada request con una sesión válida (la composición lo usa para contar
+ * "usuarios activos" del día). Un error del gancho se registra y no corta el request.
+ */
+export type SessionSeenHook = (executor: Executor, session: Session) => Promise<void> | void;
+
 /** El `SessionResolver` del router: cookie → claims → sesión validada contra la base. */
-export function createSessionResolver(db: Executor): SessionResolver {
+export function createSessionResolver(db: Executor, options: { onSession?: SessionSeenHook } = {}): SessionResolver {
   return async (req) => {
     const claims = readSessionClaims(req);
-    return claims ? loadSession(db, claims) : null;
+    const session = claims ? await loadSession(db, claims) : null;
+    if (session && options.onSession) {
+      try {
+        await options.onSession(db, session);
+      } catch (error) {
+        log.warn("session_seen_hook_failed", { businessId: session.businessId, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    return session;
   };
 }
 

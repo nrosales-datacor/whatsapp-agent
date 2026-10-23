@@ -6,6 +6,7 @@ import type { Executor } from "../../platform/db/scope";
 import { HttpError } from "../../platform/http/errors";
 import { created, noContent, route } from "../../platform/http/router";
 import type { Route } from "../../platform/http/routeTypes";
+import { log } from "../../platform/observability/log";
 import type { PlanHooks } from "../../platform/plan/planHooks";
 import { getClientIp } from "../../platform/net/clientIp";
 import { getBusinessContext } from "../business";
@@ -37,7 +38,12 @@ export interface TeamRouteDeps {
   db: Executor;
   /** Plan del negocio (`me.plan`) y cupo de usuarios; lo inyecta la composición desde modules/billing. */
   plans: Pick<PlanHooks, "snapshot" | "quota" | "hasFeature">;
+  /** Aviso de un login correcto (la composición lo cuenta en `daily_usage`). Sus errores no cortan el login. */
+  onLogin?: LoginHook;
 }
+
+/** Aviso de un login correcto: negocio con el que entró y la persona. */
+export type LoginHook = (executor: Executor, businessId: string, userId: string) => Promise<void> | void;
 
 const Email = z.string().trim().min(1).max(320);
 const Token = z.string().min(1).max(200);
@@ -73,7 +79,7 @@ const MemberPatchBody = z
     message: "Indicá qué cambiar (rol, estado o sucursales).",
   });
 
-export function teamRoutes({ db, plans }: TeamRouteDeps): Route[] {
+export function teamRoutes({ db, plans, onLogin }: TeamRouteDeps): Route[] {
   /** Fija la cookie de la sesión nueva y devuelve su `me`. */
   async function startSession(res: ServerResponse, claims: SessionClaims): Promise<Me> {
     const session = await loadSession(db, claims);
@@ -87,7 +93,15 @@ export function teamRoutes({ db, plans }: TeamRouteDeps): Route[] {
     route({ method: "POST", path: "/auth/login", auth: "public", body: LoginBody }, async ({ req, res, body }) => {
       const result = await login(db, { ...body, ip: getClientIp(req) });
       if (result.status === "totp_required") return { status: "totp_required" as const };
-      return { status: "ok" as const, me: await startSession(res, result.claims) };
+      const me = await startSession(res, result.claims);
+      if (onLogin) {
+        try {
+          await onLogin(db, result.claims.businessId, result.claims.userId);
+        } catch (error) {
+          log.warn("login_hook_failed", { businessId: result.claims.businessId, error: error instanceof Error ? error.message : String(error) });
+        }
+      }
+      return { status: "ok" as const, me };
     }),
 
     route({ method: "POST", path: "/auth/logout", auth: "public" }, ({ res }) => {

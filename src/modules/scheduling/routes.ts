@@ -21,6 +21,7 @@ import {
   reassignStaff,
   rescheduleAppointment,
   updateAppointmentDetails,
+  type AppointmentBookedHook,
   type AppointmentCompletedHook,
   type AppointmentView,
 } from "./appointments";
@@ -63,6 +64,8 @@ export interface SchedulingRouteDeps {
   plans?: ClientsTierHook;
   /** Efectos internos de completar una cita, en su transacción (la composición inyecta las comisiones). */
   onAppointmentCompleted?: AppointmentCompletedHook;
+  /** Aviso de cita creada desde el panel, ya confirmada (la composición cuenta el uso en `daily_usage`). */
+  onAppointmentBooked?: AppointmentBookedHook;
 }
 
 const DESK: readonly Role[] = ["owner", "admin", "front_desk"];
@@ -170,7 +173,7 @@ function slotJson(slot: Slot) {
   };
 }
 
-export function schedulingRoutes({ db, countConversationsWaiting, plans, onAppointmentCompleted }: SchedulingRouteDeps): Route[] {
+export function schedulingRoutes({ db, countConversationsWaiting, plans, onAppointmentCompleted, onAppointmentBooked }: SchedulingRouteDeps): Route[] {
   /** Campos personalizados de la cita: CRM completo (sin el hook del plan, nunca). */
   async function assertCustomFieldsAllowed(businessId: string): Promise<void> {
     await assertFullClients(plans ?? { clientsTier: async () => "basic" }, businessId);
@@ -239,6 +242,7 @@ export function schedulingRoutes({ db, countConversationsWaiting, plans, onAppoi
           customData: body.customData,
           createdBy: session.userId,
           allowOutsideHours: body.allowOutsideHours,
+          onBooked: onAppointmentBooked,
         }),
       );
     }),

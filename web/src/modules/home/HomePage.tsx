@@ -12,6 +12,7 @@ import { isoToZoned } from "../settings/zonedTime";
 import { formatLongDate, formatTime, formatWhen, STATUS_LABEL } from "../scheduling/format";
 import { schedulingApi, useAppointmentStore, useHomeToday, type Appointment, type AppointmentStatus } from "../scheduling/schedulingApi";
 import WaitingCard from "../whatsapp/WaitingCard";
+import HomeOverview from "./HomeOverview";
 import "../scheduling/agenda.css";
 import "./home.css";
 
@@ -24,9 +25,10 @@ function agendaLink(a: Appointment, timeZone: string): string {
 }
 
 /**
- * Inicio básico (/): el día de la sucursal activa (o de todas): citas de hoy por estado,
+ * Inicio (/): el día de la sucursal activa (o de todas). Básico: citas de hoy por estado,
  * próximas, sin confirmar de hoy y mañana, no-show de hoy y lo que agendó el agente esta
- * semana (si el plan trae WhatsApp IA). El Inicio completo del Pro llega en I5.
+ * semana (si el plan trae WhatsApp IA). Pro (módulo Reportes): arriba, el Inicio completo
+ * (cobrado hoy, clientes nuevos, alertas, ingresos de 14 días; ver ./HomeOverview.tsx).
  */
 export default function HomePage() {
   const me = useSession();
@@ -34,6 +36,7 @@ export default function HomePage() {
   const { selected, label } = useActiveLocation();
   const query = useHomeToday();
   const hasWhatsapp = me.modules.includes("whatsapp");
+  const hasOverview = me.modules.includes("reports");
   const subtitle = selected === ALL_LOCATIONS ? label : `${capitalize(t.location)}: ${label}`;
 
   if (query.isPending) {
@@ -66,6 +69,8 @@ export default function HomePage() {
           Ver agenda
         </Link>
       </PageHeader>
+
+      {hasOverview && <HomeOverview />}
 
       <div className="home-grid">
         <section className="card home-card home-today" aria-labelledby="home-today-title">

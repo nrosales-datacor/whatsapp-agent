@@ -28,6 +28,7 @@ import {
   recordAppointmentPayment,
   recordClientPayment,
   refundPayment,
+  type PaymentRecordedHook,
   type PaymentsChangedHook,
 } from "./payments";
 import { PAYMENT_KINDS } from "./schema";
@@ -58,6 +59,8 @@ export interface SalesRouteDeps {
   db: Executor;
   /** Efectos internos de cobrar o devolver en una cita, en su transacción (la composición inyecta las comisiones). */
   onPaymentsChanged?: PaymentsChangedHook;
+  /** Aviso de seña o cobro registrado, ya confirmado (la composición cuenta el uso en `daily_usage`). */
+  onPaymentRecorded?: PaymentRecordedHook;
 }
 
 const DESK: readonly Role[] = ["owner", "admin", "front_desk"];
@@ -179,7 +182,7 @@ async function accessibleAppointment(db: Executor, session: Session, id: string)
   return appointment;
 }
 
-export function salesRoutes({ db, onPaymentsChanged }: SalesRouteDeps): Route[] {
+export function salesRoutes({ db, onPaymentsChanged, onPaymentRecorded }: SalesRouteDeps): Route[] {
   return [
     // ── Métodos de pago ──
     route({ method: "GET", path: "/settings/payment-methods", auth: "user", module: "sales" }, ({ session }) =>
@@ -222,6 +225,7 @@ export function salesRoutes({ db, onPaymentsChanged }: SalesRouteDeps): Route[] 
             currency: body.currency ?? null,
             recordedBy: session.userId,
             onPaymentsChanged,
+            onRecorded: onPaymentRecorded,
           }),
         );
       },
@@ -248,6 +252,7 @@ export function salesRoutes({ db, onPaymentsChanged }: SalesRouteDeps): Route[] 
             paidAt: body.paidAt ?? null,
             currency: body.currency ?? null,
             recordedBy: session.userId,
+            onRecorded: onPaymentRecorded,
           }),
         );
       },

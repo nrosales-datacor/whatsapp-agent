@@ -2,7 +2,9 @@ import { mockAgendaSetup, mockPlanUsage, settingsMockRoute, settingsOverlay, typ
 import type { TransportRequest, TransportResponse } from "./api";
 import { mockClientsOf, routeClientsMock } from "../modules/clients/clientsMock";
 import { routeCrmSettingsMock } from "../modules/clients/crmMock";
-import { isSalesMockPath, routeSalesMock } from "../modules/sales/salesMock";
+import { mockBusinessUsage, mockPlatformMetrics, resolveMockRange } from "../modules/admin/adminMetricsMock";
+import { isReportsMockPath, routeReportsMock } from "../modules/reports/reportsMock";
+import { isSalesMockPath, mockSalesOf, routeSalesMock, type MockSalesSession } from "../modules/sales/salesMock";
 import { mockAppointmentsOf, mockClientIdsForStaff, routeSchedulingMock } from "../modules/scheduling/schedulingMock";
 import { routeWhatsappMock } from "../modules/whatsapp/whatsappMock";
 import type {
@@ -660,6 +662,52 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
     }) ?? fail(404, "not_found", "Ruta inexistente en el mock.");
   }
 
+  // Reportes e Inicio completo (I5): /reports/* (y su .csv) y /home/overview, calculados sobre
+  // las citas de la Agenda simulada y los pagos de Ventas simulada.
+  if (isReportsMockPath(path)) {
+    const me = sessionMe();
+    if (!me || !sessionUser) return unauthorized();
+    const b = businessOf(state, me.business.id);
+    const membership = sessionUser.memberships.find((m) => m.businessId === b.id);
+    const setup = mockAgendaSetup(settingsSeedOf(state, b.id), membersOf(state, b.id));
+    const clients = mockClientsOf(b.id, b.locations);
+    const appointments = mockAppointmentsOf({ businessId: b.id, userId: me.user.id, role: me.role, locationIds: membership?.locationIds, staffId: me.staffId ?? null, setup, clients });
+    const salesSession: MockSalesSession = {
+      businessId: b.id,
+      userId: me.user.id,
+      role: me.role,
+      locationIds: membership?.locationIds,
+      staffId: me.staffId ?? null,
+      modules: me.modules,
+      currency: me.business.currency,
+      timezone: me.business.timezone,
+      locations: setup.locations.map((l) => ({ id: l.id, name: l.name, timezone: l.timezone })),
+      staff: setup.staff.map((s) => ({ id: s.id, name: s.name, color: s.color })),
+      services: setup.services.map((s) => ({ id: s.id, name: s.name, categoryId: s.categoryId })),
+      clients,
+      appointments,
+    };
+    const sales = me.modules.includes("sales") ? mockSalesOf(salesSession) : { payments: [], commissions: [] };
+    return (
+      routeReportsMock(
+        req,
+        {
+          role: me.role,
+          modules: me.modules,
+          locationIds: membership?.locationIds,
+          currency: me.business.currency,
+          timezone: me.business.timezone,
+          setup,
+          appointments,
+          payments: sales.payments,
+          commissions: sales.commissions,
+          clients,
+        },
+        req.headers["X-Location-Id"],
+      ) ?? fail(404, "not_found", "Ruta inexistente en el mock.")
+    );
+  }
+
   // Agenda e Inicio (I1): /availability, /appointments*, /clients/:id/appointments y /home/today.
   if (path === "/availability" || path === "/appointments" || path.startsWith("/appointments/") || path === "/home/today" || /^\/clients\/[^/]+\/appointments$/.test(path)) {
     const me = sessionMe();
@@ -990,6 +1038,19 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
       state.createdBusinesses = [created, ...state.createdBusinesses];
       return ok(created, 201);
     }
+  }
+
+  // ── Superadmin: métricas de producto (I5) ──
+  const usageMatch = /^\/admin\/businesses\/([^/]+)\/usage$/.exec(path);
+  if ((path === "/admin/metrics" || usageMatch) && req.method === "GET") {
+    if (!state.admin) return unauthorized();
+    const range = resolveMockRange(new URL(req.path, "http://mock").searchParams);
+    if ("error" in range) return invalid({ "query.to": range.error });
+    const seeded = new Set(Object.keys(BUSINESSES));
+    if (!usageMatch) return ok(mockPlatformMetrics(allAdminBusinesses(state), seeded, range));
+    const business = allAdminBusinesses(state).find((x) => x.id === usageMatch[1]);
+    if (!business) return fail(404, "not_found", "Ese negocio no existe.");
+    return ok(mockBusinessUsage(business, seeded.has(business.id), range));
   }
 
   // ── Superadmin: plan, pausa y detalle (I2) ──
