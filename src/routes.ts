@@ -1,14 +1,16 @@
 import { adminRoutes } from "./admin/routes";
-import type { PlanService } from "./modules/billing";
+import { billingRoutes, type BillingDeps, type PlanService } from "./modules/billing";
 import { businessRoutes, clientSettingsRoutes, type LocationReferenceCheck } from "./modules/business";
 import { clientsRoutes } from "./modules/clients";
 import { catalogRoutes, isLocationRestrictingServices } from "./modules/catalog";
 import { commissionsRoutes, recalculateAppointmentCommissions } from "./modules/commissions";
+import { onboardingRoutes, type SignupDeps } from "./modules/onboarding";
 import { salesRoutes } from "./modules/sales";
 import { clientIdsWithStaffAppointments, schedulingRoutes } from "./modules/scheduling";
 import { isLocationAssigned, staffRoutes, teamRoutes } from "./modules/team";
 import {
   countConversationsWaiting,
+  isWhatsAppConnected,
   createWhatsAppDeps,
   whatsappClientEraser,
   whatsappRoutes,
@@ -18,6 +20,7 @@ import {
 import type { Executor } from "./platform/db/scope";
 import type { Route } from "./platform/http/routeTypes";
 import { systemRoutes } from "./platform/http/systemRoutes";
+import { PROVISIONING_STEPS } from "./provisioning";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Punto ÚNICO de composición de la API del panel (/api/panel/*).
@@ -46,6 +49,10 @@ export interface RouteDeps {
   plans: PlanService;
   /** Dependencias del módulo WhatsApp (Graph, Storage, push…). Default: las reales. */
   whatsapp?: WhatsAppDeps;
+  /** Cobro en línea (Stripe, I6): los tests inyectan el gateway y el entorno. Default: los reales. */
+  billing?: BillingDeps;
+  /** Alta self-service (I6): los tests inyectan el resolver DNS del chequeo de correo y el reloj. */
+  signup?: Omit<SignupDeps, "provisioning">;
 }
 
 /**
@@ -103,5 +110,10 @@ export function panelRoutes(deps: RouteDeps): Route[] {
     ...whatsappRoutes({ db: deps.db, deps: whatsapp }),
     // WhatsApp IA > Configuración del agente (I2): /whatsapp/settings.
     ...whatsappSettingsRoutes(deps),
+    // Cobro en línea del dueño (I6): /billing/status, /billing/checkout y /billing/portal.
+    ...billingRoutes({ db: deps.db, ...deps.billing }),
+    // Alta self-service y checklist de primeros pasos (I6): /signup/* y /onboarding/*. El alta
+    // usa los mismos pasos que la del superadmin (catálogo y métodos de pago).
+    ...onboardingRoutes({ db: deps.db, plans: deps.plans, isWhatsAppConnected, provisioning: PROVISIONING_STEPS, ...deps.signup }),
   ];
 }

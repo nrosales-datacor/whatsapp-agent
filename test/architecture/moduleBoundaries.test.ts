@@ -11,7 +11,7 @@ import ts from "typescript";
 // escondida hasta que alguien la note en una revisión.
 //
 //   (a) El núcleo (business, team, catalog, clients, scheduling, sales, commissions) no
-//       importa nada de whatsapp, campaigns ni billing.
+//       importa nada de whatsapp, campaigns, billing ni onboarding.
 //   (b) src/platform no importa de src/modules, salvo src/platform/db/schemaRegistry.ts
 //       (junta los esquemas para el cliente de Drizzle).
 //   (c) Un módulo importa de otro SOLO por su index.ts (su API pública). Única excepción:
@@ -25,7 +25,7 @@ import ts from "typescript";
 
 const SRC = fileURLToPath(new URL("../../src/", import.meta.url));
 const CORE = ["business", "team", "catalog", "clients", "scheduling", "sales", "commissions"];
-const OUTSIDE_CORE = ["whatsapp", "campaigns", "billing"];
+const OUTSIDE_CORE = ["whatsapp", "campaigns", "billing", "onboarding"];
 const SCHEMA_REGISTRY = "platform/db/schemaRegistry.ts";
 
 /** Ruta relativa a src/ con barras normales, p. ej. "modules/scheduling/schema.ts". */

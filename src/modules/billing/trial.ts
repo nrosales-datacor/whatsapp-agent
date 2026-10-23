@@ -11,12 +11,26 @@ import { trialEndFrom } from "./stripeConfig";
 
 /**
  * Arranca (o reinicia) la prueba DENTRO de la transacción del llamador, con su rastro. El
- * llamador invalida el caché del contexto después de confirmar. Devuelve el fin de la prueba.
+ * llamador invalida el caché del contexto después de confirmar. Con `onlyIfInTrial`, solo
+ * la reinicia si el negocio sigue en una prueba con vencimiento (si el superadmin ya lo
+ * pasó a otro estado, no se toca). Devuelve el fin de la prueba, o null si no la tocó.
  */
-export async function startTrial(tx: Tx, businessId: string, actor: string, now: Date = new Date()): Promise<Date> {
+export async function startTrial(
+  tx: Tx,
+  businessId: string,
+  actor: string,
+  now: Date = new Date(),
+  options: { onlyIfInTrial?: boolean } = {},
+): Promise<Date | null> {
   const trialEndsAt = trialEndFrom(now);
-  const changed = await updateBusinessSubscription(tx, businessId, { billingStatus: "trial", trialEndsAt });
+  const state = { touched: false };
+  const changed = await updateBusinessSubscription(tx, businessId, (current) => {
+    if (options.onlyIfInTrial && (current.billingStatus !== "trial" || !current.trialEndsAt)) return {};
+    state.touched = true;
+    return { billingStatus: "trial", trialEndsAt };
+  });
   if (!changed) throw new Error("startTrial: el negocio no existe");
+  if (!state.touched) return null;
   await recordAudit(tx, businessId, "trial_started", actor, { trialEndsAt: trialEndsAt.toISOString() });
   return trialEndsAt;
 }

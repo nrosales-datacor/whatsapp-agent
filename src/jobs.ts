@@ -1,4 +1,4 @@
-import type { PlanService } from "./modules/billing";
+import { startBillingScheduler, type PlanService } from "./modules/billing";
 import { handleReminderJob, REMINDER_SEND_JOB, startReminderScheduler, type ReminderJobPayload } from "./modules/scheduling";
 import {
   createAgentRunner,
@@ -68,7 +68,9 @@ export function registerJobHandlers(options: JobDeps = {}): void {
  * réplicas con su lease (src/platform/net/leaderLease.ts).
  */
 export function startModuleSchedulers(db: Executor): Loop[] {
-  return [startReminderScheduler({ db }), ...startWhatsAppSchedulers(db)];
+  // Barrido de vencimientos del cobro (I6): gracia de un pago atrasado, prueba vencida y
+  // suscripción terminada → pausa por el cobro.
+  return [startReminderScheduler({ db }), ...startWhatsAppSchedulers(db), startBillingScheduler({ db })];
 }
 
 /**
