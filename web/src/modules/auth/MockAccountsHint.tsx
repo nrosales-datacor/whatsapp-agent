@@ -27,7 +27,8 @@ export default function MockAccountsHint() {
         Invitaciones: <code>/panel/accept-invitation?token={MOCK_INVITATION_TOKEN}</code> (cuenta nueva) y{" "}
         <code>/panel/accept-invitation?token={MOCK_EXISTING_INVITATION_TOKEN}</code> (cuenta que ya existe, con 2FA).
         Recuperar clave: <code>/panel/reset-password?token=cualquiera</code>. Superadmin: <code>/panel/admin</code>{" "}
-        (usuario <code>{MOCK_ADMIN_USERNAME}</code>).
+        (usuario <code>{MOCK_ADMIN_USERNAME}</code>). Alta self-service: <code>/panel/signup</code> (el enlace para confirmar el
+        correo aparece en pantalla).
       </p>
     </details>
   );

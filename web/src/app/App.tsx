@@ -11,6 +11,8 @@ import ResetPasswordPage from "../modules/auth/ResetPasswordPage";
 import CampaignsPage from "../modules/campaigns/CampaignsPage";
 import ClientDetailPage from "../modules/clients/ClientDetailPage";
 import ClientsPage from "../modules/clients/ClientsPage";
+import SignupPage from "../modules/onboarding/SignupPage";
+import VerifyEmailPage from "../modules/onboarding/VerifyEmailPage";
 import HomePage from "../modules/home/HomePage";
 import ReportsPage from "../modules/reports/ReportsPage";
 import CommissionsPage from "../modules/sales/CommissionsPage";
@@ -37,6 +39,7 @@ import { PublicOnly, RequireAuth } from "./session";
 //   Acceso:      /login · /forgot-password · /reset-password?token= (enlace del correo)
 //                /accept-invitation?token= (enlace del correo; /invite/:token es alias)
 //                /change-password (obligatorio con clave temporal)
+//   Alta (I6):   /signup (alta self-service) · /verify-email?token= (enlace del correo)
 //   Panel:       / · /agenda · /clients · /clients/:id · /reports · /campaigns
 //                /sales · /sales/pending · /sales/today · /sales/commissions
 //                /whatsapp · /whatsapp/conversations/:id · /whatsapp/metrics · /whatsapp/settings
@@ -63,6 +66,15 @@ export default function App() {
           </PublicOnly>
         }
       />
+      <Route
+        path="/signup"
+        element={
+          <PublicOnly>
+            <SignupPage />
+          </PublicOnly>
+        }
+      />
+      <Route path="/verify-email" element={<VerifyEmailPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/accept-invitation" element={<AcceptInvitationPage />} />
       <Route path="/invite/:token" element={<InviteRedirect />} />
