@@ -50,6 +50,13 @@
       "when": 1792696768351,
       "tag": "0006_clients_crm",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792714880292,
+      "tag": "0007_stripe_signup",
+      "breakpoints": true
     }
   ]
 }
