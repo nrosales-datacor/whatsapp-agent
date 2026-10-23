@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 import { eq } from "drizzle-orm";
+import { invalidateBusinessContext } from "../../src/modules/business";
+import { businesses } from "../../src/modules/business/schema";
+import { countClientsByStatus, listClients } from "../../src/modules/clients";
 import { clients } from "../../src/modules/clients/schema";
 import { getHomeOverview, resolveReportScope, buildChannelsReport, buildClientsReport, buildSalesReport, buildServicesReport, buildStaffReport } from "../../src/modules/reports";
 import { getCollectedTotals, recordAppointmentPayment, recordClientPayment, refundPayment, seedDefaultPaymentMethods, type PaymentMethodView } from "../../src/modules/sales";
@@ -35,9 +38,10 @@ import { createSchedulingWorld, CR, crAt, crDay, type SchedulingWorld } from "..
 // 23:50 de Costa Rica es del mismo día aunque en UTC ya sea el siguiente), sucursal,
 // canceladas y no-show —, ocupación (horario ∩ sucursal − ausencias que se pisan),
 // clientes nuevos vs. recurrentes y retención, montos por canal y tickets, los cinco
-// reportes armados, el Inicio completo (cobrado hoy, nuevos, alertas, en riesgo, 14 días)
-// y las métricas de producto en daily_usage (citas, pagos, logins y usuarios activos una
-// vez por persona y día).
+// reportes armados, el Inicio completo (cobrado hoy, nuevos, alertas, en riesgo, 14 días),
+// "en riesgo" con el estado del CRM (lo mismo que la lista y sus chips, con las reglas del
+// negocio) y las métricas de producto en daily_usage (citas, pagos, logins y usuarios
+// activos una vez por persona y día).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const base = await createEphemeralDb();
@@ -311,7 +315,7 @@ test("los cinco reportes: rango inclusive en la zona del negocio, sucursal y tot
   await assert.rejects(resolveReportScope(db, owner, { from: crDay(-400), to: crDay(0) }, null), invalidTo);
 });
 
-test("Inicio completo: cobrado hoy, clientes nuevos, citas y no-show de hoy, alertas, en riesgo provisorio e ingresos de 14 días", async () => {
+test("Inicio completo: cobrado hoy, clientes nuevos, citas y no-show de hoy, alertas, en riesgo e ingresos de 14 días", async () => {
   const w = await world();
   const today = crDay(1); // el "hoy" del Inicio (reloj inyectado)
   const now = crAt(today, "07:00");
@@ -350,8 +354,10 @@ test("Inicio completo: cobrado hoy, clientes nuevos, citas y no-show de hoy, ale
   assert.equal(home.alerts.unconfirmed.tomorrow, 1, "la confirmada no cuenta");
   assert.equal(home.alerts.unconfirmed.items.length, 2);
   assert.equal(home.alerts.atRisk.count, 1);
-  assert.deepEqual(home.alerts.atRisk.items.map((c) => c.name), ["En riesgo"]);
-  assert.equal(home.alerts.atRisk.provisional, true);
+  assert.deepEqual(
+    home.alerts.atRisk.items.map((c) => [c.name, c.visitCount, c.lastVisitAt]),
+    [["En riesgo", 3, new Date(now.getTime() - 70 * 86_400_000).toISOString()]],
+  );
   assert.equal(home.revenue.length, 14);
   assert.equal(home.revenue[13].date, today);
   assert.equal(home.revenue[13].netCents, 1_000_000);
@@ -363,6 +369,44 @@ test("Inicio completo: cobrado hoy, clientes nuevos, citas y no-show de hoy, ale
   assert.equal(heredia.collectedToday.netCents, 0);
   assert.equal(heredia.alerts.unconfirmed.tomorrow, 0);
   assert.equal(heredia.conversationsWaiting, null);
+});
+
+test("en riesgo = estado del CRM: Inicio, la lista filtrada y los chips dicen lo mismo (reglas fijas y por frecuencia)", async () => {
+  const w = await world();
+  const now = new Date();
+  const ago = (days: number) => new Date(now.getTime() - days * 86_400_000);
+  await withTenant(db, w.businessId, (tx) =>
+    tx.insert(clients).values([
+      // Nunca vino y se registró hace 90 días: en riesgo por el alta (el cálculo por última visita no lo veía).
+      { businessId: w.businessId, name: "Sin visitas", phone: "+50688880021", createdAt: ago(90) },
+      // Viene cada ~9 días y hace 25 que no: en riesgo solo por frecuencia (2 × 8,75 días).
+      { businessId: w.businessId, name: "Frecuente", phone: "+50688880022", visitCount: 5, firstVisitAt: ago(60), lastVisitAt: ago(25), createdAt: ago(61) },
+      // 70 días sin venir: en riesgo con el umbral fijo (60); por frecuencia (cada 65 días) todavía no.
+      { businessId: w.businessId, name: "Espaciada", phone: "+50688880023", visitCount: 3, firstVisitAt: ago(200), lastVisitAt: ago(70), createdAt: ago(201) },
+      { businessId: w.businessId, name: "Inactiva", phone: "+50688880024", visitCount: 1, firstVisitAt: ago(130), lastVisitAt: ago(130), createdAt: ago(131) },
+      // Con los datos eliminados no aparece en ningún lado.
+      { businessId: w.businessId, name: "Cliente eliminado", visitCount: 2, firstVisitAt: ago(100), lastVisitAt: ago(80), createdAt: ago(101), anonymizedAt: ago(1) },
+    ]),
+  );
+
+  async function check(expected: string[]) {
+    const home = await getHomeOverview(db, w.businessId, { locationIds: null, locationId: null, now });
+    assert.deepEqual(home.alerts.atRisk.items.map((c) => c.name), expected, "Inicio: los más cerca de pasar a inactivos primero");
+    assert.equal(home.alerts.atRisk.count, expected.length);
+    const list = await listClients(db, w.businessId, { statuses: ["at_risk"] }, { now, withStatus: true });
+    assert.deepEqual(list.items.map((c) => c.name).sort(), [...expected].sort(), "la lista filtrada por «En riesgo»");
+    assert.equal((await countClientsByStatus(db, w.businessId, {}, { now })).at_risk, expected.length, "el chip «En riesgo»");
+    return home;
+  }
+
+  // Reglas default (fijo: en riesgo a los 60 días, inactivo a los 120).
+  const home = await check(["Sin visitas", "Espaciada"]);
+  assert.equal(home.alerts.atRisk.items[0].lastVisitAt, null, "todavía no vino");
+
+  // El negocio pasa a "por frecuencia": cambia quién está en riesgo, en todos lados a la vez.
+  await withTenant(db, w.businessId, (tx) => tx.update(businesses).set({ clientStatusRules: { atRiskMode: "frequency" } }).where(eq(businesses.id, w.businessId)));
+  invalidateBusinessContext(w.businessId);
+  await check(["Sin visitas", "Frecuente"]);
 });
 
 test("daily_usage: citas creadas, pagos, logins y usuarios activos (una vez por persona y día, aunque haya muchos requests)", async () => {
