@@ -15,7 +15,8 @@ import { REPORT_BUILDERS, REPORT_IDS } from "./reports";
 //                              promedio; señas y devoluciones
 //   GET /reports/services      más vendidos por cantidad e ingresos
 //   GET /reports/staff         citas, completadas, no-show %, cobrado, ocupación %, comisiones
-//   GET /reports/clients       nuevos, recurrentes, altas, retención simple
+//   GET /reports/clients       nuevos, recurrentes, altas, retención simple y la cartera
+//                              por estado del CRM (hoy)
 //   GET /reports/channels      agente de WhatsApp, panel, teléfono, presencial, web
 //   GET /reports/<id>.csv      el mismo reporte para exportar (descarga)
 //        ?from&to (días locales AAAA-MM-DD, inclusive, zona del negocio)&locationId

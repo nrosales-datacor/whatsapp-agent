@@ -39,9 +39,9 @@ import { createSchedulingWorld, CR, crAt, crDay, type SchedulingWorld } from "..
 // canceladas y no-show —, ocupación (horario ∩ sucursal − ausencias que se pisan),
 // clientes nuevos vs. recurrentes y retención, montos por canal y tickets, los cinco
 // reportes armados, el Inicio completo (cobrado hoy, nuevos, alertas, en riesgo, 14 días),
-// "en riesgo" con el estado del CRM (lo mismo que la lista y sus chips, con las reglas del
-// negocio) y las métricas de producto en daily_usage (citas, pagos, logins y usuarios
-// activos una vez por persona y día).
+// "en riesgo" y la cartera por estado con el estado del CRM (lo mismo que la lista y sus
+// chips, con las reglas del negocio) y las métricas de producto en daily_usage (citas,
+// pagos, logins y usuarios activos una vez por persona y día).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const base = await createEphemeralDb();
@@ -300,6 +300,7 @@ test("los cinco reportes: rango inclusive en la zona del negocio, sucursal y tot
   assert.equal(clientsReport.served, 1);
   assert.equal(clientsReport.newClients, 1, "María: su primera visita es A");
   assert.equal(clientsReport.byDay.length, 1);
+  assert.equal(clientsReport.byStatus.total, (await countClientsByStatus(db, w.businessId)).total, "la cartera por estado es la de los chips");
 
   // Sucursal: Heredia no tiene cobros ni la cita de Ana.
   const heredia = await resolveReportScope(db, owner, { from: D, to: D, locationId: w.heredia }, null);
@@ -371,7 +372,7 @@ test("Inicio completo: cobrado hoy, clientes nuevos, citas y no-show de hoy, ale
   assert.equal(heredia.conversationsWaiting, null);
 });
 
-test("en riesgo = estado del CRM: Inicio, la lista filtrada y los chips dicen lo mismo (reglas fijas y por frecuencia)", async () => {
+test("en riesgo = estado del CRM: Inicio, la lista filtrada, los chips y el reporte de clientes dicen lo mismo (reglas fijas y por frecuencia)", async () => {
   const w = await world();
   const now = new Date();
   const ago = (days: number) => new Date(now.getTime() - days * 86_400_000);
@@ -388,6 +389,7 @@ test("en riesgo = estado del CRM: Inicio, la lista filtrada y los chips dicen lo
       { businessId: w.businessId, name: "Cliente eliminado", visitCount: 2, firstVisitAt: ago(100), lastVisitAt: ago(80), createdAt: ago(101), anonymizedAt: ago(1) },
     ]),
   );
+  const owner: Session = { userId: randomUUID(), businessId: w.businessId, role: "owner", locationIds: "all", sessionEpoch: 0 };
 
   async function check(expected: string[]) {
     const home = await getHomeOverview(db, w.businessId, { locationIds: null, locationId: null, now });
@@ -396,6 +398,9 @@ test("en riesgo = estado del CRM: Inicio, la lista filtrada y los chips dicen lo
     const list = await listClients(db, w.businessId, { statuses: ["at_risk"] }, { now, withStatus: true });
     assert.deepEqual(list.items.map((c) => c.name).sort(), [...expected].sort(), "la lista filtrada por «En riesgo»");
     assert.equal((await countClientsByStatus(db, w.businessId, {}, { now })).at_risk, expected.length, "el chip «En riesgo»");
+    const report = await buildClientsReport(db, w.businessId, await resolveReportScope(db, owner, {}, null, now), now);
+    assert.equal(report.byStatus.at_risk, expected.length, "el reporte de clientes");
+    assert.equal(report.byStatus.inactive, 1);
     return home;
   }
 
