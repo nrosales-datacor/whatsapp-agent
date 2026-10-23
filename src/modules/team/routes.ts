@@ -15,7 +15,8 @@ import { acceptInvitation, getInvitation, inviteMember } from "./invitations";
 import { buildMe, type Me } from "./me";
 import { assertLocationsOfBusiness, listMembers, updateMember } from "./members";
 import { requestPasswordReset, resetPassword } from "./recovery";
-import { clearSessionCookie, loadSession, setSessionCookie } from "./session";
+import { businessPaused, clearSessionCookie, setSessionCookie } from "./session";
+import { startPanelSession } from "./sessionStart";
 import { disableTotp, enableTotp, setupTotp } from "./twoFactor";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -75,18 +76,19 @@ const MemberPatchBody = z
 
 export function teamRoutes({ db, plans }: TeamRouteDeps): Route[] {
   /** Fija la cookie de la sesión nueva y devuelve su `me`. */
-  async function startSession(res: ServerResponse, claims: SessionClaims): Promise<Me> {
-    const session = await loadSession(db, claims);
-    if (!session) throw new HttpError(401, "Tu sesión no es válida o venció. Iniciá sesión de nuevo.", "unauthorized");
-    setSessionCookie(res, claims);
-    return buildMe(db, session, plans);
-  }
+  const startSession = (res: ServerResponse, claims: SessionClaims): Promise<Me> => startPanelSession(db, res, claims, plans);
 
   return [
     // ── Sesión ──
     route({ method: "POST", path: "/auth/login", auth: "public", body: LoginBody }, async ({ req, res, body }) => {
       const result = await login(db, { ...body, ip: getClientIp(req) });
       if (result.status === "totp_required") return { status: "totp_required" as const };
+      if (result.status === "paused") {
+        // Pausado por el cobro: la sesión queda (solo para las rutas de pago) y el panel
+        // muestra "Cuenta pausada" con el botón para pagar.
+        setSessionCookie(res, result.claims);
+        throw businessPaused();
+      }
       return { status: "ok" as const, me: await startSession(res, result.claims) };
     }),
 
