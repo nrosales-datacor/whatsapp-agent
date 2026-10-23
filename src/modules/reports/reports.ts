@@ -1,6 +1,6 @@
 import type { Executor } from "../../platform/db/scope";
 import { getServices } from "../catalog";
-import { countRegisteredClients } from "../clients";
+import { countClientsByStatus, countRegisteredClients, type ClientStatusCounts } from "../clients";
 import { getCommissionSummary } from "../commissions";
 import { getCollectedTotals, type CollectedGroup } from "../sales";
 import {
@@ -284,6 +284,12 @@ export interface ClientsReport extends ReportBase {
   retention: { previousServed: number; retained: number; rate: number | null };
   /** Todos los días del rango. */
   byDay: { date: string; newClients: number; returningClients: number }[];
+  /**
+   * Estado de la cartera HOY (CRM: nuevo, activo, VIP, en riesgo, inactivo con las reglas del
+   * negocio): los mismos números que los chips de la lista de clientes. Es una foto del
+   * momento: no depende del rango ni de la sucursal (el cliente no es de una sucursal).
+   */
+  byStatus: ClientStatusCounts;
 }
 
 export async function buildClientsReport(db: Executor, businessId: string, scope: ReportScope, now = new Date()): Promise<ClientsReport> {
@@ -295,6 +301,7 @@ export async function buildClientsReport(db: Executor, businessId: string, scope
     timeZone: scope.view.timezone,
   });
   const registered = await countRegisteredClients(db, businessId, { from: scope.start, to: scope.end });
+  const byStatus = await countClientsByStatus(db, businessId, {}, { now });
   const days = new Map(stats.byDay.map((d) => [d.date, d]));
   return {
     ...base(scope, now),
@@ -309,6 +316,7 @@ export async function buildClientsReport(db: Executor, businessId: string, scope
       newClients: days.get(date)?.newClients ?? 0,
       returningClients: days.get(date)?.returningClients ?? 0,
     })),
+    byStatus,
   };
 }
 
