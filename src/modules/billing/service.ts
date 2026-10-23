@@ -1,10 +1,11 @@
 import type { Executor } from "../../platform/db/scope";
 import { HttpError } from "../../platform/http/errors";
 import type { ModuleGate } from "../../platform/http/routeTypes";
-import type { PlanFeature, PlanHooks, PlanResource, PlanSnapshot, PlanUsageView } from "../../platform/plan/planHooks";
+import type { PlanBillingView, PlanFeature, PlanHooks, PlanResource, PlanSnapshot, PlanUsageView } from "../../platform/plan/planHooks";
 import { countActiveLocationsOf, getBusinessContext, type Business } from "../business";
 import { countActiveMembers, countActiveStaff } from "../team";
 import type { PlanLimits } from "./catalog";
+import { billingStatusOfBusiness } from "./checkout";
 import { quotaOf, resolveEntitlements, type Entitlements } from "./entitlements";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -184,6 +185,7 @@ export function createPlanService(db: Executor, options: PlanServiceOptions = {}
         modules: [...e.modules],
         features: [...e.features],
         billingStatus: e.billingStatus,
+        billing: planBillingOf(found.business),
         limits: { locations: e.limits.locations, staff: e.limits.staff, users: e.limits.users, aiConversations: e.limits.aiConversations },
         usage: await usageOf(found.business),
       };
@@ -195,5 +197,20 @@ export function createPlanService(db: Executor, options: PlanServiceOptions = {}
       if (!business || business.status === "active") return true;
       return allowedWhilePaused.has(jobType);
     },
+  };
+}
+
+/** Vencimientos y cobro en línea del negocio para `me.plan.billing`. */
+function planBillingOf(business: Business): PlanBillingView {
+  const s = billingStatusOfBusiness(business);
+  return {
+    trialEndsAt: s.trialEndsAt,
+    currentPeriodEnd: s.currentPeriodEnd,
+    cancelAtPeriodEnd: s.cancelAtPeriodEnd,
+    pastDueSince: s.pastDueSince,
+    pauseAt: s.pauseAt,
+    onlinePayments: s.onlinePayments,
+    hasSubscription: s.hasSubscription,
+    canManage: s.canManage,
   };
 }
