@@ -26,5 +26,6 @@ export function useSignupOptions() {
 }
 
 export function useOnboarding(enabled: boolean) {
-  return useQuery({ queryKey: ONBOARDING_QUERY_KEY, queryFn: getOnboarding, enabled, staleTime: 15_000 });
+  // Sin caché: al volver al Inicio después de configurar algo, los pasos se recalculan.
+  return useQuery({ queryKey: ONBOARDING_QUERY_KEY, queryFn: getOnboarding, enabled, staleTime: 0 });
 }
