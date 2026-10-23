@@ -5,6 +5,8 @@ import { routeCrmSettingsMock } from "../modules/clients/crmMock";
 import { isSalesMockPath, routeSalesMock } from "../modules/sales/salesMock";
 import { mockAppointmentsOf, mockClientIdsForStaff, routeSchedulingMock } from "../modules/scheduling/schedulingMock";
 import { routeWhatsappMock } from "../modules/whatsapp/whatsappMock";
+import { isBillingPaused, mockPlanBilling, routeBillingMock, type MockBillingFields } from "../modules/billing/billingMock";
+import { isPendingSignupLogin, MOCK_TRIAL_DAYS, routeSignupMock, type PendingSignup } from "../modules/onboarding/signupMock";
 import type {
   AdminBusiness,
   AdminBusinessDetail,
@@ -31,6 +33,10 @@ import { readStorage, writeStorage } from "./storage";
 // `me.plan`, cupos y marca propia; el superadmin simulado cambia plan, módulos, cupos y
 // cobro, y pausa/reactiva (la sesión de ese negocio pasa a 403 `business_paused`).
 //
+// Cobro en línea y alta self-service (I6): negocios en prueba, con el pago atrasado y
+// pausado por el cobro; /billing/* simula Stripe (modules/billing/billingMock.ts) y
+// /signup/* + /onboarding/* el alta y los primeros pasos (modules/onboarding/signupMock.ts).
+//
 // Solo se carga con VITE_MOCK_API=1 (import dinámico desde lib/api.ts): no viaja en el
 // build normal. Los datos son ficticios.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -56,6 +62,9 @@ export const MOCK_ACCOUNTS: readonly { email: string; description: string }[] = 
   { email: "temporal@demo.test", description: "Admin con clave temporal (cambio obligatorio)" },
   { email: "sinnegocio@demo.test", description: "Cuenta sin ningún negocio activo (no entra)" },
   { email: "pausada@demo.test", description: "Dueña de un negocio pausado por el superadmin (no entra: cuenta pausada)" },
+  { email: "prueba@demo.test", description: "Dueña de un negocio nuevo en prueba (9 días, checklist de primeros pasos)" },
+  { email: "atrasada@demo.test", description: "Dueña con el pago atrasado en Stripe (aviso y Gestionar pago)" },
+  { email: "pagopausado@demo.test", description: "Dueño de un negocio pausado por falta de pago (entra solo a pagar)" },
 ];
 
 const LATENCY_MS = 250;
@@ -89,12 +98,27 @@ interface MockSubscription {
   limits: AdminLimitOverrides;
   billingStatus: string;
   status: string;
+  // Cobro en línea (I6, modules/billing/billingMock.ts): prueba, período, atraso, Stripe.
+  trialEndsAt?: string | null;
+  currentPeriodEnd?: string | null;
+  cancelAtPeriodEnd?: boolean;
+  pastDueSince?: string | null;
+  stripeCustomer?: boolean;
+  subscription?: boolean;
+  billingPausedAt?: string | null;
+  /** Negocio nuevo: muestra la checklist de primeros pasos (I6). */
+  onboarding?: boolean;
 }
 
 interface MockBusiness extends MeBusiness, MockSubscription {
   locations: LocationRef[];
   country: string;
   createdAt: string;
+}
+
+/** Fecha ISO a N días de ahora (los vencimientos de la semilla se mueven con el reloj). */
+function daysFromNow(days: number): string {
+  return new Date(Date.now() + days * 86_400_000).toISOString();
 }
 
 /** Plan efectivo: el del catálogo con lo contratado encima (como resolveEntitlements). */
@@ -191,9 +215,76 @@ const BUSINESSES: Record<string, MockBusiness> = {
     country: "CR",
     createdAt: "2026-08-15T15:00:00.000Z",
   },
+  // ── Cobro en línea y alta self-service (I6) ──
+  "5d0a1c7e-2f4b-4b8e-8f3a-6c1d2e3f4a05": {
+    id: "5d0a1c7e-2f4b-4b8e-8f3a-6c1d2e3f4a05",
+    name: "Spa Brisa",
+    slug: "spa-brisa",
+    plan: "basic",
+    industry: "generic",
+    currency: "CRC",
+    timezone: "America/Costa_Rica",
+    terminology: {},
+    branding: {},
+    locations: [{ id: "0b3c6f2e-6a1d-4c39-9a51-3f0f8c2a1e06", name: "Principal" }],
+    // Alta self-service en prueba: le quedan 9 días y muestra los primeros pasos.
+    extraModules: {},
+    limits: {},
+    billingStatus: "trial",
+    status: "active",
+    trialEndsAt: daysFromNow(9),
+    onboarding: true,
+    country: "CR",
+    createdAt: "2026-10-18T15:00:00.000Z",
+  },
+  "5d0a1c7e-2f4b-4b8e-8f3a-6c1d2e3f4a06": {
+    id: "5d0a1c7e-2f4b-4b8e-8f3a-6c1d2e3f4a06",
+    name: "Peluquería Norte",
+    slug: "peluqueria-norte",
+    plan: "pro",
+    industry: "generic",
+    currency: "CRC",
+    timezone: "America/Costa_Rica",
+    terminology: {},
+    branding: {},
+    locations: [{ id: "0b3c6f2e-6a1d-4c39-9a51-3f0f8c2a1e07", name: "Moravia" }],
+    // Suscripción de Stripe con el último cobro rechazado: 5 días de gracia antes de pausar.
+    extraModules: {},
+    limits: {},
+    billingStatus: "past_due",
+    status: "active",
+    pastDueSince: daysFromNow(-2),
+    stripeCustomer: true,
+    subscription: true,
+    currentPeriodEnd: daysFromNow(28),
+    country: "CR",
+    createdAt: "2026-07-01T15:00:00.000Z",
+  },
+  "5d0a1c7e-2f4b-4b8e-8f3a-6c1d2e3f4a07": {
+    id: "5d0a1c7e-2f4b-4b8e-8f3a-6c1d2e3f4a07",
+    name: "Masajes Sol",
+    slug: "masajes-sol",
+    plan: "basic",
+    industry: "aesthetics",
+    currency: "CRC",
+    timezone: "America/Costa_Rica",
+    terminology: {},
+    branding: {},
+    locations: [{ id: "0b3c6f2e-6a1d-4c39-9a51-3f0f8c2a1e08", name: "Curridabat" }],
+    // Suscripción terminada: pausado POR EL COBRO (el dueño entra solo a pagar).
+    extraModules: {},
+    limits: {},
+    billingStatus: "cancelled",
+    status: "paused",
+    billingPausedAt: daysFromNow(-1),
+    stripeCustomer: true,
+    subscription: false,
+    country: "CR",
+    createdAt: "2026-06-01T15:00:00.000Z",
+  },
 };
 
-const [DENTAL, AESTHETICS, NAILS, BARBER] = Object.keys(BUSINESSES);
+const [DENTAL, AESTHETICS, NAILS, BARBER, TRIAL_SPA, PAST_DUE_SALON, BILLING_PAUSED] = Object.keys(BUSINESSES);
 
 interface MockMembership {
   businessId: string;
@@ -287,6 +378,30 @@ const BASE_USERS: MockUser[] = [
     mustChangePassword: false,
     memberships: [{ businessId: BARBER, role: "owner" }],
   },
+  {
+    id: "7e1f0a2b-1111-4c3d-8e4f-000000000010",
+    name: "Gabriela Soto",
+    email: "prueba@demo.test",
+    totpEnabled: false,
+    mustChangePassword: false,
+    memberships: [{ businessId: TRIAL_SPA, role: "owner" }],
+  },
+  {
+    id: "7e1f0a2b-1111-4c3d-8e4f-000000000011",
+    name: "Natalia Brenes",
+    email: "atrasada@demo.test",
+    totpEnabled: false,
+    mustChangePassword: false,
+    memberships: [{ businessId: PAST_DUE_SALON, role: "owner" }],
+  },
+  {
+    id: "7e1f0a2b-1111-4c3d-8e4f-000000000012",
+    name: "Esteban Mora",
+    email: "pagopausado@demo.test",
+    totpEnabled: false,
+    mustChangePassword: false,
+    memberships: [{ businessId: BILLING_PAUSED, role: "owner" }],
+  },
 ];
 
 interface MockInvitation extends MockMembership {
@@ -327,6 +442,8 @@ interface MockState {
   subscriptions: Record<string, Partial<MockSubscription>>;
   /** Rastro de auditoría simulado por negocio (más reciente primero). */
   audit: Record<string, AuditEntry[]>;
+  /** Negocios creados por el alta self-service (I6), después de verificar el correo. */
+  signupBusinesses: MockBusiness[];
 }
 
 const STATE_KEY = "selyon.mock.state";
@@ -345,6 +462,7 @@ function emptyState(): MockState {
     usedInvitations: [],
     subscriptions: {},
     audit: {},
+    signupBusinesses: [],
   };
 }
 
@@ -380,7 +498,8 @@ function passwordOf(state: MockState, email: string): string {
 
 /** El negocio con lo que cambió el superadmin y su plan efectivo. */
 function businessOf(state: MockState, businessId: string): MockBusiness & { resolved: ReturnType<typeof resolvePlan> } {
-  const b: MockBusiness = { ...BUSINESSES[businessId], ...state.subscriptions[businessId] };
+  const seed = BUSINESSES[businessId] ?? state.signupBusinesses.find((s) => s.id === businessId);
+  const b: MockBusiness = { ...seed, ...state.subscriptions[businessId] };
   return { ...b, resolved: resolvePlan(b) };
 }
 
@@ -446,7 +565,7 @@ function buildMe(user: MockUser, businessId: string, state: MockState): Me {
       .filter((m) => !isPaused(state, m.businessId))
       .map((m) => ({
         businessId: m.businessId,
-        businessName: BUSINESSES[m.businessId].name,
+        businessName: businessOf(state, m.businessId).name,
         role: m.role,
       })),
     modules: resolved.modules,
@@ -457,6 +576,7 @@ function buildMe(user: MockUser, businessId: string, state: MockState): Me {
       modules: resolved.modules,
       features: resolved.features,
       billingStatus: base.billingStatus,
+      billing: mockPlanBilling(base),
       limits: {
         locations: resolved.limits.locations,
         staff: resolved.limits.staff,
@@ -557,6 +677,24 @@ function adminDetailOf(state: MockState, id: string): AdminBusinessDetail | null
     overrides: { modules: { ...sub.extraModules }, limits: { ...sub.limits } },
     usage: planUsageOf(state, b, b.resolved.modules),
     audit: state.audit[id] ?? [],
+    // Cobro en línea (I6): lo que vería el superadmin de Stripe (ids ficticios).
+    stripe: (() => {
+      const billing = mockPlanBilling(b);
+      const customerId = b.stripeCustomer ? `cus_demo_${b.slug.replace(/-/g, "")}` : null;
+      return {
+        configured: true,
+        customerId,
+        subscriptionId: b.subscription ? `sub_demo_${b.slug.replace(/-/g, "")}` : null,
+        subscriptionStatus: b.subscription ? (b.billingStatus === "past_due" ? "past_due" : b.billingStatus === "trial" ? "trialing" : "active") : b.stripeCustomer ? "canceled" : null,
+        currentPeriodEnd: billing.currentPeriodEnd,
+        cancelAtPeriodEnd: billing.cancelAtPeriodEnd,
+        pastDueSince: billing.pastDueSince,
+        pauseAt: billing.pauseAt,
+        trialEndsAt: billing.trialEndsAt,
+        billingPaused: isBillingPaused(b),
+        dashboardUrl: customerId ? `https://dashboard.stripe.com/test/customers/${customerId}` : null,
+      };
+    })(),
   };
 }
 
@@ -629,9 +767,61 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
   const publicPath =
     path.startsWith("/admin/") ||
     path.startsWith("/auth/invitations/") ||
+    path.startsWith("/signup") ||
     ["/auth/login", "/auth/logout", "/auth/password/forgot", "/auth/password/reset"].includes(path);
   const sessionBusinessId = sessionUser ? (state.businessId ?? sessionUser.memberships[0]?.businessId) : null;
-  if (!publicPath && sessionBusinessId && isPaused(state, sessionBusinessId)) return businessPaused();
+  // Pausado POR EL COBRO (I6): las rutas de pago siguen respondiendo (la dueña reactiva pagando).
+  const payingWhilePaused = path.startsWith("/billing/") && sessionBusinessId !== null && isBillingPaused(businessOf(state, sessionBusinessId));
+  if (!publicPath && !payingWhilePaused && sessionBusinessId && isPaused(state, sessionBusinessId)) return businessPaused();
+
+  // Cobro en línea (I6): /billing/status, /billing/checkout y /billing/portal (Stripe simulado).
+  if (path.startsWith("/billing/")) {
+    if (!sessionUser || !sessionBusinessId) return unauthorized();
+    const b = businessOf(state, sessionBusinessId);
+    const role = sessionUser.memberships.find((m) => m.businessId === b.id)?.role ?? "staff";
+    const fields: MockBillingFields = { ...b };
+    return (
+      routeBillingMock(
+        req,
+        { role, business: fields, update: (changes) => (state.subscriptions[b.id] = { ...state.subscriptions[b.id], ...changes }) },
+        b.resolved.label,
+      ) ?? fail(404, "not_found", "Ruta inexistente en el mock.")
+    );
+  }
+
+  // Alta self-service y primeros pasos (I6): /signup/* y /onboarding/*.
+  if (path.startsWith("/signup") || path.startsWith("/onboarding")) {
+    const me = sessionMe();
+    return (
+      routeSignupMock(req, {
+        emailExists: (email) => findUser(state, email) !== null,
+        createAccount: (signup) => createSignupAccount(state, signup),
+        session:
+          me && sessionUser
+            ? {
+                businessId: me.business.id,
+                role: me.role,
+                modules: me.modules,
+                onboarding: businessOf(state, me.business.id).onboarding ?? false,
+                staffCount: () => mockAgendaSetup(settingsSeedOf(state, me.business.id), membersOf(state, me.business.id)).staff.filter((s) => s.active).length,
+                appointmentCount: () => {
+                  const b = businessOf(state, me.business.id);
+                  const membership = sessionUser.memberships.find((m) => m.businessId === b.id);
+                  return mockAppointmentsOf({
+                    businessId: b.id,
+                    userId: me.user.id,
+                    role: me.role,
+                    locationIds: membership?.locationIds,
+                    staffId: me.staffId ?? null,
+                    setup: mockAgendaSetup(settingsSeedOf(state, b.id), membersOf(state, b.id)),
+                    clients: mockClientsOf(b.id, b.locations),
+                  }).length;
+                },
+              }
+            : null,
+      }) ?? fail(404, "not_found", "Ruta inexistente en el mock.")
+    );
+  }
 
   // Ventas y Comisiones (I4): métodos de pago, cobros, saldo de una cita, pendientes, caja,
   // reglas, movimientos y liquidaciones. Antes que la Agenda (también usa /appointments/:id/*).
@@ -730,7 +920,7 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
   if (path.startsWith("/whatsapp/") || path.startsWith("/push/")) {
     const me = sessionMe();
     if (!me) return unauthorized();
-    const b = BUSINESSES[me.business.id];
+    const b = businessOf(state, me.business.id);
     return (
       routeWhatsappMock(
         req,
@@ -774,6 +964,10 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
         return fail(429, "too_many_attempts", "Demasiados intentos. Probá de nuevo en unos minutos.");
       }
       const user = findUser(state, email);
+      // Alta self-service sin confirmar (I6): con la clave buena, se explica por qué no entra.
+      if (!user && isPendingSignupLogin(email, password)) {
+        return fail(403, "email_not_verified", "Todavía no confirmaste tu correo. Abrí el enlace que te mandamos (o pedí uno nuevo) y después ingresá.");
+      }
       if (!user || password !== passwordOf(state, user.email)) {
         state.failedLogins += 1;
         return invalidCredentials();
@@ -786,6 +980,14 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
       }
       const activeMemberships = user.memberships.filter((m) => !isPaused(state, m.businessId));
       if (activeMemberships.length === 0) {
+        // Pausado POR EL COBRO y es el dueño (I6): queda la sesión, solo para pagar.
+        const payable = user.memberships.find((m) => m.role === "owner" && isBillingPaused(businessOf(state, m.businessId)));
+        if (payable) {
+          state.failedLogins = 0;
+          state.sessionEmail = user.email;
+          state.businessId = payable.businessId;
+          return businessPaused();
+        }
         if (user.memberships.length > 0) return businessPaused();
         return fail(
           403,
@@ -1029,6 +1231,58 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
   if (settings) return settings;
 
   return fail(404, "not_found", "Ruta inexistente en el mock.");
+}
+
+/** Terminología que precarga cada plantilla de rubro (espejo de src/modules/business/templates). */
+const TEMPLATE_TERMINOLOGY: Record<string, MeBusiness["terminology"]> = {
+  dental: { client: "paciente", clients: "pacientes", staffMember: "especialista", staff: "especialistas" },
+  nails: { staffMember: "estilista", staff: "estilistas" },
+};
+
+/**
+ * Alta self-service verificada (I6): el negocio en prueba con su sucursal "Principal", la
+ * dueña con la clave que eligió y la sesión iniciada. Devuelve su `me`.
+ */
+function createSignupAccount(state: MockState, signup: PendingSignup): Me {
+  const n = state.signupBusinesses.length + 1;
+  const base = slugify(signup.businessName);
+  const taken = new Set([...Object.values(BUSINESSES), ...state.signupBusinesses].map((b) => b.slug));
+  let slug = base;
+  for (let i = 2; taken.has(slug); i++) slug = `${base}-${i}`;
+  const business: MockBusiness = {
+    id: mockId(500 + n),
+    name: signup.businessName,
+    slug,
+    plan: "basic",
+    industry: signup.industry,
+    currency: signup.currency,
+    timezone: signup.timezone,
+    terminology: { ...(TEMPLATE_TERMINOLOGY[signup.industry] ?? {}) },
+    branding: {},
+    locations: [{ id: mockId(600 + n), name: "Principal" }],
+    extraModules: {},
+    limits: {},
+    billingStatus: "trial",
+    status: "active",
+    trialEndsAt: daysFromNow(MOCK_TRIAL_DAYS),
+    onboarding: true,
+    country: signup.country,
+    createdAt: new Date().toISOString(),
+  };
+  state.signupBusinesses = [...state.signupBusinesses, business];
+  const user: MockUser = {
+    id: mockId(700 + n),
+    name: signup.ownerName,
+    email: signup.email,
+    totpEnabled: false,
+    mustChangePassword: false,
+    memberships: [{ businessId: business.id, role: "owner" }],
+  };
+  state.extraUsers = [...state.extraUsers.filter((u) => u.email !== user.email), user];
+  setOverride(state, user.email, { password: signup.password });
+  state.sessionEmail = user.email;
+  state.businessId = business.id;
+  return buildMe(user, business.id, state);
 }
 
 /** Miembros de un negocio según las cuentas del mock (semilla de Configuración > Usuarios). */

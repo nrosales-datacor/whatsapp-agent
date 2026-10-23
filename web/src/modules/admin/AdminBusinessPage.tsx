@@ -18,6 +18,7 @@ import {
   reactivateBusiness,
 } from "./adminApi";
 import AdminShell from "./AdminShell";
+import AdminStripeCard from "./AdminStripeCard";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Superadmin › un negocio (/admin/businesses/:id): cobro manual (PROCESO-COBRO-MANUAL.md).
@@ -51,6 +52,8 @@ const ACTION_LABELS: Record<string, string> = {
   member_updated: "Cambio en el equipo",
   invitation_accepted: "Invitación aceptada",
   password_changed: "Cambio de clave",
+  trial_started: "Inicio de la prueba",
+  email_verified: "Correo confirmado",
 };
 
 interface LimitDraft {
@@ -346,6 +349,14 @@ function UsageCard({ detail }: { detail: AdminBusinessDetail }) {
   );
 }
 
+/** Quién hizo el cambio: el superadmin, Stripe, el barrido de vencimientos o el equipo. */
+function actorLabel(actor: string): string {
+  if (actor.startsWith("superadmin:")) return "Superadmin";
+  if (actor === "system:stripe") return "Stripe";
+  if (actor === "system:billing") return "Vencimiento del cobro";
+  return "Equipo del negocio";
+}
+
 function HistoryCard({ audit }: { audit: AuditEntry[] }) {
   return (
     <section className="card" aria-labelledby="history-title">
@@ -360,7 +371,7 @@ function HistoryCard({ audit }: { audit: AuditEntry[] }) {
             <li key={e.id}>
               <span className="admin-history-action">{ACTION_LABELS[e.action] ?? e.action}</span>
               <span className="admin-history-meta tnum">
-                {formatDateTime(e.createdAt)} · {e.actor.startsWith("superadmin:") ? "Superadmin" : "Equipo del negocio"}
+                {formatDateTime(e.createdAt)} · {actorLabel(e.actor)}
               </span>
               {auditSummary(e) && <span className="admin-history-detail">{auditSummary(e)}</span>}
             </li>
@@ -400,6 +411,7 @@ export default function AdminBusinessPage() {
             <PlanCard key={`${query.data.business.plan}-${JSON.stringify(query.data.overrides)}-${query.data.business.billingStatus}`} detail={query.data} />
             <div className="stack">
               <ServiceCard detail={query.data} />
+              {query.data.stripe && <AdminStripeCard stripe={query.data.stripe} />}
               <UsageCard detail={query.data} />
               <HistoryCard audit={query.data.audit} />
             </div>

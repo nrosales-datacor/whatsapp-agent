@@ -11,6 +11,7 @@ import { useToast } from "../../ui/Toast";
 import { isoToZoned } from "../settings/zonedTime";
 import { formatLongDate, formatTime, formatWhen, STATUS_LABEL } from "../scheduling/format";
 import { schedulingApi, useAppointmentStore, useHomeToday, type Appointment, type AppointmentStatus } from "../scheduling/schedulingApi";
+import OnboardingChecklist from "../onboarding/OnboardingChecklist";
 import WaitingCard from "../whatsapp/WaitingCard";
 import "../scheduling/agenda.css";
 import "./home.css";
@@ -66,6 +67,8 @@ export default function HomePage() {
           Ver agenda
         </Link>
       </PageHeader>
+
+      <OnboardingChecklist />
 
       <div className="home-grid">
         <section className="card home-card home-today" aria-labelledby="home-today-title">

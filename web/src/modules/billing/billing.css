@@ -1,0 +1,57 @@
+/* Cobro en línea (I6): aviso del panel, tarjeta de suscripción y la cuenta pausada. */
+
+.billing-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: var(--step--1);
+  line-height: 1.5;
+}
+.billing-banner > svg { flex: none; color: var(--accent-strong); }
+.billing-banner p { flex: 1 1 220px; min-width: 0; }
+.billing-banner-warning { border-color: color-mix(in srgb, var(--warning) 45%, transparent); background: var(--warning-soft); }
+.billing-banner-warning > svg { color: var(--warning); }
+
+.billing-summary { font-size: var(--step--1); color: var(--text); line-height: 1.55; margin-bottom: var(--space-sm); }
+.billing-summary-warning { color: var(--warning); font-weight: 600; }
+.billing-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-sm);
+  background: var(--info-soft);
+  color: var(--text);
+  font-size: var(--step--1);
+}
+.billing-notice-ok { background: var(--success-soft); }
+.billing-notice-ok svg { color: var(--success); flex: none; }
+
+.billing-actions { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-sm); }
+.billing-offers { display: grid; grid-template-columns: 1fr; gap: var(--space-sm); width: 100%; }
+@media (min-width: 720px) { .billing-offers { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.billing-offer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  min-width: 0;
+  padding: var(--space-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.billing-offer-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs); }
+.billing-offer-name { font-family: var(--font-display); font-weight: 700; color: var(--text); }
+.billing-extras { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+.billing-extra { display: flex; flex-direction: column; gap: 4px; font-size: var(--step--1); color: var(--text-2); }
+.billing-extra-input { width: 7.5rem; }
+
+.billing-paused { width: 100%; max-width: 560px; text-align: left; }
