@@ -415,7 +415,9 @@ test("past_due → gracia → pausa del barrido → pagar reactiva; un evento vi
   assert.equal((await auditOf(biz.businessId, "business_reactivated"))[0].actor, "system:stripe");
   assert.equal((await owner.get(`${API}/auth/me`)).status, 200, "la misma sesión vuelve a servir");
 
-  // Llega tarde un evento VIEJO (past_due de antes del pago): se registra pero no pisa nada.
+  // Con el pago, Stripe manda también la suscripción al día; después llega tarde un evento
+  // VIEJO (past_due de antes del pago): se registra pero no pisa nada.
+  assert.equal((await sendWebhook(stripeEvent("customer.subscription.updated", subscription({ id: sub, customer, status: "active", items: [{ price: "price_basic" }] })))).body.data?.outcome, "applied");
   const late = await sendWebhook(stripeEvent("customer.subscription.updated", subscription({ id: sub, customer, status: "past_due", items: [{ price: "price_basic" }] }), new Date(Date.now() - 10 * 60_000)));
   assert.equal(late.body.data?.outcome, "stale");
   assert.equal((await rowOf(biz.businessId)).billingStatus, "active");
@@ -464,6 +466,31 @@ test("prueba vencida: el barrido pausa por el cobro (salvo una suscripción viva
   assert.equal(((await auditOf(expired.businessId, "business_paused"))[0].details as { reason: string }).reason, "trial_expired");
   assert.equal((await rowOf(covered.businessId)).status, "active");
   assert.equal((await rowOf(manual.businessId)).status, "active", "el cobro manual no vence solo");
+});
+
+test("webhook: el pago que llega antes que el alta de la suscripción no la deja vieja; la factura en $0 de una prueba no la saca de la prueba", async () => {
+  const biz = await createTestBusiness(db, { plan: "basic", locations: ["Central"] });
+  await setRow(biz.businessId, { billingStatus: "trial", trialEndsAt: new Date(Date.now() + 10 * DAY) });
+  const customer = `cus_${randomUUID().slice(0, 8)}`;
+  const sub = `sub_${randomUUID().slice(0, 8)}`;
+  const t = new Date();
+
+  // Factura en $0 del arranque de la prueba, ANTES que el alta (y con el negocio en la metadata).
+  await sendWebhook(stripeEvent("invoice.paid", invoice({ subscription: sub, customer, businessId: biz.businessId }), t));
+  assert.equal((await rowOf(biz.businessId)).billingStatus, "active", "sin datos de la suscripción todavía, un pago es un pago");
+  const created = await sendWebhook(
+    stripeEvent("customer.subscription.created", subscription({ id: sub, customer, status: "trialing", businessId: biz.businessId, items: [{ price: "price_pro" }] }), new Date(t.getTime() - 1000)),
+  );
+  assert.equal(created.body.data?.outcome, "applied", "el alta (un segundo más vieja que el pago) se aplica igual");
+  let row = await rowOf(biz.businessId);
+  assert.equal(row.plan, "pro");
+  assert.equal(row.billingStatus, "trial");
+  assert.equal(row.stripeSubscriptionStatus, "trialing");
+
+  // Otra factura pagada mientras sigue en prueba: no la pasa a "al día".
+  await sendWebhook(stripeEvent("invoice.paid", invoice({ subscription: sub, customer })));
+  row = await rowOf(biz.businessId);
+  assert.equal(row.billingStatus, "trial");
 });
 
 test("webhook: negocio desconocido y tipos que no se usan → 200 y quedan registrados (no se reintentan)", async () => {

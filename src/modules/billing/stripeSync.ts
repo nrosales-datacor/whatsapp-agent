@@ -26,7 +26,9 @@ import type { StripeEventLike } from "./stripeGateway";
 // tampoco queda y el reintento de Stripe lo vuelve a procesar.
 //
 // Orden: Stripe no garantiza el orden de entrega. Cada negocio guarda el instante del
-// último evento aplicado (`stripe_synced_at`); uno más viejo no pisa el estado.
+// último evento de SUSCRIPCIÓN aplicado (`stripe_synced_at`: esos eventos traen el estado
+// completo); cualquier evento más viejo que ese no pisa nada. Las facturas no lo mueven
+// (un pago que llega antes que el alta de la suscripción no la deja "vieja").
 //
 // Qué se sincroniza (todo con la fila bloqueada y su rastro en audit_log, actor
 // `system:stripe`, sin datos personales):
@@ -267,15 +269,17 @@ function subscriptionChanges(current: Business, sub: SubscriptionInfo, eventType
 function invoiceChanges(current: Business, eventType: string, eventAt: Date): SubscriptionChanges {
   if (eventType === "invoice.payment_failed") {
     // Un cobro fallido de una suscripción cancelada no la revive como "atrasada".
-    if (current.billingStatus === "cancelled") return { stripeSyncedAt: eventAt };
+    if (current.billingStatus === "cancelled") return {};
     return {
       billingStatus: "past_due",
       pastDueSince: current.billingStatus === "past_due" && current.pastDueSince ? current.pastDueSince : eventAt,
-      stripeSyncedAt: eventAt,
     };
   }
+  // La factura en $0 del arranque de una suscripción en prueba no la saca de la prueba (el
+  // cambio a `active` lo trae la suscripción cuando Stripe cobra de verdad).
+  if (current.stripeSubscriptionStatus === "trialing") return {};
   // Pagada: al día y, si estaba pausado por el cobro, se reactiva.
-  return { billingStatus: "active", pastDueSince: null, stripeSyncedAt: eventAt, ...reactivationFor(current, "active") };
+  return { billingStatus: "active", pastDueSince: null, ...reactivationFor(current, "active") };
 }
 
 /** Lo auditado del cobro de un negocio: sin datos personales. */
