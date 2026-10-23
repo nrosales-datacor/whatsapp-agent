@@ -1,10 +1,14 @@
 import { useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { capitalize, terminologyOf } from "../../app/navigation";
 import { useSession } from "../../app/session";
 import { errorMessage } from "../../lib/api";
 import { formatCents } from "../../lib/money";
 import EmptyState from "../../ui/EmptyState";
 import ErrorState from "../../ui/ErrorState";
+import { CLIENT_STATUSES } from "../clients/clientsApi";
+import { StatusBadge } from "../clients/StatusBadge";
+import "../clients/clients.css";
 import { DayBarChart, Meter, RankingChart } from "./charts";
 import { compactCents, deltaText, formatInt, formatMinutes, formatRate, rangeLabel } from "./format";
 import { useReportRange } from "./ReportsPage";
@@ -368,6 +372,20 @@ export function ClientsReportView() {
               />
             </Section>
           )}
+          {/* Cartera por estado del CRM, hoy: los mismos números que los chips de Clientes (adonde lleva cada uno). */}
+          <Section id="rp-clients-status" title={`${capitalize(t.clients)} por estado hoy`} aside={<span className="muted tnum">{formatInt(r.byStatus.total)}</span>}>
+            <ul className="rp-status" aria-label={`${capitalize(t.clients)} por estado`}>
+              {CLIENT_STATUSES.map((status) => (
+                <li key={status}>
+                  <Link className="rp-status-row" to={`/clients?status=${status}`}>
+                    <StatusBadge status={status} />
+                    <span className="tnum rp-status-count">{formatInt(r.byStatus[status])}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            <p className="muted ho-note">Con las reglas de {t.clients} del negocio, al día de hoy (no depende de las fechas elegidas).</p>
+          </Section>
         </>
       )}
     />

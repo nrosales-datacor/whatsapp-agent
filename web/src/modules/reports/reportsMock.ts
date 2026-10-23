@@ -1,5 +1,6 @@
 import type { TransportRequest, TransportResponse } from "../../lib/api";
 import type { Role } from "../../lib/contract";
+import type { ClientStatusCounts } from "../clients/clientsApi";
 import type { CommissionEntry, Payment } from "../sales/salesApi";
 import { workingWindows } from "../scheduling/agendaLayout";
 import type { Appointment, AppointmentStatus } from "../scheduling/schedulingApi";
@@ -7,6 +8,7 @@ import type { MockAgendaSetup } from "../settings/settingsMock";
 import { isoToZoned } from "../settings/zonedTime";
 import type {
   AppointmentChannel,
+  AtRiskClient,
   ChannelsReport,
   ClientsReport,
   CollectedGroup,
@@ -22,8 +24,10 @@ import type {
 // Reportes e Inicio completo en la API simulada (VITE_MOCK_API=1): mismas rutas, sobre,
 // códigos y reglas que src/modules/reports (módulo del plan, roles, sucursal, rango) y
 // los mismos números calculados sobre las citas de la Agenda simulada y los pagos de
-// Ventas simulada. Simplificaciones: las altas de clientes son los clientes con su primera
-// visita en el período, y los clientes en riesgo son dos fijos de la semilla.
+// Ventas simulada. El estado de la cartera (en riesgo del Inicio y desglose por estado del
+// reporte de clientes) sale del CRM simulado (clientsMock), con las mismas reglas que la
+// lista. Simplificación: las altas de clientes son los clientes con su primera visita en el
+// período.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface MockReportsSession {
@@ -37,7 +41,8 @@ export interface MockReportsSession {
   appointments: Appointment[];
   payments: Payment[];
   commissions: CommissionEntry[];
-  clients: Array<{ id: string; name: string; anonymized: boolean }>;
+  /** Estado de la cartera según el CRM simulado (`mockClientStatusOverview`). */
+  clientStatus: { counts: ClientStatusCounts; atRisk: { count: number; items: AtRiskClient[] } };
 }
 
 const REPORT_IDS: readonly ReportId[] = ["sales", "services", "staff", "clients", "channels"];
@@ -323,6 +328,7 @@ function clientsReport(session: MockReportsSession, scope: Scope): ClientsReport
     registered: newClients,
     retention: { previousServed: prevServed.size, retained, rate: rate(retained, prevServed.size) },
     byDay,
+    byStatus: session.clientStatus.counts,
   };
 }
 
@@ -426,8 +432,6 @@ function homeOverview(session: MockReportsSession, header: string | undefined): 
   const firstDay = addDays(today, -13);
   const firstVisit = new Map<string, string>();
   for (const a of session.appointments) if (a.status === "completed" && (!firstVisit.has(a.clientId) || day(a.startsAt) < (firstVisit.get(a.clientId) as string))) firstVisit.set(a.clientId, day(a.startsAt));
-  const seen = new Set(session.appointments.map((a) => a.clientId));
-  const risk = session.clients.filter((c) => !c.anonymized && !seen.has(c.id)).slice(0, 2);
   return {
     date: today,
     timezone: tz,
@@ -445,11 +449,7 @@ function homeOverview(session: MockReportsSession, header: string | undefined): 
     noShowsToday: byStatus.no_show,
     alerts: {
       unconfirmed: { today: pending.filter((a) => day(a.startsAt) === today).length, tomorrow: pending.filter((a) => day(a.startsAt) === tomorrow).length, items: pending.slice(0, 10) },
-      atRisk: {
-        count: risk.length,
-        items: risk.map((c, i) => ({ id: c.id, name: c.name, lastVisitAt: new Date(now.getTime() - (75 + i * 20) * 86_400_000).toISOString(), visitCount: 3 - i })),
-        provisional: true,
-      },
+      atRisk: session.clientStatus.atRisk,
     },
     revenue: datesOf(firstDay, today).map((date) => ({ date, netCents: pays.filter((p) => day(p.paidAt) === date).reduce((n, p) => n + signed(p), 0) })),
     conversationsWaiting: session.modules.includes("whatsapp") ? 2 : null,

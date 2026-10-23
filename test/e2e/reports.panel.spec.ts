@@ -5,7 +5,8 @@ import { expect, test, type Page } from "@playwright/test";
 // E2E de Reportes, Inicio completo y Métricas del superadmin (I5) contra la API simulada
 // (proyecto "panel-mock"): las cinco pestañas con su período (presets y personalizado) y
 // sucursal en la URL, los gráficos SVG con su tabla equivalente, Exportar CSV (descarga
-// con nombre, BOM y encabezados), el Inicio completo del Pro (y el básico del Básico), el
+// con nombre, BOM y encabezados), la cartera por estado del CRM, el Inicio completo del Pro
+// (con "en riesgo" igual al chip de Clientes; y el básico del Básico), el
 // candado del plan Básico, recepción sin Reportes, el superadmin con Métricas y la
 // actividad de un negocio, y móvil sin scroll horizontal. Datos: web/src/modules/reports/
 // reportsMock.ts (sobre la Agenda y Ventas simuladas) y admin/adminMetricsMock.ts.
@@ -107,6 +108,10 @@ test("Reportes (Pro): las cinco pestañas conservan el período; sucursal; servi
   await expect(page.getByLabel("Indicadores de pacientes").getByText("Retención")).toBeVisible();
   await expect(page.getByRole("img", { name: /nuevos y recurrentes por día/i })).toBeVisible();
   await expect(page.getByRole("list", { name: "Leyenda" })).toContainText("Nuevos");
+  // Cartera por estado del CRM (hoy): cada estado lleva a la lista de Clientes filtrada.
+  const byStatus = page.getByRole("list", { name: "Pacientes por estado" });
+  await expect(byStatus.getByRole("link")).toHaveCount(5);
+  await expect(byStatus.getByRole("link", { name: /^En riesgo/ })).toHaveAttribute("href", "/panel/clients?status=at_risk");
 
   await tabs.getByRole("link", { name: "Canales" }).click();
   const channels = page.getByRole("table", { name: "Canales del período" });
@@ -131,6 +136,15 @@ test("Inicio completo (Pro): cobrado hoy, nuevos, alertas, en riesgo e ingresos 
   await expect(risk.getByRole("link").first()).toBeVisible();
   // Las tarjetas del Inicio básico siguen abajo.
   await expect(heading(page, "Próximas citas", 2)).toBeVisible();
+  // "En riesgo" es el estado del CRM: el mismo número que el chip de Clientes, adonde lleva.
+  const riskAlert = page.getByRole("link", { name: /Pacientes en riesgo/ });
+  const riskCount = (await riskAlert.locator(".ho-alert-count").textContent())?.trim() ?? "";
+  expect(Number(riskCount)).toBeGreaterThan(0);
+  await riskAlert.click();
+  await expect(page).toHaveURL(/\/panel\/clients\?status=at_risk$/);
+  const riskChip = page.getByRole("group", { name: "Filtrar por estado" }).getByRole("button", { name: /^En riesgo/ });
+  await expect(riskChip.locator(".clients-chip-count")).toHaveText(riskCount);
+  await expect(page.locator("td.clients-col-status").first()).toHaveText("En riesgo");
 
   await page.goto("/panel/login");
   await page.evaluate(() => sessionStorage.clear());

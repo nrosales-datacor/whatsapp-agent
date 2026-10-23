@@ -13,7 +13,8 @@ import "../sales/sales.css";
 // ─────────────────────────────────────────────────────────────────────────────
 // Inicio completo (plan Pro, `GET /home/overview`): cobrado hoy, clientes nuevos, citas y
 // no-show de hoy, alertas (sin confirmar hoy y mañana, clientes en riesgo) e ingresos de
-// los últimos 14 días. Va arriba del Inicio básico, que sigue con sus listas.
+// los últimos 14 días. Va arriba del Inicio básico, que sigue con sus listas. "En riesgo"
+// es el estado del CRM: el mismo número que el chip «En riesgo» de Clientes, adonde lleva.
 // ─────────────────────────────────────────────────────────────────────────────
 
 function Kpi({ label, value, hint, strong = false }: { label: string; value: string; hint?: string; strong?: boolean }) {
@@ -93,10 +94,10 @@ export default function HomeOverview() {
               <span>Sin confirmar mañana</span>
               <span className={"ho-alert-count tnum" + (unconfirmed.tomorrow === 0 ? " zero" : "")}>{formatInt(unconfirmed.tomorrow)}</span>
             </Link>
-            <div className="ho-alert" role="group" aria-label={`${capitalize(t.clients)} en riesgo`}>
+            <Link className="ho-alert" to="/clients?status=at_risk">
               <span>{capitalize(t.clients)} en riesgo</span>
               <span className={"ho-alert-count tnum" + (atRisk.count === 0 ? " zero" : "")}>{formatInt(atRisk.count)}</span>
-            </div>
+            </Link>
             {atRisk.items.length > 0 && (
               <ul className="ho-risk" aria-label={`${capitalize(t.clients)} que hace tiempo no vienen`}>
                 {atRisk.items.map((c) => (
@@ -104,12 +105,12 @@ export default function HomeOverview() {
                     <Link className="link" to={`/clients/${c.id}`}>
                       {c.name}
                     </Link>
-                    <span className="muted tnum">hace {formatInt(daysAgo(c.lastVisitAt))} días</span>
+                    <span className="muted tnum">{c.lastVisitAt ? `hace ${formatInt(daysAgo(c.lastVisitAt))} días` : "todavía no vino"}</span>
                   </li>
                 ))}
               </ul>
             )}
-            <p className="muted ho-note">En riesgo: hace tiempo que no vienen (según su última visita).</p>
+            <p className="muted ho-note">En riesgo: hace rato que no vuelven, según las reglas de {t.clients} del negocio.</p>
           </div>
         </section>
       </div>
