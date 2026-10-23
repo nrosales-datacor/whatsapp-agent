@@ -21,7 +21,8 @@ import { businessContextOf } from "./range";
 //   • cobrado hoy (neto, con señas y devoluciones), clientes nuevos hoy (altas), citas de
 //     hoy por estado y no-show de hoy;
 //   • alertas: citas sin confirmar de hoy (las que no empezaron) y de mañana, y clientes
-//     en riesgo — TODO(I3): provisorio por última visita hasta que el CRM traiga los estados;
+//     en riesgo: el estado `at_risk` del CRM con las reglas del negocio (el mismo cálculo
+//     que el chip y el filtro «En riesgo» de la lista de clientes, ver clients/stats.ts);
 //   • ingresos (neto cobrado) de los últimos 14 días, día por día.
 //
 // "Hoy" es el día local de la sucursal elegida (o del negocio con "Todas"), igual que el
@@ -85,14 +86,7 @@ export async function getHomeOverview(
   const pendingOn = (day: string) => pendingByDay.groups.find((g) => g.key === day)?.byStatus.pending ?? 0;
   const unconfirmedItems = await listAppointments(db, businessId, { from: now, to: tomorrowEnd, locationIds, statuses: ["pending"], limit: UNCONFIRMED_LIMIT });
 
-  const rules = ctx.clientStatusRules;
-  // TODO(I3): usar el estado `at_risk` del CRM (mismas reglas, un solo cálculo).
-  const atRisk = await listClientsAtRisk(db, businessId, {
-    now,
-    atRiskAfterDays: rules.atRiskAfterDays,
-    inactiveAfterDays: rules.inactiveAfterDays,
-    limit: AT_RISK_LIMIT,
-  });
+  const atRisk = await listClientsAtRisk(db, businessId, { now, limit: AT_RISK_LIMIT });
 
   const firstDay = addDays(date, -(REVENUE_DAYS - 1));
   const revenue = await getCollectedTotals(db, businessId, {
