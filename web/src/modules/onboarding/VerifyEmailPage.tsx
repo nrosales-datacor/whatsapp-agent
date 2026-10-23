@@ -13,7 +13,8 @@ import "./onboarding.css";
  * Confirmación del correo del alta (`/verify-email?token=…`, el enlace del correo): verifica,
  * deja la sesión iniciada y lleva al Inicio (con la checklist de primeros pasos). El enlace
  * es de un solo uso: se manda UNA vez por montaje (el modo estricto de React monta dos
- * veces en desarrollo). Si venció, se puede pedir otro.
+ * veces en desarrollo; por eso un ref y estado local en vez de `useMutation`, cuyo
+ * observador se desengancha en ese segundo montaje). Si venció, se puede pedir otro.
  */
 export default function VerifyEmailPage() {
   const [params] = useSearchParams();
@@ -21,22 +22,22 @@ export default function VerifyEmailPage() {
   const navigate = useNavigate();
   const setSession = useSetSession();
   const sent = useRef(false);
-  const verify = useMutation({
-    mutationFn: (value: string) => verifySignup(value),
-    onSuccess: (me) => {
-      setSession(me);
-      navigate("/", { replace: true });
-    },
-  });
+  const [failure, setFailure] = useState<string | null>(token ? null : "Al enlace le falta información.");
 
   useEffect(() => {
     if (!token || sent.current) return;
     sent.current = true;
-    verify.mutate(token);
-  }, [token, verify]);
+    verifySignup(token).then(
+      (me) => {
+        setSession(me);
+        navigate("/", { replace: true });
+      },
+      (error: unknown) => setFailure(errorMessage(error, "No pudimos confirmar tu correo.")),
+    );
+  }, [token, navigate, setSession]);
 
-  if (token && (verify.isIdle || verify.isPending || verify.isSuccess)) return <FullPageStatus message="Confirmando tu correo…" />;
-  return <ExpiredLink message={verify.isError ? errorMessage(verify.error) : "Al enlace le falta información."} />;
+  if (failure === null) return <FullPageStatus message="Confirmando tu correo…" />;
+  return <ExpiredLink message={failure} />;
 }
 
 function ExpiredLink({ message }: { message: string }) {
