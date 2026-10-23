@@ -1,7 +1,17 @@
 import type { TransportRequest, TransportResponse } from "../../lib/api";
 import type { LocationRef, Role } from "../../lib/contract";
 import { readStorage, writeStorage } from "../../lib/storage";
-import { CLIENT_STATUSES, type ClientChannel, type ClientDetail, type ClientFormOptions, type ClientStatus, type ClientSummary, type ImportAction, type ImportReport } from "./clientsApi";
+import {
+  CLIENT_STATUSES,
+  type ClientChannel,
+  type ClientDetail,
+  type ClientFormOptions,
+  type ClientStatus,
+  type ClientStatusCounts,
+  type ClientSummary,
+  type ImportAction,
+  type ImportReport,
+} from "./clientsApi";
 import type { CustomField } from "./crmApi";
 import {
   applyCustomData,
@@ -300,6 +310,54 @@ export function mockClientsOf(businessId: string, locations: LocationRef[]): Arr
     saveState(state);
   }
   return state[businessId].map((c) => ({ id: c.id, name: c.name, phone: c.phone, email: c.email, anonymized: c.anonymized }));
+}
+
+/** Un cliente en riesgo, como lo lista el Inicio completo. */
+export interface MockAtRiskClient {
+  id: string;
+  name: string;
+  lastVisitAt: string | null;
+  visitCount: number;
+}
+
+/**
+ * Estado de la cartera para Reportes e Inicio completo (I5): cantidad por estado y los
+ * clientes en riesgo, con las MISMAS reglas que los chips y el filtro «En riesgo» de la
+ * lista (espejo de `countClientsByStatus` y `listClientsAtRisk`). Sin anonimizados; los
+ * en riesgo, los que llevan más tiempo sin venir primero (los más cerca de pasar a inactivos).
+ */
+export function mockClientStatusOverview(
+  businessId: string,
+  locations: LocationRef[],
+  industry: string,
+  atRiskLimit = 5,
+): { counts: ClientStatusCounts; atRisk: { count: number; items: MockAtRiskClient[] } } {
+  const state = loadState();
+  if (!state[businessId]) {
+    state[businessId] = seedClients(businessId, locations);
+    saveState(state);
+  }
+  const rules = crmOf(businessId, industry).data.rules;
+  const now = Date.now();
+  const counts = Object.fromEntries(CLIENT_STATUSES.map((s) => [s, 0])) as ClientStatusCounts;
+  counts.total = 0;
+  const atRisk: MockClient[] = [];
+  for (const c of state[businessId]) {
+    if (c.anonymized) continue;
+    const status = statusOf(c, rules, now);
+    counts[status]++;
+    counts.total++;
+    if (status === "at_risk") atRisk.push(c);
+  }
+  const reference = (c: MockClient) => Date.parse(c.lastVisitAt ?? c.createdAt);
+  atRisk.sort((a, b) => reference(a) - reference(b) || b.visitCount - a.visitCount || a.id.localeCompare(b.id));
+  return {
+    counts,
+    atRisk: {
+      count: atRisk.length,
+      items: atRisk.slice(0, atRiskLimit).map((c) => ({ id: c.id, name: c.name, lastVisitAt: c.lastVisitAt, visitCount: c.visitCount })),
+    },
+  };
 }
 
 // ── Filtros ─────────────────────────────────────────────────────────────────

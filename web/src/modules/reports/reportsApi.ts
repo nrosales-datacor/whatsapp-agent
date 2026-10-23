@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api, apiDownload, getActiveLocationId } from "../../lib/api";
+import type { ClientStatusCounts } from "../clients/clientsApi";
 import type { Appointment, AppointmentStatus } from "../scheduling/schedulingApi";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -98,6 +99,8 @@ export interface ClientsReport extends ReportBase {
   registered: number;
   retention: { previousServed: number; retained: number; rate: number | null };
   byDay: { date: string; newClients: number; returningClients: number }[];
+  /** Estado de la cartera HOY (CRM: las reglas del negocio), no depende del rango ni de la sucursal. */
+  byStatus: ClientStatusCounts;
 }
 
 export interface ChannelReportItem {
@@ -128,7 +131,8 @@ export interface ReportById {
 export interface AtRiskClient {
   id: string;
   name: string;
-  lastVisitAt: string;
+  /** null = todavía no vino (está en riesgo por el tiempo desde el alta). */
+  lastVisitAt: string | null;
   visitCount: number;
 }
 
@@ -144,7 +148,8 @@ export interface HomeOverview {
   noShowsToday: number;
   alerts: {
     unconfirmed: { today: number; tomorrow: number; items: Appointment[] };
-    atRisk: { count: number; items: AtRiskClient[]; provisional: true };
+    /** Estado «en riesgo» del CRM: el mismo que los chips y el filtro de la lista de clientes. */
+    atRisk: { count: number; items: AtRiskClient[] };
   };
   revenue: { date: string; netCents: number }[];
   conversationsWaiting: number | null;

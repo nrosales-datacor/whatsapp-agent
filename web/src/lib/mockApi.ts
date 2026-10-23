@@ -1,6 +1,6 @@
 import { mockAgendaSetup, mockPlanUsage, settingsMockRoute, settingsOverlay, type MockMemberSeed } from "../modules/settings/settingsMock";
 import type { TransportRequest, TransportResponse } from "./api";
-import { mockClientsOf, routeClientsMock } from "../modules/clients/clientsMock";
+import { mockClientsOf, mockClientStatusOverview, routeClientsMock } from "../modules/clients/clientsMock";
 import { routeCrmSettingsMock } from "../modules/clients/crmMock";
 import { mockBusinessUsage, mockPlatformMetrics, resolveMockRange } from "../modules/admin/adminMetricsMock";
 import { isReportsMockPath, routeReportsMock } from "../modules/reports/reportsMock";
@@ -701,7 +701,8 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
           appointments,
           payments: sales.payments,
           commissions: sales.commissions,
-          clients,
+          // En riesgo y desglose por estado: el CRM simulado, con las reglas de la lista de clientes.
+          clientStatus: mockClientStatusOverview(b.id, b.locations, b.industry),
         },
         req.headers["X-Location-Id"],
       ) ?? fail(404, "not_found", "Ruta inexistente en el mock.")
