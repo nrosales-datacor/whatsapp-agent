@@ -233,6 +233,66 @@ export async function apiRequest<T>(method: HttpMethod, path: string, body?: unk
   throw error;
 }
 
+// ── Descargas (CSV de Reportes) ─────────────────────────────────────────────
+
+/** Nombre del archivo de una cabecera `Content-Disposition: attachment; filename="…"`. */
+export function filenameFromDisposition(header: string | null, fallback: string): string {
+  const match = /filename="?([^";]+)"?/i.exec(header ?? "");
+  return match?.[1]?.trim() || fallback;
+}
+
+/** Guarda un Blob como archivo (enlace temporal con `download`). */
+export function saveBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.rel = "noopener";
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+}
+
+/**
+ * GET de un archivo de la API (misma sesión y sucursal que el resto) y lo descarga. Un
+ * error vuelve como `ApiError` con el mismo sobre que los JSON. En modo mock, el mock
+ * responde `{ ok: true, data: { content, filename, contentType } }`.
+ */
+export async function apiDownload(path: string, fallbackName: string): Promise<string> {
+  const headers: Record<string, string> = { Accept: "text/csv, application/json" };
+  if (activeLocationId) headers[LOCATION_HEADER] = activeLocationId;
+  if (IS_MOCK_API) {
+    const data = await apiRequest<{ content: string; filename: string; contentType: string }>("GET", path);
+    saveBlob(new Blob([data.content], { type: data.contentType }), data.filename || fallbackName);
+    return data.filename || fallbackName;
+  }
+  let res: Response;
+  try {
+    res = await fetch(API_PREFIX + path, { method: "GET", credentials: "same-origin", headers });
+  } catch {
+    throw new ApiError(0, NETWORK_MESSAGE, "network_error", {}, path);
+  }
+  if (!res.ok) {
+    let payload: unknown;
+    try {
+      payload = await res.json();
+    } catch {
+      payload = undefined;
+    }
+    const env = (isObject(payload) ? payload : {}) as Partial<ErrorEnvelope>;
+    const code = env.code || fallbackCode(res.status);
+    const error = new ApiError(res.status, env.error || messageForCode(code), code, isObject(env.fields) ? env.fields : {}, path);
+    if (error.status === 401 && error.code === "unauthorized") unauthorizedHandler?.(path);
+    if (error.code === "business_paused") businessPausedHandler?.();
+    throw error;
+  }
+  const filename = filenameFromDisposition(res.headers.get("content-disposition"), fallbackName);
+  saveBlob(await res.blob(), filename);
+  return filename;
+}
+
 export const api = {
   get: <T>(path: string) => apiRequest<T>("GET", path),
   post: <T>(path: string, body?: unknown) => apiRequest<T>("POST", path, body),

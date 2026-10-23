@@ -44,3 +44,87 @@ export const changeBusinessPlan = (id: string, input: PlanChangeInput) => api.pa
 export const pauseBusiness = (id: string, reason?: string) => api.post<AdminBusinessDetail>(`${businessPath(id)}/pause`, reason ? { reason } : {});
 
 export const reactivateBusiness = (id: string) => api.post<AdminBusinessDetail>(`${businessPath(id)}/reactivate`);
+
+// ── Métricas de producto (I5): espejo de src/admin/metrics.ts ──
+
+export interface UsageTotals {
+  appointmentsCreated: number;
+  paymentsRecorded: number;
+  /** Días-persona: una persona activa 3 días suma 3. */
+  activeUsers: number;
+  logins: number;
+  aiConversations: number;
+  whatsappHandoffs: number;
+}
+
+export interface UsageRange {
+  from: string;
+  to: string;
+  days: number;
+  timezone: string;
+}
+
+export interface Activation {
+  firstLoginOn: string | null;
+  firstAppointmentOn: string | null;
+  firstPaymentOn: string | null;
+  firstAiConversationOn: string | null;
+  activated: boolean;
+}
+
+export interface BusinessUsageRow {
+  id: string;
+  name: string;
+  planLabel: string;
+  status: string;
+  createdAt: string;
+  agentOn: boolean;
+  usage: UsageTotals;
+  appointmentsLastWeek: number;
+  activeDays: number;
+  lastActivityOn: string | null;
+  activation: Activation;
+}
+
+export interface PlatformMetrics {
+  range: UsageRange;
+  totals: UsageTotals & {
+    businesses: number;
+    activeBusinesses: number;
+    pausedBusinesses: number;
+    withActivity: number;
+    withAppointmentsLastWeek: number;
+    withAgentOn: number;
+    activated: number;
+  };
+  daily: (UsageTotals & { date: string; activeBusinesses: number })[];
+  businesses: BusinessUsageRow[];
+}
+
+export interface BusinessUsage {
+  business: { id: string; name: string; planLabel: string; status: string };
+  range: UsageRange;
+  totals: UsageTotals;
+  daily: (UsageTotals & { date: string })[];
+  activation: Activation;
+}
+
+export interface UsageQuery {
+  from?: string;
+  to?: string;
+}
+
+const usageQuery = (q: UsageQuery) => {
+  const params = new URLSearchParams();
+  if (q.from) params.set("from", q.from);
+  if (q.to) params.set("to", q.to);
+  const s = params.toString();
+  return s ? `?${s}` : "";
+};
+
+export const adminMetricsQueryKey = (q: UsageQuery) => ["admin", "metrics", q.from ?? "", q.to ?? ""] as const;
+export const adminUsageQueryKey = (id: string, q: UsageQuery) => ["admin", "usage", id, q.from ?? "", q.to ?? ""] as const;
+
+export const getPlatformMetrics = (q: UsageQuery = {}) => api.get<PlatformMetrics>(`/admin/metrics${usageQuery(q)}`);
+
+export const getBusinessUsage = (id: string, q: UsageQuery = {}) => api.get<BusinessUsage>(`${businessPath(id)}/usage${usageQuery(q)}`);

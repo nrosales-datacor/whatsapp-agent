@@ -9,6 +9,7 @@ import {
   findSlots,
   listUpcomingAppointmentsForClient,
   rescheduleAppointment,
+  type AppointmentBookedHook,
   type AppointmentView,
   type Slot,
 } from "../../scheduling";
@@ -57,6 +58,8 @@ export interface ToolRuntime {
   ctx: AgentContext;
   input: AgentTurnInput;
   effects: TurnEffects;
+  /** Aviso de cita agendada (métricas de uso que inyecta la composición). */
+  onAppointmentBooked?: AppointmentBookedHook;
 }
 
 export type ToolResult = { ok: boolean } & Record<string, unknown>;
@@ -515,6 +518,7 @@ async function bookTool(rt: ToolRuntime, args: z.infer<(typeof ARGS)["book_appoi
     notes: noteParts.join(" ") || null,
     createdBy: null,
     now: rt.input.now,
+    onBooked: rt.onAppointmentBooked,
   });
   const summary = summarize(rt, view);
   rt.effects.actions.push({ type: "appointment_booked", appointmentId: view.id });

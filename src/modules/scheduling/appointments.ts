@@ -2,6 +2,7 @@ import { and, asc, count, desc, eq, gte, inArray, lt, max, min, ne, or, sql, typ
 import { hasPgCode } from "../../platform/db/errors";
 import { isTenantId, withTenant, type Executor, type Tx } from "../../platform/db/scope";
 import { HttpError, ValidationError } from "../../platform/http/errors";
+import { log } from "../../platform/observability/log";
 import { applyCustomDataPatch, getBusinessContext, listCustomFields, listLocations, type Terminology } from "../business";
 import { getClient, getClientsByIds, refreshClientStats } from "../clients";
 import { listStaff } from "../team";
@@ -382,7 +383,15 @@ export interface BookAppointmentInput {
   minLeadMin?: number;
   /** Reloj (tests). */
   now?: Date;
+  /**
+   * Se avisa DESPUÉS de confirmar la reserva (métricas de uso que inyecta la composición:
+   * scheduling no las conoce). Un error del gancho se registra y no afecta la cita.
+   */
+  onBooked?: AppointmentBookedHook;
 }
+
+/** Aviso de una cita recién creada (ya confirmada en la base), con quien la creó. */
+export type AppointmentBookedHook = (executor: Executor, businessId: string, appointment: AppointmentView) => Promise<void> | void;
 
 interface StartRules {
   now: Date;
@@ -534,7 +543,15 @@ export async function bookAppointment(executor: Executor, businessId: string, in
     }
     throw startProblemError(lastProblem ?? "busy", t);
   });
-  return getOrThrow(executor, businessId, id);
+  const view = await getOrThrow(executor, businessId, id);
+  if (input.onBooked) {
+    try {
+      await input.onBooked(executor, businessId, view);
+    } catch (error) {
+      log.warn("appointment_booked_hook_failed", { businessId, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return view;
 }
 
 // ── Mover (reprogramar / reasignar) ─────────────────────────────────────────

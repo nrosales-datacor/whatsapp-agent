@@ -12,7 +12,9 @@ import CampaignsPage from "../modules/campaigns/CampaignsPage";
 import ClientDetailPage from "../modules/clients/ClientDetailPage";
 import ClientsPage from "../modules/clients/ClientsPage";
 import HomePage from "../modules/home/HomePage";
+import AdminMetricsPage from "../modules/admin/AdminMetricsPage";
 import ReportsPage from "../modules/reports/ReportsPage";
+import { ChannelsReportView, ClientsReportView, SalesReportView, ServicesReportView, StaffReportView } from "../modules/reports/ReportViews";
 import CommissionsPage from "../modules/sales/CommissionsPage";
 import DailySummaryPage from "../modules/sales/DailySummaryPage";
 import PaymentsPage from "../modules/sales/PaymentsPage";
@@ -37,11 +39,12 @@ import { PublicOnly, RequireAuth } from "./session";
 //   Acceso:      /login · /forgot-password · /reset-password?token= (enlace del correo)
 //                /accept-invitation?token= (enlace del correo; /invite/:token es alias)
 //                /change-password (obligatorio con clave temporal)
-//   Panel:       / · /agenda · /clients · /clients/:id · /reports · /campaigns
+//   Panel:       / · /agenda · /clients · /clients/:id · /campaigns
+//                /reports · /reports/services · /reports/staff · /reports/clients · /reports/channels
 //                /sales · /sales/pending · /sales/today · /sales/commissions
 //                /whatsapp · /whatsapp/conversations/:id · /whatsapp/metrics · /whatsapp/settings
 //                /settings/:page
-//   Superadmin:  /admin/login · /admin · /admin/businesses/:id (plan, cobro y pausa)
+//   Superadmin:  /admin/login · /admin · /admin/businesses/:id (plan, cobro, pausa y uso) · /admin/metrics
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -71,6 +74,7 @@ export default function App() {
       <Route path="/admin" element={<RequireAdmin />}>
         <Route index element={<AdminHomePage />} />
         <Route path="businesses/:id" element={<AdminBusinessPage />} />
+        <Route path="metrics" element={<AdminMetricsPage />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />
       </Route>
 
@@ -131,7 +135,15 @@ export default function App() {
                 <ReportsPage />
               </SectionGate>
             }
-          />
+          >
+            {/* Ventas · Servicios · Profesionales · Clientes · Canales (período en ?days o ?from&to). */}
+            <Route index element={<SalesReportView />} />
+            <Route path="services" element={<ServicesReportView />} />
+            <Route path="staff" element={<StaffReportView />} />
+            <Route path="clients" element={<ClientsReportView />} />
+            <Route path="channels" element={<ChannelsReportView />} />
+            <Route path="*" element={<Navigate to="/reports" replace />} />
+          </Route>
           <Route
             path="whatsapp"
             element={

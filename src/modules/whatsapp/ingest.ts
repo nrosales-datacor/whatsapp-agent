@@ -2,11 +2,13 @@ import { randomUUID } from "node:crypto";
 import { and, eq, lt, max } from "drizzle-orm";
 import { withTenant, type Executor } from "../../platform/db/scope";
 import { ValidationError } from "../../platform/http/errors";
+import { incrementDailyUsage, USAGE_METRICS } from "../../platform/observability/dailyUsage";
 import { log } from "../../platform/observability/log";
 import { recordEvent } from "../../platform/observability/metrics";
 import { enqueue } from "../../platform/queue";
 import { getBusinessContext } from "../business";
 import { findOrCreateClientByPhone } from "../clients";
+import { localDate } from "../scheduling";
 import type { RoutedChannel } from "./channels";
 import { directActionOf, type DirectAction } from "./commands";
 import { allowIngest, INGEST_DEFER_MS } from "./limits";
@@ -29,7 +31,8 @@ import { incrementAiUsage } from "./usage";
 //   • Negocio pausado (falta de pago): el mensaje se guarda para que el equipo lo vea al
 //     reactivarse, pero no se encola nada (nadie le responde).
 //   • Uso del mes: mensajes entrantes y "conversación iniciada" (primer mensaje del
-//     cliente tras 24 h de silencio, como cobra Meta).
+//     cliente tras 24 h de silencio, como cobra Meta); la conversación iniciada también va
+//     a `daily_usage` (`ai_conversations`, por día local) para el superadmin.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const WHATSAPP_INBOUND_JOB = "whatsapp.inbound";
@@ -132,6 +135,10 @@ export async function ingestInboundMessage(
     if (!businessActive) return { outcome: "stored" as const, conversationId: conversation.id };
 
     await incrementAiUsage(tx, businessId, { messagesIn: 1, conversationsStarted: started ? 1 : 0 }, now);
+    // Por día local del negocio (métricas de producto del superadmin, I5): atómico con el mensaje.
+    if (started) {
+      await incrementDailyUsage(tx, businessId, { date: localDate(now, ctx.business.timezone), metric: USAGE_METRICS.aiConversations });
+    }
     const deferred = !allowIngest(businessId, now.getTime());
     await enqueue<InboundJobPayload>(tx, {
       type: WHATSAPP_INBOUND_JOB,

@@ -2,6 +2,7 @@ import { and, desc, eq, gte, inArray, lt, sql, type SQL } from "drizzle-orm";
 import { formatAmount } from "../../platform/money/currency";
 import { isTenantId, withTenant, type Executor, type Tx } from "../../platform/db/scope";
 import { HttpError, ValidationError } from "../../platform/http/errors";
+import { log } from "../../platform/observability/log";
 import { getBusinessContext, listLocations } from "../business";
 import { getClient, getClientsByIds, refreshClientStats } from "../clients";
 import { getAppointment, listAppointments, localDayBounds, type AppointmentView } from "../scheduling";
@@ -35,6 +36,21 @@ import { payments, type Payment, type PaymentKind } from "./schema";
 
 /** Efecto interno de un cobro o devolución de una cita, en su transacción (comisiones). */
 export type PaymentsChangedHook = (tx: Tx, businessId: string, appointmentId: string) => Promise<void>;
+
+/**
+ * Aviso de una seña o un cobro recién registrado (ya confirmado en la base): métricas de
+ * uso que inyecta la composición. Un error del gancho se registra y no afecta el pago.
+ */
+export type PaymentRecordedHook = (executor: Executor, businessId: string, payment: PaymentView) => Promise<void> | void;
+
+async function notifyRecorded(executor: Executor, businessId: string, payment: PaymentView, hook: PaymentRecordedHook | undefined): Promise<void> {
+  if (!hook) return;
+  try {
+    await hook(executor, businessId, payment);
+  } catch (error) {
+    log.warn("payment_recorded_hook_failed", { businessId, error: error instanceof Error ? error.message : String(error) });
+  }
+}
 
 /** Tope de un monto en céntimos (mil millones de unidades), igual que los precios del catálogo. */
 export const MAX_AMOUNT_CENTS = 100_000_000_000;
@@ -299,6 +315,7 @@ export interface AppointmentPaymentInput {
   /** Usuario del panel que lo registra. */
   recordedBy: string | null;
   onPaymentsChanged?: PaymentsChangedHook;
+  onRecorded?: PaymentRecordedHook;
   now?: Date;
 }
 
@@ -367,6 +384,7 @@ export async function recordAppointmentPayment(executor: Executor, businessId: s
 
   const payment = await getPayment(executor, businessId, paymentId);
   if (!payment) throw paymentNotFound();
+  await notifyRecorded(executor, businessId, payment, input.onRecorded);
   return { payment, balance: await getAppointmentBalance(executor, businessId, appointmentId) };
 }
 
@@ -380,6 +398,7 @@ export interface ClientPaymentInput {
   paidAt?: Date | null;
   currency?: string | null;
   recordedBy: string | null;
+  onRecorded?: PaymentRecordedHook;
   now?: Date;
 }
 
@@ -422,6 +441,7 @@ export async function recordClientPayment(executor: Executor, businessId: string
   });
   const payment = await getPayment(executor, businessId, paymentId);
   if (!payment) throw paymentNotFound();
+  await notifyRecorded(executor, businessId, payment, input.onRecorded);
   return payment;
 }
 

@@ -9,15 +9,19 @@ import ErrorState from "../../ui/ErrorState";
 import { FormError, SelectField, TextField } from "../../ui/Field";
 import Icon from "../../ui/Icons";
 import { useToast } from "../../ui/Toast";
+import { DayBarChart } from "../reports/charts";
 import {
   ADMIN_BUSINESSES_QUERY_KEY,
   adminBusinessQueryKey,
+  adminUsageQueryKey,
   changeBusinessPlan,
   getBusinessDetail,
+  getBusinessUsage,
   pauseBusiness,
   reactivateBusiness,
 } from "./adminApi";
 import AdminShell from "./AdminShell";
+import "../reports/reports.css";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Superadmin › un negocio (/admin/businesses/:id): cobro manual (PROCESO-COBRO-MANUAL.md).
@@ -346,6 +350,55 @@ function UsageCard({ detail }: { detail: AdminBusinessDetail }) {
   );
 }
 
+/** Uso de los últimos 30 días desde `daily_usage` (métricas de producto, I5). */
+function ProductUsageCard({ businessId }: { businessId: string }) {
+  const query = useQuery({ queryKey: adminUsageQueryKey(businessId, {}), queryFn: () => getBusinessUsage(businessId) });
+  return (
+    <section className="card" aria-labelledby="product-usage-title">
+      <h2 id="product-usage-title" className="card-title">
+        Actividad de los últimos 30 días
+      </h2>
+      {query.isPending ? (
+        <p className="muted" role="status">
+          Cargando actividad…
+        </p>
+      ) : query.isError ? (
+        <ErrorState message={errorMessage(query.error, "No pudimos cargar la actividad.")} onRetry={() => void query.refetch()} />
+      ) : (
+        <>
+          <dl className="admin-usage">
+            {(
+              [
+                ["Citas creadas", query.data.totals.appointmentsCreated],
+                ["Pagos registrados", query.data.totals.paymentsRecorded],
+                ["Usuarios activos (días-persona)", query.data.totals.activeUsers],
+                ["Logins", query.data.totals.logins],
+                ["Conversaciones del agente", query.data.totals.aiConversations],
+              ] as const
+            ).map(([label, value]) => (
+              <div key={label} className="admin-usage-row">
+                <dt>{label}</dt>
+                <dd className="tnum">{value.toLocaleString("es-CR")}</dd>
+              </div>
+            ))}
+            <div className="admin-usage-row">
+              <dt>Activado</dt>
+              <dd>{query.data.activation.activated ? "Sí" : "Todavía no"}</dd>
+            </div>
+          </dl>
+          <DayBarChart
+            data={query.data.daily.map((d) => ({ date: d.date, values: [d.appointmentsCreated] }))}
+            series={[{ name: "Citas creadas", tone: "main" }]}
+            label={`Citas creadas por día en los últimos 30 días: ${query.data.totals.appointmentsCreated}`}
+            format={(v) => v.toLocaleString("es-CR")}
+            height={160}
+          />
+        </>
+      )}
+    </section>
+  );
+}
+
 function HistoryCard({ audit }: { audit: AuditEntry[] }) {
   return (
     <section className="card" aria-labelledby="history-title">
@@ -401,6 +454,7 @@ export default function AdminBusinessPage() {
             <div className="stack">
               <ServiceCard detail={query.data} />
               <UsageCard detail={query.data} />
+              <ProductUsageCard businessId={query.data.business.id} />
               <HistoryCard audit={query.data.audit} />
             </div>
           </div>
