@@ -157,3 +157,15 @@ test("hoursText y textos fijos por registro, con override del negocio", () => {
   assert.equal(isOutOfScopeReply("Disculpe, solo puedo ayudarle con cosas de la clínica"), true);
   assert.equal(isOutOfScopeReply("Claro, te ayudo con tu cita"), false);
 });
+
+test("buildSystemPrompt: las reglas de crecimiento (I6) aparecen solo si están activas en el negocio", () => {
+  const ctx = dentalContext();
+  const off = buildSystemPrompt(ctx);
+  assert.doesNotMatch(off, /record_quote|upsell_offer/);
+  const quotes = buildSystemPrompt(ctx, { quoteRecovery: true, upsellRules: [] });
+  assert.match(quotes, /SEGUIMIENTO DE COTIZACIONES.*`record_quote`/);
+  assert.doesNotMatch(quotes, /upsell_offer/);
+  const upsell = buildSystemPrompt(ctx, { quoteRecovery: false, upsellRules: [{ serviceId: "a", suggestServiceId: "b" }] });
+  assert.match(upsell, /`upsell_offer`.*`add_service_to_appointment`.*`decline_upsell`/s);
+  assert.match(upsell, /paciente/, "usa la terminología del negocio");
+});
