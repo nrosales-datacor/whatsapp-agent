@@ -849,6 +849,8 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
         staffId: me.staffId ?? null,
         setup: mockAgendaSetup(settingsSeedOf(state, b.id), membersOf(state, b.id)),
         clients: mockClientsOf(b.id, b.locations),
+        industry: b.industry,
+        crmFull: me.plan.clientsTier === "full",
       }) ?? fail(404, "not_found", "Ruta inexistente en el mock.")
     );
   }

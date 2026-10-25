@@ -13,6 +13,7 @@ import AppointmentBalance from "../sales/AppointmentBalance";
 import type { StaffView } from "../settings/settingsApi";
 import { isoToZoned } from "../settings/zonedTime";
 import { CHANNEL_LABEL, formatLongDate, formatMinutes, formatTime, formatWhen, isActive, STATUS_LABEL } from "./format";
+import AppointmentFields, { customDataFrom, draftsOf, useAppointmentFields, type FieldDrafts } from "./AppointmentFields";
 import { schedulingApi, useAppointment, useAppointmentStore, type Appointment, type Slot } from "./schedulingApi";
 import SlotPicker from "./SlotPicker";
 
@@ -121,6 +122,16 @@ function AppointmentDetail({
   const [notes, setNotes] = useState(appointment.notes ?? "");
 
   const notesDirty = (appointment.notes ?? "") !== notes.trim();
+  const fields = useAppointmentFields();
+  const [drafts, setDrafts] = useState<FieldDrafts>(() => draftsOf(fields, appointment.customData));
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  // Los campos llegan después de la cita (otra consulta) o lo guardado cambia: el borrador se
+  // rehace. Por el contenido (no la identidad): un refresco con lo mismo no borra lo que se edita.
+  const storedKey = JSON.stringify(appointment.customData ?? {});
+  useEffect(() => setDrafts(draftsOf(fields, appointment.customData)), [fields, storedKey]);
+  const customChanges = customDataFrom(fields, drafts, appointment.customData ?? {});
+  const fieldsDirty = Object.keys(customChanges.data).length > 0 || Object.keys(customChanges.errors).length > 0;
+  const apiFieldError = isApiError(error) ? (key: string) => error.fieldError(`customData.${key}`) : () => undefined;
   const occupied = Math.round((new Date(appointment.endsAt).getTime() - new Date(appointment.startsAt).getTime()) / 60_000);
 
   return (
@@ -208,6 +219,36 @@ function AppointmentDetail({
           </button>
         )}
       </form>
+
+      {fields.length > 0 && (
+        <form
+          className="appt-notes"
+          aria-label={`Datos de la ${t.appointment}`}
+          onSubmit={(e: FormEvent) => {
+            e.preventDefault();
+            setFieldErrors(customChanges.errors);
+            if (Object.keys(customChanges.errors).length > 0 || Object.keys(customChanges.data).length === 0) return;
+            run(() => schedulingApi.updateCustomData(appointment.id, customChanges.data), "Datos guardados.");
+          }}
+        >
+          <p className="field-label">Datos de la {t.appointment}</p>
+          <AppointmentFields
+            fields={fields}
+            drafts={drafts}
+            disabled={pending}
+            onChange={(key, value) => {
+              setDrafts((d) => ({ ...d, [key]: value }));
+              setFieldErrors((e) => ({ ...e, [`customData.${key}`]: "" }));
+            }}
+            errorFor={(key) => fieldErrors[`customData.${key}`] || apiFieldError(key)}
+          />
+          {fieldsDirty && (
+            <button type="submit" className="btn btn-secondary btn-small" disabled={pending}>
+              Guardar datos
+            </button>
+          )}
+        </form>
+      )}
 
       {mode === "cancel" && <CancelForm appointment={appointment} onCancel={() => setMode("view")} onDone={(reason) => run(() => schedulingApi.cancel(appointment.id, reason), `${capitalize(t.appointment)} cancelada.`)} pending={pending} />}
       {mode === "reschedule" && (

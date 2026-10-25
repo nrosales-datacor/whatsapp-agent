@@ -4,8 +4,8 @@ import { expect, test, type Page } from "@playwright/test";
 // E2E de la Agenda, el Inicio básico y el historial de la ficha (I1) contra la API
 // simulada (proyecto "panel-mock"): agendar desde "Nueva cita" con un horario libre,
 // confirmar, reprogramar y cancelar desde el panel lateral; "+ Nuevo → Cita"; vista
-// semana; el profesional ve solo su carril; las tarjetas del Inicio según el plan; y
-// móvil (375 px) sin scroll horizontal. Datos de web/src/modules/scheduling/schedulingMock.ts
+// semana; el profesional ve solo su carril; las tarjetas del Inicio según el plan; los
+// campos personalizados de la cita (Pro); y móvil (375 px) sin scroll horizontal. Datos de web/src/modules/scheduling/schedulingMock.ts
 // (citas sembradas alrededor de hoy) y de la Configuración simulada (horarios).
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -99,6 +99,43 @@ test("agendar, confirmar, reprogramar y cancelar una cita", async ({ page }) => 
   await expect(page.getByRole("button", { name: /María Fernández/ })).toHaveCount(0);
   await page.getByLabel("Ver canceladas").check();
   await expect(page.getByRole("button", { name: /María Fernández, Limpieza dental, Cancelada/ })).toBeVisible();
+});
+
+test("campos de la cita (Pro): se cargan al agendar y se editan en el detalle; el Básico no los ve", async ({ page }) => {
+  await login(page, "duena@demo.test");
+  const monday = freeMonday();
+  await page.goto(`/panel/agenda?date=${monday}`);
+  await page.getByRole("button", { name: "Nueva cita" }).click();
+  const dialog = page.getByRole("dialog", { name: "Nueva cita" });
+  await dialog.getByLabel("Buscar paciente").fill("María Fernández");
+  await dialog.getByRole("button", { name: /María Fernández/ }).first().click();
+  await dialog.getByRole("checkbox", { name: /Limpieza dental/ }).check();
+  await dialog.getByRole("radiogroup", { name: "Horarios disponibles" }).getByRole("radio").first().click();
+  const fields = dialog.getByRole("group", { name: "Datos de la cita" });
+  await expect(fields).toBeVisible();
+  await fields.getByLabel("Pieza dental").fill("36");
+  await dialog.getByRole("button", { name: "Agendar cita" }).click();
+  await expect(dialog).toBeHidden();
+
+  await page.getByRole("button", { name: /María Fernández, Limpieza dental, Sin confirmar/ }).click();
+  const drawer = page.getByRole("dialog", { name: "María Fernández" });
+  const form = drawer.getByRole("form", { name: "Datos de la cita" });
+  await expect(form.getByLabel("Pieza dental")).toHaveValue("36");
+  await expect(form.getByRole("button", { name: "Guardar datos" })).toHaveCount(0);
+  await form.getByLabel("Pieza dental").fill("37");
+  await form.getByRole("button", { name: "Guardar datos" }).click();
+  await expect(page.getByText("Datos guardados.")).toBeVisible();
+  await expect(form.getByLabel("Pieza dental")).toHaveValue("37");
+  await expect(form.getByRole("button", { name: "Guardar datos" })).toHaveCount(0);
+
+  // Básico: sin CRM completo, la cita no tiene campos personalizados.
+  await page.context().clearCookies();
+  await page.evaluate(() => sessionStorage.clear());
+  await login(page, "basico@demo.test");
+  await page.goto("/panel/agenda");
+  await page.getByRole("button", { name: "Nueva cita" }).click();
+  await expect(page.getByRole("dialog", { name: /Nueva/ })).toBeVisible();
+  await expect(page.getByRole("group", { name: /Datos de la/ })).toHaveCount(0);
 });
 
 test('"+ Nuevo → Cita" abre el diálogo y la vista semana navega', async ({ page }) => {

@@ -1,6 +1,7 @@
 import type { TransportRequest, TransportResponse } from "../../lib/api";
 import type { Role } from "../../lib/contract";
 import { readStorage, writeStorage } from "../../lib/storage";
+import { applyCustomData, crmOf } from "../clients/crmMock";
 import type { MockAgendaSetup } from "../settings/settingsMock";
 import type { StaffView } from "../settings/settingsApi";
 import { isoToZoned, zonedToIso } from "../settings/zonedTime";
@@ -29,6 +30,27 @@ export interface MockSchedulingSession {
   staffId: string | null;
   setup: MockAgendaSetup;
   clients: Array<{ id: string; name: string; phone: string | null; email: string | null; anonymized: boolean }>;
+  /** Rubro del negocio (defaults de los campos personalizados) y si tiene el CRM completo (Pro). */
+  industry?: string;
+  crmFull?: boolean;
+}
+
+/** Valida y aplica `customData` de la cita como el backend (403 sin el CRM completo). */
+function customDataOf(
+  session: MockSchedulingSession,
+  current: Record<string, unknown>,
+  raw: unknown,
+): { data: Record<string, unknown> } | { response: TransportResponse } {
+  if (!session.crmFull) {
+    return {
+      response: fail(403, "module_not_in_plan", "Esta función es del CRM de clientes del plan Pro. Para usarla, ampliá tu plan en Configuración › Plan."),
+    };
+  }
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { response: invalid({ "body.customData": "Datos inválidos." }) };
+  const { fields } = crmOf(session.businessId, session.industry ?? "generic").data;
+  const result = applyCustomData(fields, "appointment", current, raw as Record<string, unknown>);
+  if (Object.keys(result.errors).length > 0) return { response: invalid(result.errors) };
+  return { data: result.data };
 }
 
 type Stored = Omit<Appointment, "client" | "staff" | "location">;
@@ -255,6 +277,7 @@ function seed(state: State, session: MockSchedulingSession): Stored[] {
               channel,
               totalCents: c.totalCents,
               notes: null,
+              customData: {},
               createdBy: null,
               confirmedAt: status === "pending" ? null : createdAt,
               cancelledAt: null,
@@ -382,6 +405,12 @@ export function routeSchedulingMock(req: TransportRequest, session: MockScheduli
     const index = problems.findIndex((p) => p === null);
     if (index < 0) return problemResponse(problems.includes("busy") ? "busy" : (problems[0] as Problem));
     const c = cands[index];
+    let customData: Record<string, unknown> = {};
+    if (body.customData !== undefined) {
+      const applied = customDataOf(session, {}, body.customData);
+      if ("response" in applied) return applied.response;
+      customData = applied.data;
+    }
     const now = new Date().toISOString();
     const stored: Stored = {
       id: nextId(state),
@@ -394,6 +423,7 @@ export function routeSchedulingMock(req: TransportRequest, session: MockScheduli
       channel: (["panel", "phone", "walk_in"] as string[]).includes(text(body, "channel")) ? (text(body, "channel") as AppointmentChannel) : "panel",
       totalCents: c.totalCents,
       notes: text(body, "notes") || null,
+      customData,
       createdBy: session.userId,
       confirmedAt: null,
       cancelledAt: null,
@@ -422,7 +452,12 @@ export function routeSchedulingMock(req: TransportRequest, session: MockScheduli
     };
     if (req.method === "GET" && !action) return ok(view(session, appointment));
     if (req.method === "PATCH" && !action) {
-      appointment.notes = text(body, "notes") || null;
+      if (body.customData !== undefined) {
+        const applied = customDataOf(session, appointment.customData ?? {}, body.customData);
+        if ("response" in applied) return applied.response;
+        appointment.customData = applied.data;
+      }
+      if (body.notes !== undefined) appointment.notes = text(body, "notes") || null;
       return touch();
     }
     if (req.method !== "POST" || !action) return fail(405, "method_not_allowed", "Método no permitido.");
