@@ -3,13 +3,14 @@
 > Dos trámites que corren por fuera del código y conviene arrancar YA porque tienen tiempos de
 > espera de Meta. Esta guía deja los pasos exactos. Actualizá el estado acá cuando avance cada uno.
 
-**Última actualización:** 2026-07-10 (C4.2: código de Embedded Signup implementado; falta el trámite Meta + las env vars)
+**Última actualización:** 2026-10-25 (I6: plantillas del producto nuevo por número, sección E). Antes, 2026-07-10 (C4.2: código de Embedded Signup implementado; falta el trámite Meta + las env vars)
 
 | Trámite | Estado | Bloquea |
 |---|---|---|
 | A. Plantilla Utility `recordatorio_cita` | ⏳ esperando aprobación de Meta | Recordatorios fuera de 24h (y C1.3/C3.1 construyen encima) |
 | B. Tech Provider + Embedded Signup | ⬜ trámite Meta sin empezar (⚠️ el **código** de C4.2 ya está listo) | Que el botón "Conectar WhatsApp" del onboarding funcione contra Meta. No bloquea nada del piloto (el alta manual sigue). |
 | C. Plantilla MARKETING para campañas | ⬜ sin empezar | Envío real de campañas (C3.2). El código y el panel ya están listos; sin la plantilla aprobada, "Campañas" queda configurada pero no puede enviar. |
+| E. Plantillas del producto nuevo (Carril I) | ⬜ por negocio, al darlo de alta | Recordatorios, campañas, reseñas y rescate FUERA de la ventana de 24 h. Se cargan en WhatsApp IA › Configuración › Números. |
 
 ---
 
@@ -228,3 +229,42 @@ En **WhatsApp Manager** → *Plantillas de mensaje* → **Crear plantilla**:
    redeploy, mismo mecanismo que el resto de "Mi negocio").
 3. Probar reabriendo una conversación de prueba (tu propio número) antes de depender de ella
    con un cliente real.
+
+---
+
+## E. Plantillas del producto nuevo (Carril I: recordatorio, campañas, reseñas y rescate)
+
+> Las secciones A–D son del sistema viejo del lavacar (se configuraban en "Mi negocio"). En el
+> producto nuevo (Selyon CRM, Carril I) **cada número** tiene sus plantillas y se cargan en
+> **WhatsApp IA › Configuración › Números** (nombre exacto + idioma con el que se aprobó). Las
+> plantillas se aprueban por WABA: cada negocio crea las suyas en su WhatsApp Manager.
+
+Fuera de la ventana de 24 h del último mensaje del cliente WhatsApp solo acepta plantillas
+aprobadas. Sin la plantilla, cada función sigue andando DENTRO de la ventana (texto con botones)
+y fuera de ella no manda nada (queda registrado; nunca "figura enviado" algo que no salió).
+
+| Plantilla (campo del panel) | Categoría | Cuerpo (variables) | Botones de respuesta rápida | La usa |
+|---|---|---|---|---|
+| Recordatorio | Utility | `{{1}}` cliente · `{{2}}` servicios · `{{3}}` cuándo ("mañana jueves 23 de octubre a las 10:00") | 2: "Confirmo ✅" · "Cancelar" | Recordatorio del día antes (scheduling) |
+| Marketing | Marketing | `{{1}}` cliente · `{{2}}` el mensaje de la campaña (un párrafo) | ninguno (la baja es por la palabra BAJA, en el texto) | Campañas (I6.1) |
+| Seguimiento post-servicio | Utility | `{{1}}` cliente · `{{2}}` servicios | 3: "Excelente 😀" · "Bien 🙂" · "Mal 😕" | Reseñas (I6.2) |
+| Rescate de cotizaciones | Marketing | `{{1}}` cliente · `{{2}}` servicio · `{{3}}` monto | ninguno | Segundo toque del rescate (I6.3) |
+
+Ejemplos de cuerpo (voseo; adaptá el registro al negocio):
+
+- **Seguimiento:** "¡Hola {{1}}! 👋 ¿Cómo te fue con {{2}}? Contanos con un toque y nos ayudás a
+  mejorar."
+- **Rescate:** "¡Hola {{1}}! Hace unos días consultaste por {{2}} ({{3}}). ¿Te ayudamos a
+  agendarlo? Respondé este mensaje y te pasamos los horarios libres. Para no recibir más
+  promociones, respondé BAJA."
+- **Marketing:** "¡Hola {{1}}! {{2}} Escribinos si querés agendar. Para no recibir más
+  promociones, respondé BAJA."
+
+Los botones de las plantillas de recordatorio y seguimiento los arma el código (manda el payload
+de cada botón al enviar: `confirm|cita`, `fu|cita|positive`…): en Meta solo hay que crear los
+botones de respuesta rápida con esos textos, en ese orden.
+
+A quién le llegan las promociones (marketing y rescate): SOLO a clientes con consentimiento
+explícito y sin baja. El agente pregunta "¿te avisamos de promociones?" (Sí/No) tras la primera
+cita agendada, si el negocio tiene Campañas; el equipo también puede registrarlo en la ficha si
+el cliente lo dijo en persona. Todo queda en el rastro de auditoría.
