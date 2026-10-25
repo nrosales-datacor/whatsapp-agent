@@ -66,3 +66,18 @@ export function monthLabel(month: string): string {
   if (!year || !m) return month;
   return new Date(Date.UTC(year, m - 1, 15)).toLocaleDateString("es-CR", { month: "long", year: "numeric", timeZone: "UTC" });
 }
+
+/** Días que le quedan a la prueba gratis (redondeado hacia arriba; 0 = vence hoy o ya venció). null sin fecha. */
+export function trialDaysLeft(trialEndsAt: string | null | undefined, now = new Date()): number | null {
+  if (!trialEndsAt) return null;
+  const ms = Date.parse(trialEndsAt) - now.getTime();
+  if (Number.isNaN(ms)) return null;
+  return Math.max(0, Math.ceil(ms / 86_400_000));
+}
+
+/** "Tu prueba gratis termina hoy / mañana / en 5 días". */
+export function trialEndsText(days: number): string {
+  if (days <= 0) return "Tu prueba gratis termina hoy";
+  if (days === 1) return "Tu prueba gratis termina mañana";
+  return `Tu prueba gratis termina en ${days} días`;
+}

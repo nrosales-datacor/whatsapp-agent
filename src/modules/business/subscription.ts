@@ -1,4 +1,4 @@
-import { and, count, eq } from "drizzle-orm";
+import { and, asc, count, eq, isNotNull, isNull, lte, or } from "drizzle-orm";
 import { withSystem, withTenant, type Executor, type Tx } from "../../platform/db/scope";
 import { businesses, locations, type BillingStatus, type Business, type BusinessStatus, type Plan } from "./schema";
 import type { ExtraModules } from "./settings";
@@ -6,9 +6,10 @@ import type { ExtraModules } from "./settings";
 // ─────────────────────────────────────────────────────────────────────────────
 // Lo contractual del negocio que vive en `businesses` (PLAN-GESTION.md §5): plan, módulos
 // sueltos y cupos contratados (`extra_modules`), estado del servicio (`status`: pausar y
-// reactivar) y estado del cobro manual (`billing_status`). Lo ESCRIBE solo el superadmin,
-// vía modules/billing, que es quien sabe qué significa cada valor; acá solo el acceso a la
-// fila, para que billing no lea tablas ajenas.
+// reactivar), estado del cobro (`billing_status`), la suscripción de Stripe y el fin de la
+// prueba gratis. Lo ESCRIBE solo modules/billing (el superadmin, el webhook de Stripe y el
+// barrido de pruebas vencidas), que es quien sabe qué significa cada valor; acá solo el
+// acceso a la fila, para que billing no lea tablas ajenas.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface SubscriptionChanges {
@@ -16,6 +17,10 @@ export interface SubscriptionChanges {
   extraModules?: ExtraModules;
   status?: BusinessStatus;
   billingStatus?: BillingStatus;
+  /** null borra el valor. */
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  trialEndsAt?: Date | null;
 }
 
 /** La fila del negocio leída de la base (no del caché), en contexto de sistema. null si no existe. */
@@ -43,9 +48,55 @@ export async function updateBusinessSubscription(
   if (next.extraModules !== undefined) set.extraModules = next.extraModules;
   if (next.status !== undefined) set.status = next.status;
   if (next.billingStatus !== undefined) set.billingStatus = next.billingStatus;
+  if (next.stripeCustomerId !== undefined) set.stripeCustomerId = next.stripeCustomerId;
+  if (next.stripeSubscriptionId !== undefined) set.stripeSubscriptionId = next.stripeSubscriptionId;
+  if (next.trialEndsAt !== undefined) set.trialEndsAt = next.trialEndsAt;
   if (Object.keys(set).length === 0) return { before, after: before };
   const [after] = await tx.update(businesses).set(set).where(eq(businesses.id, businessId)).returning();
   return { before, after };
+}
+
+/**
+ * Negocio de una suscripción o un cliente de Stripe (el webhook resuelve así los eventos
+ * que no traen nuestro id en la metadata). Corre con el contexto de `tx` (sistema).
+ */
+export async function findBusinessIdByStripeRefs(
+  tx: Tx,
+  refs: { customerId?: string | null; subscriptionId?: string | null },
+): Promise<string | null> {
+  const conditions = [
+    refs.subscriptionId ? eq(businesses.stripeSubscriptionId, refs.subscriptionId) : undefined,
+    refs.customerId ? eq(businesses.stripeCustomerId, refs.customerId) : undefined,
+  ].filter((c) => c !== undefined);
+  if (conditions.length === 0) return null;
+  const [row] = await tx
+    .select({ id: businesses.id })
+    .from(businesses)
+    .where(or(...conditions))
+    .limit(1);
+  return row?.id ?? null;
+}
+
+/**
+ * Negocios con la prueba gratis vencida a `now` que siguen en `trial` y sin suscripción de
+ * Stripe (el barrido de billing los pasa a pago pendiente). Corre con el contexto de `tx`
+ * (sistema). Los más viejos primero, hasta `limit`.
+ */
+export async function listExpiredTrials(tx: Tx, now: Date, limit = 100): Promise<string[]> {
+  const rows = await tx
+    .select({ id: businesses.id })
+    .from(businesses)
+    .where(
+      and(
+        isNotNull(businesses.trialEndsAt),
+        lte(businesses.trialEndsAt, now),
+        eq(businesses.billingStatus, "trial"),
+        isNull(businesses.stripeSubscriptionId),
+      ),
+    )
+    .orderBy(asc(businesses.trialEndsAt))
+    .limit(limit);
+  return rows.map((r) => r.id);
 }
 
 /** Sucursales activas del negocio, contadas con `tx` (para el cupo, dentro de la transacción). */

@@ -4,12 +4,14 @@ import {
   appointmentConfirmationEmail,
   appointmentReminderEmail,
   DEFAULT_BRAND_COLOR,
+  emailVerificationEmail,
   escapeHtml,
   formatAppointmentDateTime,
   formatDuration,
   invitationEmail,
   normalizeBrandColor,
   passwordResetEmail,
+  signupAttemptEmail,
   type AppointmentReminderEmailData,
 } from "../../src/platform/email/templates";
 
@@ -179,4 +181,24 @@ test("formatDuration: minutos, horas y días en español", () => {
   assert.equal(formatDuration(1440), "1 día");
   assert.equal(formatDuration(10080), "7 días");
   assert.equal(formatDuration(1500), "25 horas");
+});
+
+test("alta self-service: verificación del correo (link, vencimiento, negocio escapado) y aviso de cuenta existente", () => {
+  const verify = emailVerificationEmail({
+    userName: "Ana",
+    businessName: "<b>Clínica</b>",
+    verifyUrl: "https://app.example.test/panel/verify-email?token=abc",
+    expiresInMinutes: 48 * 60,
+  });
+  assert.match(verify.subject, /Confirmá tu correo/);
+  assert.ok(verify.text.includes("https://app.example.test/panel/verify-email?token=abc"));
+  assert.ok(verify.html.includes("&lt;b&gt;Clínica&lt;/b&gt;"));
+  assert.ok(!verify.html.includes("<b>Clínica</b>"));
+  assert.match(verify.text, /2 días/);
+  assert.throws(() => emailVerificationEmail({ verifyUrl: "javascript:alert(1)", expiresInMinutes: 60 }));
+
+  const attempt = signupAttemptEmail({ userName: "Ana", loginUrl: "https://app.example.test/panel/login", forgotUrl: "https://app.example.test/panel/forgot-password" });
+  assert.match(attempt.subject, /Ya tenés una cuenta/);
+  assert.ok(attempt.text.includes("https://app.example.test/panel/login"));
+  assert.ok(attempt.text.includes("https://app.example.test/panel/forgot-password"));
 });

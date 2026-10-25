@@ -1,4 +1,4 @@
-import type { PlanService } from "./modules/billing";
+import { startTrialExpiryLoop, type PlanService } from "./modules/billing";
 import { CAMPAIGN_DISPATCH_JOB, handleCampaignDispatchJob } from "./modules/campaigns";
 import { handleReminderJob, REMINDER_SEND_JOB, startReminderScheduler, type ReminderJobPayload } from "./modules/scheduling";
 import {
@@ -88,7 +88,13 @@ export function registerJobHandlers(options: JobDeps = {}): void {
  * réplicas con su lease (src/platform/net/leaderLease.ts).
  */
 export function startModuleSchedulers(db: Executor, plans: PlanService = createPlans(db)): Loop[] {
-  return [startReminderScheduler({ db }), ...startWhatsAppSchedulers(db, { getGrowth: growthFromPlan(plans) })];
+  return [
+    startReminderScheduler({ db }),
+    // Seguimiento post-servicio y rescate de cotizaciones con lo que permite el plan (I6).
+    ...startWhatsAppSchedulers(db, { getGrowth: growthFromPlan(plans) }),
+    // Pruebas gratis vencidas sin suscripción → pago pendiente (I6.7, modules/billing).
+    startTrialExpiryLoop({ db }),
+  ];
 }
 
 /**

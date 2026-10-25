@@ -43,8 +43,8 @@ export {
   parseDateText,
 } from "./customFields";
 export type { CustomDataPatchOptions, CustomFieldView, ListCustomFieldsOptions } from "./customFields";
-// Lo contractual (plan, extras, pausa, cobro): lo escribe el superadmin vía modules/billing.
-export { countActiveLocationsOf, getBusinessRow, updateBusinessSubscription } from "./subscription";
+// Lo contractual (plan, extras, pausa, cobro, Stripe, prueba): lo escribe modules/billing.
+export { countActiveLocationsOf, findBusinessIdByStripeRefs, getBusinessRow, listExpiredTrials, updateBusinessSubscription } from "./subscription";
 export type { SubscriptionChanges } from "./subscription";
 export {
   AI_REGISTERS,

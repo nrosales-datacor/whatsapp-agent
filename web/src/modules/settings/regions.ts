@@ -37,3 +37,15 @@ export const CURRENCY_OPTIONS = [
 export function withCurrent<T extends { value: string; label: string }>(options: readonly T[], current: string): { value: string; label: string }[] {
   return options.some((o) => o.value === current) || !current ? [...options] : [{ value: current, label: current }, ...options];
 }
+
+/** Zona horaria y moneda con que arranca un negocio de cada país (el alta self-service las toma de acá). */
+export const COUNTRY_DEFAULTS: Readonly<Record<string, { timezone: string; currency: string }>> = {
+  CR: { timezone: "America/Costa_Rica", currency: "CRC" },
+  PA: { timezone: "America/Panama", currency: "USD" },
+  NI: { timezone: "America/Managua", currency: "NIO" },
+  HN: { timezone: "America/Tegucigalpa", currency: "HNL" },
+  SV: { timezone: "America/El_Salvador", currency: "USD" },
+  GT: { timezone: "America/Guatemala", currency: "GTQ" },
+  MX: { timezone: "America/Mexico_City", currency: "MXN" },
+  CO: { timezone: "America/Bogota", currency: "COP" },
+};

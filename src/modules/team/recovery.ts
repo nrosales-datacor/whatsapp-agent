@@ -68,6 +68,8 @@ export async function resetPassword(db: Executor, input: { token: string; passwo
     const [user] = await tx.select({ id: users.id, active: users.active }).from(users).where(eq(users.id, pending.userId)).limit(1);
     if (!user || !user.active) return false;
     await setPassword(tx, user.id, passwordHash);
+    // El link llegó a su correo: queda verificado (alta self-service sin confirmar, I6.7).
+    await tx.update(users).set({ emailVerificationPending: false }).where(eq(users.id, user.id));
     await recordAudit(tx, null, "password_reset", userActor(user.id));
     return true;
   });

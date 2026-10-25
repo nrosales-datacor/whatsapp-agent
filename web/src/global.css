@@ -458,3 +458,13 @@ form > .btn { margin-top: var(--space-lg); }
 @media (min-width: 1100px) {
   .admin-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); }
 }
+
+/* Aviso del cobro (prueba que vence, pago pendiente) arriba del contenido (I6.6–I6.7) */
+.billing-banner { display: flex; align-items: center; gap: var(--space-xs); flex-wrap: wrap; padding: var(--space-xs) var(--space-md); background: var(--info-soft); color: var(--text); font-size: var(--step--1); border-bottom: 1px solid var(--border); }
+.billing-banner-warning { background: var(--warning-soft); color: var(--warning); }
+.billing-banner-text { flex: 1 1 240px; min-width: 0; font-weight: 600; }
+.billing-banner-link { font-weight: 700; color: inherit; text-decoration: underline; min-height: 36px; display: inline-flex; align-items: center; }
+.signup-terms { display: flex; align-items: flex-start; gap: var(--space-xs); margin-top: var(--space-sm); font-size: var(--step--1); color: var(--text); line-height: 1.5; cursor: pointer; }
+.signup-terms input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--accent); flex-shrink: 0; cursor: pointer; }
+.auth-resend { margin-top: var(--space-sm); font-size: var(--step--1); color: var(--text-2); }
+.auth-signup { margin-top: var(--space-md); text-align: center; font-size: var(--step--1); color: var(--text-2); }

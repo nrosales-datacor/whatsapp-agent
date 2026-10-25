@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { boolean, check, index, integer, jsonb, pgTable, smallint, text, time, uniqueIndex, uuid } from "drizzle-orm/pg-core";
-import { oneOf, timestamps, uuidPk } from "../../platform/db/columns";
+import { instant, oneOf, timestamps, uuidPk } from "../../platform/db/columns";
 import { tenantPolicy } from "../../platform/db/rls";
 import {
   DEFAULT_REMINDER_CHANNELS,
@@ -86,10 +86,21 @@ export const businesses = pgTable(
     legalName: text("legal_name"),
     taxId: text("tax_id"),
     billingEmail: text("billing_email"),
+    // Suscripción en Stripe (I6.6): cliente y suscripción que mantiene el webhook. null =
+    // cobro manual (o todavía sin suscribirse). Los escribe modules/billing.
+    stripeCustomerId: text("stripe_customer_id"),
+    stripeSubscriptionId: text("stripe_subscription_id"),
+    // Fin de la prueba gratis del alta self-service (I6.7). null = sin prueba con fecha
+    // (alta del superadmin, cobro manual): el barrido de pruebas vencidas no la toca.
+    trialEndsAt: instant("trial_ends_at"),
     ...timestamps(),
   },
   (t) => [
     uniqueIndex("businesses_slug_uq").on(t.slug),
+    uniqueIndex("businesses_stripe_customer_uq").on(t.stripeCustomerId),
+    uniqueIndex("businesses_stripe_subscription_uq").on(t.stripeSubscriptionId),
+    // Barrido de pruebas vencidas: solo las que tienen fecha.
+    index("businesses_trial_ends_idx").on(t.trialEndsAt).where(sql`${t.trialEndsAt} IS NOT NULL`),
     check("businesses_slug_check", sql`${t.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`),
     check("businesses_plan_check", oneOf(t.plan, PLANS)),
     check("businesses_status_check", oneOf(t.status, BUSINESS_STATUSES)),

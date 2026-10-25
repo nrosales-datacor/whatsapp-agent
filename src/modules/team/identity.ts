@@ -113,7 +113,7 @@ export async function bumpSessionEpoch(tx: Tx, userId: string): Promise<number> 
  * login ni al revés. El límite por IP sí es uno solo: es el presupuesto de CPU (scrypt)
  * que una IP le puede hacer gastar al proceso.
  */
-export type CredentialScope = "login" | "forgot" | "password" | "totp" | "invitation";
+export type CredentialScope = "login" | "forgot" | "password" | "totp" | "invitation" | "signup" | "verify";
 
 /**
  * Chequea el rate limit ANTES de gastar scrypt (o de verificar un código) y cuenta el
