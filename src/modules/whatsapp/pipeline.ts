@@ -1,3 +1,4 @@
+import { recordAudit } from "../../platform/audit/auditLog";
 import type { Executor } from "../../platform/db/scope";
 import { HttpError } from "../../platform/http/errors";
 import { isTransientError } from "../../platform/net/transient";
@@ -6,7 +7,7 @@ import { incrementDailyUsage } from "../../platform/observability/dailyUsage";
 import { log } from "../../platform/observability/log";
 import { hasNewerGroupJob, PermanentJobError, type JobContext } from "../../platform/queue";
 import { getBusinessContext } from "../business";
-import { getClient, recordMarketingOptOut, type ClientView } from "../clients";
+import { claimMarketingConsentRequest, getClient, recordMarketingConsent, recordMarketingOptOut, type ClientView } from "../clients";
 import {
   cancelAppointment,
   confirmAppointment,
@@ -14,9 +15,9 @@ import {
   listUpcomingAppointmentsForClient,
   localDate,
 } from "../scheduling";
-import type { AgentHistoryMessage, AgentReply, AgentTurnResult } from "./agentContract";
+import type { AgentGrowth, AgentHistoryMessage, AgentReply, AgentTurnResult } from "./agentContract";
 import { credentialsOf, getChannelRow } from "./channels";
-import { appointmentReplyOf, requestsHuman } from "./commands";
+import { appointmentReplyOf, followUpReplyOf, marketingConsentReplyOf, requestsHuman } from "./commands";
 import {
   botActivitySince,
   currentMode,
@@ -31,13 +32,16 @@ import {
   updateMessage,
 } from "./conversations";
 import { loadTextProfile, notifyTeam, type WhatsAppDeps } from "./deps";
+import { recordFollowUpAnswer } from "./followUps";
 import type { ChannelCredentials, ReplyButton } from "./graph";
+import { readGrowthConfig } from "./growthSettings";
 import type { InboundJobPayload } from "./ingest";
 import { capStatus, CLIENT_LIMIT_NOTICE_PREFIX, clientTurnsPerHour, detectLoop, loopRepeats, loopWindowMin, type AiLimits } from "./limits";
 import { mediaObjectPath } from "./media";
+import { marketingConsentButtonIds } from "./payload";
 import { humanModeExpired } from "./rules";
 import type { Conversation, Message } from "./schema";
-import { pipelineText, type PipelineTextKey, type TextProfile } from "./texts";
+import { BUTTON_TITLES, pipelineText, type PipelineTextKey, type TextProfile } from "./texts";
 import { getAiUsage, incrementAiUsage, whisperCostMicros } from "./usage";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -50,7 +54,8 @@ import { getAiUsage, incrementAiUsage, whisperCostMicros } from "./usage";
 //   2. Foto o audio: se descarga de Graph y se guarda en Storage (el operador la ve en la
 //      bandeja tanto si atiende el bot como una persona).
 //   3. Acciones directas, sin agente y en cualquier modo: "Confirmo"/"Cancelar" del
-//      recordatorio (sobre scheduling) y BAJA de promociones (sobre clients). Después,
+//      recordatorio (sobre scheduling), BAJA de promociones y el Sí/No de promociones
+//      (sobre clients) y la respuesta al seguimiento post-servicio (I6). Después,
 //      si el plan no trae el agente (Pro sin agente) el mensaje queda guardado sin
 //      respuesta automática.
 //   4. Modo humano: si venció (nadie del equipo actuó en N horas) vuelve al bot; si no, el
@@ -62,7 +67,8 @@ import { getAiUsage, incrementAiUsage, whisperCostMicros } from "./usage";
 //   8. Audio → transcripción (Whisper). 9. Agente con el historial hasta este mensaje.
 //   10. Si mientras pensaba una persona tomó la conversación, se descarta la respuesta.
 //   11. Acciones (`handoff` → modo humano + push), envío de respuestas (texto o botones),
-//       salientes guardados, aviso de bot la primera vez y uso del mes.
+//       salientes guardados, aviso de bot la primera vez y uso del mes. Tras la primera
+//       cita agendada, la pregunta de promociones si el negocio tiene Campañas (I6).
 //
 // Reintentos: un error transitorio (Graph caído, OpenAI 429/5xx) relanza para que la cola
 // reintente el turno ENTERO con backoff, mientras queden intentos y el turno no haya
@@ -86,7 +92,7 @@ function positiveInt(raw: string | undefined, fallback: number): number {
 }
 
 const KINDS = new Set(["text", "image", "audio", "document", "contact", "unsupported"]);
-const ACTIONS = new Set(["appointment_reply", "opt_out", "human_request"]);
+const ACTIONS = new Set(["appointment_reply", "opt_out", "human_request", "marketing_consent", "follow_up_reply"]);
 
 function parsePayload(raw: unknown): InboundJobPayload {
   const p = raw as Partial<InboundJobPayload> | null;
@@ -218,6 +224,63 @@ async function handleOptOut(turn: Turn): Promise<void> {
   await sendFixed(turn, "optOutAck");
 }
 
+/** "¿Te avisamos de promociones?" → Sí / No (I6). Queda en el rastro de auditoría (base legal). */
+async function handleMarketingConsent(turn: Turn): Promise<void> {
+  const granted = marketingConsentReplyOf({ interactiveId: turn.payload.interactiveId });
+  if (granted === null) return;
+  await recordMarketingConsent(turn.db, turn.businessId, turn.client.id, granted, turn.now);
+  await recordAudit(turn.db, turn.businessId, granted ? "client_marketing_consent_granted" : "client_marketing_consent_declined", "whatsapp", {
+    clientId: turn.client.id,
+    source: "whatsapp",
+  });
+  turn.effects = true;
+  log.info("whatsapp_marketing_consent", { businessId: turn.businessId, conversationId: turn.conversation.id, granted });
+  await sendFixed(turn, granted ? "marketingConsentYesAck" : "marketingConsentNoAck");
+}
+
+/** Respuesta al seguimiento post-servicio: Excelente → reseña; Mal → a una persona (I6). */
+async function handleFollowUpReply(turn: Turn): Promise<void> {
+  const reply = followUpReplyOf({ interactiveId: turn.payload.interactiveId });
+  if (!reply) return;
+  const growth = await turn.deps.getGrowth(turn.businessId);
+  const config = (await readGrowthConfig(turn.db, turn.businessId)).reviews;
+  const plan = await recordFollowUpAnswer(turn.db, turn.businessId, turn.client.id, reply, {
+    reviewUrl: config.reviewUrl,
+    reviewsEnabled: growth.reviews,
+    at: turn.now,
+  });
+  turn.effects = true;
+  log.info("whatsapp_follow_up_answer", { businessId: turn.businessId, appointmentId: reply.appointmentId, answer: reply.answer }); // log-pii-ok: answer es el enum positive | neutral | negative
+  await sendFixed(turn, plan.text, plan.vars);
+  if (plan.escalate) {
+    await handOff(turn);
+    await notify(turn, "😕 El cliente dijo que no le fue bien en su cita. Escribile antes de que deje una reseña mala.");
+  }
+}
+
+/**
+ * Tras la primera cita agendada por el agente: si el negocio tiene Campañas y al cliente
+ * nunca se le preguntó, "¿te avisamos de promociones?" con Sí / No. Una sola vez por
+ * cliente (el reclamo es atómico); si falla, no se insiste.
+ */
+async function maybeAskMarketingConsent(turn: Turn): Promise<void> {
+  try {
+    if (!(await turn.deps.getGrowth(turn.businessId)).marketingConsent) return;
+    if (turn.client.marketingConsentAt || turn.client.marketingOptOutAt) return;
+    if (!(await claimMarketingConsentRequest(turn.db, turn.businessId, turn.client.id, turn.now))) return;
+    const ids = marketingConsentButtonIds();
+    await sendToClient(turn, {
+      text: pipelineText(turn.texts, "marketingConsentQuestion"),
+      buttons: [
+        { id: ids.yes, title: BUTTON_TITLES.marketingYes },
+        { id: ids.no, title: BUTTON_TITLES.marketingNo },
+      ],
+    });
+  } catch (e) {
+    log.warn("whatsapp_marketing_consent_question_failed", { businessId: turn.businessId, conversationId: turn.conversation.id, error: short(e) });
+  }
+}
+
 async function handleHumanRequest(turn: Turn, operatorNote: string): Promise<void> {
   await handOff(turn);
   turn.effects = true;
@@ -333,6 +396,17 @@ function toHistory(rows: Message[]): AgentHistoryMessage[] {
   return rows.map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", text: m.content, at: m.createdAt, ...(m.byHuman ? { byHuman: true } : {}) }));
 }
 
+/** Lo de crecimiento activo para el agente: lo permite el plan Y el dueño lo activó (I6). */
+async function agentGrowth(turn: Turn): Promise<AgentGrowth> {
+  const allowed = await turn.deps.getGrowth(turn.businessId);
+  if (!allowed.quoteRecovery && !allowed.upsell) return { quoteRecovery: false, upsellRules: [] };
+  const config = await readGrowthConfig(turn.db, turn.businessId);
+  return {
+    quoteRecovery: allowed.quoteRecovery && config.quoteRecovery.enabled,
+    upsellRules: allowed.upsell && config.upsell.enabled ? config.upsell.rules : [],
+  };
+}
+
 async function runAgentTurn(turn: Turn, operatorNote: string): Promise<void> {
   let result: AgentTurnResult;
   try {
@@ -346,6 +420,7 @@ async function runAgentTurn(turn: Turn, operatorNote: string): Promise<void> {
       locationId: turn.locationId,
       history: toHistory(history),
       now: turn.now,
+      growth: await agentGrowth(turn),
     });
   } catch (e) {
     if (shouldRetry(turn, e)) throw e;
@@ -390,6 +465,7 @@ async function runAgentTurn(turn: Turn, operatorNote: string): Promise<void> {
   }
   if (handoff) await notify(turn, `🙋 El bot pasó este caso: ${handoff.reason}`);
   log.info("whatsapp_reply_sent", { businessId: turn.businessId, conversationId: turn.conversation.id, replies: replies.length, handoff: Boolean(handoff) });
+  if (!handoff && actions.some((a) => a.type === "appointment_booked")) await maybeAskMarketingConsent(turn);
 }
 
 // ── Entrada del job ──────────────────────────────────────────────────────────
@@ -456,6 +532,8 @@ export async function handleInboundJob(rawPayload: unknown, ctx: JobContext, dep
   // 3. Acciones directas (cualquier modo).
   if (payload.action === "appointment_reply") return handleAppointmentReply(turn);
   if (payload.action === "opt_out") return handleOptOut(turn);
+  if (payload.action === "marketing_consent") return handleMarketingConsent(turn);
+  if (payload.action === "follow_up_reply") return handleFollowUpReply(turn);
 
   // 3b. Agente apagado por el plan (Pro sin agente, módulo quitado): sin respuesta
   // automática ni traspaso (el plan tampoco trae la bandeja); el mensaje queda guardado.

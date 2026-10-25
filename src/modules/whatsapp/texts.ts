@@ -124,6 +124,53 @@ export const PIPELINE_TEXTS = {
   },
   /** Constancia en el historial de una plantilla de reapertura enviada desde la bandeja. */
   reopenTemplateSent: same("📩 Se envió la plantilla para retomar la conversación."),
+
+  // ── Crecimiento (I6) ──
+  /** Tras la primera cita agendada, si el negocio tiene Campañas. Vars: {negocio}. */
+  marketingConsentQuestion: {
+    vos: "Una cosa más 🙂 ¿Querés que {negocio} te avise por acá de promociones y novedades? Podés darte de baja cuando quieras escribiendo BAJA.",
+    tu: "Una cosa más 🙂 ¿Quieres que {negocio} te avise por aquí de promociones y novedades? Puedes darte de baja cuando quieras escribiendo BAJA.",
+    usted: "Una cosa más 🙂 ¿Desea que {negocio} le avise por aquí de promociones y novedades? Puede darse de baja cuando quiera escribiendo BAJA.",
+  },
+  marketingConsentYesAck: {
+    vos: "¡Listo! 🙌 Te vamos a avisar de promociones por acá. Si en algún momento no querés recibirlas, escribí BAJA.",
+    tu: "¡Listo! 🙌 Te vamos a avisar de promociones por aquí. Si en algún momento no quieres recibirlas, escribe BAJA.",
+    usted: "¡Listo! 🙌 Le vamos a avisar de promociones por aquí. Si en algún momento no desea recibirlas, escriba BAJA.",
+  },
+  marketingConsentNoAck: {
+    vos: "Entendido 👍 No te vamos a enviar promociones. Tus recordatorios de cita te siguen llegando igual.",
+    tu: "Entendido 👍 No te vamos a enviar promociones. Tus recordatorios de cita te siguen llegando igual.",
+    usted: "Entendido 👍 No le vamos a enviar promociones. Sus recordatorios de cita le siguen llegando igual.",
+  },
+  /** Seguimiento post-servicio con botones (dentro de la ventana de 24 h). Vars: {cliente} {servicio} {negocio}. */
+  followUpQuestion: {
+    vos: "¡Hola {cliente}! 👋 ¿Cómo te fue con {servicio} en {negocio}? Contanos con un toque:",
+    tu: "¡Hola {cliente}! 👋 ¿Cómo te fue con {servicio} en {negocio}? Cuéntanos con un toque:",
+    usted: "¡Hola {cliente}! 👋 ¿Cómo le fue con {servicio} en {negocio}? Cuéntenos con un toque:",
+  },
+  /** "Excelente" con link de reseñas. Vars: {link}. */
+  followUpPositiveReview: {
+    vos: "¡Qué alegría! 🙌 Si tenés un minuto, nos ayudaría muchísimo que dejaras una reseña en Google: {link}",
+    tu: "¡Qué alegría! 🙌 Si tienes un minuto, nos ayudaría muchísimo que dejaras una reseña en Google: {link}",
+    usted: "¡Qué alegría! 🙌 Si tiene un minuto, nos ayudaría muchísimo que dejara una reseña en Google: {link}",
+  },
+  followUpPositive: same("¡Qué alegría! 🙌 Gracias por la confianza."),
+  followUpNeutral: {
+    vos: "¡Gracias por contarnos! 🙂 Si hay algo que podamos mejorar, escribinos por acá.",
+    tu: "¡Gracias por contarnos! 🙂 Si hay algo que podamos mejorar, escríbenos por aquí.",
+    usted: "¡Gracias por contarnos! 🙂 Si hay algo que podamos mejorar, escríbanos por aquí.",
+  },
+  followUpNegative: {
+    vos: "Lamentamos mucho que no te haya ido bien 😔 Una persona del equipo te va a escribir por acá para resolverlo.",
+    tu: "Lamentamos mucho que no te haya ido bien 😔 Una persona del equipo te va a escribir por aquí para resolverlo.",
+    usted: "Lamentamos mucho que no le haya ido bien 😔 Una persona del equipo le va a escribir por aquí para resolverlo.",
+  },
+  /** Rescate de una cotización, primer toque (dentro de la ventana). Vars: {servicio} {monto}. */
+  quoteFirstTouch: {
+    vos: "¡Hola! 👋 Hace un rato consultaste por {servicio} ({monto}). ¿Querés que te lo agende? Te dejo los próximos horarios libres, o decime qué día te queda bien.",
+    tu: "¡Hola! 👋 Hace un rato consultaste por {servicio} ({monto}). ¿Quieres que te lo agende? Te dejo los próximos horarios libres, o dime qué día te queda bien.",
+    usted: "¡Hola! 👋 Hace un rato consultó por {servicio} ({monto}). ¿Desea que se lo agende? Le dejo los próximos horarios libres, o dígame qué día le queda bien.",
+  },
 } satisfies Record<string, ByRegister>;
 
 export type PipelineTextKey = keyof typeof PIPELINE_TEXTS;
@@ -135,6 +182,11 @@ export const PIPELINE_TEXT_KEYS = Object.keys(PIPELINE_TEXTS) as PipelineTextKey
 export const BUTTON_TITLES = {
   confirmAppointment: "Confirmo ✅",
   cancelAppointment: "Cancelar",
+  marketingYes: "Sí, me interesa",
+  marketingNo: "No, gracias",
+  followUpPositive: "Excelente 😀",
+  followUpNeutral: "Bien 🙂",
+  followUpNegative: "Mal 😕",
 } as const;
 
 // Países donde se vosea por defecto (el resto, tuteo). El dueño lo cambia en la configuración del agente.

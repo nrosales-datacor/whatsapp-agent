@@ -107,7 +107,7 @@ server.listen(PORT, () => {
     // Un negocio pausado (cobro manual) no procesa trabajo nuevo: la cola lo posterga (salvo
     // completar lo que ya entró por WhatsApp, sin responder).
     queueWorker = startQueueWorker({ db, canRunJob: createJobGate(db, plans) });
-    loops.push(...startModuleSchedulers(db));
+    loops.push(...startModuleSchedulers(db, plans));
   }
 });
 

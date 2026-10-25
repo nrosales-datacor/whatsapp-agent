@@ -19,8 +19,22 @@ export {
   type ListClientsOptions,
 } from "./search";
 export { CLIENT_STATUSES, computeClientStatus, isVip, type ClientStatus, type ClientStatusInput } from "./status";
+// Consentimiento de marketing y audiencia de las campañas (I6).
+export {
+  claimMarketingConsentRequest,
+  listMarketingAudienceIds,
+  MAX_CAMPAIGN_AUDIENCE,
+  marketingConsentSummary,
+  marketingRecipient,
+  previewMarketingAudience,
+  recordMarketingConsent,
+  type AudienceOptions,
+  type MarketingAudience,
+  type MarketingRecipient,
+} from "./marketing";
 export {
   ANONYMIZED_CLIENT_NAME,
+  clientIdIn,
   findClientByPhone,
   findOrCreateClientByPhone,
   getClient,

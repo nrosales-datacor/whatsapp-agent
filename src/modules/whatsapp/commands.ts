@@ -1,4 +1,12 @@
-import { CANCEL_APPOINTMENT_PREFIX, CONFIRM_APPOINTMENT_PREFIX, type InboundMessage } from "./payload";
+import {
+  CANCEL_APPOINTMENT_PREFIX,
+  CONFIRM_APPOINTMENT_PREFIX,
+  FOLLOW_UP_ANSWERS,
+  FOLLOW_UP_PREFIX,
+  MARKETING_CONSENT_PREFIX,
+  type FollowUpAnswer,
+  type InboundMessage,
+} from "./payload";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Acciones directas: mensajes que el pipeline atiende SIN pasar por el agente de IA y que
@@ -99,12 +107,39 @@ export function appointmentReplyOf(message: Pick<InboundMessage, "interactiveId"
   return null;
 }
 
-export type DirectAction = "appointment_reply" | "opt_out" | "human_request";
+// ── Consentimiento de promociones y seguimiento post-servicio (I6) ───────────
+// Solo por botón (nuestro payload): un "sí" escrito a mano es ambiguo y lo atiende el agente.
+
+/** El cliente respondió "¿te avisamos de promociones?": true = sí, false = no. null si no es eso. */
+export function marketingConsentReplyOf(message: Pick<InboundMessage, "interactiveId">): boolean | null {
+  const [kind, arg] = (message.interactiveId ?? "").split("|");
+  if (kind !== MARKETING_CONSENT_PREFIX) return null;
+  if (arg === "yes") return true;
+  if (arg === "no") return false;
+  return null;
+}
+
+export interface FollowUpReply {
+  appointmentId: string;
+  answer: FollowUpAnswer;
+}
+
+/** El cliente respondió el seguimiento post-servicio de una cita (Excelente / Bien / Mal). */
+export function followUpReplyOf(message: Pick<InboundMessage, "interactiveId">): FollowUpReply | null {
+  const [kind, appointmentId, answer] = (message.interactiveId ?? "").split("|");
+  if (kind !== FOLLOW_UP_PREFIX || !appointmentId || !UUID.test(appointmentId)) return null;
+  if (!(FOLLOW_UP_ANSWERS as readonly string[]).includes(answer)) return null;
+  return { appointmentId: appointmentId.toLowerCase(), answer: answer as FollowUpAnswer };
+}
+
+export type DirectAction = "appointment_reply" | "opt_out" | "human_request" | "marketing_consent" | "follow_up_reply";
 
 /** Acción directa de un mensaje de texto, o null si es un turno para el agente. */
 export function directActionOf(message: Pick<InboundMessage, "kind" | "text" | "interactiveId" | "buttonText">): DirectAction | null {
   if (message.kind !== "text") return null;
   if (appointmentReplyOf(message)) return "appointment_reply";
+  if (marketingConsentReplyOf(message) !== null) return "marketing_consent";
+  if (followUpReplyOf(message)) return "follow_up_reply";
   if (isOptOutRequest(message.text)) return "opt_out";
   if (requestsHuman(message.text)) return "human_request";
   return null;

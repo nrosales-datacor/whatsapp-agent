@@ -145,8 +145,8 @@ export function usesCrmFilters(input: ListClientsInput): boolean {
   );
 }
 
-/** Condiciones de los filtros (sin cursor ni alcance). */
-function filterConditions(ctx: BusinessContext, filters: ClientFilters, now: Date): SQL | undefined {
+/** Condiciones de los filtros (sin cursor ni alcance). También las usa ./marketing.ts. */
+export function filterConditions(ctx: BusinessContext, filters: ClientFilters, now: Date): SQL | undefined {
   const rules = ctx.clientStatusRules;
   const tz = ctx.business.timezone;
   const conditions: (SQL | undefined)[] = [searchCondition(filters.q)];
@@ -167,7 +167,7 @@ function filterConditions(ctx: BusinessContext, filters: ClientFilters, now: Dat
   return and(...conditions);
 }
 
-async function contextOf(executor: Executor, businessId: string): Promise<BusinessContext> {
+export async function contextOf(executor: Executor, businessId: string): Promise<BusinessContext> {
   const ctx = await getBusinessContext(executor, businessId);
   if (!ctx) throw new HttpError(404, "Negocio no encontrado.", "not_found");
   return ctx;

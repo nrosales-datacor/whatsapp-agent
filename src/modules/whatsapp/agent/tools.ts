@@ -4,6 +4,7 @@ import type { Executor } from "../../../platform/db/scope";
 import { HttpError, ValidationError } from "../../../platform/http/errors";
 import { listBookableStaff } from "../../catalog";
 import {
+  addServiceToAppointment,
   bookAppointment,
   cancelAppointment,
   findSlots,
@@ -14,6 +15,8 @@ import {
   type Slot,
 } from "../../scheduling";
 import type { AgentAction, AgentReply, AgentTurnInput } from "../agentContract";
+import { closeQuotesForAppointment, recordQuote } from "../quotes";
+import { declinedUpsellsOf, pickUpsell, recordDeclinedUpsell } from "../upsell";
 import { maxUpcomingAppointments } from "./config";
 import { priceText, type AgentContext, type AgentLocation, type AgentService } from "./context";
 import { hoursText } from "./prompt";
@@ -60,6 +63,8 @@ export interface ToolRuntime {
   effects: TurnEffects;
   /** Aviso de cita agendada (métricas de uso que inyecta la composición). */
   onAppointmentBooked?: AppointmentBookedHook;
+  /** Errores internos de pasos accesorios (cerrar cotizaciones, upsell): no cortan la tool. */
+  reportError?: ErrorReporter;
 }
 
 export type ToolResult = { ok: boolean } & Record<string, unknown>;
@@ -178,8 +183,37 @@ export const TOOL_DEFINITIONS: ChatCompletionFunctionTool[] = [
   ),
 ];
 
-/** Nombres de las tools (para validar las evals y los tests). */
-export const TOOL_NAMES = TOOL_DEFINITIONS.map((t) => t.function.name);
+// ── Crecimiento (I6): solo se le ofrecen al modelo si están activas en el negocio ──
+
+const QUOTE_TOOLS: ChatCompletionFunctionTool[] = [
+  tool(
+    "record_quote",
+    "Registra que le diste al cliente el PRECIO de un servicio agendable y NO agendó todavía (para hacerle seguimiento después). Llamala una vez por servicio, sin decirle nada al cliente sobre esto. No la uses si agendó.",
+    { service_id: str("id del servicio cotizado (de la lista).") },
+  ),
+];
+
+const UPSELL_TOOLS: ChatCompletionFunctionTool[] = [
+  tool(
+    "add_service_to_appointment",
+    "Agrega a continuación, con la misma persona, el servicio que le ofreciste (upsell) a una cita recién agendada, cuando el cliente ACEPTA. Usá el service_id de `upsell_offer`.",
+    {
+      appointment_id: nullableStr("id de la cita (el de book_appointment); null si tiene una sola próxima."),
+      service_id: str("id del servicio a agregar (de upsell_offer)."),
+    },
+  ),
+  tool("decline_upsell", "Anota que el cliente NO quiso agregar el servicio que le ofreciste, para no volver a ofrecérselo por un tiempo.", {
+    service_id: str("id del servicio que rechazó (de upsell_offer)."),
+  }),
+];
+
+/** Tools del turno: las de siempre + las de crecimiento activas en el negocio. */
+export function toolDefinitionsFor(growth: AgentTurnInput["growth"]): ChatCompletionFunctionTool[] {
+  return [...TOOL_DEFINITIONS, ...(growth?.quoteRecovery ? QUOTE_TOOLS : []), ...(growth?.upsellRules.length ? UPSELL_TOOLS : [])];
+}
+
+/** Nombres de todas las tools (para validar las evals y los tests). */
+export const TOOL_NAMES = [...TOOL_DEFINITIONS, ...QUOTE_TOOLS, ...UPSELL_TOOLS].map((t) => t.function.name);
 
 // ── Validación de argumentos (Zod) ──────────────────────────────────────────
 
@@ -218,6 +252,9 @@ const ARGS = {
   reschedule_appointment: z.object({ appointment_id: NullableId, date: DateArg, time: TimeArg }),
   cancel_appointment: z.object({ appointment_id: NullableId, reason: FreeTextArg }),
   handoff_to_human: z.object({ reason: z.string().max(2000) }),
+  record_quote: z.object({ service_id: Id }),
+  add_service_to_appointment: z.object({ appointment_id: NullableId, service_id: Id }),
+  decline_upsell: z.object({ service_id: Id }),
 } satisfies Record<string, z.ZodType>;
 
 type ToolName = keyof typeof ARGS;
@@ -524,7 +561,60 @@ async function bookTool(rt: ToolRuntime, args: z.infer<(typeof ARGS)["book_appoi
   rt.effects.actions.push({ type: "appointment_booked", appointmentId: view.id });
   rt.effects.confirmations.push(agentText(rt.ctx.settings, "appointmentBooked", confirmationVars(rt, summary)));
   rt.effects.buttons = null;
+  // Si había cotizaciones abiertas de estos servicios, se cierran (agendó: rescate logrado o
+  // innecesario). Best-effort: la cita ya está guardada.
+  await closeQuotesForAppointment(rt.executor, rt.input.businessId, view).catch((error) =>
+    rt.reportError?.(error, { stage: "close_quotes", businessId: rt.input.businessId, appointmentId: view.id }),
+  );
+  const offer = await upsellOffer(rt, view).catch((error) => {
+    rt.reportError?.(error, { stage: "upsell_offer", businessId: rt.input.businessId, appointmentId: view.id });
+    return null;
+  });
+  if (offer) {
+    return {
+      ok: true,
+      appointment: summary,
+      upsell_offer: offer,
+      note: `Quedó agendada. Confirmale al ${t.client} en una frase corta y, en el mismo mensaje, ofrecele UNA vez agregar ${offer.name} (${offer.price}) a continuación. Si acepta, llamá add_service_to_appointment; si no, decline_upsell.`,
+    };
+  }
   return { ok: true, appointment: summary, note: `Quedó agendada. Confirmale al ${t.client} en una frase corta.` };
+}
+
+/** La oferta de upsell para una cita recién agendada (null si no aplica ninguna regla). */
+async function upsellOffer(rt: ToolRuntime, view: AppointmentView): Promise<{ service_id: string; name: string; price: string; duration_min: number } | null> {
+  const rules = rt.input.growth?.upsellRules ?? [];
+  if (rules.length === 0) return null;
+  const tz = view.location?.timezone ?? rt.ctx.timezone;
+  const pick = pickUpsell({
+    rules,
+    appointment: view,
+    bookable: rt.ctx.services.map((s) => ({
+      serviceId: s.id,
+      name: s.name,
+      priceCents: s.priceCents,
+      variablePrice: s.variablePrice,
+      durationMin: s.durationMin,
+      locationIds: s.locationIds,
+    })),
+    declined: await declinedUpsellsOf(rt.executor, rt.input.businessId, rt.input.conversationId),
+    today: localDate(rt.input.now, tz),
+  });
+  if (!pick) return null;
+  return { service_id: pick.serviceId, name: pick.name, price: priceText(pick.priceCents, pick.variablePrice, rt.ctx.currency), duration_min: pick.durationMin };
+}
+
+async function addServiceTool(rt: ToolRuntime, args: z.infer<(typeof ARGS)["add_service_to_appointment"]>): Promise<ToolResult> {
+  const t = rt.ctx.terminology;
+  const rules = rt.input.growth?.upsellRules ?? [];
+  // Solo lo que ofrecen las reglas del negocio: el modelo no agrega servicios por su cuenta.
+  if (!rules.some((r) => sameId(r.suggestServiceId, args.service_id))) fail("Ese servicio no se puede agregar por este medio.");
+  const target = await resolveClientAppointment(rt, args.appointment_id);
+  const view = await addServiceToAppointment(rt.executor, rt.input.businessId, target.id, args.service_id, { now: rt.input.now, onlineOnly: true });
+  const summary = summarize(rt, view);
+  rt.effects.actions.push({ type: "appointment_service_added", appointmentId: view.id });
+  rt.effects.confirmations.push(agentText(rt.ctx.settings, "appointmentRescheduled", confirmationVars(rt, summary)));
+  return { ok: true, appointment: summary, note: `Listo, se agregó. Confirmale al ${t.client} cómo quedó la ${t.appointment} (servicios, hora y precio) en una frase.` };
 }
 
 async function rescheduleTool(rt: ToolRuntime, args: z.infer<(typeof ARGS)["reschedule_appointment"]>): Promise<ToolResult> {
@@ -632,6 +722,26 @@ const HANDLERS: { [K in ToolName]: (rt: ToolRuntime, args: z.infer<(typeof ARGS)
   async handoff_to_human(rt, args) {
     rt.effects.handoff = { reason: freeText(args.reason, MAX_FREE_TEXT) || "El agente no pudo resolver la consulta." };
     return { ok: true };
+  },
+
+  async record_quote(rt, args) {
+    if (!rt.input.growth?.quoteRecovery) return { ok: false, error: "Herramienta no disponible." };
+    const service = rt.ctx.services.find((s) => sameId(s.id, args.service_id));
+    if (!service) return fail("Ese servicio no existe o no se agenda por este medio.");
+    await recordQuote(rt.executor, rt.input.businessId, { clientId: rt.input.clientId, serviceId: service.id, amountCents: service.priceCents, at: rt.input.now });
+    return { ok: true, note: "Anotado. No le menciones esto al cliente." };
+  },
+
+  async add_service_to_appointment(rt, args) {
+    if (!rt.input.growth?.upsellRules.length) return { ok: false, error: "Herramienta no disponible." };
+    return addServiceTool(rt, args);
+  },
+
+  async decline_upsell(rt, args) {
+    if (!rt.input.growth?.upsellRules.length) return { ok: false, error: "Herramienta no disponible." };
+    const service = rt.ctx.services.find((s) => sameId(s.id, args.service_id));
+    if (service) await recordDeclinedUpsell(rt.executor, rt.input.businessId, rt.input.conversationId, service.id, localDate(rt.input.now, rt.ctx.timezone));
+    return { ok: true, note: "Anotado: no se lo vuelvas a ofrecer. Seguí la conversación normalmente." };
   },
 };
 

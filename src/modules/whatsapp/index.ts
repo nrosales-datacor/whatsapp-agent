@@ -35,7 +35,18 @@ export {
   type TemplateMessage,
   type WhatsAppApi,
 } from "./graph";
+// Crecimiento (I6): lo que permite el plan, promociones para Campañas y cierre de cotizaciones
+// al agendar desde el panel.
 export { NO_GROWTH, noGrowth, type GrowthFeatures, type GrowthResolver } from "./growth";
+export {
+  countRepliesAfterSends,
+  marketingChannelStatus,
+  sendMarketingTemplate,
+  type MarketingChannelStatus,
+  type MarketingSendInput,
+  type MarketingSendOutcome,
+} from "./marketing";
+export { closeQuotesForAppointment } from "./quotes";
 export { countConversationsWaiting } from "./inbox";
 export { WHATSAPP_INBOUND_JOB } from "./ingest";
 export { startWhatsAppSchedulers, WHATSAPP_JOBS_ALLOWED_WHILE_PAUSED, whatsappJobHandlers, type WhatsAppJobSpec } from "./jobs";

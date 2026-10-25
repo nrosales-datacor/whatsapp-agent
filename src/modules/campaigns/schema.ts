@@ -20,18 +20,26 @@ export type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number];
 export const CAMPAIGN_SEND_STATUSES = ["pending", "processing", "sent", "failed", "skipped"] as const;
 export type CampaignSendStatus = (typeof CAMPAIGN_SEND_STATUSES)[number];
 
-export const SEGMENT_TYPES = ["all", "inactive", "service_lapsed"] as const;
-export type SegmentType = (typeof SEGMENT_TYPES)[number];
-
-/** Cómo se arma la lista de destinatarios. */
-export interface SegmentFilter {
-  type: SegmentType;
-  /** `inactive`: última visita hace al menos estos días. */
-  days?: number;
-  /** `service_lapsed`: servicio a considerar. */
-  serviceId?: string;
-  /** `service_lapsed`: último servicio completado hace al menos estos meses. */
-  months?: number;
+/**
+ * Cómo se arma la lista de destinatarios (I6): los filtros de la lista de clientes del CRM
+ * más dos propios de las campañas. Todo combinado con Y; vacío = todos los que aceptaron
+ * promociones. Las fechas son RELATIVAS a cuando se arma el envío (una campaña programada
+ * para el mes que viene usa "hace 60 días" de ese día).
+ */
+export interface CampaignSegment {
+  statuses?: string[];
+  tags?: string[];
+  vip?: boolean;
+  preferredLocationId?: string;
+  preferredStaffId?: string;
+  /** Última visita hace AL MENOS estos días. */
+  lastVisitMinDays?: number;
+  /** Última visita hace COMO MUCHO estos días. */
+  lastVisitMaxDays?: number;
+  /** "Te toca de nuevo": su último `serviceId` completado fue hace al menos `months` meses. */
+  lapsedService?: { serviceId: string; months: number };
+  /** Sin quien ya tiene una cita próxima (default true: ya vuelve solo). */
+  excludeUpcoming?: boolean;
 }
 
 const businessId = () =>
@@ -47,7 +55,7 @@ export const campaigns = pgTable(
     name: text("name").notNull(),
     // Texto que llena la variable libre de la plantilla (igual para todos los destinatarios).
     message: text("message").notNull(),
-    segment: jsonb("segment").$type<SegmentFilter>().notNull(),
+    segment: jsonb("segment").$type<CampaignSegment>().notNull(),
     status: text("status").notNull().default("draft"),
     scheduledFor: instant("scheduled_for"),
     startedAt: instant("started_at"),

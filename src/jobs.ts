@@ -1,10 +1,12 @@
 import type { PlanService } from "./modules/billing";
+import { CAMPAIGN_DISPATCH_JOB, handleCampaignDispatchJob } from "./modules/campaigns";
 import { handleReminderJob, REMINDER_SEND_JOB, startReminderScheduler, type ReminderJobPayload } from "./modules/scheduling";
 import {
   createAgentRunner,
   createWhatsAppDeps,
   isWhatsAppConnected,
   queueWhatsAppReminder,
+  sendMarketingTemplate,
   startWhatsAppSchedulers,
   whatsappJobHandlers,
   type AgentRunner,
@@ -69,14 +71,24 @@ export function registerJobHandlers(options: JobDeps = {}): void {
     return whatsapp;
   };
   for (const spec of whatsappJobHandlers(whatsappDeps)) registerJobHandler(spec.type, spec.handler, spec.options);
+
+  // Campañas (I6): cada lote de una campaña; el envío lo hace el módulo WhatsApp con la
+  // plantilla de marketing del número (campaigns no conoce Graph).
+  registerJobHandler(
+    CAMPAIGN_DISPATCH_JOB,
+    async (payload, ctx) => {
+      await handleCampaignDispatchJob(payload, ctx, { send: (db, businessId, input) => sendMarketingTemplate(db, whatsappDeps(db), businessId, input) });
+    },
+    { timeoutMs: 180_000 },
+  );
 }
 
 /**
  * Loops periódicos de los módulos (procesos `ROLE=worker|all`). Cada uno se coordina entre
  * réplicas con su lease (src/platform/net/leaderLease.ts).
  */
-export function startModuleSchedulers(db: Executor): Loop[] {
-  return [startReminderScheduler({ db }), ...startWhatsAppSchedulers(db)];
+export function startModuleSchedulers(db: Executor, plans: PlanService = createPlans(db)): Loop[] {
+  return [startReminderScheduler({ db }), ...startWhatsAppSchedulers(db, { getGrowth: growthFromPlan(plans) })];
 }
 
 /**

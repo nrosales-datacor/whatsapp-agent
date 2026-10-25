@@ -2,6 +2,8 @@ import type { Executor } from "../../platform/db/scope";
 import { MANAGER_ROLES } from "../../platform/http/access";
 import { route } from "../../platform/http/router";
 import type { Route } from "../../platform/http/routeTypes";
+import { noGrowth, type GrowthResolver } from "./growth";
+import { getGrowthSettings, GrowthSettingsPatch, updateGrowthSettings } from "./growthSettings";
 import { AiSettingsPatch, getAiSettings, updateAiSettings } from "./settings";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -10,6 +12,9 @@ import { AiSettingsPatch, getAiSettings, updateAiSettings } from "./settings";
 //   GET    /whatsapp/settings    cualquier rol del negocio (la primera lectura crea la fila
 //                                con los defaults de la plantilla del rubro)
 //   PATCH  /whatsapp/settings    dueño, admin
+//   GET    /whatsapp/growth      crecimiento (I6): reseñas, rescate de cotizaciones y upsell,
+//                                con lo que el plan permite (`allowed`)
+//   PATCH  /whatsapp/growth      dueño, admin (403 `module_not_in_plan` si el plan no lo trae)
 //
 // Forma: { tone, register: "vos"|"tu"|"usted", instructions,
 //          knowledge: [{ id, title, items: string[] }], faq: [{ question, answer }],
@@ -18,9 +23,11 @@ import { AiSettingsPatch, getAiSettings, updateAiSettings } from "./settings";
 
 export interface WhatsappSettingsRouteDeps {
   db: Executor;
+  /** Lo de crecimiento que permite el plan (la composición lo arma desde billing). Default: nada. */
+  getGrowth?: GrowthResolver;
 }
 
-export function settingsRoutes({ db }: WhatsappSettingsRouteDeps): Route[] {
+export function settingsRoutes({ db, getGrowth = noGrowth }: WhatsappSettingsRouteDeps): Route[] {
   return [
     route({ method: "GET", path: "/whatsapp/settings", auth: "user", module: "whatsapp" }, ({ session }) =>
       getAiSettings(db, session.businessId),
@@ -28,6 +35,13 @@ export function settingsRoutes({ db }: WhatsappSettingsRouteDeps): Route[] {
     route(
       { method: "PATCH", path: "/whatsapp/settings", auth: "user", roles: MANAGER_ROLES, module: "whatsapp", body: AiSettingsPatch },
       ({ session, body }) => updateAiSettings(db, session, body),
+    ),
+    route({ method: "GET", path: "/whatsapp/growth", auth: "user", module: "whatsapp" }, async ({ session }) =>
+      getGrowthSettings(db, session.businessId, await getGrowth(session.businessId)),
+    ),
+    route(
+      { method: "PATCH", path: "/whatsapp/growth", auth: "user", roles: MANAGER_ROLES, module: "whatsapp", body: GrowthSettingsPatch },
+      async ({ session, body }) => updateGrowthSettings(db, session, await getGrowth(session.businessId), body),
     ),
   ];
 }

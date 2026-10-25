@@ -26,13 +26,27 @@ export interface AgentTurnInput {
   locationId: string | null;
   history: AgentHistoryMessage[];
   now: Date;
+  /**
+   * Crecimiento activo para este negocio (I6: lo permite el plan Y el dueño lo activó). Sin
+   * el campo, nada: el agente no registra cotizaciones ni ofrece upsell.
+   */
+  growth?: AgentGrowth;
+}
+
+/** Lo de crecimiento que el agente hace en el turno. */
+export interface AgentGrowth {
+  /** Registrar cotizaciones (`record_quote`) para el rescate. */
+  quoteRecovery: boolean;
+  /** Reglas de upsell "a quien agenda X, ofrecele Y" (vacío = sin upsell). */
+  upsellRules: { serviceId: string; suggestServiceId: string }[];
 }
 
 export type AgentAction =
   | { type: "handoff"; reason: string }
   | { type: "appointment_booked"; appointmentId: string }
   | { type: "appointment_rescheduled"; appointmentId: string }
-  | { type: "appointment_cancelled"; appointmentId: string };
+  | { type: "appointment_cancelled"; appointmentId: string }
+  | { type: "appointment_service_added"; appointmentId: string };
 
 export interface AgentReply {
   text: string;

@@ -72,6 +72,8 @@ export interface ChannelTemplates {
   /** Utilidad, para reabrir una conversación fuera de la ventana de 24 h. */
   reopen?: ChannelTemplate;
   quoteRecovery?: ChannelTemplate;
+  /** Seguimiento post-servicio fuera de la ventana de 24 h (I6): {{1}} cliente · {{2}} servicios, 3 botones. */
+  followUp?: ChannelTemplate;
 }
 
 /** Sección de conocimiento nombrada por el dueño ("Precios", "Tratamientos"…), un ítem por línea. */
@@ -99,6 +101,24 @@ export interface QuoteRecoverySettings {
   waitHours?: number;
   firstTouchText?: string;
   secondTouchText?: string;
+}
+
+/** Seguimiento post-servicio (reseñas): N horas después de terminar la cita. */
+export interface FollowUpSettings {
+  enabled?: boolean;
+  delayHours?: number;
+}
+
+/** Regla de upsell: a quien agenda `serviceId`, el agente le ofrece agregar `suggestServiceId`. */
+export interface UpsellRule {
+  serviceId: string;
+  suggestServiceId: string;
+}
+
+/** Upsell (el agente ofrece un servicio complementario tras agendar). */
+export interface UpsellSettings {
+  enabled?: boolean;
+  rules?: UpsellRule[];
 }
 
 /** Upsell que el cliente rechazó: no se le vuelve a ofrecer antes de un tiempo. */
@@ -162,6 +182,9 @@ export const aiSettings = pgTable(
     // Override de los textos del sistema al cliente final: clave del catálogo → plantilla.
     texts: jsonb("texts").$type<Record<string, string>>().notNull().default({}),
     quoteRecovery: jsonb("quote_recovery").$type<QuoteRecoverySettings>().notNull().default({}),
+    // Seguimiento post-servicio y upsell (I6): se activan acá si el plan los trae.
+    followUp: jsonb("follow_up").$type<FollowUpSettings>().notNull().default({}),
+    upsell: jsonb("upsell").$type<UpsellSettings>().notNull().default({}),
     // Reseñas de Google: link para pedir la reseña y Place ID para el rating diario.
     reviewUrl: text("review_url"),
     googlePlaceId: text("google_place_id"),
@@ -266,6 +289,10 @@ export const quotes = pgTable(
   (t) => [
     // Candidatas a un toque, por negocio y antigüedad.
     index("quotes_business_status_created_idx").on(t.businessId, t.status, t.createdAt),
+    // Una sola cotización ABIERTA por cliente y servicio: repetir el precio no la duplica.
+    uniqueIndex("quotes_open_client_service_uq")
+      .on(t.clientId, t.serviceId)
+      .where(sql`${t.status} IN ('pending', 'first_touch', 'second_touch')`),
     index("quotes_client_idx").on(t.clientId),
     check("quotes_status_check", oneOf(t.status, QUOTE_STATUSES)),
     check("quotes_amount_check", sql`${t.amountCents} >= 0`),

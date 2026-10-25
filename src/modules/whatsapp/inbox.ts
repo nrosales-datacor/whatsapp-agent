@@ -10,6 +10,8 @@ import { addDays, countBookingsByChannel, localDate, localDayBounds, mondayOf, n
 import { credentialsOf, getChannelRow, listChannelRows } from "./channels";
 import { getConversation, lastInboundAt, saveOutgoingMessage, setConversationMode } from "./conversations";
 import { loadTextProfile, type WhatsAppDeps } from "./deps";
+import { followUpStats, type FollowUpStats } from "./followUps";
+import { quoteStats, type QuoteStats } from "./quotes";
 import { windowState } from "./rules";
 import { conversations, messages, type Conversation, type ConversationMode, type Message } from "./schema";
 import { pipelineText } from "./texts";
@@ -459,6 +461,8 @@ export interface AgentMetrics {
   handoffs: number;
   aiCostMicros: number;
   byDay: { date: string; conversations: number; bookings: number }[];
+  /** Crecimiento (I6) en el rango, de todo el negocio: seguimientos y reseñas, y rescate de cotizaciones. */
+  growth: { followUps: FollowUpStats; quotes: QuoteStats };
 }
 
 /** Rango máximo de las métricas (días). */
@@ -530,5 +534,9 @@ export async function agentMetrics(
     handoffs: await sumHandoffs(db, businessId, fromDate, toDate),
     aiCostMicros: await aiCostMicrosBetween(db, businessId, start, new Date(end.getTime() - 1)),
     byDay,
+    growth: {
+      followUps: await followUpStats(db, businessId, { from: start, to: end }),
+      quotes: await quoteStats(db, businessId, { from: start, to: end }),
+    },
   };
 }
