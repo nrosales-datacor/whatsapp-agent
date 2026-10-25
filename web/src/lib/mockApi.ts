@@ -6,7 +6,8 @@ import { mockBusinessUsage, mockPlatformMetrics, resolveMockRange } from "../mod
 import { isReportsMockPath, routeReportsMock } from "../modules/reports/reportsMock";
 import { isSalesMockPath, mockSalesOf, routeSalesMock, type MockSalesSession } from "../modules/sales/salesMock";
 import { mockAppointmentsOf, mockClientIdsForStaff, routeSchedulingMock } from "../modules/scheduling/schedulingMock";
-import { routeWhatsappMock } from "../modules/whatsapp/whatsappMock";
+import { mockMarketingChannelStatus, routeWhatsappMock, type MockWhatsappSession } from "../modules/whatsapp/whatsappMock";
+import { routeCampaignsMock } from "../modules/campaigns/campaignsMock";
 import type {
   AdminBusiness,
   AdminBusinessDetail,
@@ -901,28 +902,36 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
     );
   }
 
-  // WhatsApp IA y push (I2): su propio archivo, con la sesión ya resuelta.
-  if (path.startsWith("/whatsapp/") || path.startsWith("/push/")) {
+  // WhatsApp IA y push (I2) y Campañas (I6): sus propios archivos, con la sesión ya resuelta.
+  if (path.startsWith("/whatsapp/") || path.startsWith("/push/") || path === "/campaigns" || path.startsWith("/campaigns/")) {
     const me = sessionMe();
     if (!me) return unauthorized();
     const b = seedOf(state, me.business.id);
-    return (
-      routeWhatsappMock(
-        req,
-        {
+    const whatsappSession: MockWhatsappSession = {
+      businessId: b.id,
+      businessName: me.business.name,
+      industry: b.industry,
+      role: me.role,
+      modules: me.modules,
+      features: me.plan.features,
+      serviceIds: mockAgendaSetup(settingsSeedOf(state, b.id), membersOf(state, b.id)).services.filter((s) => s.active).map((s) => s.id),
+      locations: b.locations,
+      clients: mockClientsOf(b.id, b.locations),
+    };
+    if (path === "/campaigns" || path.startsWith("/campaigns/")) {
+      return (
+        routeCampaignsMock(req, {
           businessId: b.id,
-          businessName: me.business.name,
-          industry: b.industry,
           role: me.role,
           modules: me.modules,
-          features: me.plan.features,
-          serviceIds: mockAgendaSetup(settingsSeedOf(state, b.id), membersOf(state, b.id)).services.filter((s) => s.active).map((s) => s.id),
+          industry: b.industry,
+          timezone: me.business.timezone,
           locations: b.locations,
-          clients: mockClientsOf(b.id, b.locations),
-        },
-        req.headers["X-Location-Id"],
-      ) ?? fail(404, "not_found", "Ruta inexistente en el mock.")
-    );
+          channels: () => mockMarketingChannelStatus(whatsappSession),
+        }) ?? fail(404, "not_found", "Ruta inexistente en el mock.")
+      );
+    }
+    return routeWhatsappMock(req, whatsappSession, req.headers["X-Location-Id"]) ?? fail(404, "not_found", "Ruta inexistente en el mock.");
   }
 
   const invitationMatch = /^\/auth\/invitations\/([^/]+)$/.exec(path);

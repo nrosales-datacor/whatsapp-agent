@@ -344,7 +344,9 @@ function defaultChannels(session: MockWhatsappSession, businessIndex: number): C
           i === 0 ? "+50640001234" : "+50640005678",
           location.id,
           i !== 0,
-          i === 0 ? { reminder: es("recordatorio_cita"), reopen: es("reapertura_conversacion") } : { reminder: es("recordatorio_cita") },
+          i === 0
+            ? { reminder: es("recordatorio_cita"), reopen: es("reapertura_conversacion"), marketing: es("promo_mensual") }
+            : { reminder: es("recordatorio_cita") },
         ),
       );
   }
@@ -628,6 +630,15 @@ function validateSettings(body: unknown): { settings: AgentSettings } | { fields
 }
 
 // ── Rutas ───────────────────────────────────────────────────────────────────
+
+/** Números activos y cuántos tienen la plantilla de marketing (Campañas simuladas, I6). */
+export function mockMarketingChannelStatus(session: MockWhatsappSession): { connected: number; withTemplate: number } {
+  const state = loadState();
+  const b = (state.businesses[session.businessId] ??= seedBusiness(session));
+  saveState(state);
+  const active = b.channels.filter((c) => c.status === "active" && c.tokenStatus === "valid");
+  return { connected: active.length, withTemplate: active.filter((c) => c.templates.marketing).length };
+}
 
 /** Rutas /whatsapp/* y /push/* del mock. null si la ruta no es de este módulo. */
 export function routeWhatsappMock(req: TransportRequest, session: MockWhatsappSession, locationId?: string): TransportResponse | null {

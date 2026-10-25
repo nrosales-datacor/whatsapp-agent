@@ -102,6 +102,13 @@ function OnlineBilling({ status }: { status: BillingStatusView }) {
   );
 }
 
+/** Lo de crecimiento que hace el agente (I6; se activa en WhatsApp IA › Crecimiento). */
+const GROWTH_FEATURES: readonly { id: string; label: string; description: string }[] = [
+  { id: "reviews", label: "Reseñas", description: "después de cada cita, el agente pide la opinión y la reseña en Google." },
+  { id: "quote_recovery", label: "Rescate de cotizaciones", description: "a quien preguntó un precio y no agendó, el agente le vuelve a escribir." },
+  { id: "upsell", label: "Sugerencias al agendar", description: "el agente ofrece un servicio complementario al agendar." },
+];
+
 export default function PlanPage() {
   const me = useSession();
   const qc = useQueryClient();
@@ -164,6 +171,16 @@ export default function PlanPage() {
             <Icon id={branding ? "sparkles" : "lock"} size={16} />
             <span>{branding ? "Marca propia: tus colores y tu logo en el panel." : "Marca propia: disponible en el plan Pro."}</span>
           </li>
+          {GROWTH_FEATURES.map((f) => {
+            const on = plan.features.includes(f.id);
+            const why = !isPro ? "disponible en el plan Pro." : "las hace el agente de WhatsApp: no aplican sin él.";
+            return (
+              <li key={f.id}>
+                <Icon id={on ? "sparkles" : "lock"} size={16} />
+                <span>{on ? `${f.label}: ${f.description}` : `${f.label}: ${why}`}</span>
+              </li>
+            );
+          })}
         </ul>
       </section>
 
