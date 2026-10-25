@@ -59,6 +59,8 @@ export interface MockClientsSession {
   timezone?: string;
   /** Rol staff: ids de los clientes con citas suyas ("Mis clientes"); null = no tiene profesional vinculado. */
   staffClientIds?: string[] | null;
+  /** Módulos del plan (`me.modules`): el consentimiento de promociones es de Campañas. */
+  modules?: string[];
 }
 
 type MockClient = Omit<ClientDetail, "guardian" | "dependents" | "status" | "isVip">;
@@ -126,8 +128,9 @@ function seedClients(businessId: string, locations: LocationRef[]): MockClient[]
       preferredChannel: email && i % 2 === 0 ? ("email" as const) : i % 5 === 0 ? ("whatsapp" as const) : null,
       vip: i % 17 === 3,
       customData: {},
-      marketingConsentAt: null,
-      marketingOptOutAt: null,
+      // Promociones (I6): la mayoría aceptó por WhatsApp; algunos pidieron la baja; otros sin respuesta.
+      marketingConsentAt: i % 9 !== 8 && i % 4 !== 3 && i % 11 !== 5 ? new Date(baseDay - (30 + (i % 60)) * DAY_MS).toISOString() : null,
+      marketingOptOutAt: i % 11 === 5 ? new Date(baseDay - (10 + (i % 20)) * DAY_MS).toISOString() : null,
       visitCount: visits,
       firstVisitAt: firstVisit?.toISOString() ?? null,
       lastVisitAt: lastVisit?.toISOString() ?? null,
@@ -310,6 +313,69 @@ export function mockClientsOf(businessId: string, locations: LocationRef[]): Arr
     saveState(state);
   }
   return state[businessId].map((c) => ({ id: c.id, name: c.name, phone: c.phone, email: c.email, anonymized: c.anonymized }));
+}
+
+/** Segmento de una campaña, como lo entiende el mock (espejo de `CampaignSegment`). */
+export interface MockSegment {
+  statuses?: ClientStatus[];
+  tags?: string[];
+  vip?: boolean;
+  preferredLocationId?: string;
+  preferredStaffId?: string;
+  lastVisitMinDays?: number;
+  lastVisitMaxDays?: number;
+}
+
+/** Audiencia de un segmento (espejo de `previewMarketingAudience`): conteos y quiénes la reciben. */
+export interface MockAudience {
+  matched: number;
+  eligible: number;
+  withoutConsent: number;
+  optedOut: number;
+  withoutPhone: number;
+  recipients: { id: string; name: string }[];
+}
+
+/**
+ * Quiénes recibirían una campaña: los que cumplen los filtros del CRM y aceptaron promociones,
+ * sin baja y con teléfono. "Te toca de nuevo" y "sin cita próxima" no se simulan.
+ */
+export function mockMarketingAudience(businessId: string, locations: LocationRef[], industry: string, timezone: string, segment: MockSegment): MockAudience {
+  const state = loadState();
+  const all = (state[businessId] ??= seedClients(businessId, locations));
+  saveState(state);
+  const crmData = crmOf(businessId, industry).data;
+  const crm: Crm = { crm: true, rules: crmData.rules, fields: crmData.fields };
+  const today = localDate(new Date().toISOString(), timezone);
+  const daysAgo = (n: number) => new Date(Date.parse(`${today}T12:00:00Z`) - n * DAY_MS).toISOString().slice(0, 10);
+  const filters: Filters = {
+    q: "",
+    statuses: segment.statuses ?? [],
+    tags: segment.tags ?? [],
+    from: segment.lastVisitMaxDays ? daysAgo(segment.lastVisitMaxDays) : "",
+    to: segment.lastVisitMinDays ? daysAgo(segment.lastVisitMinDays) : "",
+    staff: segment.preferredStaffId ?? "",
+    location: segment.preferredLocationId ?? "",
+    vip: segment.vip === undefined ? "" : String(segment.vip),
+  };
+  const matched = all.filter((c) => matches(c, filters, crm, timezone)).sort(byName);
+  const out: MockAudience = { matched: matched.length, eligible: 0, withoutConsent: 0, optedOut: 0, withoutPhone: 0, recipients: [] };
+  for (const c of matched) {
+    if (c.marketingOptOutAt) out.optedOut++;
+    else if (!c.marketingConsentAt) out.withoutConsent++;
+    else if (!c.phone) out.withoutPhone++;
+    else {
+      out.eligible++;
+      out.recipients.push({ id: c.id, name: c.name });
+    }
+  }
+  return out;
+}
+
+/** ¿El cliente puede recibir HOY una promoción? (re-chequeo antes de cada envío simulado). */
+export function mockMarketingReachable(businessId: string, clientId: string): boolean {
+  const c = loadState()[businessId]?.find((x) => x.id === clientId);
+  return Boolean(c && !c.anonymized && c.phone && c.marketingConsentAt && !c.marketingOptOutAt);
 }
 
 /** Un cliente en riesgo, como lo lista el Inicio completo. */
@@ -714,6 +780,22 @@ export function routeClientsMock(req: TransportRequest, session: MockClientsSess
     all.push(created);
     save();
     return ok(detail(created, all, crm), 201);
+  }
+
+  const consentMatch = /^\/clients\/([^/]+)\/marketing-consent$/.exec(path);
+  if (consentMatch && req.method === "PUT") {
+    if (!(session.modules ?? []).includes("campaigns")) return notInPlan();
+    if (!EDITORS.includes(session.role)) return forbiddenRole();
+    const target = all.find((c) => c.id === decodeURIComponent(consentMatch[1]));
+    if (!target || target.anonymized) return notFound();
+    const granted = bodyKey(req.body, "granted");
+    if (typeof granted !== "boolean") return invalid({ "body.granted": "Indicá si acepta o no." });
+    const now = new Date().toISOString();
+    // Como el backend: aceptar borra una baja anterior; retirarlo en la ficha es una baja.
+    if (granted) Object.assign(target, { marketingConsentAt: now, marketingOptOutAt: null, updatedAt: now });
+    else Object.assign(target, { marketingConsentAt: null, marketingOptOutAt: now, updatedAt: now });
+    save();
+    return ok(detail(target, all, crm));
   }
 
   const match = /^\/clients\/([^/]+)(\/anonymize)?$/.exec(path);

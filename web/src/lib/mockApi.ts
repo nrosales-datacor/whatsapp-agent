@@ -876,6 +876,7 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
       routeClientsMock(req, {
         businessId: b.id,
         role: me.role,
+        modules: me.modules,
         locations: b.locations,
         country: b.country,
         clientTerm: b.terminology.client ?? "cliente",

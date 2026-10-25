@@ -29,6 +29,7 @@ import {
 } from "./clientsApi";
 import { displayName, formatDateOnly, formatDay, formatPhone } from "./format";
 import GuardianPicker from "./GuardianPicker";
+import MarketingConsent from "./MarketingConsent";
 import "./clients.css";
 
 const RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -106,6 +107,8 @@ export default function ClientDetailPage() {
       )}
 
       <ClientAppointments client={client} />
+
+      {me.modules.includes("campaigns") && !client.anonymized && <MarketingConsent client={client} />}
 
       {me.role === "owner" && !client.anonymized && <AnonymizeClient client={client} />}
     </div>

@@ -333,6 +333,15 @@ export function useUpdateClient(businessId: string, id: string) {
   });
 }
 
+/** Consentimiento de promociones dado (o retirado) en persona (`PUT /clients/:id/marketing-consent`, I6). */
+export function useMarketingConsent(businessId: string, id: string) {
+  const store = useStoreDetail(businessId);
+  return useMutation({
+    mutationFn: (granted: boolean) => api.put<ClientDetail>(`/clients/${encodeURIComponent(id)}/marketing-consent`, { granted }),
+    onSuccess: store,
+  });
+}
+
 export function useAnonymizeClient(businessId: string, id: string) {
   const store = useStoreDetail(businessId);
   return useMutation({
