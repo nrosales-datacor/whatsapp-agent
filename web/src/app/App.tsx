@@ -8,6 +8,8 @@ import ChangePasswordPage from "../modules/auth/ChangePasswordPage";
 import ForgotPasswordPage from "../modules/auth/ForgotPasswordPage";
 import LoginPage from "../modules/auth/LoginPage";
 import ResetPasswordPage from "../modules/auth/ResetPasswordPage";
+import SignupPage from "../modules/auth/SignupPage";
+import VerifyEmailPage from "../modules/auth/VerifyEmailPage";
 import CampaignsPage from "../modules/campaigns/CampaignsPage";
 import ClientDetailPage from "../modules/clients/ClientDetailPage";
 import ClientsPage from "../modules/clients/ClientsPage";
@@ -39,6 +41,7 @@ import { PublicOnly, RequireAuth } from "./session";
 //   Acceso:      /login · /forgot-password · /reset-password?token= (enlace del correo)
 //                /accept-invitation?token= (enlace del correo; /invite/:token es alias)
 //                /change-password (obligatorio con clave temporal)
+//                /signup (alta self-service, si está abierta) · /verify-email?token= (enlace del correo)
 //   Panel:       / · /agenda · /clients · /clients/:id · /campaigns
 //                /reports · /reports/services · /reports/staff · /reports/clients · /reports/channels
 //                /sales · /sales/pending · /sales/today · /sales/commissions
@@ -66,6 +69,15 @@ export default function App() {
           </PublicOnly>
         }
       />
+      <Route
+        path="/signup"
+        element={
+          <PublicOnly>
+            <SignupPage />
+          </PublicOnly>
+        }
+      />
+      <Route path="/verify-email" element={<VerifyEmailPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/accept-invitation" element={<AcceptInvitationPage />} />
       <Route path="/invite/:token" element={<InviteRedirect />} />

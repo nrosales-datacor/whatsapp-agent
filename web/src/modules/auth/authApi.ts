@@ -1,5 +1,5 @@
 import { api } from "../../lib/api";
-import type { AcceptInvitationInput, Invitation, LoginInput, LoginResult, Me, TotpSetup } from "../../lib/contract";
+import type { AcceptInvitationInput, Invitation, LoginInput, LoginResult, Me, SignupConfig, SignupInput, TotpSetup } from "../../lib/contract";
 
 // Endpoints de identidad del panel (contrato de I0.6). La sesión (`/auth/me`, logout y
 // cambio de negocio) está en app/session.tsx.
@@ -24,6 +24,17 @@ export const setupTotp = () => api.post<TotpSetup>("/auth/totp/setup");
 export const enableTotp = (code: string) => api.post<void>("/auth/totp/enable", { code });
 
 export const disableTotp = (password: string, code: string) => api.post<void>("/auth/totp/disable", { password, code });
+
+// Alta self-service (I6.7): config pública, registro y verificación del correo.
+export const SIGNUP_CONFIG_QUERY_KEY = ["signup-config"] as const;
+
+export const getSignupConfig = () => api.get<SignupConfig>("/auth/signup/config");
+
+export const signUp = (input: SignupInput) => api.post<{ status: "verification_sent" }>("/auth/signup", input);
+
+export const verifyEmail = (token: string) => api.post<void>("/auth/verify-email", { token });
+
+export const resendVerification = (email: string) => api.post<void>("/auth/verify-email/resend", { email });
 
 /** Mínimo de la clave que el panel valida antes de mandar (el backend es la autoridad). */
 export const MIN_PASSWORD_LENGTH = 8;
