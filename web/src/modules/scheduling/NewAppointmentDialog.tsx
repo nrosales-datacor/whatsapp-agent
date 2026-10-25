@@ -10,6 +10,7 @@ import { useToast } from "../../ui/Toast";
 import { clientKeys, searchClients, useCreateClient } from "../clients/clientsApi";
 import { formatPhone } from "../clients/format";
 import type { LocationView, ServiceView, StaffView } from "../settings/settingsApi";
+import AppointmentFields, { customDataFrom, draftsOf, useAppointmentFields, type FieldDrafts } from "./AppointmentFields";
 import { formatMinutes, formatTime, formatWhen } from "./format";
 import { useCreateAppointment, type Appointment, type PanelChannel, type Slot } from "./schedulingApi";
 import SlotPicker from "./SlotPicker";
@@ -66,6 +67,9 @@ export default function NewAppointmentDialog({ open, onClose, defaults, location
   const [channel, setChannel] = useState<PanelChannel>("panel");
   const [notes, setNotes] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
+  const fields = useAppointmentFields(open);
+  const [drafts, setDrafts] = useState<FieldDrafts>({});
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const mutation = useCreateAppointment();
 
   // Al abrir, se arranca de los valores que manda la agenda.
@@ -80,6 +84,8 @@ export default function NewAppointmentDialog({ open, onClose, defaults, location
     setChannel("panel");
     setNotes("");
     setLocalError(null);
+    setDrafts(draftsOf(fields, {}));
+    setFieldErrors({});
     mutation.reset();
     // Solo al abrir: los defaults cambian de identidad en cada render de la agenda.
   }, [open]);
@@ -115,9 +121,22 @@ export default function NewAppointmentDialog({ open, onClose, defaults, location
           : null;
     setLocalError(problem);
     if (problem || !client || !slot) return;
+    // Campos de la cita: van todos (el backend exige los obligatorios); los de formato inválido, antes de mandar.
+    const custom = fields.length > 0 ? customDataFrom(fields, drafts) : null;
+    setFieldErrors(custom?.errors ?? {});
+    if (custom && Object.keys(custom.errors).length > 0) return;
     const chosenStaff = staffId && staffId !== "any" ? staffId : slot.staff.length === 1 ? slot.staff[0].id : "any";
     mutation.mutate(
-      { locationId, clientId: client.id, serviceIds, staffId: chosenStaff, startsAt: slot.startsAt, channel, notes: notes.trim() || null },
+      {
+        locationId,
+        clientId: client.id,
+        serviceIds,
+        staffId: chosenStaff,
+        startsAt: slot.startsAt,
+        channel,
+        notes: notes.trim() || null,
+        ...(custom ? { customData: custom.data } : {}),
+      },
       {
         onSuccess: (appointment) => {
           showToast(`${capitalize(t.appointment)} agendada: ${client.name}, ${formatWhen(appointment.startsAt, timeZone)}`);
@@ -233,6 +252,20 @@ export default function NewAppointmentDialog({ open, onClose, defaults, location
         </div>
 
         <TextField label="Notas (opcional)" value={notes} maxLength={2000} onChange={(e) => setNotes(e.target.value)} />
+        {fields.length > 0 && (
+          <fieldset className="appt-fieldset">
+            <legend className="field-label">Datos de la {t.appointment}</legend>
+            <AppointmentFields
+              fields={fields}
+              drafts={drafts}
+              onChange={(key, value) => {
+                setDrafts((d) => ({ ...d, [key]: value }));
+                setFieldErrors((e) => ({ ...e, [`customData.${key}`]: "" }));
+              }}
+              errorFor={(key) => fieldErrors[`customData.${key}`] || fieldError(`customData.${key}`)}
+            />
+          </fieldset>
+        )}
         <FormError message={generalError} />
         <div className="client-form-actions">
           <button type="button" className="btn btn-secondary" onClick={close}>

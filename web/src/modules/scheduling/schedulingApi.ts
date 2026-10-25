@@ -35,6 +35,8 @@ export interface Appointment {
   channel: AppointmentChannel;
   totalCents: number;
   notes: string | null;
+  /** Campos personalizados de la cita (CRM del Pro), por clave. */
+  customData: Record<string, unknown>;
   createdBy: string | null;
   confirmedAt: string | null;
   cancelledAt: string | null;
@@ -96,6 +98,8 @@ export interface NewAppointmentInput {
   startsAt: string;
   channel?: PanelChannel;
   notes?: string | null;
+  /** Campos personalizados de la cita (solo con el CRM completo). */
+  customData?: Record<string, unknown>;
   allowOutsideHours?: boolean;
 }
 
@@ -135,6 +139,7 @@ export const schedulingApi = {
   },
   create: (input: NewAppointmentInput) => api.post<Appointment>("/appointments", input),
   updateNotes: (id: string, notes: string | null) => api.patch<Appointment>(`/appointments/${enc(id)}`, { notes }),
+  updateCustomData: (id: string, customData: Record<string, unknown>) => api.patch<Appointment>(`/appointments/${enc(id)}`, { customData }),
   confirm: (id: string) => api.post<Appointment>(`/appointments/${enc(id)}/confirm`),
   complete: (id: string) => api.post<Appointment>(`/appointments/${enc(id)}/complete`),
   noShow: (id: string) => api.post<Appointment>(`/appointments/${enc(id)}/no-show`),
