@@ -29,6 +29,8 @@ export interface BrandOptions {
   businessName: string;
   /** Color de marca del negocio en hex ("#0b7d72" o "#0b7"); si falta o no es válido, el de la plataforma. */
   brandColor?: string | null;
+  /** Logo del negocio (marca propia, I6.5): solo https; cualquier otra cosa se ignora y va el nombre solo. */
+  logoUrl?: string | null;
 }
 
 /** Color de la plataforma (el acento del panel, web/src/global.css). */
@@ -60,6 +62,17 @@ function required(value: string | null | undefined, field: string): string {
 }
 
 /** URL apta para un link de correo: solo http/https. Lanza sin mostrar la URL (puede llevar un token). */
+/** Logo utilizable en un correo: solo https (un http lo bloquea el cliente de correo; otra cosa, nunca). */
+function safeLogoUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" ? parsed.href : null;
+  } catch {
+    return null;
+  }
+}
+
 function safeUrl(url: string, field: string): string {
   let parsed: URL;
   try {
@@ -211,6 +224,13 @@ function renderHtml(parts: EmailParts): string {
     ? `<p style="margin:0;font-size:13px;line-height:1.5;color:#6b7280;">${e(parts.footnote)}</p>`
     : "";
 
+  // Marca propia: el logo del negocio a la izquierda del nombre (con alt: si el cliente de
+  // correo bloquea imágenes, se lee el nombre igual).
+  const logoUrl = safeLogoUrl(parts.brand.logoUrl);
+  const logo = logoUrl
+    ? `<img src="${e(logoUrl)}" alt="" height="32" style="height:32px;max-width:120px;vertical-align:middle;margin-right:12px;border:0;">`
+    : "";
+
   return (
     `<!doctype html><html lang="es"><head><meta charset="utf-8">` +
     `<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light">` +
@@ -219,7 +239,7 @@ function renderHtml(parts: EmailParts): string {
     `<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${e(parts.preheader)}</div>` +
     `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f5f7;"><tr><td align="center" style="padding:24px 12px;">` +
     `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background:${WHITE};border-radius:8px;font-family:Arial,Helvetica,sans-serif;">` +
-    `<tr><td style="background:${brand};color:${onBrand};padding:20px 24px;font-size:18px;font-weight:bold;border-radius:8px 8px 0 0;">${e(businessName)}</td></tr>` +
+    `<tr><td style="background:${brand};color:${onBrand};padding:20px 24px;font-size:18px;font-weight:bold;border-radius:8px 8px 0 0;">${logo}${e(businessName)}</td></tr>` +
     `<tr><td style="padding:24px;">` +
     `<h1 style="margin:0 0 16px;font-size:20px;line-height:1.3;color:${INK};">${e(parts.heading)}</h1>` +
     paragraphs +
@@ -247,7 +267,7 @@ function render(parts: EmailParts): EmailContent {
 }
 
 function brandOf(data: BrandOptions, field = "businessName"): BrandOptions {
-  return { businessName: required(data.businessName, field), brandColor: data.brandColor };
+  return { businessName: required(data.businessName, field), brandColor: data.brandColor, logoUrl: data.logoUrl };
 }
 
 function greeting(name: string | null | undefined): string {

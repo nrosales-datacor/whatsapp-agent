@@ -96,6 +96,16 @@ test("color de marca: hex válido se usa (y el texto se adapta al contraste); cu
   assert.ok(!injected.includes("<script>") && injected.includes(`background:${DEFAULT_BRAND_COLOR}`));
 });
 
+test("marca propia: el logo https va en el encabezado (escapado); http, javascript: o basura se ignoran", () => {
+  const base = { ...reminder, businessName: "Clínica <Sonrisa>" };
+  const withLogo = appointmentReminderEmail({ ...base, logoUrl: "https://cdn.example.com/logo.png?a=1&b=2" });
+  assert.match(withLogo.html, /<img src="https:\/\/cdn\.example\.com\/logo\.png\?a=1&amp;b=2" alt="" height="32"/);
+  assert.match(withLogo.html, /Clínica &lt;Sonrisa&gt;/, "el nombre sigue al lado del logo");
+  for (const bad of ["http://cdn.example.com/logo.png", "javascript:alert(1)", "no es una url", null]) {
+    assert.doesNotMatch(appointmentReminderEmail({ ...base, logoUrl: bad }).html, /<img /, String(bad));
+  }
+});
+
 test("fecha y hora: en la zona horaria de la sucursal, con Intl es-CR", () => {
   const at = new Date("2026-10-20T15:00:00Z");
   const cr = formatAppointmentDateTime(at, "America/Costa_Rica");
