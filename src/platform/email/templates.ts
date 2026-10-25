@@ -321,6 +321,70 @@ export function passwordResetEmail(data: PasswordResetEmailData): EmailContent {
   });
 }
 
+// ── Alta self-service (I6.7) ──
+
+export interface EmailVerificationEmailData {
+  userName?: string | null;
+  /** Negocio recién creado (va en el saludo; la marca es la del producto: todavía no hay otra). */
+  businessName?: string | null;
+  /** Link para confirmar el correo. */
+  verifyUrl: string;
+  /** Minutos de vigencia del link. */
+  expiresInMinutes: number;
+}
+
+/** Confirmá tu correo: el último paso del registro antes de poder entrar. */
+export function emailVerificationEmail(data: EmailVerificationEmailData): EmailContent {
+  const brand: BrandOptions = { businessName: PRODUCT_NAME };
+  const verifyUrl = safeUrl(data.verifyUrl, "verifyUrl");
+  const expires = formatDuration(data.expiresInMinutes);
+  const business = oneLine(data.businessName);
+  return render({
+    subject: `Confirmá tu correo para entrar a ${PRODUCT_NAME}`,
+    brand,
+    preheader: "Un clic y tu cuenta queda lista.",
+    heading: greeting(data.userName),
+    paragraphs: [
+      business
+        ? `Creaste la cuenta de ${business} en ${PRODUCT_NAME}. Para entrar, confirmá que este correo es tuyo.`
+        : `Creaste una cuenta en ${PRODUCT_NAME}. Para entrar, confirmá que este correo es tuyo.`,
+    ],
+    actions: [{ label: "Confirmar mi correo", url: verifyUrl, primary: true }],
+    footnote: `Este enlace vence en ${expires}. Si no creaste esta cuenta, ignorá este correo: sin confirmar, nadie puede entrar con ella.`,
+  });
+}
+
+export interface SignupAttemptEmailData {
+  userName?: string | null;
+  /** Link al login del panel. */
+  loginUrl: string;
+  /** Link a "olvidé mi clave". */
+  forgotUrl: string;
+}
+
+/**
+ * Alguien quiso registrarse con un correo que ya tiene cuenta. La respuesta del registro es
+ * la misma exista o no (no es un oráculo de cuentas): el aviso llega solo al dueño del correo.
+ */
+export function signupAttemptEmail(data: SignupAttemptEmailData): EmailContent {
+  const brand: BrandOptions = { businessName: PRODUCT_NAME };
+  return render({
+    subject: `Ya tenés una cuenta en ${PRODUCT_NAME}`,
+    brand,
+    preheader: "Alguien quiso crear una cuenta nueva con este correo.",
+    heading: greeting(data.userName),
+    paragraphs: [
+      `Alguien (quizás vos) quiso crear una cuenta nueva en ${PRODUCT_NAME} con este correo, pero ya tenés una.`,
+      "Entrá con tu clave de siempre o, si no la recordás, elegí una nueva.",
+    ],
+    actions: [
+      { label: "Entrar", url: safeUrl(data.loginUrl, "loginUrl"), primary: true },
+      { label: "Olvidé mi clave", url: safeUrl(data.forgotUrl, "forgotUrl"), primary: false },
+    ],
+    footnote: "Si no fuiste vos, no tenés que hacer nada: tu cuenta sigue igual.",
+  });
+}
+
 // ── Cliente final ──
 
 export interface AppointmentEmailData extends BrandOptions {

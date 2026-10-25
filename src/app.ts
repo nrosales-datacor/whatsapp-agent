@@ -1,5 +1,5 @@
 import { resolveSuperadmin } from "./admin/session";
-import type { PlanService } from "./modules/billing";
+import { createStripeWebhookHandler, STRIPE_WEBHOOK_PATH, type PlanService } from "./modules/billing";
 import { createSessionResolver } from "./modules/team";
 import { createWhatsAppWebhookHandler, WHATSAPP_WEBHOOK_PATH, type WhatsAppDeps } from "./modules/whatsapp";
 import type { Executor } from "./platform/db/scope";
@@ -66,7 +66,7 @@ function requestUrl(rawUrl: string | undefined): URL {
 }
 
 /**
- * Handler completo (`ROLE=web` y `ROLE=all`): /health, el webhook de WhatsApp, la API del
+ * Handler completo (`ROLE=web` y `ROLE=all`): /health, los webhooks de WhatsApp y Stripe, la API del
  * panel (router declarativo, rutas en src/routes.ts), la landing en `/` y el panel
  * estático en `/panel`.
  */
@@ -81,6 +81,8 @@ export function createAppHandler({ db, role, panelApi = {}, whatsapp, plans = cr
   });
   // Webhook de WhatsApp: lo llama Meta (firma propia; sin sesión ni CSRF del panel).
   const whatsappWebhook = createWhatsAppWebhookHandler({ db });
+  // Webhook de Stripe (I6.6): lo llama Stripe, con su firma; sin Stripe configurado, 503.
+  const stripeWebhook = createStripeWebhookHandler({ db });
 
   return withSecurityHeaders(async (req, res) => {
     const url = requestUrl(req.url);
@@ -94,6 +96,12 @@ export function createAppHandler({ db, role, panelApi = {}, whatsapp, plans = cr
     // Webhook de WhatsApp (Meta): verificación GET y mensajes POST firmados.
     if (pathname === WHATSAPP_WEBHOOK_PATH) {
       await whatsappWebhook(req, res);
+      return;
+    }
+
+    // Webhook de Stripe: suscripciones (plan y estado del cobro).
+    if (pathname === STRIPE_WEBHOOK_PATH) {
+      await stripeWebhook(req, res);
       return;
     }
 

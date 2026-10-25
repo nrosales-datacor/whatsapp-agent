@@ -18,12 +18,14 @@ import { assertLocationsOfBusiness, listMembers, updateMember } from "./members"
 import { requestPasswordReset, resetPassword } from "./recovery";
 import { clearSessionCookie, loadSession, setSessionCookie } from "./session";
 import { disableTotp, enableTotp, setupTotp } from "./twoFactor";
+import { resendEmailVerification, verifyEmail } from "./verification";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Rutas de identidad y equipo (I0.6):
 //
 //   /auth/*  login, logout, me, cambio de negocio, recuperación y cambio de clave, 2FA,
-//            invitaciones (ver y aceptar). Públicas las que se usan sin sesión.
+//            invitaciones (ver y aceptar), verificar el correo del alta self-service (y
+//            reenviar el link). Públicas las que se usan sin sesión.
 //   /team/*  invitar y gestionar el equipo del negocio (dueño y admin). Invitar o
 //            reactivar a alguien pasando el cupo de usuarios del plan → 403
 //            `plan_limit_reached` (el plan llega inyectado desde modules/billing).
@@ -54,6 +56,7 @@ const LoginBody = z.object({ email: Email, password: PasswordInputSchema, totpCo
 const SwitchBusinessBody = z.object({ businessId: z.uuid() });
 const ForgotBody = z.object({ email: Email });
 const ResetBody = z.object({ token: Token, password: NewPasswordSchema });
+const VerifyEmailBody = z.object({ token: Token });
 const ChangePasswordBody = z.object({ currentPassword: PasswordInputSchema, newPassword: NewPasswordSchema });
 const TotpEnableBody = z.object({ code: TotpCodeSchema.min(1) });
 const TotpDisableBody = z.object({ password: PasswordInputSchema, code: TotpCodeSchema.min(1) });
@@ -124,6 +127,17 @@ export function teamRoutes({ db, plans, onLogin }: TeamRouteDeps): Route[] {
 
     route({ method: "POST", path: "/auth/password/reset", auth: "public", body: ResetBody }, async ({ body }) => {
       await resetPassword(db, body);
+      return noContent();
+    }),
+
+    // ── Correo del alta self-service (I6.7) ──
+    route({ method: "POST", path: "/auth/verify-email", auth: "public", body: VerifyEmailBody }, async ({ body }) => {
+      await verifyEmail(db, body.token);
+      return noContent();
+    }),
+
+    route({ method: "POST", path: "/auth/verify-email/resend", auth: "public", body: ForgotBody }, async ({ req, body }) => {
+      await resendEmailVerification(db, { email: body.email, ip: getClientIp(req) });
       return noContent();
     }),
 

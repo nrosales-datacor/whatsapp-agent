@@ -64,8 +64,10 @@ export interface PlanSnapshot {
   /** Módulos habilitados (plan + extras − apagados). Igual que `me.modules`. */
   modules: string[];
   features: PlanFeature[];
-  /** Estado del cobro manual (`trial` | `active` | `past_due` | `cancelled`). */
+  /** Estado del cobro (`trial` | `active` | `past_due` | `cancelled`): manual o por Stripe. */
   billingStatus: string;
+  /** Fin de la prueba gratis (ISO), si la hay (alta self-service o prueba de Stripe). */
+  trialEndsAt: string | null;
   limits: PlanLimitsView;
   usage: PlanUsageView;
 }

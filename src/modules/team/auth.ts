@@ -19,6 +19,7 @@ import {
 } from "./identity";
 import { businessPaused } from "./session";
 import { users, type User } from "./schema";
+import { emailNotVerified } from "./verification";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Login por email, cambio de negocio y cambio de clave.
@@ -71,6 +72,8 @@ export async function login(
   }
 
   // Credenciales correctas: recién acá se puede explicar por qué no entra (no es un oráculo).
+  // Alta self-service sin el correo confirmado (I6.7, ./verification.ts).
+  if (user.emailVerificationPending) throw emailNotVerified();
   const memberships = await activeMemberships(db, user.id);
   if (memberships.length === 0) {
     // Su único negocio está pausado (cobro manual): se lo decimos, para que sepa qué hacer.

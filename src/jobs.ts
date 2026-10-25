@@ -1,4 +1,4 @@
-import type { PlanService } from "./modules/billing";
+import { startTrialExpiryLoop, type PlanService } from "./modules/billing";
 import { handleReminderJob, REMINDER_SEND_JOB, startReminderScheduler, type ReminderJobPayload } from "./modules/scheduling";
 import {
   createAgentRunner,
@@ -72,7 +72,8 @@ export function registerJobHandlers(options: JobDeps = {}): void {
  * réplicas con su lease (src/platform/net/leaderLease.ts).
  */
 export function startModuleSchedulers(db: Executor): Loop[] {
-  return [startReminderScheduler({ db }), ...startWhatsAppSchedulers(db)];
+  // Pruebas gratis vencidas sin suscripción → pago pendiente (I6.7, modules/billing).
+  return [startReminderScheduler({ db }), ...startWhatsAppSchedulers(db), startTrialExpiryLoop({ db })];
 }
 
 /**

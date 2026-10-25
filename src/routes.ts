@@ -1,5 +1,5 @@
 import { adminRoutes } from "./admin/routes";
-import type { PlanService } from "./modules/billing";
+import { billingRoutes, type PlanService } from "./modules/billing";
 import { businessRoutes, clientSettingsRoutes, type LocationReferenceCheck } from "./modules/business";
 import { clientsRoutes } from "./modules/clients";
 import { catalogRoutes, isLocationRestrictingServices } from "./modules/catalog";
@@ -19,6 +19,7 @@ import {
 import type { Executor } from "./platform/db/scope";
 import type { Route } from "./platform/http/routeTypes";
 import { systemRoutes } from "./platform/http/systemRoutes";
+import { signupRoutes } from "./signup";
 import { createUsageTracker, type UsageTracker } from "./usage";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -85,6 +86,11 @@ export function panelRoutes(deps: RouteDeps): Route[] {
     ...staffRoutes(deps),
     // Superadmin: /admin/*.
     ...adminRoutes(deps),
+    // Alta self-service (I6.7, detrás de SIGNUP_ENABLED): /auth/signup y su config pública.
+    ...signupRoutes({ db: deps.db }),
+    // Suscripción por Stripe (I6.6, solo el dueño): /billing/status, /billing/checkout y
+    // /billing/portal. Sin Stripe configurado, el cobro sigue manual.
+    ...billingRoutes({ db: deps.db }),
     // Clientes: /clients/*. Los módulos de afuera del núcleo suman acá sus borradores de
     // datos personales para la anonimización (WhatsApp: conversaciones y mensajes). "Mis
     // clientes" del profesional: la subconsulta de sus citas la arma scheduling.
