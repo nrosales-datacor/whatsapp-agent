@@ -10,8 +10,9 @@ import { PLANS as PLAN_IDS, type ExtraModules, type Plan } from "../business";
 //     profesionales y 2 usuarios (dueño y recepción), con tope mensual de conversaciones
 //     del agente.
 //   • Pro — la gestión completa: todos los módulos, CRM de clientes (nivel `full`), marca
-//     propia. Sucursales, profesionales y usuarios POR CANTIDAD CONTRATADA: el plan trae una
-//     base y el superadmin carga lo contratado en `extra_modules.limits`.
+//     propia y lo de crecimiento del agente (reseñas, rescate de cotizaciones y upsell).
+//     Sucursales, profesionales y usuarios POR CANTIDAD CONTRATADA: el plan trae una base y
+//     el superadmin carga lo contratado en `extra_modules.limits`.
 //   • Pro sin agente — Pro con `whatsapp` apagado en `extra_modules.modules`. Los
 //     recordatorios siguen disponibles (son de la agenda, módulo `scheduling`).
 //
@@ -101,7 +102,7 @@ export function buildPlans(env: Env = process.env): Record<Plan, PlanDefinition>
       label: "Pro",
       clientsTier: "full",
       modules: MODULES,
-      features: ["branding"],
+      features: ["branding", "reviews", "quote_recovery", "upsell"],
       // Base incluida en el precio del Pro; lo contratado de más va en extra_modules.limits.
       limits: {
         locations: 1,

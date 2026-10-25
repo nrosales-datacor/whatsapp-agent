@@ -14,7 +14,7 @@ import type { Executor } from "./platform/db/scope";
 import { handleSendEmailJob, SEND_EMAIL_JOB, type SendEmailJobPayload } from "./platform/email/job";
 import type { Loop } from "./platform/net/scheduler";
 import { registerJobHandler } from "./platform/queue";
-import { aiLimitsFromPlan, createPlans } from "./plans";
+import { aiLimitsFromPlan, createPlans, growthFromPlan } from "./plans";
 import { createUsageTracker } from "./usage";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -60,10 +60,14 @@ export function registerJobHandlers(options: JobDeps = {}): void {
 
   // WhatsApp: mensajes entrantes (pipeline + agente), recordatorios y borrado de adjuntos.
   // Las dependencias se arman con el pool del proceso la primera vez que corre un job; los
-  // topes del agente son los del plan de cada negocio.
+  // topes del agente y lo de crecimiento (I6) son los del plan de cada negocio.
   let whatsapp = options.whatsapp;
-  const whatsappDeps = (db: Executor): WhatsAppDeps =>
-    (whatsapp ??= createWhatsAppDeps(db, { agent: whatsappAgentRunner, getAiLimits: aiLimitsFromPlan(options.plans ?? createPlans(db)) }));
+  const whatsappDeps = (db: Executor): WhatsAppDeps => {
+    if (whatsapp) return whatsapp;
+    const plans = options.plans ?? createPlans(db);
+    whatsapp = createWhatsAppDeps(db, { agent: whatsappAgentRunner, getAiLimits: aiLimitsFromPlan(plans), getGrowth: growthFromPlan(plans) });
+    return whatsapp;
+  };
   for (const spec of whatsappJobHandlers(whatsappDeps)) registerJobHandler(spec.type, spec.handler, spec.options);
 }
 

@@ -62,6 +62,8 @@ export const MOCK_ACCOUNTS: readonly { email: string; description: string }[] = 
 
 const LATENCY_MS = 250;
 
+const AGENT_FEATURES = ["reviews", "quote_recovery", "upsell"];
+
 const ALL_MODULES = ["scheduling", "clients", "sales", "commissions", "reports", "whatsapp", "campaigns"];
 
 /** Espejo de PLANS en src/modules/billing/catalog.ts (con los topes default del agente). */
@@ -77,7 +79,7 @@ const PLAN_CATALOG: Record<Plan, { label: string; clientsTier: MePlan["clientsTi
     label: "Pro",
     clientsTier: "full",
     modules: ALL_MODULES,
-    features: ["branding"],
+    features: ["branding", "reviews", "quote_recovery", "upsell"],
     limits: { locations: 1, staff: 5, users: 8, aiConversations: 3000, aiLlmUsd: 40 },
   },
 };
@@ -108,7 +110,9 @@ function resolvePlan(sub: MockSubscription) {
     if (value !== undefined) limits[key] = value;
   }
   const label = sub.plan === "pro" && !modules.includes("whatsapp") ? "Pro sin agente" : def.label;
-  return { label, clientsTier: def.clientsTier, modules, features: [...def.features], limits };
+  // Reseñas, rescate y upsell los hace el agente: sin WhatsApp IA no aplican.
+  const features = def.features.filter((f) => modules.includes("whatsapp") || !AGENT_FEATURES.includes(f));
+  return { label, clientsTier: def.clientsTier, modules, features, limits };
 }
 
 const LOC_ESCAZU = "0b3c6f2e-6a1d-4c39-9a51-3f0f8c2a1e01";

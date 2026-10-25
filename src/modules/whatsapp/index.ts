@@ -35,6 +35,7 @@ export {
   type TemplateMessage,
   type WhatsAppApi,
 } from "./graph";
+export { NO_GROWTH, noGrowth, type GrowthFeatures, type GrowthResolver } from "./growth";
 export { countConversationsWaiting } from "./inbox";
 export { WHATSAPP_INBOUND_JOB } from "./ingest";
 export { startWhatsAppSchedulers, WHATSAPP_JOBS_ALLOWED_WHILE_PAUSED, whatsappJobHandlers, type WhatsAppJobSpec } from "./jobs";
