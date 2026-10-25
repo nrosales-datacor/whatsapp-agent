@@ -26,6 +26,7 @@ import AgendaPage from "../modules/scheduling/AgendaPage";
 import SettingsLayout from "../modules/settings/SettingsLayout";
 import SettingsSubPage from "../modules/settings/SettingsSubPage";
 import AgentSettingsPage from "../modules/whatsapp/AgentSettingsPage";
+import GrowthPage from "../modules/whatsapp/GrowthPage";
 import InboxPage from "../modules/whatsapp/InboxPage";
 import MetricsPage from "../modules/whatsapp/MetricsPage";
 import WhatsappLayout from "../modules/whatsapp/WhatsappLayout";
@@ -170,6 +171,7 @@ export default function App() {
               <Route path="conversations/:id" element={null} />
             </Route>
             <Route path="metrics" element={<MetricsPage />} />
+            <Route path="growth" element={<GrowthPage />} />
             <Route path="settings" element={<AgentSettingsPage />} />
             <Route path="*" element={<Navigate to="/whatsapp" replace />} />
           </Route>

@@ -914,6 +914,8 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
           industry: b.industry,
           role: me.role,
           modules: me.modules,
+          features: me.plan.features,
+          serviceIds: mockAgendaSetup(settingsSeedOf(state, b.id), membersOf(state, b.id)).services.filter((s) => s.active).map((s) => s.id),
           locations: b.locations,
           clients: mockClientsOf(b.id, b.locations),
         },

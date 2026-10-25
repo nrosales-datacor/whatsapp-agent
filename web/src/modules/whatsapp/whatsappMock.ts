@@ -4,7 +4,10 @@ import { readStorage, writeStorage } from "../../lib/storage";
 import type {
   AgentSettings,
   Channel,
+  ChannelTemplate,
   ChannelTemplates,
+  GrowthSettings,
+  GrowthSettingsBody,
   ConversationMode,
   ConversationStatus,
   ConversationSummary,
@@ -14,6 +17,7 @@ import type {
   WhatsappMetrics,
   WhatsappSummary,
 } from "./whatsappApi";
+import { TEMPLATE_KEYS } from "./whatsappApi";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // WhatsApp IA en la API simulada (VITE_MOCK_API=1): bandeja, chat, métricas, configuración
@@ -32,6 +36,10 @@ export interface MockWhatsappSession {
   industry: string;
   role: Role;
   modules: string[];
+  /** Funciones del plan (`me.plan.features`): reseñas, rescate y upsell (I6). */
+  features?: string[];
+  /** Servicios activos del catálogo (las reglas de upsell los referencian). */
+  serviceIds?: string[];
   /** Todas las sucursales del negocio. */
   locations: LocationRef[];
   /** Clientes del negocio (semilla de Clientes): las conversaciones son de ellos. */
@@ -52,6 +60,7 @@ interface MockConversation {
 interface BusinessState {
   conversations: MockConversation[];
   settings: AgentSettings;
+  growth?: GrowthSettingsBody;
   channels: Channel[];
   /** Respuestas simuladas del cliente que "llegan" cuando pasa su hora. */
   scheduled: { conversationId: string; at: number; text: string }[];
@@ -74,7 +83,8 @@ const WINDOW_MS = DAY;
 const MOCK_VAPID_KEY = "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U";
 const MANAGERS: Role[] = ["owner", "admin"];
 const INBOX_ROLES: Role[] = ["owner", "admin", "front_desk"];
-const TEMPLATE_NAME = /^[a-z0-9_]*$/;
+const TEMPLATE_NAME = /^[a-z0-9_]{1,512}$/;
+const LANGUAGE = /^[a-z]{2,3}(_[A-Z]{2})?$/;
 
 // ── Respuestas ──────────────────────────────────────────────────────────────
 
@@ -305,28 +315,113 @@ function defaultSettings(session: MockWhatsappSession): AgentSettings {
   };
 }
 
+const es = (name: string): ChannelTemplate => ({ name, language: "es" });
+
+/** Número como lo devuelve `GET /whatsapp/channels` (espejo de `ChannelView`). */
+function mockChannel(id: string, displayPhone: string, locationId: string | null, expired: boolean, templates: ChannelTemplates): Channel {
+  const at = new Date(Date.now() - 40 * DAY).toISOString();
+  return {
+    id,
+    phoneNumberId: displayPhone.replace(/\D/g, "").slice(-10).padStart(15, "1"),
+    wabaId: "1234567890",
+    displayPhone,
+    locationId,
+    templates,
+    status: expired ? "disconnected" : "active",
+    tokenStatus: expired ? "expired" : "valid",
+    createdAt: at,
+    updatedAt: at,
+  };
+}
+
 function defaultChannels(session: MockWhatsappSession, businessIndex: number): Channel[] {
-  const templates = (reopen: string): ChannelTemplates => ({ reminder: "recordatorio_cita", reopen, marketing: "" });
   if (session.locations.length > 1) {
-    return session.locations.slice(0, 2).map((location, i) => ({
-      id: `ch00000${businessIndex}-0000-4000-8000-00000000000${i + 1}`,
-      phoneNumber: i === 0 ? "+50640001234" : "+50640005678",
-      displayName: i === 0 ? session.businessName : `${session.businessName} · ${location.name}`,
-      locationId: location.id,
-      status: i === 0 ? "connected" : "token_expired",
-      templates: templates(i === 0 ? "reapertura_conversacion" : ""),
-    }));
+    return session.locations
+      .slice(0, 2)
+      .map((location, i) =>
+        mockChannel(
+          `ch00000${businessIndex}-0000-4000-8000-00000000000${i + 1}`,
+          i === 0 ? "+50640001234" : "+50640005678",
+          location.id,
+          i !== 0,
+          i === 0 ? { reminder: es("recordatorio_cita"), reopen: es("reapertura_conversacion") } : { reminder: es("recordatorio_cita") },
+        ),
+      );
   }
-  return [
-    {
-      id: `ch00000${businessIndex}-0000-4000-8000-000000000001`,
-      phoneNumber: "+50640009999",
-      displayName: session.businessName,
-      locationId: null,
-      status: "connected",
-      templates: templates(""),
-    },
-  ];
+  return [mockChannel(`ch00000${businessIndex}-0000-4000-8000-000000000001`, "+50640009999", null, false, { reminder: es("recordatorio_cita") })];
+}
+
+function defaultGrowth(): GrowthSettingsBody {
+  return {
+    reviews: { enabled: false, delayHours: 3, reviewUrl: null },
+    quoteRecovery: { enabled: false, waitHours: 3, firstTouchText: null },
+    upsell: { enabled: false, rules: [] },
+  };
+}
+
+function growthView(b: BusinessState, session: MockWhatsappSession): GrowthSettings {
+  const features = session.features ?? [];
+  const active = b.channels.filter((c) => c.status === "active");
+  return {
+    ...(b.growth ?? defaultGrowth()),
+    allowed: { reviews: features.includes("reviews"), quoteRecovery: features.includes("quote_recovery"), upsell: features.includes("upsell") },
+    templates: { followUp: active.some((c) => c.templates.followUp), quoteRecovery: active.some((c) => c.templates.quoteRecovery) },
+  };
+}
+
+const HOURS_ERROR = "Entre 1 y 72 horas.";
+const validHours = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 72;
+
+/** `PATCH /whatsapp/growth`: misma validación que growthSettings.ts (en lo esencial). */
+function patchGrowth(b: BusinessState, session: MockWhatsappSession, body: unknown): TransportResponse {
+  const view = growthView(b, session);
+  const next: GrowthSettingsBody = { ...(b.growth ?? defaultGrowth()) };
+  const fields: Record<string, string> = {};
+  const reviews = field(body, "reviews");
+  const quotes = field(body, "quoteRecovery");
+  const upsell = field(body, "upsell");
+  if (reviews === undefined && quotes === undefined && upsell === undefined) return invalid({ body: "Indicá qué cambiar." });
+  if ((reviews !== undefined && !view.allowed.reviews) || (quotes !== undefined && !view.allowed.quoteRecovery) || (upsell !== undefined && !view.allowed.upsell)) {
+    return fail(403, "module_not_in_plan", "Esta función es del plan Pro. Para usarla, ampliá tu plan en Configuración › Plan.");
+  }
+  if (reviews !== undefined) {
+    const delayHours = field(reviews, "delayHours");
+    const rawUrl = field(reviews, "reviewUrl");
+    const url = typeof rawUrl === "string" && rawUrl.trim() ? rawUrl.trim() : null;
+    if (!validHours(delayHours)) fields["body.reviews.delayHours"] = HOURS_ERROR;
+    if (url && !/^https:\/\/\S+$/.test(url)) fields["body.reviews.reviewUrl"] = "Pegá el link completo de tu página de reseñas (empieza con https://).";
+    next.reviews = { enabled: field(reviews, "enabled") === true, delayHours: delayHours as number, reviewUrl: url };
+  }
+  if (quotes !== undefined) {
+    const waitHours = field(quotes, "waitHours");
+    const text = field(quotes, "firstTouchText");
+    if (!validHours(waitHours)) fields["body.quoteRecovery.waitHours"] = HOURS_ERROR;
+    if (typeof text === "string" && text.length > 500) fields["body.quoteRecovery.firstTouchText"] = "Hasta 500 caracteres.";
+    next.quoteRecovery = { enabled: field(quotes, "enabled") === true, waitHours: waitHours as number, firstTouchText: typeof text === "string" && text.trim() ? text.trim() : null };
+  }
+  if (upsell !== undefined) {
+    const rules = field(upsell, "rules");
+    const list = Array.isArray(rules) ? rules : [];
+    const known = new Set(session.serviceIds ?? []);
+    const seen = new Set<string>();
+    list.forEach((rule, i) => {
+      const from = field(rule, "serviceId");
+      const to = field(rule, "suggestServiceId");
+      if (typeof from !== "string" || (known.size > 0 && !known.has(from))) fields[`body.upsell.rules.${i}.serviceId`] = "Ese servicio no existe o no está activo.";
+      else if (typeof to !== "string" || (known.size > 0 && !known.has(to))) fields[`body.upsell.rules.${i}.suggestServiceId`] = "Ese servicio no existe o no está activo.";
+      else if (from === to) fields[`body.upsell.rules.${i}.suggestServiceId`] = "Elegí un servicio distinto al que se agenda.";
+      else if (seen.has(`${from}>${to}`)) fields[`body.upsell.rules.${i}.suggestServiceId`] = "Esa regla está repetida.";
+      seen.add(`${from}>${to}`);
+    });
+    if (list.length > 30) fields["body.upsell.rules"] = "Como máximo 30 reglas.";
+    next.upsell = {
+      enabled: field(upsell, "enabled") === true,
+      rules: list.map((r) => ({ serviceId: String(field(r, "serviceId")), suggestServiceId: String(field(r, "suggestServiceId")) })),
+    };
+  }
+  if (Object.keys(fields).length > 0) return invalid(fields);
+  b.growth = next;
+  return ok(growthView(b, session));
 }
 
 function seedBusiness(session: MockWhatsappSession): BusinessState {
@@ -466,6 +561,12 @@ function metricsFor(businessId: string, from: string, to: string): WhatsappMetri
   const conversations = byDay.reduce((s, d) => s + d.conversations, 0);
   const bookingsByAgent = byDay.reduce((s, d) => s + d.bookings, 0);
   const handoffs = Math.round(conversations * 0.12);
+  const sent = Math.round(bookingsByAgent * 0.6);
+  const answered = Math.round(sent * 0.7);
+  const positive = Math.round(answered * 0.75);
+  const negative = Math.round(answered * 0.08);
+  const quotesCreated = Math.round(conversations * 0.2);
+  const recovered = Math.round(quotesCreated * 0.18);
   return {
     conversations,
     resolvedWithoutHuman: conversations - handoffs,
@@ -473,6 +574,16 @@ function metricsFor(businessId: string, from: string, to: string): WhatsappMetri
     handoffs,
     aiCostMicros: conversations * 18_400 + bookingsByAgent * 6_100,
     byDay,
+    growth: {
+      followUps: { sent, answered, positive, neutral: answered - positive - negative, negative, reviewsRequested: Math.round(positive * 0.8) },
+      quotes: {
+        created: quotesCreated,
+        touched: Math.round(quotesCreated * 0.7),
+        booked: Math.round(quotesCreated * 0.3),
+        recovered,
+        recoveredCents: recovered * 2_500_000,
+      },
+    },
   };
 }
 
@@ -656,7 +767,7 @@ function handle(req: TransportRequest, url: URL, path: string, session: MockWhat
       case "reopen": {
         if (isWindowOpen(c, now)) return fail(409, "window_open", "La ventana de 24 horas está abierta: podés escribirle directamente.");
         const channel = b.channels.find((ch) => ch.id === c.channelId);
-        const template = channel?.templates.reopen;
+        const template = channel?.templates.reopen?.name;
         if (!template) {
           return fail(409, "reopen_template_missing", "Este número no tiene plantilla de reapertura: configurala en WhatsApp IA › Configuración.");
         }
@@ -687,6 +798,15 @@ function handle(req: TransportRequest, url: URL, path: string, session: MockWhat
     }
   }
 
+  // ── Crecimiento (I6) ──
+  if (path === "/whatsapp/growth") {
+    if (method === "GET") return ok(growthView(b, session));
+    if (method === "PATCH") {
+      if (!MANAGERS.includes(session.role)) return forbiddenRole();
+      return patchGrowth(b, session, body);
+    }
+  }
+
   // ── Números conectados ──
   if (method === "GET" && path === "/whatsapp/channels") return ok(b.channels);
   if (method === "GET" && path === "/whatsapp/channels/signup-config") {
@@ -698,14 +818,7 @@ function handle(req: TransportRequest, url: URL, path: string, session: MockWhat
     const code = field(body, "code");
     if (typeof code !== "string" || !code) return invalid({ "body.code": "Falta el código de Meta." });
     b.seq += 1;
-    const channel: Channel = {
-      id: `ch0000ff-0000-4000-8000-${String(b.seq).padStart(12, "0")}`,
-      phoneNumber: `+5064000${String(7000 + b.seq).padStart(4, "0")}`,
-      displayName: session.businessName,
-      locationId: null,
-      status: "connected",
-      templates: { reminder: "", reopen: "", marketing: "" },
-    };
+    const channel = mockChannel(`ch0000ff-0000-4000-8000-${String(b.seq).padStart(12, "0")}`, `+5064000${String(7000 + b.seq).padStart(4, "0")}`, null, false, {});
     b.channels.push(channel);
     return ok(channel, 201);
   }
@@ -715,25 +828,35 @@ function handle(req: TransportRequest, url: URL, path: string, session: MockWhat
     if (!channel) return fail(404, "not_found", "No encontramos ese número.");
     if (!MANAGERS.includes(session.role)) return forbiddenRole();
     if (method === "POST" && channelMatch[2]) {
-      if (channel.status === "token_expired") return fail(409, "token_expired", "El acceso de Meta a este número venció: volvé a conectarlo.");
-      if (channel.status === "disconnected") return fail(409, "channel_disconnected", "Este número está desconectado.");
-      return ok({ sent: true });
+      // Como el backend: un token vencido responde 200 con ok:false.
+      const valid = channel.tokenStatus === "valid";
+      return ok({ ok: valid, tokenStatus: channel.tokenStatus, displayPhone: channel.displayPhone, verifiedName: valid ? session.businessName : null });
     }
     if (method === "PATCH" && !channelMatch[2]) {
       const location = field(body, "locationId");
       const templates = field(body, "templates");
       const fields: Record<string, string> = {};
       if (location !== null && !session.locations.some((l) => l.id === location)) fields["body.locationId"] = "Sucursal inválida.";
-      const next = { ...channel.templates };
-      for (const key of ["reminder", "reopen", "marketing"] as const) {
+      const next: ChannelTemplates = { ...channel.templates };
+      for (const key of TEMPLATE_KEYS) {
         const value = field(templates, key);
-        if (typeof value !== "string" || !TEMPLATE_NAME.test(value.trim())) {
-          fields[`body.templates.${key}`] = "Usá el nombre exacto de la plantilla en Meta (minúsculas, números y guion bajo).";
-        } else next[key] = value.trim();
+        if (value === undefined) continue;
+        if (value === null) {
+          delete next[key];
+          continue;
+        }
+        const name = field(value, "name");
+        const language = field(value, "language");
+        if (typeof name !== "string" || !TEMPLATE_NAME.test(name.trim()) || !name.trim()) {
+          fields[`body.templates.${key}.name`] = "Usá el nombre exacto de la plantilla en Meta (minúsculas, números y guion bajo).";
+        } else if (typeof language !== "string" || !LANGUAGE.test(language.trim())) {
+          fields[`body.templates.${key}.language`] = "Idioma inválido (p. ej. es o es_MX).";
+        } else next[key] = { name: name.trim(), language: language.trim() };
       }
       if (Object.keys(fields).length > 0) return invalid(fields);
       channel.locationId = location as string | null;
       channel.templates = next;
+      channel.updatedAt = new Date().toISOString();
       return ok(channel);
     }
   }

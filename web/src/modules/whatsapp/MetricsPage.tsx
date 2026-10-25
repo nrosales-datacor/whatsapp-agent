@@ -2,6 +2,7 @@ import { useState } from "react";
 import { capitalize, terminologyOf } from "../../app/navigation";
 import { useSession } from "../../app/session";
 import { errorMessage } from "../../lib/api";
+import { formatCents } from "../../lib/money";
 import ErrorState from "../../ui/ErrorState";
 import Icon, { type IconId } from "../../ui/Icons";
 import { todayIn } from "../scheduling/format";
@@ -31,6 +32,7 @@ export default function MetricsPage() {
   const query = useWhatsappMetrics(from, to);
   const m = query.data;
   const showCost = AGENT_MANAGERS.includes(me.role);
+  const growthFeatures = ["reviews", "quote_recovery"].filter((f) => me.plan.features.includes(f));
 
   return (
     <div className="wa-metrics">
@@ -92,6 +94,48 @@ export default function MetricsPage() {
               />
             )}
           </section>
+
+          {growthFeatures.length > 0 && (
+            <section className="wa-growth-metrics" aria-labelledby="wa-growth-title">
+              <h2 id="wa-growth-title" className="card-title">
+                Crecimiento
+              </h2>
+              <ul className="wa-kpis">
+                {growthFeatures.includes("reviews") && (
+                  <>
+                    <Kpi
+                      icon="star"
+                      label="Seguimientos post-servicio"
+                      value={formatInt(m.growth.followUps.sent)}
+                      note={`${formatInt(m.growth.followUps.answered)} respondieron · ${formatInt(m.growth.followUps.negative)} con una mala experiencia`}
+                    />
+                    <Kpi
+                      icon="sparkles"
+                      label="Reseñas pedidas"
+                      value={formatInt(m.growth.followUps.reviewsRequested)}
+                      note={`${formatPercent(m.growth.followUps.positive, m.growth.followUps.answered)} respondió «Excelente»`}
+                    />
+                  </>
+                )}
+                {growthFeatures.includes("quote_recovery") && (
+                  <>
+                    <Kpi
+                      icon="receipt"
+                      label="Cotizaciones sin agendar"
+                      value={formatInt(m.growth.quotes.created)}
+                      note={`${formatInt(m.growth.quotes.touched)} recibieron un recordatorio`}
+                    />
+                    <Kpi
+                      icon="refresh"
+                      label="Cotizaciones recuperadas"
+                      value={formatInt(m.growth.quotes.recovered)}
+                      note={`${formatCents(m.growth.quotes.recoveredCents, me.business.currency)} agendados después del rescate`}
+                    />
+                  </>
+                )}
+              </ul>
+            </section>
+          )}
         </div>
       )}
     </div>
