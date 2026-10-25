@@ -1,5 +1,5 @@
 import { adminRoutes } from "./admin/routes";
-import { billingRoutes, type PlanService } from "./modules/billing";
+import { billingRoutes, type PlanService, type StripeConfig, type StripeGateway } from "./modules/billing";
 import { businessRoutes, clientSettingsRoutes, type LocationReferenceCheck } from "./modules/business";
 import { clientsRoutes } from "./modules/clients";
 import { catalogRoutes, isLocationRestrictingServices } from "./modules/catalog";
@@ -51,6 +51,8 @@ export interface RouteDeps {
   whatsapp?: WhatsAppDeps;
   /** Métricas de producto en `daily_usage` (src/usage.ts). Default: uno nuevo. */
   usage?: UsageTracker;
+  /** Cliente de Stripe (los tests pasan un doble). Default: el SDK real con la clave del entorno. */
+  stripeGateway?: (config: StripeConfig) => StripeGateway;
 }
 
 /**
@@ -90,7 +92,7 @@ export function panelRoutes(deps: RouteDeps): Route[] {
     ...signupRoutes({ db: deps.db }),
     // Suscripción por Stripe (I6.6, solo el dueño): /billing/status, /billing/checkout y
     // /billing/portal. Sin Stripe configurado, el cobro sigue manual.
-    ...billingRoutes({ db: deps.db }),
+    ...billingRoutes({ db: deps.db, stripeGateway: deps.stripeGateway }),
     // Clientes: /clients/*. Los módulos de afuera del núcleo suman acá sus borradores de
     // datos personales para la anonimización (WhatsApp: conversaciones y mensajes). "Mis
     // clientes" del profesional: la subconsulta de sus citas la arma scheduling.
