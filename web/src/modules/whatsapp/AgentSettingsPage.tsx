@@ -16,12 +16,20 @@ const REGISTER_OPTIONS: readonly { value: Register; label: string }[] = [
   { value: "usted", label: "Usted (formal)" },
 ];
 
-/** Textos fijos conocidos del agente; las claves que no estén acá se muestran con su nombre. */
+/**
+ * Textos fijos que el dueño puede reemplazar (claves del catálogo del backend:
+ * src/modules/whatsapp/texts.ts y agent/texts.ts). Vacío = el texto por defecto, en el
+ * registro del negocio. Las claves guardadas que no estén acá se muestran con su nombre.
+ */
 const TEXT_LABELS: Record<string, { label: string; hint?: string }> = {
-  greeting: { label: "Saludo", hint: "El primer mensaje cuando alguien escribe por primera vez." },
+  botNotice: { label: "Aviso de asistente automático", hint: "Va antes del primer mensaje automático. Variable: {negocio}." },
   handoff: { label: "Al pasar a una persona", hint: "Lo que dice el agente cuando la conversación pasa al equipo." },
-  outOfHours: { label: "Fuera de horario", hint: "Cuando escriben con el negocio cerrado." },
-  fallback: { label: "Cuando no sabe la respuesta" },
+  humanRequested: { label: "Cuando piden hablar con una persona" },
+  notUnderstood: { label: "Cuando no entiende el mensaje" },
+  optOutAck: { label: "Al pedir la baja de promociones (BAJA)" },
+  marketingConsentQuestion: { label: "Pregunta de promociones", hint: "Tras la primera cita, si tenés Campañas. Variable: {negocio}." },
+  followUpQuestion: { label: "Seguimiento después del servicio", hint: "Variables: {cliente}, {servicio}, {negocio}." },
+  quoteFirstTouch: { label: "Rescate de una cotización", hint: "Variables: {servicio}, {monto}." },
 };
 
 const MAX_TONE = 200;
@@ -196,28 +204,32 @@ function SettingsForm({ saved }: { saved: AgentSettings }) {
         <FaqEditor faq={draft.faq} onChange={(v) => set("faq", v)} focus={faqFocus} setFocus={setFaqFocus} errors={problems?.faq ?? {}} />
       </section>
 
-      {Object.keys(draft.texts).length > 0 && (
-        <section className="card wa-settings-card" aria-labelledby="wa-texts-title">
-          <h2 id="wa-texts-title" className="card-title">
-            Textos del agente
-          </h2>
-          <p className="settings-help">Mensajes que el agente manda tal cual en momentos puntuales.</p>
-          {Object.entries(draft.texts).map(([key, value]) => {
-            const meta = textLabel(key);
-            return (
-              <TextAreaField
-                key={key}
-                label={meta.label}
-                hint={meta.hint}
-                rows={2}
-                value={value}
-                onChange={(v) => set("texts", { ...draft.texts, [key]: v })}
-                error={fieldError(`texts.${key}`)}
-              />
-            );
-          })}
-        </section>
-      )}
+      <section className="card wa-settings-card" aria-labelledby="wa-texts-title">
+        <h2 id="wa-texts-title" className="card-title">
+          Textos del agente
+        </h2>
+        <p className="settings-help">Mensajes que se mandan tal cual en momentos puntuales. Vacío = el texto por defecto.</p>
+        {[...new Set([...Object.keys(TEXT_LABELS), ...Object.keys(draft.texts)])].map((key) => {
+          const meta = textLabel(key);
+          return (
+            <TextAreaField
+              key={key}
+              label={meta.label}
+              hint={meta.hint}
+              rows={2}
+              value={draft.texts[key] ?? ""}
+              onChange={(v) => {
+                // Vacío = volver al texto por defecto: la clave no se manda (la lista se reemplaza entera).
+                const next = { ...draft.texts };
+                if (v) next[key] = v;
+                else delete next[key];
+                set("texts", next);
+              }}
+              error={fieldError(`texts.${key}`)}
+            />
+          );
+        })}
+      </section>
 
       {(dirty || save.isError) && (
         <div className="client-savebar wa-savebar" role="region" aria-label="Cambios sin guardar">

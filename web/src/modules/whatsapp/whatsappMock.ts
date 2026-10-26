@@ -306,11 +306,9 @@ function defaultSettings(session: MockWhatsappSession): AgentSettings {
       { id: "politicas", title: "Políticas", items: ["Cancelaciones con 24 horas de anticipación", "Pagos con SINPE Móvil, tarjeta o efectivo"] },
     ],
     faq: [{ question: "¿Tienen parqueo?", answer: "Sí, frente al local y gratis para clientes." }],
+    // Como el backend: solo los textos que el negocio reemplazó (claves del catálogo real).
     texts: {
-      greeting: `¡Hola! Soy el asistente de ${session.businessName}. ¿En qué te ayudo?`,
       handoff: "Le paso tu mensaje a una persona del equipo. Te escriben en un momento.",
-      outOfHours: "Estamos fuera de horario, pero te respondo igual y agendamos lo que necesités.",
-      fallback: "No tengo ese dato a mano. ¿Querés que le pregunte a alguien del equipo?",
     },
   };
 }
