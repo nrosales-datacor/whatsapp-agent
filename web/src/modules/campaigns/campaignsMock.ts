@@ -53,7 +53,7 @@ interface MockCampaign {
 type State = Record<string, MockCampaign[]>;
 
 const STATE_KEY = "selyon.mock.campaigns";
-const ENVIO_MS = 400;
+const ENVIO_MS = 150;
 const MANAGERS: Role[] = ["owner", "admin"];
 
 function loadState(): State {
