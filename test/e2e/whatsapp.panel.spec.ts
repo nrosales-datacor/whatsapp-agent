@@ -145,7 +145,8 @@ test("métricas: KPIs, gráfico por día con tabla y cambio de período", async 
   await page.getByRole("navigation", { name: "Secciones de WhatsApp IA" }).getByRole("link", { name: "Métricas" }).click();
   await expect(page).toHaveURL(/\/panel\/whatsapp\/metrics$/);
   await expect(page).toHaveTitle("Métricas · WhatsApp IA · Selyon CRM");
-  await expect(page.locator(".wa-kpi-label")).toHaveText([
+  // Los del agente (los de crecimiento del Pro van en su propia sección, ver growth.panel.spec.ts).
+  await expect(page.locator(".wa-metrics-body > .wa-kpis .wa-kpi-label")).toHaveText([
     "Conversaciones",
     "Resueltas sin una persona",
     "Citas agendadas por el agente",

@@ -79,6 +79,13 @@ export interface WhatsappMetrics {
   /** Costo del modelo de IA en millonésimas de dólar. */
   aiCostMicros: number;
   byDay: { date: string; conversations: number; bookings: number }[];
+  /** Crecimiento (I6) en el rango, de todo el negocio. */
+  growth: GrowthMetrics;
+}
+
+export interface GrowthMetrics {
+  followUps: { sent: number; answered: number; positive: number; neutral: number; negative: number; reviewsRequested: number };
+  quotes: { created: number; touched: number; booked: number; recovered: number; recoveredCents: number };
 }
 
 export type Register = "vos" | "tu" | "usted";
@@ -104,21 +111,44 @@ export interface AgentSettings {
   texts: Record<string, string>;
 }
 
-export type ChannelStatus = "connected" | "token_expired" | "disconnected";
+/** Estado guardado del número (`whatsapp_channels.status`). */
+export type ChannelStatus = "pending" | "active" | "disconnected";
+/** Vigencia del token de Meta. */
+export type TokenStatus = "valid" | "expired" | "missing";
 
-export interface ChannelTemplates {
-  reminder: string;
-  reopen: string;
-  marketing: string;
+/** Plantillas que usa el sistema (las aprueba Meta por número). */
+export const TEMPLATE_KEYS = ["reminder", "reopen", "marketing", "followUp", "quoteRecovery"] as const;
+export type TemplateKey = (typeof TEMPLATE_KEYS)[number];
+
+/** Plantilla aprobada en Meta: nombre exacto e idioma con el que se aprobó ("es", "es_MX"). */
+export interface ChannelTemplate {
+  name: string;
+  language: string;
 }
 
+export type ChannelTemplates = Partial<Record<TemplateKey, ChannelTemplate>>;
+
+/** `GET /whatsapp/channels` (espejo de `ChannelView` en src/modules/whatsapp/channels.ts). */
 export interface Channel {
   id: string;
-  phoneNumber: string;
-  displayName: string;
+  phoneNumberId: string;
+  wabaId: string | null;
+  /** Número visible ("+506 8888 7777"); null si Meta todavía no lo informó. */
+  displayPhone: string | null;
   locationId: string | null;
-  status: ChannelStatus;
   templates: ChannelTemplates;
+  status: ChannelStatus;
+  tokenStatus: TokenStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** `POST /whatsapp/channels/:id/test`: un token vencido responde 200 con `ok: false`. */
+export interface ChannelTestResult {
+  ok: boolean;
+  tokenStatus: TokenStatus;
+  displayPhone: string | null;
+  verifiedName: string | null;
 }
 
 export interface SignupConfig {
@@ -127,9 +157,30 @@ export interface SignupConfig {
   graphVersion: string;
 }
 
+/** `PATCH /whatsapp/channels/:id`: cada plantilla se reemplaza; null la borra. */
 export interface ChannelPatch {
   locationId: string | null;
-  templates: ChannelTemplates;
+  templates: Partial<Record<TemplateKey, ChannelTemplate | null>>;
+}
+
+// ── Crecimiento (I6): /whatsapp/growth ───────────────────────────────────────
+
+export interface UpsellRule {
+  serviceId: string;
+  suggestServiceId: string;
+}
+
+export interface GrowthSettingsBody {
+  reviews: { enabled: boolean; delayHours: number; reviewUrl: string | null };
+  quoteRecovery: { enabled: boolean; waitHours: number; firstTouchText: string | null };
+  upsell: { enabled: boolean; rules: UpsellRule[] };
+}
+
+export interface GrowthSettings extends GrowthSettingsBody {
+  /** Lo que permite el plan (el resto va con candado). */
+  allowed: { reviews: boolean; quoteRecovery: boolean; upsell: boolean };
+  /** Plantillas cargadas en algún número activo (fuera de la ventana de 24 h son obligatorias). */
+  templates: { followUp: boolean; quoteRecovery: boolean };
 }
 
 export const LIST_REFRESH_MS = 15_000;
@@ -144,6 +195,7 @@ export const whatsappKeys = {
   summary: ["whatsapp", "summary"] as const,
   metrics: (from: string, to: string) => ["whatsapp", "metrics", from, to] as const,
   settings: ["whatsapp", "settings"] as const,
+  growth: ["whatsapp", "growth"] as const,
   channels: ["whatsapp", "channels"] as const,
 };
 
@@ -167,9 +219,15 @@ export const whatsappApi = {
   channels: () => api.get<Channel[]>("/whatsapp/channels"),
   signupConfig: () => api.get<SignupConfig>("/whatsapp/channels/signup-config"),
   connect: (code: string) => api.post<unknown>("/whatsapp/channels/connect", { code }),
-  testChannel: (id: string) => api.post<unknown>(`/whatsapp/channels/${encodeURIComponent(id)}/test`),
+  testChannel: (id: string) => api.post<ChannelTestResult>(`/whatsapp/channels/${encodeURIComponent(id)}/test`),
   updateChannel: (id: string, patch: ChannelPatch) => api.patch<Channel>(`/whatsapp/channels/${encodeURIComponent(id)}`, patch),
+  growth: () => api.get<GrowthSettings>("/whatsapp/growth"),
+  saveGrowth: (patch: Partial<GrowthSettingsBody>) => api.patch<GrowthSettings>("/whatsapp/growth", patch),
 };
+
+export function useGrowthSettings() {
+  return useQuery({ queryKey: whatsappKeys.growth, queryFn: whatsappApi.growth });
+}
 
 /** Bandeja paginada ("Ver más" pide la página siguiente con el cursor). */
 export function useConversationList(status: ConversationFilter, q: string) {

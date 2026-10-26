@@ -9,21 +9,48 @@ import Icon from "../../ui/Icons";
 import { useToast } from "../../ui/Toast";
 import { formatPhone } from "../clients/format";
 import { EmbeddedSignupError, launchEmbeddedSignup } from "./embeddedSignup";
-import { useChannels, whatsappApi, whatsappKeys, type Channel, type ChannelPatch, type ChannelStatus, type ChannelTemplates } from "./whatsappApi";
+import { TEMPLATE_KEYS, useChannels, whatsappApi, whatsappKeys, type Channel, type ChannelPatch, type TemplateKey } from "./whatsappApi";
 
-const STATUS: Record<ChannelStatus, { label: string; className: string }> = {
+/** Cómo está el número para el agente: conectado, con el acceso de Meta vencido o pendiente. */
+type ChannelState = "connected" | "expired" | "pending";
+
+const STATE: Record<ChannelState, { label: string; className: string }> = {
   connected: { label: "Conectado", className: "badge" },
-  token_expired: { label: "Acceso vencido", className: "badge badge-warning" },
-  disconnected: { label: "Desconectado", className: "badge badge-muted" },
+  expired: { label: "Acceso vencido", className: "badge badge-warning" },
+  pending: { label: "Pendiente", className: "badge badge-muted" },
 };
 
-const TEMPLATE_FIELDS: readonly { key: keyof ChannelTemplates; label: string; hint: string }[] = [
+function stateOf(channel: Channel): ChannelState {
+  if (channel.tokenStatus === "expired" || channel.status === "disconnected") return "expired";
+  if (channel.tokenStatus === "missing" || channel.status === "pending") return "pending";
+  return "connected";
+}
+
+const TEMPLATE_FIELDS: readonly { key: TemplateKey; label: string; hint: string }[] = [
   { key: "reminder", label: "Plantilla de recordatorio", hint: "La que usa el recordatorio de la cita del día siguiente." },
   { key: "reopen", label: "Plantilla de reapertura", hint: "Para escribirle a un cliente cuando pasaron más de 24 horas (botón «Reabrir con plantilla»)." },
-  { key: "marketing", label: "Plantilla de marketing", hint: "Para campañas. Opcional." },
+  { key: "marketing", label: "Plantilla de marketing", hint: "Para campañas. Variables: {{1}} nombre del cliente · {{2}} mensaje de la campaña." },
+  {
+    key: "followUp",
+    label: "Plantilla de seguimiento post-servicio",
+    hint: "Para pedir la opinión (y la reseña) fuera de la ventana de 24 h. {{1}} cliente · {{2}} servicios, con 3 botones de respuesta rápida.",
+  },
+  {
+    key: "quoteRecovery",
+    label: "Plantilla de rescate de cotizaciones",
+    hint: "Segundo toque a quien preguntó un precio y no agendó. {{1}} cliente · {{2}} servicio · {{3}} monto.",
+  },
 ];
 
 const ALL = "";
+const DEFAULT_LANGUAGE = "es";
+
+/** Borrador del formulario: un idioma para todas las plantillas del número (como se aprueban casi siempre). */
+interface ChannelDraft {
+  locationId: string | null;
+  language: string;
+  names: Record<TemplateKey, string>;
+}
 
 /** Números de WhatsApp del negocio: conectar (Embedded Signup), probar, sucursal y plantillas. */
 export default function ChannelsSection() {
@@ -85,8 +112,22 @@ export default function ChannelsSection() {
   );
 }
 
-function toDraft(channel: Channel): ChannelPatch {
-  return { locationId: channel.locationId, templates: { ...channel.templates } };
+function toDraft(channel: Channel): ChannelDraft {
+  const names = Object.fromEntries(TEMPLATE_KEYS.map((k) => [k, channel.templates[k]?.name ?? ""])) as Record<TemplateKey, string>;
+  const language = TEMPLATE_KEYS.map((k) => channel.templates[k]?.language).find(Boolean) ?? DEFAULT_LANGUAGE;
+  return { locationId: channel.locationId, language, names };
+}
+
+/** Lo que se manda: cada plantilla con nombre, con el idioma del número; sin nombre, se borra. */
+function toPatch(draft: ChannelDraft): ChannelPatch {
+  const language = draft.language.trim() || DEFAULT_LANGUAGE;
+  const templates = Object.fromEntries(
+    TEMPLATE_KEYS.map((k) => {
+      const name = draft.names[k].trim();
+      return [k, name ? { name, language } : null];
+    }),
+  ) as ChannelPatch["templates"];
+  return { locationId: draft.locationId, templates };
 }
 
 function ChannelItem({ channel, onReconnect, reconnecting }: { channel: Channel; onReconnect: () => void; reconnecting: boolean }) {
@@ -94,10 +135,11 @@ function ChannelItem({ channel, onReconnect, reconnecting }: { channel: Channel;
   const t = terminologyOf(me);
   const qc = useQueryClient();
   const { showToast } = useToast();
-  const [draft, setDraft] = useState<ChannelPatch>(() => toDraft(channel));
+  const [draft, setDraft] = useState<ChannelDraft>(() => toDraft(channel));
   const dirty = JSON.stringify(draft) !== JSON.stringify(toDraft(channel));
-  const status = STATUS[channel.status];
-  const phone = formatPhone(channel.phoneNumber);
+  const state = stateOf(channel);
+  const status = STATE[state];
+  const phone = channel.displayPhone ? formatPhone(channel.displayPhone) : `ID ${channel.phoneNumberId}`;
 
   const locationOptions = [
     { value: ALL, label: `Todas las ${t.locations}` },
@@ -106,17 +148,22 @@ function ChannelItem({ channel, onReconnect, reconnecting }: { channel: Channel;
   ];
 
   const save = useMutation({
-    mutationFn: () => whatsappApi.updateChannel(channel.id, { locationId: draft.locationId, templates: draft.templates }),
+    mutationFn: () => whatsappApi.updateChannel(channel.id, toPatch(draft)),
     onSuccess: (saved) => {
-      qc.setQueryData<Channel[]>(whatsappKeys.channels, (list) => list?.map((c) => (c.id === channel.id ? (saved ?? { ...c, ...draft }) : c)));
-      if (saved) setDraft(toDraft(saved));
+      if (saved) {
+        qc.setQueryData<Channel[]>(whatsappKeys.channels, (list) => list?.map((c) => (c.id === channel.id ? saved : c)));
+        setDraft(toDraft(saved));
+      } else void qc.invalidateQueries({ queryKey: whatsappKeys.channels });
       showToast(`Guardamos los cambios del ${phone}.`);
     },
   });
 
   const test = useMutation({
     mutationFn: () => whatsappApi.testChannel(channel.id),
-    onSuccess: () => showToast(`La conexión del ${phone} funciona.`),
+    onSuccess: (result) => {
+      void qc.invalidateQueries({ queryKey: whatsappKeys.channels });
+      showToast(result?.ok === false ? `El acceso de Meta al ${phone} venció: volvé a conectarlo.` : `La conexión del ${phone} funciona.`);
+    },
     onError: (error) => showToast(errorMessage(error, "La prueba del número falló.")),
   });
 
@@ -137,18 +184,18 @@ function ChannelItem({ channel, onReconnect, reconnecting }: { channel: Channel;
         </span>
         <div className="wa-channel-title">
           <span className="wa-channel-phone tnum">{phone}</span>
-          <span className="muted">{channel.displayName}</span>
+          <span className="muted">{state === "pending" ? "Todavía sin acceso de Meta" : "WhatsApp Business"}</span>
         </div>
         <span className={status.className}>{status.label}</span>
       </div>
 
-      {channel.status !== "connected" && (
+      {state !== "connected" && (
         <div className="readonly-notice wa-channel-warning">
           <Icon id="alert" size={16} />
           <span>
-            {channel.status === "token_expired"
+            {state === "expired"
               ? "El acceso de Meta a este número venció: el agente no puede responder hasta que lo volvás a conectar."
-              : "Este número está desconectado: el agente no responde por él."}
+              : "Este número todavía no está conectado con Meta: el agente no responde por él."}
           </span>
           <button type="button" className="link-button" onClick={onReconnect} disabled={reconnecting}>
             Volver a conectar
@@ -179,17 +226,27 @@ function ChannelItem({ channel, onReconnect, reconnecting }: { channel: Channel;
               className="wa-mono"
               spellCheck={false}
               autoCapitalize="off"
-              value={draft.templates[f.key]}
-              onChange={(e) => setDraft((d) => ({ ...d, templates: { ...d.templates, [f.key]: e.target.value } }))}
-              error={fieldError(`templates.${f.key}`)}
+              value={draft.names[f.key]}
+              onChange={(e) => setDraft((d) => ({ ...d, names: { ...d.names, [f.key]: e.target.value } }))}
+              error={fieldError(`templates.${f.key}.name`) ?? fieldError(`templates.${f.key}`)}
             />
           ))}
+          <TextField
+            label="Idioma de las plantillas"
+            hint="El código con el que las aprobaste en Meta (es, es_MX, en_US…)."
+            className="wa-mono"
+            spellCheck={false}
+            autoCapitalize="off"
+            value={draft.language}
+            onChange={(e) => setDraft((d) => ({ ...d, language: e.target.value }))}
+            error={TEMPLATE_KEYS.map((k) => fieldError(`templates.${k}.language`)).find(Boolean)}
+          />
         </div>
       </fieldset>
 
       <FormError message={save.isError && !Object.keys(isApiError(save.error) ? save.error.fields : {}).length ? errorMessage(save.error) : null} />
       <div className="wa-channel-actions">
-        <button type="button" className="btn btn-secondary btn-small" onClick={() => test.mutate()} disabled={test.isPending || channel.status !== "connected"}>
+        <button type="button" className="btn btn-secondary btn-small" onClick={() => test.mutate()} disabled={test.isPending || state === "pending"}>
           <Icon id="send" size={16} />
           {test.isPending ? "Probando…" : "Probar conexión"}
         </button>

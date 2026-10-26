@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import AdminBusinessPage from "../modules/admin/AdminBusinessPage";
 import AdminHomePage from "../modules/admin/AdminHomePage";
 import AdminLoginPage from "../modules/admin/AdminLoginPage";
@@ -10,6 +10,8 @@ import LoginPage from "../modules/auth/LoginPage";
 import ResetPasswordPage from "../modules/auth/ResetPasswordPage";
 import SignupPage from "../modules/auth/SignupPage";
 import VerifyEmailPage from "../modules/auth/VerifyEmailPage";
+import CampaignDetailPage from "../modules/campaigns/CampaignDetailPage";
+import CampaignEditorPage from "../modules/campaigns/CampaignEditorPage";
 import CampaignsPage from "../modules/campaigns/CampaignsPage";
 import ClientDetailPage from "../modules/clients/ClientDetailPage";
 import ClientsPage from "../modules/clients/ClientsPage";
@@ -26,6 +28,7 @@ import AgendaPage from "../modules/scheduling/AgendaPage";
 import SettingsLayout from "../modules/settings/SettingsLayout";
 import SettingsSubPage from "../modules/settings/SettingsSubPage";
 import AgentSettingsPage from "../modules/whatsapp/AgentSettingsPage";
+import GrowthPage from "../modules/whatsapp/GrowthPage";
 import InboxPage from "../modules/whatsapp/InboxPage";
 import MetricsPage from "../modules/whatsapp/MetricsPage";
 import WhatsappLayout from "../modules/whatsapp/WhatsappLayout";
@@ -42,7 +45,7 @@ import { PublicOnly, RequireAuth } from "./session";
 //                /accept-invitation?token= (enlace del correo; /invite/:token es alias)
 //                /change-password (obligatorio con clave temporal)
 //                /signup (alta self-service, si está abierta) · /verify-email?token= (enlace del correo)
-//   Panel:       / · /agenda · /clients · /clients/:id · /campaigns
+//   Panel:       / · /agenda · /clients · /clients/:id · /campaigns · /campaigns/new · /campaigns/:id(/edit)
 //                /reports · /reports/services · /reports/staff · /reports/clients · /reports/channels
 //                /sales · /sales/pending · /sales/today · /sales/commissions
 //                /whatsapp · /whatsapp/conversations/:id · /whatsapp/metrics · /whatsapp/settings
@@ -170,6 +173,7 @@ export default function App() {
               <Route path="conversations/:id" element={null} />
             </Route>
             <Route path="metrics" element={<MetricsPage />} />
+            <Route path="growth" element={<GrowthPage />} />
             <Route path="settings" element={<AgentSettingsPage />} />
             <Route path="*" element={<Navigate to="/whatsapp" replace />} />
           </Route>
@@ -177,10 +181,16 @@ export default function App() {
             path="campaigns"
             element={
               <SectionGate id="campaigns">
-                <CampaignsPage />
+                <Outlet />
               </SectionGate>
             }
-          />
+          >
+            {/* Lista · borrador nuevo · detalle con resultados · editar el borrador (I6). */}
+            <Route index element={<CampaignsPage />} />
+            <Route path="new" element={<CampaignEditorPage />} />
+            <Route path=":id" element={<CampaignDetailPage />} />
+            <Route path=":id/edit" element={<CampaignEditorPage />} />
+          </Route>
           <Route
             path="settings"
             element={

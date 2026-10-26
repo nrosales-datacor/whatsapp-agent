@@ -202,3 +202,11 @@
 
 /* Configuración › Reglas: números cortos, campos angostos. */
 .crm-rules .field .input { max-width: 260px; }
+
+/* ── Promociones (I6) ── */
+.client-consent-status { display: flex; align-items: flex-start; gap: var(--space-xs); font-weight: 600; margin: 0 0 var(--space-xs); }
+.client-consent-status svg { flex-shrink: 0; margin-top: 2px; }
+.client-consent-yes { color: var(--success, var(--accent-strong)); }
+.client-consent-no { color: var(--warning); }
+.client-consent-none { color: var(--text-2); }
+.client-consent-actions { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-top: var(--space-sm); }
