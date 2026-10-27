@@ -1,6 +1,8 @@
 // Descarga (una sola vez) los .woff2 de las fuentes del panel desde Google Fonts
 // y los guarda en src/platform/http/fonts/ para SERVIRLOS NOSOTROS (sin depender del CDN
 // de Google en runtime: funciona offline y detrás de firewalls corporativos).
+// Geist y Geist Mono son variables: Google devuelve el mismo archivo para todos los pesos,
+// así que se guarda uno por familia (geist.woff2, geist-mono.woff2).
 import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,7 +12,7 @@ if (!existsSync(OUT)) mkdirSync(OUT, { recursive: true });
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
 const CSS_URL =
-  "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap";
+  "https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap";
 
 const slug = (s) => s.toLowerCase().replace(/\s+/g, "-");
 
@@ -30,9 +32,14 @@ while ((m = re.exec(css))) {
   if (!family || !weight || !url) continue;
   wanted.push({ family, weight, url, name: `${slug(family)}-${weight}.woff2` });
 }
-
-console.log(`Encontradas ${wanted.length} variantes latin.`);
+// Mismo archivo para todos los pesos de una familia (fuente variable) → uno solo, sin el peso.
 for (const f of wanted) {
+  if (wanted.every((o) => o.family !== f.family || o.url === f.url)) f.name = `${slug(f.family)}.woff2`;
+}
+const unique = [...new Map(wanted.map((f) => [f.name, f])).values()];
+
+console.log(`Encontradas ${wanted.length} variantes latin (${unique.length} archivos).`);
+for (const f of unique) {
   const buf = Buffer.from(await (await fetch(f.url, { headers: { "User-Agent": UA } })).arrayBuffer());
   writeFileSync(resolve(OUT, f.name), buf);
   console.log(`  ${f.name}  (${f.family} ${f.weight}, ${(buf.length / 1024).toFixed(1)} KB)`);

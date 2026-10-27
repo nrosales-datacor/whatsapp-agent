@@ -23,8 +23,12 @@ function pushItems(push: ReturnType<typeof usePush>): MenuItem[] {
   }
 }
 
-/** Menú de usuario: notificaciones, cambiar clave, 2FA, tema claro/oscuro y salir. */
-export default function UserMenu() {
+/**
+ * Menú de usuario: notificaciones, cambiar clave, 2FA, tema claro/oscuro y salir.
+ * "sidebar": avatar + nombre + rol al pie del menú lateral (abre hacia arriba);
+ * "compact": solo el avatar en el encabezado (móvil; en desktop se oculta por CSS).
+ */
+export default function UserMenu({ variant }: { variant: "sidebar" | "compact" }) {
   const me = useSession();
   const push = usePush();
   const t = terminologyOf(me);
@@ -37,11 +41,25 @@ export default function UserMenu() {
     <>
       <Menu
         ariaLabel={`Menú de ${me.user.name}`}
-        buttonClassName="avatar-button"
+        buttonClassName={variant === "sidebar" ? "user-chip" : "avatar-button user-menu-compact"}
+        placement={variant === "sidebar" ? "above" : "below"}
+        align={variant === "sidebar" ? "start" : "end"}
         buttonContent={
-          <span className="avatar" aria-hidden="true">
-            {initials(me.user.name)}
-          </span>
+          variant === "sidebar" ? (
+            <>
+              <span className="avatar" aria-hidden="true">
+                {initials(me.user.name)}
+              </span>
+              <span className="user-chip-text" aria-hidden="true">
+                <span className="user-chip-name">{me.user.name}</span>
+                <span className="user-chip-role">{roleLabel(me.role, t)}</span>
+              </span>
+            </>
+          ) : (
+            <span className="avatar" aria-hidden="true">
+              {initials(me.user.name)}
+            </span>
+          )
         }
         header={
           <div className="user-summary">

@@ -5,33 +5,33 @@
 
 .sales-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-xs) var(--space-md); margin-bottom: var(--space-md); }
 .sales-head .page-header { margin-bottom: 0; }
-.sales-tabs ul { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-pill); }
-.sales-tab { display: inline-flex; align-items: center; min-height: 40px; padding: 8px 16px; border-radius: var(--radius-pill); color: var(--text-2); font-size: var(--step--1); font-weight: 700; text-decoration: none; white-space: nowrap; }
-.sales-tab:hover { color: var(--text); background: var(--surface-2); }
-.sales-tab.active { background: var(--accent); color: var(--accent-fg); }
+.sales-tabs ul { display: flex; flex-wrap: wrap; gap: 2px; padding: 3px; background: var(--surface-sunken); border: none; border-radius: 9px; width: max-content; max-width: 100%; }
+.sales-tab { display: inline-flex; align-items: center; min-height: 30px; padding: 0 12px; border-radius: 7px; color: var(--text-secondary); font-size: var(--step--1); font-weight: 500; text-decoration: none; white-space: nowrap; transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
+.sales-tab:hover { color: var(--text); }
+.sales-tab.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(16,18,24,.08); }
 
 .sales-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-sm); }
 .sales-toolbar .field { margin-top: 0; flex: 1 1 150px; min-width: 0; max-width: 220px; }
 .sales-toolbar-actions { margin-left: auto; display: flex; gap: var(--space-xs); }
 .sales-toolbar-inline { margin-bottom: var(--space-sm); }
 
-.sales-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)); gap: var(--space-sm); }
-.card.sales-kpi { display: flex; flex-direction: column; gap: 2px; padding: var(--space-md); }
-.sales-kpi-label { font-size: var(--step--1); font-weight: 600; color: var(--text-2); }
-.sales-kpi-value { font-family: var(--font-display); font-size: var(--step-2); font-weight: 800; line-height: 1.15; color: var(--text); overflow-wrap: anywhere; }
-.card.sales-kpi-strong { border-color: var(--accent-line); background: var(--accent-soft); }
-.sales-kpi-strong .sales-kpi-value { color: var(--accent-strong); }
+.sales-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: var(--space-md); }
+.card.sales-kpi { display: flex; flex-direction: column; gap: 8px; padding: var(--space-card); }
+.sales-kpi-label { font-size: var(--step--1); font-weight: 500; color: var(--text-secondary); }
+.sales-kpi-value { font-size: var(--step-4); line-height: 32px; font-weight: 600; letter-spacing: -.015em; color: var(--text); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.card.sales-kpi-strong { border-color: var(--border); background: var(--surface); }
+.sales-kpi-strong .sales-kpi-value { color: var(--status-confirmed); }
 
 /* `position: relative`: lo absoluto de adentro (textos solo para lectores de pantalla) queda
    dentro del scroll de la tarjeta y no agranda la página. */
 .card.sales-table-card { position: relative; padding: 0; overflow-x: auto; }
 .sales-table-scroll { position: relative; overflow-x: auto; }
 .sales-table { width: 100%; border-collapse: collapse; font-size: var(--step--1); }
-.sales-table th { text-align: left; font-weight: 700; color: var(--text); }
-.sales-table thead th { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-3); padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--border); background: var(--surface-2); white-space: nowrap; }
+.sales-table th { text-align: left; font-weight: 600; color: var(--text); }
+.sales-table thead th { font-size: 12px; font-weight: 500; color: var(--text-3); padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--border); background: var(--surface-muted); white-space: nowrap; }
 .sales-table td, .sales-table tbody th, .sales-table tfoot th { padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--border-2); vertical-align: top; }
 .sales-table tbody tr:last-child td, .sales-table tbody tr:last-child th { border-bottom: none; }
-.sales-table tfoot th, .sales-table tfoot td { border-top: 1px solid var(--border); border-bottom: none; font-weight: 700; background: var(--surface-2); }
+.sales-table tfoot th, .sales-table tfoot td { border-top: 1px solid var(--border); border-bottom: none; font-weight: 600; background: var(--surface-2); }
 .card .sales-table thead th:first-child, .card .sales-table td:first-child { padding-left: var(--space-md); }
 .sales-col-num { text-align: right !important; white-space: nowrap; }
 .sales-col-action { text-align: right; white-space: nowrap; width: 1%; }
@@ -39,10 +39,10 @@
 .sales-row-note { display: block; color: var(--text-2); font-size: 12px; font-weight: 500; margin-top: 2px; overflow-wrap: anywhere; }
 .sales-row-refund td { color: var(--text-2); }
 .sales-truncated { padding: var(--space-sm) var(--space-md); }
-.sales-strong { font-weight: 800; color: var(--text); }
+.sales-strong { font-weight: 600; color: var(--text); }
 .sales-negative { color: var(--danger); }
 
-.sales-kind-badge { display: inline-flex; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: var(--radius-pill); background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border); }
+.sales-kind-badge { display: inline-flex; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: var(--radius-pill); background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border); }
 .sales-kind-badge.kind-payment { background: var(--success-soft); color: var(--success); border-color: transparent; }
 .sales-kind-badge.kind-deposit { background: var(--info-soft); color: var(--info); border-color: transparent; }
 .sales-kind-badge.kind-refund { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
@@ -50,8 +50,8 @@
 /* Saldo de una cita (diálogo "Cobrar", panel de la cita y Pendientes). */
 .sales-balance, .sales-pending-amounts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-xs); }
 .sales-balance { margin: var(--space-sm) 0; padding: var(--space-sm); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
-.sales-balance dt, .sales-pending-amounts dt { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
-.sales-balance dd, .sales-pending-amounts dd { font-weight: 800; color: var(--text); overflow-wrap: anywhere; }
+.sales-balance dt, .sales-pending-amounts dt { font-size: 12px; font-weight: 500; color: var(--text-3); }
+.sales-balance dd, .sales-pending-amounts dd { font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
 .sales-balance-due dd { color: var(--warning); }
 .sales-balance-paid dd { color: var(--success); }
 .sales-note { margin-top: var(--space-sm); padding: var(--space-sm); border-radius: var(--radius-sm); background: var(--success-soft); color: var(--text); font-size: var(--step--1); }
@@ -60,7 +60,7 @@
 
 .sales-pending { display: flex; flex-direction: column; gap: var(--space-sm); }
 .card.sales-pending-item { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 300px) auto; align-items: center; gap: var(--space-sm) var(--space-md); padding: var(--space-md); }
-.sales-pending-title { font-weight: 700; }
+.sales-pending-title { font-weight: 600; }
 
 .sales-section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); flex-wrap: wrap; margin-bottom: var(--space-xs); }
 .sales-section-head .card-title { margin-bottom: 0; }
@@ -68,7 +68,7 @@
 .sales-entry { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-xs) var(--space-md); padding: var(--space-xs) 0; border-bottom: 1px solid var(--border-2); min-height: 52px; }
 .sales-entries li:last-child { border-bottom: none; }
 .sales-entry-main { flex: 1 1 240px; min-width: 0; }
-.sales-entry-title { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-weight: 700; font-size: var(--step--1); overflow-wrap: anywhere; }
+.sales-entry-title { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-weight: 600; font-size: var(--step--1); overflow-wrap: anywhere; }
 .sales-entry-actions { display: flex; gap: var(--space-xs); flex-wrap: wrap; }
 
 .sales-day-list { display: flex; flex-direction: column; }
@@ -84,14 +84,16 @@
 
 @media (max-width: 767px) {
   .sales-head { flex-direction: column; align-items: stretch; }
-  .sales-tabs ul { border-radius: var(--radius); }
+  .sales-tabs ul { width: 100%; }
   .sales-tabs li { flex: 1 1 auto; }
-  .sales-tab { width: 100%; justify-content: center; padding: 8px 10px; }
+  .sales-tab { width: 100%; justify-content: center; padding: 0 10px; }
   .sales-toolbar .field { max-width: none; flex-basis: calc(50% - var(--space-sm)); }
   .sales-toolbar-actions { margin-left: 0; width: 100%; }
   .sales-toolbar-actions .btn { flex: 1; }
   .card.sales-pending-item { grid-template-columns: minmax(0, 1fr); }
-  .sales-kpi-value { font-size: var(--step-1); }
+  .sales-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-sm); } /* KPIs en 2x2 */
+  .card.sales-kpi { padding: var(--space-sm) 14px; gap: 4px; }
+  .sales-kpi-value { font-size: 22px; line-height: 28px; }
 }
 
 /* Imprimir el resumen del día: solo el contenido, sin menú ni barras. */
@@ -100,7 +102,7 @@
   .app-main { padding: 0 !important; }
   .page { max-width: none; }
   .card { border-color: #999; break-inside: avoid; }
-  .sales-print-header .sales-print-business { display: block; font-weight: 800; font-size: var(--step-1); }
+  .sales-print-header .sales-print-business { display: block; font-weight: 600; font-size: var(--step-1); }
   .card.sales-kpi-strong { background: none; }
   body { background: #fff; color: #000; }
 }

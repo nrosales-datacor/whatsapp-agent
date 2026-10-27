@@ -75,7 +75,7 @@ interface Props {
   strokeWidth?: number;
 }
 
-export default function Icon({ id, size = 20, strokeWidth = 1.8 }: Props) {
+export default function Icon({ id, size = 20, strokeWidth = 1.75 }: Props) {
   return (
     <svg
       width={size}
