@@ -24,6 +24,8 @@ const { paymentMethods } = await import("../../src/modules/sales/schema");
 const { memberships, users } = await import("../../src/modules/team/schema");
 const { _resetSignupLimitsForTests } = await import("../../src/modules/onboarding");
 const { auditLog } = await import("../../src/platform/db/schema");
+const { readDailyUsage, USAGE_METRICS } = await import("../../src/platform/observability/dailyUsage");
+const { localDate } = await import("../../src/modules/scheduling");
 const { jobs } = await import("../../src/platform/queue/schema");
 const { withSystem } = await import("../../src/platform/db/scope");
 const { createEphemeralDb } = await import("../helpers/pgliteDb");
@@ -189,6 +191,28 @@ test("verificación: sin verificar no entra (403 con la clave buena, 401 genéri
 
   const login = await browser().post(`${API}/auth/login`, { email: body.email.toUpperCase(), password: body.password });
   assert.equal(login.status, 200, "ya verificada, entra normal");
+});
+
+test("métricas: verificar el correo cuenta como login y la dueña como usuaria activa en daily_usage (I5)", async () => {
+  const body = signupBody();
+  assert.equal((await browser().post(`${API}/signup`, body)).status, 202);
+  const biz = await businessNamed(body.businessName);
+  const today = localDate(new Date(), biz.timezone);
+  const read = (metric: string) => readDailyUsage(db, biz.id, { metric, from: today, to: today });
+  // Solo darse de alta (sin abrir el enlace) no es entrar al panel.
+  assert.deepEqual(await read(USAGE_METRICS.logins), []);
+
+  const b = browser();
+  assert.equal((await b.post(`${API}/signup/verify`, { token: await verificationToken(body.email) })).status, 200);
+  assert.deepEqual(await read(USAGE_METRICS.logins), [{ date: today, value: 1 }], "el primer ingreso es por el enlace");
+  // Con la sesión del enlace, el panel la cuenta como activa (una vez por día).
+  assert.equal((await b.get(`${API}/onboarding`)).status, 200);
+  assert.equal((await b.get(`${API}/auth/me`)).status, 200);
+  assert.deepEqual(await read(USAGE_METRICS.activeUsers), [{ date: today, value: 1 }]);
+
+  // Los siguientes ingresos, por /auth/login como cualquiera.
+  assert.equal((await browser().post(`${API}/auth/login`, { email: body.email, password: body.password })).status, 200);
+  assert.deepEqual(await read(USAGE_METRICS.logins), [{ date: today, value: 2 }]);
 });
 
 test("honeypot: responde lo mismo y no crea nada", async () => {

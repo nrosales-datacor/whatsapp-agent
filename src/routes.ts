@@ -128,7 +128,15 @@ export function panelRoutes(deps: RouteDeps): Route[] {
     // Cobro en línea del dueño (I6): /billing/status, /billing/checkout y /billing/portal.
     ...billingRoutes({ db: deps.db, ...deps.billing }),
     // Alta self-service y checklist de primeros pasos (I6): /signup/* y /onboarding/*. El alta
-    // usa los mismos pasos que la del superadmin (catálogo y métodos de pago).
-    ...onboardingRoutes({ db: deps.db, plans: deps.plans, isWhatsAppConnected, provisioning: PROVISIONING_STEPS, ...deps.signup }),
+    // usa los mismos pasos que la del superadmin (catálogo y métodos de pago) y verificar el
+    // correo cuenta como login en `daily_usage` (usuarios activos: lo marca la sesión).
+    ...onboardingRoutes({
+      db: deps.db,
+      plans: deps.plans,
+      isWhatsAppConnected,
+      provisioning: PROVISIONING_STEPS,
+      onLogin: usage.login,
+      ...deps.signup,
+    }),
   ];
 }
