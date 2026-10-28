@@ -10,8 +10,8 @@ import {
 import { withTenant, type Executor } from "../../platform/db/scope";
 import { HttpError } from "../../platform/http/errors";
 import { parseCookies, SESSION_COOKIE, sessionCookie } from "../../platform/http/http";
+import type { Session, SessionResolveOptions, SessionResolver } from "../../platform/http/routeTypes";
 import { log } from "../../platform/observability/log";
-import type { Session, SessionResolver } from "../../platform/http/routeTypes";
 import { getBusinessContext } from "../business";
 import { membershipLocations, memberships, users } from "./schema";
 
@@ -50,7 +50,7 @@ export const businessPaused = () =>
  * Valida los claims contra la base y arma la sesión, o null si ya no vale. Lanza 403
  * `business_paused` si el negocio está pausado.
  */
-export async function loadSession(db: Executor, claims: SessionClaims): Promise<Session | null> {
+export async function loadSession(db: Executor, claims: SessionClaims, options: SessionResolveOptions = {}): Promise<Session | null> {
   const ctx = await getBusinessContext(db, claims.businessId);
   if (!ctx || (ctx.business.status !== "active" && ctx.business.status !== "paused")) return null;
 
@@ -64,12 +64,15 @@ export async function loadSession(db: Executor, claims: SessionClaims): Promise<
         membershipActive: memberships.active,
         userActive: users.active,
         sessionEpoch: users.sessionEpoch,
+        emailUnverifiedSince: users.emailUnverifiedSince,
       })
       .from(memberships)
       .innerJoin(users, eq(users.id, memberships.userId))
       .where(and(eq(memberships.businessId, claims.businessId), eq(memberships.userId, claims.userId)))
       .limit(1);
     if (!row || !row.userActive || !row.membershipActive) return null;
+    // Correo sin verificar (alta self-service): no hay sesión hasta abrir el enlace.
+    if (row.emailUnverifiedSince) return null;
     if (row.sessionEpoch !== claims.sessionEpoch) return null; // sesión revocada
     if (!isRole(row.role)) return null;
 
@@ -90,7 +93,7 @@ export async function loadSession(db: Executor, claims: SessionClaims): Promise<
     };
   });
   // Recién con la sesión validada: alguien que ya no es miembro ve un 401, no el estado del negocio.
-  if (session && ctx.business.status === "paused") throw businessPaused();
+  if (session && ctx.business.status === "paused" && !options.allowPaused) throw businessPaused();
   return session;
 }
 
@@ -102,9 +105,9 @@ export type SessionSeenHook = (executor: Executor, session: Session) => Promise<
 
 /** El `SessionResolver` del router: cookie → claims → sesión validada contra la base. */
 export function createSessionResolver(db: Executor, options: { onSession?: SessionSeenHook } = {}): SessionResolver {
-  return async (req) => {
+  return async (req, resolveOptions) => {
     const claims = readSessionClaims(req);
-    const session = claims ? await loadSession(db, claims) : null;
+    const session = claims ? await loadSession(db, claims, resolveOptions) : null;
     if (session && options.onSession) {
       try {
         await options.onSession(db, session);

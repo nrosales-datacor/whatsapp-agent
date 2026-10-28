@@ -10,8 +10,8 @@ import ts from "typescript";
 // test/security/rls.test.ts con RLS: una dependencia prohibida rompe acá, no queda
 // escondida hasta que alguien la note en una revisión.
 //
-//   (a) El núcleo (business, team, catalog, clients, scheduling, sales, commissions) no
-//       importa nada de whatsapp, campaigns ni billing.
+//   (a) El núcleo (business, team, catalog, clients, scheduling, sales, commissions,
+//       reports) no importa nada de whatsapp, campaigns, billing ni onboarding.
 //   (b) src/platform no importa de src/modules, salvo src/platform/db/schemaRegistry.ts
 //       (junta los esquemas para el cliente de Drizzle).
 //   (c) Un módulo importa de otro SOLO por su index.ts (su API pública). Única excepción:
@@ -20,8 +20,8 @@ import ts from "typescript";
 //       de un módulo puede leer las tablas de otro.
 //   (d) Nadie depende de reports (I5): arma sus reportes con lo que exponen los demás y
 //       solo la composición (src/routes.ts) lo usa. Así ningún módulo puede formar un
-//       ciclo a través de él, y reports (núcleo de gestión) tampoco importa whatsapp ni
-//       billing (regla a).
+//       ciclo a través de él, y reports (núcleo de gestión) tampoco importa whatsapp,
+//       billing ni onboarding (regla a).
 //
 // Los imports se leen con el preprocesador de TypeScript (no con una regex): ve imports,
 // re-exports, `import type` e `import()` dinámicos, e ignora los comentarios.
@@ -31,7 +31,7 @@ const SRC = fileURLToPath(new URL("../../src/", import.meta.url));
 const CORE = ["business", "team", "catalog", "clients", "scheduling", "sales", "commissions", "reports"];
 /** Módulos de los que ningún otro módulo puede depender (solo la composición). */
 const LEAVES = ["reports"];
-const OUTSIDE_CORE = ["whatsapp", "campaigns", "billing"];
+const OUTSIDE_CORE = ["whatsapp", "campaigns", "billing", "onboarding"];
 const SCHEMA_REGISTRY = "platform/db/schemaRegistry.ts";
 
 /** Ruta relativa a src/ con barras normales, p. ej. "modules/scheduling/schema.ts". */

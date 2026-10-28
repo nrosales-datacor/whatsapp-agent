@@ -41,5 +41,12 @@ export function productionConfigWarnings(env: Env = process.env): string[] {
   if (!env.PANEL_SUPERADMIN_USERNAME?.trim() || !env.PANEL_SUPERADMIN_HASH?.trim()) {
     warnings.push("Superadmin sin configurar (PANEL_SUPERADMIN_USERNAME / PANEL_SUPERADMIN_HASH): nadie puede crear negocios.");
   }
+  // Cobro en línea (Stripe, I6): configurado a medias queda apagado; mejor saberlo al arrancar.
+  if (env.STRIPE_SECRET_KEY?.trim() && !env.STRIPE_WEBHOOK_SECRET?.trim()) {
+    warnings.push("STRIPE_SECRET_KEY sin STRIPE_WEBHOOK_SECRET: el cobro en línea queda apagado (el webhook no puede verificar eventos).");
+  }
+  if (env.STRIPE_SECRET_KEY?.trim() && !env.STRIPE_PRICE_BASIC?.trim() && !env.STRIPE_PRICE_PRO?.trim()) {
+    warnings.push("Stripe sin precios (STRIPE_PRICE_BASIC / STRIPE_PRICE_PRO): el cobro en línea queda apagado.");
+  }
   return warnings;
 }

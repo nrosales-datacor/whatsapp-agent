@@ -50,6 +50,13 @@ export const ERROR_MESSAGES: Readonly<Record<string, string>> = {
   already_paused: "El negocio ya estaba pausado.",
   already_active: "El negocio ya estaba activo.",
   business_closed: "El negocio está dado de baja.",
+  // Cobro en línea y alta self-service (I6)
+  billing_not_configured: "El pago en línea todavía no está disponible. Escribinos para contratar o cambiar tu plan.",
+  already_subscribed: "Ya tenés una suscripción activa: gestionala desde «Gestionar pago».",
+  no_billing_account: "Todavía no tenés una suscripción en línea: suscribite primero.",
+  plan_not_available: "Ese plan todavía no se puede contratar en línea.",
+  stripe_error: "No pudimos conectar con el procesador de pagos. Probá de nuevo en un momento.",
+  email_not_verified: "Todavía no confirmaste tu correo. Abrí el enlace que te mandamos.",
   // Identidad (I0.6)
   invalid_credentials: "Correo o clave incorrectos.",
   no_active_business: "Tu cuenta no tiene acceso a ningún negocio activo. Hablá con quien administra tu negocio.",
@@ -229,7 +236,8 @@ export async function apiRequest<T>(method: HttpMethod, path: string, body?: unk
 
   if (error.status === 401 && error.code === "unauthorized") unauthorizedHandler?.(path);
   // `/auth/me` es quien muestra la pantalla: avisar desde ahí sería un bucle.
-  if (error.code === "business_paused" && path !== "/auth/me") businessPausedHandler?.();
+  // Las rutas del cobro (`/billing/*`) las usa la propia pantalla de cuenta pausada para pagar.
+  if (error.code === "business_paused" && path !== "/auth/me" && !path.startsWith("/billing/")) businessPausedHandler?.();
   throw error;
 }
 

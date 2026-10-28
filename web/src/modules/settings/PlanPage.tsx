@@ -4,12 +4,14 @@ import { capitalize, terminologyOf } from "../../app/navigation";
 import { ME_QUERY_KEY, useSession } from "../../app/session";
 import { atLimit, BILLING_STATUS_LABELS, monthLabel, MODULES, usageText } from "../../lib/plans";
 import Icon from "../../ui/Icons";
+import SubscriptionCard from "../billing/SubscriptionCard";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuración › Plan (solo el dueño, solo lectura): el plan del negocio con sus módulos,
 // el nivel de clientes, los límites y el uso del mes. Todo sale de `me.plan` (lo resuelve
 // modules/billing); al entrar se vuelve a pedir la sesión para que el uso esté al día.
-// Cambiar de plan es, por ahora, con nosotros (cobro manual).
+// Suscribirse o gestionar el pago en línea: la tarjeta "Suscripción" (Stripe, I6); sin
+// Stripe configurado, cambiar de plan sigue siendo con nosotros (cobro manual).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PLAN_PITCH: Record<string, string> = {
@@ -80,6 +82,8 @@ export default function PlanPage() {
         </ul>
       </section>
 
+      {me.role === "owner" && <SubscriptionCard />}
+
       <section className="card" aria-labelledby="plan-modules">
         <h3 id="plan-modules" className="card-title">
           Módulos
@@ -118,8 +122,9 @@ export default function PlanPage() {
       </section>
 
       <p className="settings-help">
-        Para cambiar de plan, sumar un módulo o ampliar tus cupos, escribinos: lo ajustamos en el momento, sin perder nada de lo que
-        ya cargaste.
+        {plan.billing?.onlinePayments
+          ? "Para sumar un módulo suelto o algo a medida, escribinos: lo ajustamos en el momento, sin perder nada de lo que ya cargaste."
+          : "Para cambiar de plan, sumar un módulo o ampliar tus cupos, escribinos: lo ajustamos en el momento, sin perder nada de lo que ya cargaste."}
       </p>
     </div>
   );

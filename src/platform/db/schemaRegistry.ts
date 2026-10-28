@@ -1,5 +1,6 @@
 import { is } from "drizzle-orm";
 import { PgTable } from "drizzle-orm/pg-core";
+import * as billing from "../../modules/billing/schema";
 import * as business from "../../modules/business/schema";
 import * as campaigns from "../../modules/campaigns/schema";
 import * as catalog from "../../modules/catalog/schema";
@@ -48,6 +49,7 @@ export const schema = {
   ...tablesOf(commissions),
   ...tablesOf(whatsapp),
   ...tablesOf(campaigns),
+  ...tablesOf(billing),
 };
 
 export type Schema = typeof schema;

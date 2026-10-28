@@ -23,8 +23,10 @@ import {
   type ModuleOverrides,
   type PlanLimits,
 } from "./catalog";
+import { billingStatusOfBusiness } from "./checkout";
 import { resolveEntitlements } from "./entitlements";
 import type { PlanService } from "./service";
+import { isStripeTestMode, readStripeConfig } from "./stripeConfig";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Lo del superadmin sobre los planes (cobro manual, PROCESO-COBRO-MANUAL.md):
@@ -77,6 +79,50 @@ export interface AdminBusinessDetail {
   usage: PlanUsageView;
   /** Últimos cambios del negocio (más reciente primero). */
   audit: AuditEntry[];
+  /** Cobro en línea (Stripe) y vencimientos del negocio. */
+  stripe: AdminStripeView;
+}
+
+/** Cobro en línea de un negocio, como lo ve el superadmin (ids públicos de Stripe, sin secretos). */
+export interface AdminStripeView {
+  /** ¿Stripe está configurado en el servidor? */
+  configured: boolean;
+  customerId: string | null;
+  subscriptionId: string | null;
+  /** Estado crudo de la suscripción en Stripe (`active`, `past_due`, `canceled`…). */
+  subscriptionStatus: string | null;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  pastDueSince: string | null;
+  /** Cuándo lo pausa el barrido si no paga (atraso + gracia). */
+  pauseAt: string | null;
+  /** Fin de la prueba del alta self-service (null = cobro manual, sin vencimiento). */
+  trialEndsAt: string | null;
+  /** ¿Está pausado por el cobro? (al pagar se reactiva solo). */
+  billingPaused: boolean;
+  /** Link al cliente en el Dashboard de Stripe. */
+  dashboardUrl: string | null;
+}
+
+const iso = (d: Date | null) => (d ? d.toISOString() : null);
+
+function stripeViewOf(business: Business): AdminStripeView {
+  const config = readStripeConfig();
+  const status = billingStatusOfBusiness(business);
+  const dashboard = config && isStripeTestMode(config) ? "https://dashboard.stripe.com/test" : "https://dashboard.stripe.com";
+  return {
+    configured: config !== null,
+    customerId: business.stripeCustomerId,
+    subscriptionId: business.stripeSubscriptionId,
+    subscriptionStatus: business.stripeSubscriptionStatus,
+    currentPeriodEnd: iso(business.currentPeriodEnd),
+    cancelAtPeriodEnd: business.cancelAtPeriodEnd,
+    pastDueSince: iso(business.pastDueSince),
+    pauseAt: status.pauseAt,
+    trialEndsAt: iso(business.trialEndsAt),
+    billingPaused: business.status === "paused" && business.billingPausedAt !== null,
+    dashboardUrl: business.stripeCustomerId ? `${dashboard}/customers/${encodeURIComponent(business.stripeCustomerId)}` : null,
+  };
 }
 
 const notFound = () => new HttpError(404, "Ese negocio no existe.", "not_found");
@@ -127,6 +173,7 @@ export async function getAdminBusinessDetail(db: Executor, plans: Pick<PlanServi
     overrides: e.overrides,
     usage,
     audit,
+    stripe: stripeViewOf(business),
   };
 }
 
@@ -147,7 +194,9 @@ export async function changeBusinessPlan(db: Executor, businessId: string, input
         modules: input.extraModules ?? current_.overrides.modules,
         limits: input.limits ?? current_.overrides.limits,
       });
-      return { plan, extraModules: toStoredExtraModules(extra), billingStatus: input.billingStatus };
+      // Marcarlo al día (o en otro estado que no sea atrasado) frena la pausa automática por atraso.
+      const pastDue = input.billingStatus !== undefined && input.billingStatus !== "past_due" ? { pastDueSince: null } : {};
+      return { plan, extraModules: toStoredExtraModules(extra), billingStatus: input.billingStatus, ...pastDue };
     });
     if (!changed) throw notFound();
     await recordAudit(tx, businessId, "plan_changed", actor, { before: planState(changed.before), after: planState(changed.after) });
@@ -162,7 +211,8 @@ export async function pauseBusiness(db: Executor, businessId: string, reason: st
     const changed = await updateBusinessSubscription(tx, businessId, (current) => {
       if (current.status === "paused") throw new HttpError(409, "El negocio ya estaba pausado.", "already_paused");
       if (current.status !== "active") throw new HttpError(409, "El negocio está dado de baja.", "business_closed");
-      return { status: "paused" };
+      // Pausa del superadmin (no del cobro): el dueño no la puede levantar pagando.
+      return { status: "paused", billingPausedAt: null };
     });
     if (!changed) throw notFound();
     await recordAudit(tx, businessId, "business_paused", actor, { reason: reason || null, billingStatus: changed.after.billingStatus });
@@ -177,7 +227,7 @@ export async function reactivateBusiness(db: Executor, businessId: string, actor
     const changed = await updateBusinessSubscription(tx, businessId, (current) => {
       if (current.status === "active") throw new HttpError(409, "El negocio ya estaba activo.", "already_active");
       if (current.status !== "paused") throw new HttpError(409, "El negocio está dado de baja.", "business_closed");
-      return { status: "active" };
+      return { status: "active", billingPausedAt: null };
     });
     if (!changed) throw notFound();
     await recordAudit(tx, businessId, "business_reactivated", actor, { billingStatus: changed.after.billingStatus });

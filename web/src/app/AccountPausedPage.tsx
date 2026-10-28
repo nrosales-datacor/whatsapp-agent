@@ -1,5 +1,6 @@
 import { useLayoutEffect } from "react";
 import { documentTitle } from "../lib/branding";
+import PausedBillingActions from "../modules/billing/PausedBillingActions";
 import Icon from "../ui/Icons";
 import { useLogout } from "./session";
 
@@ -25,6 +26,7 @@ export default function AccountPausedPage({ onRetry }: { onRetry: () => void }) 
         La cuenta de este negocio está pausada por el momento. Tus datos, tu agenda y tus clientes siguen guardados: en cuanto
         se reactive, todo vuelve a funcionar como antes. Escribinos para reactivarla.
       </p>
+      <PausedBillingActions />
       <div className="account-paused-actions">
         <button type="button" className="btn btn-secondary" onClick={onRetry}>
           <Icon id="refresh" size={16} />

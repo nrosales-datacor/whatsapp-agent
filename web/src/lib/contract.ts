@@ -93,6 +93,22 @@ export interface PlanUsage {
 export type ClientsTier = "basic" | "full";
 export type BillingStatus = "trial" | "active" | "past_due" | "cancelled";
 
+/** Vencimientos del cobro (fechas ISO 8601). Espejo de `PlanBillingView` en src/platform/plan/planHooks.ts. */
+export interface PlanBilling {
+  /** Fin de la prueba del alta self-service (null = sin vencimiento automático). */
+  trialEndsAt: string | null;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  pastDueSince: string | null;
+  /** Cuándo se pausa la cuenta si no se paga, o null. */
+  pauseAt: string | null;
+  /** ¿Se puede pagar en línea? (Stripe configurado). */
+  onlinePayments: boolean;
+  hasSubscription: boolean;
+  /** ¿Puede abrir "Gestionar pago"? (tiene cliente en Stripe). */
+  canManage: boolean;
+}
+
 /** `me.plan`: lo que el panel necesita del plan para mostrar u ocultar lo del Pro. */
 export interface MePlan {
   id: Plan;
@@ -103,6 +119,8 @@ export interface MePlan {
   /** Funciones del plan que no son un módulo (p. ej. "branding": marca propia). */
   features: string[];
   billingStatus: BillingStatus | string;
+  /** Vencimientos y cobro en línea (I6): avisos de prueba y de pago atrasado, botones de pago. */
+  billing: PlanBilling;
   limits: PlanLimits;
   usage: PlanUsage;
 }
@@ -221,6 +239,8 @@ export interface AdminBusinessDetail {
   overrides: { modules: Partial<Record<string, boolean>>; limits: AdminLimitOverrides };
   usage: PlanUsage;
   audit: AuditEntry[];
+  /** Cobro en línea (Stripe) y vencimientos (I6). */
+  stripe?: AdminStripeInfo;
 }
 
 /** `PATCH /admin/businesses/:id/plan`: `extraModules` y `limits` reemplazan lo contratado. */
@@ -240,4 +260,77 @@ export interface CreateBusinessInput {
   locationName: string;
   ownerEmail: string;
   ownerName: string;
+}
+
+// ── Cobro en línea y alta self-service (I6) ─────────────────────────────────
+
+/** Cobro en línea de un negocio en el superadmin. Espejo de `AdminStripeView` (src/modules/billing/admin.ts). */
+export interface AdminStripeInfo {
+  configured: boolean;
+  customerId: string | null;
+  subscriptionId: string | null;
+  /** Estado crudo de la suscripción en Stripe (`active`, `past_due`, `canceled`…). */
+  subscriptionStatus: string | null;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  pastDueSince: string | null;
+  pauseAt: string | null;
+  trialEndsAt: string | null;
+  billingPaused: boolean;
+  dashboardUrl: string | null;
+}
+
+/** `GET /billing/status` (solo el dueño). Espejo de `BillingStatusView` (src/modules/billing/checkout.ts). */
+export interface BillingAccount {
+  onlinePayments: boolean;
+  plans: { id: Plan; label: string; available: boolean }[];
+  extras: { locations: boolean; staff: boolean };
+  plan: Plan;
+  planLabel: string;
+  billingStatus: string;
+  trialEndsAt: string | null;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  pastDueSince: string | null;
+  pauseAt: string | null;
+  hasSubscription: boolean;
+  canManage: boolean;
+  paused: boolean;
+  pausedForBilling: boolean;
+}
+
+/** `POST /billing/checkout`. */
+export interface CheckoutInput {
+  plan: Plan;
+  extraLocations?: number;
+  extraStaff?: number;
+}
+
+/** `GET /signup/options`. */
+export interface SignupOptions {
+  industries: { id: string; label: string }[];
+  trialDays: number;
+}
+
+/** `POST /signup` (público). `website` es el honeypot: siempre vacío. */
+export interface SignupInput {
+  businessName: string;
+  industry: string;
+  country: string;
+  timezone: string;
+  currency: string;
+  ownerName: string;
+  email: string;
+  password: string;
+  website: string;
+}
+
+export type OnboardingStepId = "hours" | "services" | "team" | "whatsapp" | "first_appointment";
+
+/** `GET /onboarding` (dueño y admin). */
+export interface OnboardingStatus {
+  visible: boolean;
+  dismissed: boolean;
+  completed: boolean;
+  steps: { id: OnboardingStepId; done: boolean }[];
 }

@@ -8,6 +8,7 @@ import type { LoginInput } from "../../lib/contract";
 import { FormError, PasswordField, TextField } from "../../ui/Field";
 import AuthLayout from "./AuthLayout";
 import { login } from "./authApi";
+import { resendVerification } from "../onboarding/onboardingApi";
 
 function loginErrorMessage(error: unknown, step: "credentials" | "totp"): string {
   // En el paso del código, el backend responde el mismo `invalid_credentials` (no revela
@@ -48,7 +49,19 @@ export default function LoginPage() {
       const from = (location.state as LoginRedirectState | null)?.from;
       navigate(from && from !== "/login" ? from : homePathFor(me), { replace: true });
     },
+    onError: async (error) => {
+      // Pausado POR EL COBRO: el backend deja la sesión para pagar (403 + cookie). Si la hay,
+      // "Cuenta pausada" ofrece reactivarla; si no (pausa del superadmin), queda el mensaje.
+      if (!isApiError(error, "business_paused")) return;
+      try {
+        await qc.fetchQuery({ queryKey: ME_QUERY_KEY, queryFn: fetchMe, staleTime: 0 });
+      } catch (e) {
+        if (isApiError(e, "business_paused")) navigate("/", { replace: true });
+      }
+    },
   });
+  // Alta self-service sin confirmar: se puede pedir el enlace de nuevo desde acá.
+  const resend = useMutation({ mutationFn: (value: string) => resendVerification(value) });
 
   useEffect(() => {
     if (step === "totp") totpRef.current?.focus();
@@ -127,9 +140,17 @@ export default function LoginPage() {
           }
         />
         <FormError message={error} />
+        {isApiError(mutation.error, "email_not_verified") && (
+          <button type="button" className="btn btn-secondary btn-block" onClick={() => resend.mutate(email.trim())} disabled={resend.isPending || resend.isSuccess}>
+            {resend.isSuccess ? "Listo, revisá tu correo" : resend.isPending ? "Reenviando…" : "Reenviar el correo de confirmación"}
+          </button>
+        )}
         <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={mutation.isPending}>
           {mutation.isPending ? "Entrando…" : "Entrar"}
         </button>
+        <Link to="/signup" className="link auth-secondary">
+          ¿Primera vez? Creá tu cuenta gratis
+        </Link>
       </form>
     </AuthLayout>
   );
