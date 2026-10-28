@@ -51,6 +51,8 @@ const { businesses, invalidateBusinessContextForTests } = await (async () => {
 })();
 const { stripeEvents } = await import("../../src/modules/billing/schema");
 const { auditLog } = await import("../../src/platform/db/schema");
+const { readDailyUsage, USAGE_METRICS } = await import("../../src/platform/observability/dailyUsage");
+const { localDate } = await import("../../src/modules/scheduling");
 const { withSystem } = await import("../../src/platform/db/scope");
 const { createEphemeralDb } = await import("../helpers/pgliteDb");
 const { Browser, startTestServer } = await import("../helpers/panelClient");
@@ -360,11 +362,16 @@ test("webhook: bajar de plan y cancelar al final del período; al terminar → c
   assert.equal(paidStatus.body.data.pausedForBilling, true);
   assert.equal(paidStatus.body.data.hasSubscription, false);
 
-  // Un login nuevo: 403 business_paused, pero con la sesión para pagar.
+  // Un login nuevo: 403 business_paused, pero con la sesión para pagar. No cuenta como login
+  // en `daily_usage` (I5): la persona no llega a usar el panel.
+  const today = localDate(new Date(), row.timezone);
+  const loginsToday = async () => (await readDailyUsage(db, biz.businessId, { metric: USAGE_METRICS.logins, from: today, to: today }))[0]?.value ?? 0;
+  const loginsBefore = await loginsToday();
   const { browser: fresh, res } = await loginAs(app, member.email, member.password!);
   assert.equal(res.status, 403);
   assert.equal(res.body.code, "business_paused");
   assert.ok(res.setCookies.length > 0, "deja la cookie para las rutas de pago");
+  assert.equal(await loginsToday(), loginsBefore, "entrar solo a pagar no suma logins");
   assert.equal((await fresh.get(`${API}/home/today`)).body.code, "business_paused");
   const checkout = await fresh.post(`${API}/billing/checkout`, { plan: "pro" });
   assert.equal(checkout.status, 200, "puede volver a suscribirse");
