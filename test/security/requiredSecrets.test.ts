@@ -43,6 +43,11 @@ test("secretos: avisos de producción por PUBLIC_BASE_URL y superadmin sin confi
     }),
     [],
   );
+  const base = { NODE_ENV: "production", PUBLIC_BASE_URL: "https://app.example.test", PANEL_SUPERADMIN_USERNAME: "root", PANEL_SUPERADMIN_HASH: "a:b" };
+  const halfStripe = productionConfigWarnings({ ...base, STRIPE_SECRET_KEY: "sk_test_x" });
+  assert.ok(halfStripe.some((w) => w.includes("STRIPE_WEBHOOK_SECRET")), "Stripe a medias: se avisa al arrancar");
+  assert.ok(halfStripe.some((w) => w.includes("STRIPE_PRICE_BASIC")));
+  assert.deepEqual(productionConfigWarnings({ ...base, STRIPE_SECRET_KEY: "sk_test_x", STRIPE_WEBHOOK_SECRET: "whsec_x", STRIPE_PRICE_PRO: "price_x" }), []);
 });
 
 function startServer(env: Record<string, string>) {

@@ -1,5 +1,6 @@
 import { resolveSuperadmin } from "./admin/session";
-import type { PlanService } from "./modules/billing";
+import { createStripeWebhookHandler, STRIPE_WEBHOOK_PATH, type BillingDeps, type PlanService } from "./modules/billing";
+import type { SignupDeps } from "./modules/onboarding";
 import { createSessionResolver } from "./modules/team";
 import { createWhatsAppWebhookHandler, WHATSAPP_WEBHOOK_PATH, type WhatsAppDeps } from "./modules/whatsapp";
 import type { Executor } from "./platform/db/scope";
@@ -58,6 +59,10 @@ export interface AppOptions {
    * uso del agente de WhatsApp (src/plans.ts).
    */
   plans?: PlanService;
+  /** Cobro en línea (Stripe): gateway y entorno inyectables en los tests. Default: los reales. */
+  billing?: BillingDeps;
+  /** Alta self-service: resolver DNS del chequeo de correo y reloj (tests). */
+  signup?: Omit<SignupDeps, "provisioning">;
 }
 
 function requestUrl(rawUrl: string | undefined): URL {
@@ -66,21 +71,23 @@ function requestUrl(rawUrl: string | undefined): URL {
 }
 
 /**
- * Handler completo (`ROLE=web` y `ROLE=all`): /health, el webhook de WhatsApp, la API del
+ * Handler completo (`ROLE=web` y `ROLE=all`): /health, los webhooks de WhatsApp y Stripe, la API del
  * panel (router declarativo, rutas en src/routes.ts), la landing en `/` y el panel
  * estático en `/panel`.
  */
-export function createAppHandler({ db, role, panelApi = {}, whatsapp, plans = createPlans(db) }: AppOptions): HttpHandler {
+export function createAppHandler({ db, role, panelApi = {}, whatsapp, plans = createPlans(db), billing, signup }: AppOptions): HttpHandler {
   // Métricas de producto (`daily_usage`): un solo rastreador para las rutas y la sesión.
   const usage = createUsageTracker();
   // Se arma una vez por proceso: una declaración de rutas incoherente rompe el arranque.
   const panelApiHandler = createRouter({
-    routes: panelRoutes({ db, plans, whatsapp, usage }),
+    routes: panelRoutes({ db, plans, whatsapp, usage, billing, signup }),
     ...defaultPanelApiAccess(db, plans, usage),
     ...panelApi,
   });
   // Webhook de WhatsApp: lo llama Meta (firma propia; sin sesión ni CSRF del panel).
   const whatsappWebhook = createWhatsAppWebhookHandler({ db });
+  // Webhook de Stripe: lo llama Stripe (firma propia con STRIPE_WEBHOOK_SECRET; sin sesión ni CSRF).
+  const stripeWebhook = createStripeWebhookHandler({ db, env: billing?.env, now: billing?.now });
 
   return withSecurityHeaders(async (req, res) => {
     const url = requestUrl(req.url);
@@ -94,6 +101,12 @@ export function createAppHandler({ db, role, panelApi = {}, whatsapp, plans = cr
     // Webhook de WhatsApp (Meta): verificación GET y mensajes POST firmados.
     if (pathname === WHATSAPP_WEBHOOK_PATH) {
       await whatsappWebhook(req, res);
+      return;
+    }
+
+    // Webhook de Stripe: cambios de suscripción y pagos, firmados (idempotente por evento).
+    if (pathname === STRIPE_WEBHOOK_PATH) {
+      await stripeWebhook(req, res);
       return;
     }
 

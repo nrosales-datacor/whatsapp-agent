@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { boolean, check, index, integer, jsonb, pgTable, smallint, text, time, uniqueIndex, uuid } from "drizzle-orm/pg-core";
-import { oneOf, timestamps, uuidPk } from "../../platform/db/columns";
+import { instant, oneOf, timestamps, uuidPk } from "../../platform/db/columns";
 import { tenantPolicy } from "../../platform/db/rls";
 import {
   DEFAULT_REMINDER_CHANNELS,
@@ -86,10 +86,38 @@ export const businesses = pgTable(
     legalName: text("legal_name"),
     taxId: text("tax_id"),
     billingEmail: text("billing_email"),
+    // ── Cobro en línea con Stripe (I6, modules/billing). Lo escribe SOLO billing (webhook,
+    // barrido de vencimientos y superadmin); null en los negocios de cobro manual. ──
+    // Cliente y suscripción de Stripe del negocio (ids públicos de Stripe, no secretos).
+    stripeCustomerId: text("stripe_customer_id"),
+    stripeSubscriptionId: text("stripe_subscription_id"),
+    // Estado crudo de la suscripción en Stripe (`active`, `past_due`, `canceled`…), para el
+    // superadmin. Lo que usa el producto es `billing_status`.
+    stripeSubscriptionStatus: text("stripe_subscription_status"),
+    // Fin del período pagado y si la suscripción se cancela al llegar a esa fecha.
+    currentPeriodEnd: instant("current_period_end"),
+    cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
+    // Instante del último evento de Stripe aplicado (los eventos pueden llegar desordenados:
+    // uno más viejo que este no pisa el estado).
+    stripeSyncedAt: instant("stripe_synced_at"),
+    // Fin de la prueba del alta self-service (null = sin vencimiento automático: los negocios
+    // que da de alta el superadmin siguen con el cobro manual).
+    trialEndsAt: instant("trial_ends_at"),
+    // Desde cuándo está atrasado el pago (Stripe); con la gracia vencida, el barrido pausa.
+    pastDueSince: instant("past_due_since"),
+    // El negocio está pausado POR EL COBRO (gracia vencida, prueba vencida o suscripción
+    // terminada), no por decisión del superadmin: el dueño puede entrar a pagar y, al
+    // pagar, se reactiva solo.
+    billingPausedAt: instant("billing_paused_at"),
+    // Checklist de primeros pasos del Inicio: cuándo se descartó (null = se muestra mientras
+    // no esté completa). Los negocios anteriores a la migración nacen descartados.
+    onboardingDismissedAt: instant("onboarding_dismissed_at"),
     ...timestamps(),
   },
   (t) => [
     uniqueIndex("businesses_slug_uq").on(t.slug),
+    uniqueIndex("businesses_stripe_customer_uq").on(t.stripeCustomerId),
+    uniqueIndex("businesses_stripe_subscription_uq").on(t.stripeSubscriptionId),
     check("businesses_slug_check", sql`${t.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`),
     check("businesses_plan_check", oneOf(t.plan, PLANS)),
     check("businesses_status_check", oneOf(t.status, BUSINESS_STATUSES)),

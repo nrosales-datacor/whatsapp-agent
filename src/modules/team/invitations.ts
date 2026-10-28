@@ -10,6 +10,7 @@ import { publicUrl } from "../../platform/http/publicUrl";
 import { assertQuota } from "../../platform/plan/planHooks";
 import { getBusinessContext } from "../business";
 import { verifyUserTotp } from "./auth";
+import { markEmailVerified } from "./emailVerification";
 import { guardCredentialAttempt, NewPasswordSchema, normalizeEmail, recordCredentialFailure } from "./identity";
 import { countActiveMembersIn, readMembers, replaceMembershipLocations, type Member } from "./members";
 import { memberships, users, type AuthToken, type User } from "./schema";
@@ -194,6 +195,7 @@ export async function acceptInvitation(
         .returning({ sessionEpoch: users.sessionEpoch });
       if (!row) return null;
       await recordAudit(tx, inv.businessId, "invitation_accepted", userActor(user.id), { newAccount: true });
+      await markEmailVerified(tx, user.id);
       return row.sessionEpoch;
     });
     if (sessionEpoch === null) throw invalidInvitation(400);
@@ -218,6 +220,8 @@ export async function acceptInvitation(
   const consumed = await withSystem(db, async (tx) => {
     if (!(await consumeToken(tx, inv.token.id))) return false;
     await recordAudit(tx, inv.businessId, "invitation_accepted", userActor(user.id), { newAccount: false });
+    // El enlace llegó a su correo: si la cuenta tenía el correo sin verificar, queda verificado.
+    await markEmailVerified(tx, user.id);
     return true;
   });
   if (!consumed) throw invalidInvitation(400);

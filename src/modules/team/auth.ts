@@ -13,6 +13,7 @@ import {
   findUserByEmail,
   findUserById,
   guardCredentialAttempt,
+  billingPausedOwnedBusiness,
   hasMembershipInPausedBusiness,
   normalizeEmail,
   recordCredentialFailure,
@@ -39,7 +40,22 @@ const invalidCredentials = () => new HttpError(401, "Correo o clave incorrectos.
 /** La clave actual no coincide (400, no 401: la sesión SÍ es válida y el panel trata todo 401 como "sesión vencida"). */
 export const invalidPassword = () => new HttpError(400, "La clave actual no es correcta.", "invalid_password");
 
-export type LoginResult = { status: "totp_required" } | { status: "ok"; claims: SessionClaims };
+/**
+ * `paused`: su único negocio está pausado POR EL COBRO y es su dueña: la ruta le deja la
+ * sesión en ese negocio (solo sirven las rutas de pago) y responde 403 `business_paused`.
+ */
+export type LoginResult =
+  | { status: "totp_required" }
+  | { status: "ok"; claims: SessionClaims }
+  | { status: "paused"; claims: SessionClaims };
+
+/** 403 de una cuenta del alta self-service que todavía no abrió el enlace del correo. */
+export const emailNotVerified = () =>
+  new HttpError(
+    403,
+    "Todavía no confirmaste tu correo. Abrí el enlace que te mandamos (o pedí uno nuevo) y después ingresá.",
+    "email_not_verified",
+  );
 
 /** ¿El código TOTP vale para esta cuenta (con su 2FA activo)? Consume el código (anti-replay). */
 export function verifyUserTotp(user: User, code: string | undefined): boolean {
@@ -71,9 +87,16 @@ export async function login(
   }
 
   // Credenciales correctas: recién acá se puede explicar por qué no entra (no es un oráculo).
+  if (user.emailUnverifiedSince) throw emailNotVerified();
   const memberships = await activeMemberships(db, user.id);
   if (memberships.length === 0) {
-    // Su único negocio está pausado (cobro manual): se lo decimos, para que sepa qué hacer.
+    // Pausado por el cobro y es la dueña: entra solo a pagar (la ruta deja la sesión y el 403).
+    const pausedForBilling = await billingPausedOwnedBusiness(db, user.id);
+    if (pausedForBilling) {
+      recordLoginSuccess(input.ip, "login", email);
+      return { status: "paused", claims: { businessId: pausedForBilling, userId: user.id, sessionEpoch: user.sessionEpoch } };
+    }
+    // Su único negocio está pausado (por el superadmin): se lo decimos, para que sepa qué hacer.
     if (await hasMembershipInPausedBusiness(db, user.id)) throw businessPaused();
     throw new HttpError(
       403,

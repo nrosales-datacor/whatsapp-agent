@@ -35,3 +35,16 @@ export type {
   TimeOff,
   User,
 } from "./schema";
+// Alta self-service (I6): dueña con el correo sin verificar, enlace de verificación y la
+// sesión que deja al verificar. Lo compone modules/onboarding.
+export {
+  createUnverifiedOwner,
+  findAccountByEmail,
+  resendEmailVerification,
+  sendEmailVerification,
+  verifyEmailToken,
+  VERIFY_EMAIL_PATH,
+} from "./emailVerification";
+export type { AccountByEmail } from "./emailVerification";
+export { getUserContact, NewPasswordSchema, normalizeEmail } from "./identity";
+export { startPanelSession } from "./sessionStart";

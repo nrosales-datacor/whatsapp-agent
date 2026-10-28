@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { applyBranding, resetBranding } from "../../lib/branding";
+import BillingBanner from "../../modules/billing/BillingBanner";
 import { LocationProvider } from "../location";
 import { navItemsFor } from "../navigation";
 import { PushProvider } from "../push";
@@ -53,6 +54,7 @@ function Shell() {
       <div className="app-column">
         <Topbar />
         <main id="main" ref={mainRef} tabIndex={-1} className="app-main">
+          <BillingBanner />
           <Outlet />
         </main>
       </div>

@@ -7,6 +7,7 @@ import { passwordResetEmail } from "../../platform/email/templates";
 import { HttpError } from "../../platform/http/errors";
 import { publicBaseUrl, publicUrl } from "../../platform/http/publicUrl";
 import { setPassword } from "./auth";
+import { markEmailVerified } from "./emailVerification";
 import { guardCredentialAttempt, normalizeEmail, recordCredentialFailure } from "./identity";
 import { users } from "./schema";
 import { consumeToken, findValidToken, issueAuthToken, PASSWORD_RESET_TTL_MS } from "./tokens";
@@ -68,6 +69,8 @@ export async function resetPassword(db: Executor, input: { token: string; passwo
     const [user] = await tx.select({ id: users.id, active: users.active }).from(users).where(eq(users.id, pending.userId)).limit(1);
     if (!user || !user.active) return false;
     await setPassword(tx, user.id, passwordHash);
+    // El enlace llegó a su correo: también lo verifica (alta self-service sin confirmar).
+    await markEmailVerified(tx, user.id);
     await recordAudit(tx, null, "password_reset", userActor(user.id));
     return true;
   });

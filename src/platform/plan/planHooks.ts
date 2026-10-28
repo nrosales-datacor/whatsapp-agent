@@ -54,6 +54,26 @@ export interface PlanUsageView {
   aiConversations: number | null;
 }
 
+/** Vencimientos del cobro tal como los ve el panel (fechas ISO 8601). */
+export interface PlanBillingView {
+  /** Fin de la prueba del alta self-service (null = sin vencimiento automático). */
+  trialEndsAt: string | null;
+  /** Fin del período pagado (suscripción en línea). */
+  currentPeriodEnd: string | null;
+  /** La suscripción se cancela al final del período. */
+  cancelAtPeriodEnd: boolean;
+  /** Desde cuándo está atrasado el pago. */
+  pastDueSince: string | null;
+  /** Cuándo se pausa la cuenta si no se paga (atraso + gracia), o null. */
+  pauseAt: string | null;
+  /** ¿Se puede pagar en línea? (Stripe configurado en el servidor). */
+  onlinePayments: boolean;
+  /** ¿Tiene una suscripción viva en Stripe? */
+  hasSubscription: boolean;
+  /** ¿Tiene cliente en Stripe? (puede abrir "Gestionar pago"). */
+  canManage: boolean;
+}
+
 /** Lo que el panel necesita del plan (`me.plan`). */
 export interface PlanSnapshot {
   /** Plan contratado (`basic` | `pro`). */
@@ -66,6 +86,8 @@ export interface PlanSnapshot {
   features: PlanFeature[];
   /** Estado del cobro manual (`trial` | `active` | `past_due` | `cancelled`). */
   billingStatus: string;
+  /** Vencimientos y cobro en línea (I6): avisos de prueba, de pago atrasado y botones de pago. */
+  billing: PlanBillingView;
   limits: PlanLimitsView;
   usage: PlanUsageView;
 }
