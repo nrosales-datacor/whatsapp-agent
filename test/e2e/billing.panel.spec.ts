@@ -44,6 +44,18 @@ test("prueba: el aviso cuenta los días; suscribirse al Pro vuelve con el plan n
   await page.getByRole("navigation", { name: "Principal" }).getByRole("link", { name: "Inicio", exact: true }).click();
   await expect(heading(page, "Inicio")).toBeVisible();
   await expect(page.getByText("Te quedan 9 días de prueba gratis")).toHaveCount(0);
+
+  // Ya en el Pro: los primeros pasos quedan arriba y el Inicio completo (I5) debajo, con las
+  // tarjetas del básico al final.
+  const steps = page.getByRole("region", { name: "Primeros pasos" });
+  const kpis = page.getByRole("region", { name: "Indicadores del día" });
+  await expect(steps).toBeVisible();
+  await expect(kpis.getByText("Cobrado hoy", { exact: true })).toBeVisible();
+  await expect(heading(page, "Ingresos de los últimos 14 días", 2)).toBeVisible();
+  await expect(heading(page, "Próximas citas", 2)).toBeVisible();
+  const stepsBox = await steps.boundingBox();
+  const kpisBox = await kpis.boundingBox();
+  expect(stepsBox && kpisBox && stepsBox.y + stepsBox.height <= kpisBox.y, "los primeros pasos van antes del Inicio completo").toBeTruthy();
 });
 
 test("pago atrasado: aviso con la fecha de pausa; Gestionar pago lo deja al día", async ({ page }) => {
