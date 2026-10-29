@@ -1,5 +1,9 @@
 # Agente de WhatsApp con IA — soporte + agenda
 
+> **En reestructura (rama `carril-i`):** este proyecto pasa a ser **Selyon CRM** (nombre provisional), software de
+> gestión para negocios con cita con el agente de WhatsApp como módulo. Plan en [`PLAN-GESTION.md`](PLAN-GESTION.md).
+> Lo que sigue describe la versión congelada (tag `whatsapp-agent-final`) y se reescribe al cerrar I0.
+
 Proyecto **individual y ejecutable**: un agente de atención por WhatsApp para un
 lavacar (o cualquier negocio de servicios), potenciado con IA. Responde dudas de
 precios/horarios/servicios y agenda pulidos. Tenant cargado: **Lavacar Rosales**.

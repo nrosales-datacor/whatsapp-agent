@@ -34,9 +34,9 @@ export default defineConfig({
       injectRegister: false,
       injectManifest: { injectionPoint: undefined },
       manifest: {
-        name: "Bandeja de WhatsApp",
-        short_name: "Bandeja",
-        description: "Atendé los chats de WhatsApp de tu negocio desde un solo lugar.",
+        name: "Selyon CRM",
+        short_name: "Selyon CRM",
+        description: "Agenda, clientes y WhatsApp de tu negocio en un solo lugar.",
         start_url: "/panel/",
         scope: "/panel/",
         display: "standalone",
