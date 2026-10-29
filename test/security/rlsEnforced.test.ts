@@ -1,13 +1,19 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
+import { businesses } from "../../src/modules/business/schema";
+import { clients } from "../../src/modules/clients/schema";
+import { paymentMethods, payments } from "../../src/modules/sales/schema";
+import { appointments } from "../../src/modules/scheduling/schema";
+import { memberships, users } from "../../src/modules/team/schema";
 import { listPlatformAudit, listTenantAudit, recordAudit, superadminActor, userActor } from "../../src/platform/audit/auditLog";
 import { auditLog } from "../../src/platform/db/schema";
 import { rowsOf } from "../../src/platform/db/rows";
 import { withSystem, withTenant } from "../../src/platform/db/scope";
 import { checkHealth } from "../../src/platform/http/health";
 import { tryAcquireLease } from "../../src/platform/net/leaderLease";
+import { appointmentValues, createBusinessFixture, type BusinessFixture } from "../helpers/domainFixtures";
 import { createEphemeralDb } from "../helpers/pgliteDb";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -112,4 +118,124 @@ test("RLS aplicado: lease de liderazgo (contexto de sistema)", async () => {
 test("RLS aplicado: el health check funciona con el rol de la app", async () => {
   const report = await checkHealth(db);
   assert.equal(report.ok, true);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tablas del dominio (I0.5). Dos negocios reales (con FKs), cada uno con su cliente, una
+// cita y un pago; con el contexto de uno, el otro no existe.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function seedSales(f: BusinessFixture): Promise<{ appointmentId: string; paymentId: string }> {
+  return withTenant(db, f.businessId, async (tx) => {
+    const [appt] = await tx
+      .insert(appointments)
+      .values(appointmentValues(f, "2026-11-02T15:00:00Z", 60, { totalCents: 2_500_000 }))
+      .returning({ id: appointments.id });
+    const [pay] = await tx
+      .insert(payments)
+      .values({
+        businessId: f.businessId,
+        locationId: f.locationId,
+        clientId: f.clientId,
+        appointmentId: appt.id,
+        amountCents: 2_500_000,
+        paymentMethodId: f.paymentMethodId,
+      })
+      .returning({ id: payments.id });
+    return { appointmentId: appt.id, paymentId: pay.id };
+  });
+}
+
+test("RLS aplicado: clients, appointments y payments — un negocio no ve las filas de otro", async () => {
+  const fa = await createBusinessFixture(db);
+  const fb = await createBusinessFixture(db);
+  const sa = await seedSales(fa);
+  const sb = await seedSales(fb);
+
+  const seenByA = await withTenant(db, fa.businessId, async (tx) => ({
+    clients: await tx.select().from(clients),
+    appointments: await tx.select().from(appointments),
+    payments: await tx.select().from(payments),
+    businesses: await tx.select().from(businesses),
+  }));
+  assert.deepEqual(seenByA.clients.map((r) => r.id), [fa.clientId]);
+  assert.deepEqual(seenByA.appointments.map((r) => r.id), [sa.appointmentId]);
+  assert.deepEqual(seenByA.payments.map((r) => r.id), [sa.paymentId]);
+  assert.deepEqual(seenByA.businesses.map((r) => r.id), [fa.businessId], "ni siquiera la fila del otro negocio");
+
+  // Ni pidiendo el id exacto de B.
+  const direct = await withTenant(db, fa.businessId, async (tx) => ({
+    client: await tx.select().from(clients).where(eq(clients.id, fb.clientId)),
+    appointment: await tx.select().from(appointments).where(eq(appointments.id, sb.appointmentId)),
+    payment: await tx.select().from(payments).where(eq(payments.id, sb.paymentId)),
+  }));
+  assert.deepEqual([direct.client.length, direct.appointment.length, direct.payment.length], [0, 0, 0]);
+
+  // Sin contexto, nada.
+  for (const table of ["clients", "appointments", "payments", "businesses", "locations", "staff"]) {
+    const r = await base.client.query<{ n: number }>(`SELECT count(*)::int AS n FROM ${table}`);
+    assert.equal(r.rows[0].n, 0, `${table}: sin withTenant/withSystem no se ve ni una fila`);
+  }
+
+  // El sistema ve los dos.
+  const all = await withSystem(db, (tx) => tx.select({ id: clients.id }).from(clients));
+  assert.ok([fa.clientId, fb.clientId].every((id) => all.some((r) => r.id === id)));
+});
+
+test("RLS aplicado: con el contexto de un negocio no se escribe ni se modifica nada de otro", async () => {
+  const fa = await createBusinessFixture(db);
+  const fb = await createBusinessFixture(db);
+  await assert.rejects(
+    withTenant(db, fa.businessId, (tx) => tx.insert(clients).values({ businessId: fb.businessId, name: "Intruso" })),
+    isRlsViolation,
+  );
+  await assert.rejects(
+    withTenant(db, fa.businessId, (tx) => tx.insert(appointments).values(appointmentValues(fb, "2026-11-03T15:00:00Z", 30))),
+    isRlsViolation,
+  );
+  // UPDATE/DELETE sobre filas ajenas: no las ve, no las toca.
+  const updated = await withTenant(db, fa.businessId, (tx) =>
+    tx.update(clients).set({ name: "Pisado" }).where(eq(clients.id, fb.clientId)).returning({ id: clients.id }),
+  );
+  assert.equal(updated.length, 0);
+  const deleted = await withTenant(db, fa.businessId, (tx) =>
+    tx.delete(paymentMethods).where(eq(paymentMethods.id, fb.paymentMethodId)).returning({ id: paymentMethods.id }),
+  );
+  assert.equal(deleted.length, 0);
+  // Mover una fila propia a otro negocio tampoco (WITH CHECK).
+  await assert.rejects(
+    withTenant(db, fa.businessId, (tx) => tx.update(clients).set({ businessId: fb.businessId }).where(eq(clients.id, fa.clientId))),
+    isRlsViolation,
+  );
+  const [still] = await withTenant(db, fb.businessId, (tx) => tx.select().from(clients).where(eq(clients.id, fb.clientId)));
+  assert.equal(still.name, "Cliente de prueba");
+});
+
+test("RLS aplicado: users — un negocio ve solo a los usuarios con membresía en él; crear usuarios es de sistema", async () => {
+  const fa = await createBusinessFixture(db);
+  const fb = await createBusinessFixture(db);
+  const [ua, ub] = await withSystem(db, async (tx) => {
+    const rows = await tx
+      .insert(users)
+      .values([
+        { email: `a-${fa.businessId.slice(0, 8)}@example.com`, name: "Usuaria A" },
+        { email: `b-${fb.businessId.slice(0, 8)}@example.com`, name: "Usuario B" },
+      ])
+      .returning({ id: users.id });
+    return rows;
+  });
+  // La membresía la crea el negocio con su propio contexto.
+  await withTenant(db, fa.businessId, (tx) => tx.insert(memberships).values({ businessId: fa.businessId, userId: ua.id, role: "owner" }));
+  await withTenant(db, fb.businessId, (tx) => tx.insert(memberships).values({ businessId: fb.businessId, userId: ub.id, role: "owner" }));
+
+  const seenByA = await withTenant(db, fa.businessId, (tx) => tx.select({ id: users.id }).from(users));
+  assert.deepEqual(seenByA.map((r) => r.id), [ua.id]);
+  const seenByB = await withTenant(db, fb.businessId, (tx) => tx.select({ id: users.id }).from(users));
+  assert.deepEqual(seenByB.map((r) => r.id), [ub.id]);
+
+  await assert.rejects(
+    withTenant(db, fa.businessId, (tx) => tx.insert(users).values({ email: "nuevo@example.com", name: "Nuevo" })),
+    isRlsViolation,
+    "un usuario sin membresía no es visible para el negocio: su alta va por withSystem",
+  );
 });
