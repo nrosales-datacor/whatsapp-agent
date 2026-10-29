@@ -1,6 +1,7 @@
 import "dotenv/config";
 import http from "node:http";
 import { createAppHandler, createWorkerHandler, type ProcessRole } from "./app";
+import { registerJobHandlers } from "./jobs";
 import { PRODUCT_NAME } from "./platform/brand";
 import { getDb, startLocalDb } from "./platform/db/client";
 import { withSafetyNet } from "./platform/net/http";
@@ -9,6 +10,7 @@ import { drainTasks, pendingTaskCount } from "./platform/net/shutdown";
 import { configuredAlertChannels } from "./platform/observability/alerts";
 import { startMetricsReport } from "./platform/observability/metrics";
 import { captureError, initSentry, isSentryConfigured } from "./platform/observability/sentry";
+import { startQueueWorker, type QueueWorker } from "./platform/queue";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Arranque del proceso (node:http, sin framework). Siempre sobre Postgres: con
@@ -64,8 +66,9 @@ server.on("error", (e) => {
   process.exit(1);
 });
 
-// Loops de fondo (schedulers) de este proceso, para frenarlos al apagar.
+// Loops de fondo (schedulers) y worker de la cola de este proceso, para frenarlos al apagar.
 const loops: Loop[] = [];
+let queueWorker: QueueWorker | null = null;
 
 server.listen(PORT, () => {
   const storage = process.env.DATABASE_URL ? "PostgreSQL" : "PostgreSQL local (PGlite)";
@@ -75,10 +78,12 @@ server.listen(PORT, () => {
   console.log(`Alertas a la plataforma: ${configuredAlertChannels().join(" + ")}`);
 
   // Trabajo de fondo: con `ROLE=web` este proceso no lo arranca (lo atiende la réplica
-  // worker, o este mismo proceso con `ROLE=all`). Los workers de cola de cada módulo se
-  // suman acá a medida que se porten.
+  // worker, o este mismo proceso con `ROLE=all`). El worker de la cola corre los handlers
+  // que registren los módulos (src/platform/queue); sin ninguno registrado no reclama nada.
   if (RUNS_BACKGROUND) {
     loops.push(startMetricsReport(db));
+    registerJobHandlers();
+    queueWorker = startQueueWorker({ db });
   }
 });
 
@@ -93,6 +98,8 @@ async function shutdown(signal: string): Promise<void> {
   exiting = true;
   console.log(`[server] ${signal}: apagado ordenado (${pendingTaskCount()} tarea(s) en curso, espera máx ${SHUTDOWN_GRACE_MS} ms)…`);
   for (const loop of loops) loop.stop();
+  // La cola deja de reclamar ya; sus jobs en curso los espera drainTasks (trackTask).
+  void queueWorker?.stop();
   server.close();
   server.closeIdleConnections?.();
   const finished = await drainTasks(SHUTDOWN_GRACE_MS);
