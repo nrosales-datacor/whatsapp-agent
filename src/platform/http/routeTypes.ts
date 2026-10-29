@@ -22,8 +22,9 @@ export type AuthMode = "user" | "superadmin" | "public";
 export type LocationMode = "required" | "optional";
 
 /**
- * Sesión de un miembro del equipo, tal como la entrega el `SessionResolver`. La identidad
- * real (usuarios, membresías, epoch) llega en I0.6; el router solo consume esta forma.
+ * Sesión de un miembro del equipo, tal como la entrega el `SessionResolver` (el real es
+ * `createSessionResolver` de src/modules/team, validado contra la base en cada request);
+ * el router solo consume esta forma. Rol y sucursales salen de la membresía viva.
  */
 export interface Session {
   userId: string;
@@ -35,8 +36,9 @@ export interface Session {
   sessionEpoch: number;
 }
 
-/** Sesión del superadmin (la plataforma). Se detalla en I0.6. */
+/** Sesión del superadmin (la plataforma, src/admin/session.ts). */
 export interface SuperadminSession {
+  /** Usuario del superadmin (PANEL_SUPERADMIN_USERNAME): va al actor del rastro de auditoría. */
   adminId: string;
 }
 

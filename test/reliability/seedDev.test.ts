@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { and, eq, gte, lt } from "drizzle-orm";
+import { and, eq, gte, lt, sql } from "drizzle-orm";
 import { getBusinessContext } from "../../src/modules/business";
 import { businesses } from "../../src/modules/business/schema";
 import { clients } from "../../src/modules/clients/schema";
 import { appointments } from "../../src/modules/scheduling/schema";
-import { users } from "../../src/modules/team/schema";
+import { memberships, users } from "../../src/modules/team/schema";
 import { verifyPassword } from "../../src/platform/auth/password";
 import { withSystem, withTenant } from "../../src/platform/db/scope";
-import { DEMO_OWNER_EMAIL, DEMO_SLUG, seedDev } from "../../scripts/seedDev";
+import { DEMO_FRONT_DESK_EMAIL, DEMO_OWNER_EMAIL, DEMO_PASSWORD, DEMO_SLUG, seedDev } from "../../scripts/seedDev";
 import { createEphemeralDb } from "../helpers/pgliteDb";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -48,8 +48,19 @@ test("seed:dev: crea el negocio demo completo con citas de esta semana, y es ide
   const [maria] = await withTenant(db, first.businessId, (tx) => tx.select().from(clients).where(eq(clients.name, "María Fernández")));
   assert.equal(maria.visitCount, 1, "la caché del cliente refleja la cita completada");
 
-  const [owner] = await withSystem(db, (tx) => tx.select().from(users).where(eq(users.email, DEMO_OWNER_EMAIL)));
-  assert.equal(await verifyPassword(first.ownerPassword, owner.passwordHash ?? undefined), true);
+  // Los dos usuarios demo entran con la clave conocida de desarrollo.
+  assert.equal(first.password, DEMO_PASSWORD);
+  for (const email of [DEMO_OWNER_EMAIL, DEMO_FRONT_DESK_EMAIL]) {
+    const [user] = await withSystem(db, (tx) => tx.select().from(users).where(eq(users.email, email)));
+    assert.equal(await verifyPassword(DEMO_PASSWORD, user.passwordHash ?? undefined), true, email);
+  }
+  // La recepcionista queda fija a una sucursal; la dueña, sin filas (= todas).
+  const access = await withTenant(db, first.businessId, (tx) =>
+    tx
+      .select({ role: memberships.role, locations: sql<number>`(SELECT count(*)::int FROM membership_locations ml WHERE ml.membership_id = ${memberships.id})` })
+      .from(memberships),
+  );
+  assert.deepEqual(access.map((a) => [a.role, Number(a.locations)]).sort(), [["front_desk", 1], ["owner", 0]]);
 
   const second = await seedDev(db, { now });
   assert.equal(second.replaced, true);

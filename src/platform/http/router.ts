@@ -46,8 +46,9 @@ import { validateInput, type InputSource } from "./validation";
 // cookie (login), el handler hace `ctx.res.setHeader("set-cookie", …)` y devuelve sus
 // datos; si escribe la respuesta él mismo (descarga, stream), el router no la toca.
 //
-// Sesión, superadmin y planes son INYECTABLES (la identidad real llega en I0.6 y los
-// planes en I2). Defaults seguros: sin resolver configurado toda ruta `user` o
+// Sesión, superadmin y planes son INYECTABLES (la identidad real vive en
+// src/modules/team y src/admin, y la arma src/app.ts; los planes llegan en I2). Defaults
+// seguros: sin resolver configurado toda ruta `user` o
 // `superadmin` responde 401, y sin `moduleGate` toda ruta con `module` responde 403.
 //
 // Cómo registra rutas un módulo: exporta una función que devuelve su lista

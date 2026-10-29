@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { businesses, locationHours, locations } from "../src/modules/business/schema";
 import { serviceCategories, serviceLocations, services, staffServices } from "../src/modules/catalog/schema";
 import { clients } from "../src/modules/clients/schema";
 import { paymentMethods, payments } from "../src/modules/sales/schema";
 import { appointments, appointmentServices, type AppointmentChannel, type AppointmentStatus } from "../src/modules/scheduling/schema";
-import { memberships, staff, staffHours, users } from "../src/modules/team/schema";
-import { generateTemporaryPassword, hashPassword } from "../src/platform/auth/password";
+import { membershipLocations, memberships, staff, staffHours, users } from "../src/modules/team/schema";
+import { hashPassword } from "../src/platform/auth/password";
 import { withSystem, withTenant, type Executor } from "../src/platform/db/scope";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -20,13 +20,19 @@ import { withSystem, withTenant, type Executor } from "../src/platform/db/scope"
 // base es en memoria y el seed solo sirve como prueba de humo.
 //
 // Idempotente: si el negocio demo ya existe, se borra (cascada) y se vuelve a crear.
-// Crea un usuario dueño con una clave al azar que se imprime UNA vez por consola (solo
-// desarrollo; la identidad completa es I0.6). Teléfonos con prefijo +506 0… (no existen
-// en Costa Rica) y correos @example.com: nada de esto le llega a una persona real.
+// Crea dos usuarios con una clave CONOCIDA de desarrollo (se imprime por consola) para
+// entrar al panel con POST /api/panel/auth/login: la dueña (todas las sucursales) y una
+// recepcionista que solo entra a Escazú (para ver el permiso por sucursal). Esa clave es
+// pública (está en el repo): el seed se niega a correr con NODE_ENV=production.
+// Teléfonos con prefijo +506 0… (no existen en Costa Rica) y correos @example.com /
+// .test: nada de esto le llega a una persona real.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const DEMO_SLUG = "demo-estetica";
 export const DEMO_OWNER_EMAIL = "owner@demo-estetica.test";
+export const DEMO_FRONT_DESK_EMAIL = "recepcion@demo-estetica.test";
+/** Clave de desarrollo de los usuarios demo. Solo desarrollo: es pública. */
+export const DEMO_PASSWORD = "demo1234";
 
 // Costa Rica no tiene horario de verano: el offset es fijo todo el año.
 const TIMEZONE = "America/Costa_Rica";
@@ -41,7 +47,9 @@ export interface SeedResult {
   businessId: string;
   replaced: boolean;
   ownerEmail: string;
-  ownerPassword: string;
+  frontDeskEmail: string;
+  /** Clave de los dos usuarios demo (`DEMO_PASSWORD`). */
+  password: string;
   counts: Record<"locations" | "staff" | "services" | "clients" | "appointments" | "payments", number>;
 }
 
@@ -49,16 +57,19 @@ export interface SeedResult {
 export async function seedDev(db: Executor, options: { now?: Date } = {}): Promise<SeedResult> {
   const now = options.now ?? new Date();
 
-  // Lo global (negocio previo y usuario dueño) es de sistema; el resto, con el alcance del negocio.
-  const { replaced, ownerId, ownerPassword } = await withSystem(db, async (tx) => {
+  // Lo global (negocio previo y usuarios demo) es de sistema; el resto, con el alcance del negocio.
+  const passwordHash = await hashPassword(DEMO_PASSWORD);
+  const { replaced, ownerId, frontDeskId } = await withSystem(db, async (tx) => {
     const previous = await tx.delete(businesses).where(eq(businesses.slug, DEMO_SLUG)).returning({ id: businesses.id });
-    await tx.delete(users).where(eq(users.email, DEMO_OWNER_EMAIL));
-    const password = generateTemporaryPassword();
-    const [owner] = await tx
+    await tx.delete(users).where(inArray(users.email, [DEMO_OWNER_EMAIL, DEMO_FRONT_DESK_EMAIL]));
+    const [owner, frontDesk] = await tx
       .insert(users)
-      .values({ email: DEMO_OWNER_EMAIL, name: "Dueña Demo", passwordHash: await hashPassword(password) })
+      .values([
+        { email: DEMO_OWNER_EMAIL, name: "Dueña Demo", passwordHash },
+        { email: DEMO_FRONT_DESK_EMAIL, name: "Recepción Escazú", passwordHash },
+      ])
       .returning({ id: users.id });
-    return { replaced: previous.length > 0, ownerId: owner.id, ownerPassword: password };
+    return { replaced: previous.length > 0, ownerId: owner.id, frontDeskId: frontDesk.id };
   });
 
   const businessId = randomUUID();
@@ -85,6 +96,12 @@ export async function seedDev(db: Executor, options: { now?: Date } = {}): Promi
         { businessId, name: "Heredia", address: "Centro Comercial Demo, 2.º piso", phone: "+50600000200", timezone: TIMEZONE, position: 1 },
       ])
       .returning({ id: locations.id });
+    // Recepción: solo Escazú (sin filas en membership_locations sería "todas").
+    const [frontDeskMembership] = await tx
+      .insert(memberships)
+      .values({ businessId, userId: frontDeskId, role: "front_desk" })
+      .returning({ id: memberships.id });
+    await tx.insert(membershipLocations).values({ businessId, membershipId: frontDeskMembership.id, locationId: escazu.id });
     const block = (locationId: string, weekday: number, opensAt: string, closesAt: string) => ({
       businessId,
       locationId,
@@ -321,7 +338,7 @@ export async function seedDev(db: Executor, options: { now?: Date } = {}): Promi
     };
   });
 
-  return { businessId, replaced, ownerEmail: DEMO_OWNER_EMAIL, ownerPassword, counts };
+  return { businessId, replaced, ownerEmail: DEMO_OWNER_EMAIL, frontDeskEmail: DEMO_FRONT_DESK_EMAIL, password: DEMO_PASSWORD, counts };
 }
 
 async function closeDb(db: unknown): Promise<void> {
@@ -347,7 +364,9 @@ async function main(): Promise<void> {
       `   ${r.counts.locations} sucursales · ${r.counts.staff} profesionales · ${r.counts.services} servicios · ` +
         `${r.counts.clients} clientes · ${r.counts.appointments} citas de esta semana · ${r.counts.payments} pagos`,
     );
-    console.log(`   Dueña (solo desarrollo): ${r.ownerEmail} / ${r.ownerPassword}`);
+    console.log("   Usuarios de desarrollo (POST /api/panel/auth/login):");
+    console.log(`     Dueña:                     ${r.ownerEmail} / ${r.password}`);
+    console.log(`     Recepción (solo Escazú):   ${r.frontDeskEmail} / ${r.password}`);
     if (!url && !process.env.PGLITE_DIR) {
       console.log("   Ojo: sin PGLITE_DIR la base es en memoria y se pierde al terminar (sirve como prueba de humo).");
     }

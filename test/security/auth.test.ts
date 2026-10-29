@@ -5,7 +5,7 @@ import { test } from "node:test";
 // ─────────────────────────────────────────────────────────────────────────────
 // Invariantes de auth (src/platform/auth): sesión firmada, contraseñas scrypt con
 // anti-timing y rate limit de login.
-//   • Sesión firmada (HMAC): un token no se puede forjar ni manipular (rol/negocio/exp/epoch).
+//   • Sesión firmada (HMAC): un token no se puede forjar ni manipular (negocio/usuario/exp/epoch).
 //   • Login anti-timing: el camino de "usuario inexistente" gasta el mismo scrypt.
 //   • Rate limit: por IP, por par (IP, usuario) y global por usuario, sin ser oráculo.
 //
@@ -28,7 +28,7 @@ process.env.PANEL_LOGIN_LOCKOUT_MAX_MS = "500";
 process.env.PANEL_LOGIN_LOCKOUT_GLOBAL_THRESHOLD = "6";
 process.env.PANEL_LOGIN_LOCKOUT_GLOBAL_BASE_MS = "80";
 
-const { createSession, verifySession, createAdminSession, verifyAdminSession } = await import(
+const { createSessionToken, verifySessionToken, createAdminSession, verifyAdminSession } = await import(
   "../../src/platform/auth/sessionToken"
 );
 const { hashPassword, verifyPassword, DUMMY_HASH, generateTemporaryPassword } = await import("../../src/platform/auth/password");
@@ -42,94 +42,103 @@ const encode = (parts: string[]) => Buffer.from(parts.join(".")).toString("base6
 const signWithTestSecret = (payload: string) =>
   crypto.createHmac("sha256", process.env.PANEL_SESSION_SECRET!).update(payload).digest("hex");
 
-const TENANT_A = "0b8f8a8e-1f3c-4e0e-9f61-6c4c7d0c0a01";
-const TENANT_B = "5d2e7c1a-9b3f-4a7d-8e21-1a2b3c4d5e6f";
+const BUSINESS_A = "0b8f8a8e-1f3c-4e0e-9f61-6c4c7d0c0a01";
+const BUSINESS_B = "5d2e7c1a-9b3f-4a7d-8e21-1a2b3c4d5e6f";
+const USER_1 = "9c1d2e3f-4a5b-4c6d-8e7f-001122334455";
+const USER_2 = "1f2e3d4c-5b6a-4987-8a6b-554433221100";
+
+const token = (sessionEpoch = 0, businessId = BUSINESS_A, userId = USER_1) =>
+  createSessionToken({ businessId, userId, sessionEpoch });
 
 // ─── Sesión firmada (cookie HMAC, stateless) ────────────────────────────────
+// Formato: "u1.<negocio>.<usuario>.<epoch>.<vence>.<versión>.<firma>". El rol NO viaja:
+// lo lee de la membresía viva quien valida la sesión contra la base.
 
-test("sesión: round-trip devuelve tenantId/userId/role/epoch", () => {
-  assert.deepEqual(verifySession(createSession(TENANT_A, "usr-1", "owner", 0)), {
-    tenantId: TENANT_A,
-    userId: "usr-1",
-    role: "owner",
-    epoch: 0,
-  });
+test("sesión: round-trip devuelve negocio, usuario y epoch", () => {
+  assert.deepEqual(verifySessionToken(token(0)), { businessId: BUSINESS_A, userId: USER_1, sessionEpoch: 0 });
 });
 
 test("sesión: el epoch viaja tal cual — no solo 0", () => {
-  assert.deepEqual(verifySession(createSession(TENANT_A, "usr-1", "front_desk", 7)), {
-    tenantId: TENANT_A,
-    userId: "usr-1",
-    role: "front_desk",
-    epoch: 7,
-  });
+  assert.deepEqual(verifySessionToken(token(7)), { businessId: BUSINESS_A, userId: USER_1, sessionEpoch: 7 });
+});
+
+test("sesión: crear un token con ids que no son uuid o epoch negativo → lanza (no firma basura)", () => {
+  assert.throws(() => createSessionToken({ businessId: "negocio-a", userId: USER_1, sessionEpoch: 0 }));
+  assert.throws(() => createSessionToken({ businessId: BUSINESS_A, userId: "usr-1", sessionEpoch: 0 }));
+  assert.throws(() => createSessionToken({ businessId: BUSINESS_A, userId: USER_1, sessionEpoch: -1 }));
 });
 
 test("sesión: token nulo/ausente/basura → null (no lanza)", () => {
-  assert.equal(verifySession(undefined), null);
-  assert.equal(verifySession(""), null);
-  assert.equal(verifySession("no-es-base64url.@@@"), null);
-  assert.equal(verifySession("aaaa"), null);
+  assert.equal(verifySessionToken(undefined), null);
+  assert.equal(verifySessionToken(""), null);
+  assert.equal(verifySessionToken("no-es-base64url.@@@"), null);
+  assert.equal(verifySessionToken("aaaa"), null);
 });
 
 test("sesión: firma alterada → null (no se puede forjar)", () => {
-  const parts = decode(createSession(TENANT_A, "usr-1", "staff", 0));
+  const parts = decode(token());
   parts[parts.length - 1] = "0".repeat(64); // firma falsa del mismo largo
-  assert.equal(verifySession(encode(parts)), null);
-});
-
-test("sesión: escalar el rol staff→owner sin re-firmar → null", () => {
-  const [tenantId, userId, , epoch, exp, ver, sig] = decode(createSession(TENANT_A, "usr-1", "staff", 0));
-  assert.equal(verifySession(encode([tenantId, userId, "owner", epoch, exp, ver, sig])), null);
+  assert.equal(verifySessionToken(encode(parts)), null);
 });
 
 test("sesión: cambiar el negocio sin re-firmar → null (no cruza negocios)", () => {
-  const [, userId, role, epoch, exp, ver, sig] = decode(createSession(TENANT_A, "usr-1", "owner", 0));
-  assert.equal(verifySession(encode([TENANT_B, userId, role, epoch, exp, ver, sig])), null);
+  const [marker, , userId, epoch, exp, ver, sig] = decode(token());
+  assert.equal(verifySessionToken(encode([marker, BUSINESS_B, userId, epoch, exp, ver, sig])), null);
+});
+
+test("sesión: cambiar el usuario sin re-firmar → null (no se suplanta a otro)", () => {
+  const [marker, businessId, , epoch, exp, ver, sig] = decode(token());
+  assert.equal(verifySessionToken(encode([marker, businessId, USER_2, epoch, exp, ver, sig])), null);
 });
 
 test("sesión: extender el vencimiento sin re-firmar → null", () => {
-  const [tenantId, userId, role, epoch, , ver, sig] = decode(createSession(TENANT_A, "usr-1", "owner", 0));
+  const [marker, businessId, userId, epoch, , ver, sig] = decode(token());
   const future = String(Date.now() + 999 * 24 * 60 * 60 * 1000);
-  assert.equal(verifySession(encode([tenantId, userId, role, epoch, future, ver, sig])), null);
+  assert.equal(verifySessionToken(encode([marker, businessId, userId, epoch, future, ver, sig])), null);
 });
 
 test("sesión: token vencido → null (aunque la firma sea válida)", () => {
-  const payload = `${TENANT_A}.usr-1.owner.0.${Date.now() - 1000}.1`;
-  assert.equal(verifySession(encode([payload, signWithTestSecret(payload)])), null);
+  const payload = `u1.${BUSINESS_A}.${USER_1}.0.${Date.now() - 1000}.1`;
+  assert.equal(verifySessionToken(encode([payload, signWithTestSecret(payload)])), null);
 });
 
 test("sesión: versión distinta invalida (re-login global) → null", () => {
-  const [tenantId, userId, role, epoch, exp, , sig] = decode(createSession(TENANT_A, "usr-1", "owner", 0));
-  assert.equal(verifySession(encode([tenantId, userId, role, epoch, exp, "99", sig])), null);
+  const [marker, businessId, userId, epoch, exp, , sig] = decode(token());
+  assert.equal(verifySessionToken(encode([marker, businessId, userId, epoch, exp, "99", sig])), null);
 });
 
-test("sesión: un rol desconocido, aun bien firmado, → null", () => {
-  const payload = `${TENANT_A}.usr-1.dueno.0.${Date.now() + 60_000}.1`;
-  assert.equal(verifySession(encode([payload, signWithTestSecret(payload)])), null);
+test("sesión: el formato viejo (con el rol adentro), aun bien firmado, → null", () => {
+  const payload = `${BUSINESS_A}.${USER_1}.owner.0.${Date.now() + 60_000}.1`;
+  assert.equal(verifySessionToken(encode([payload, signWithTestSecret(payload)])), null);
 });
 
-// Revocación: verifySession NO conoce el epoch "vigente" de la cuenta (eso lo compara quien
-// valida la sesión contra la base); lo que se prueba acá es que el epoch viaja protegido
-// por la firma: no se puede "revivir" un token viejo subiéndole el epoch a mano.
+test("sesión: ids que no son uuid, aun bien firmados, → null", () => {
+  const payload = `u1.negocio-a.${USER_1}.0.${Date.now() + 60_000}.1`;
+  assert.equal(verifySessionToken(encode([payload, signWithTestSecret(payload)])), null);
+});
+
+// Revocación: verifySessionToken NO conoce el epoch "vigente" de la cuenta (eso lo compara
+// quien valida la sesión contra la base); lo que se prueba acá es que el epoch viaja
+// protegido por la firma: no se puede "revivir" un token viejo subiéndole el epoch a mano.
 test("sesión: subir el epoch sin re-firmar → null (no se puede forjar la revocación)", () => {
-  const [tenantId, userId, role, , exp, ver, sig] = decode(createSession(TENANT_A, "usr-1", "owner", 0));
-  assert.equal(verifySession(encode([tenantId, userId, role, "1", exp, ver, sig])), null);
+  const [marker, businessId, userId, , exp, ver, sig] = decode(token(0));
+  assert.equal(verifySessionToken(encode([marker, businessId, userId, "1", exp, ver, sig])), null);
 });
 
 test("sesión: epoch no numérico o negativo → null (corrupto, no lanza)", () => {
-  const [tenantId, userId, role, , exp, ver] = decode(createSession(TENANT_A, "usr-1", "owner", 0));
+  const [marker, businessId, userId, , exp, ver] = decode(token());
   for (const badEpoch of ["abc", "-1", "1.5", ""]) {
-    const payload = `${tenantId}.${userId}.${role}.${badEpoch}.${exp}.${ver}`;
-    assert.equal(verifySession(encode([payload, signWithTestSecret(payload)])), null, `epoch "${badEpoch}" debería rechazarse`);
+    const payload = `${marker}.${businessId}.${userId}.${badEpoch}.${exp}.${ver}`;
+    assert.equal(verifySessionToken(encode([payload, signWithTestSecret(payload)])), null, `epoch "${badEpoch}" debería rechazarse`);
   }
 });
 
 // ─── Sesión del superadmin — cookie y marca aparte ──────────────────────────
 
-test("sesión admin: round-trip válido → true; una sesión del equipo NO cuela como admin", () => {
+test("sesión admin: round-trip válido → true; una sesión del equipo NO cuela como admin (ni al revés)", () => {
   assert.equal(verifyAdminSession(createAdminSession()), true);
-  assert.equal(verifyAdminSession(createSession(TENANT_A, "usr-1", "owner", 0)), false);
+  assert.equal(verifyAdminSession(token()), false);
+  assert.equal(verifySessionToken(createAdminSession()), null);
   assert.equal(verifyAdminSession(undefined), false);
 });
 

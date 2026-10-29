@@ -1,0 +1,1181 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Sistema de diseño del panel — Lavacar Rosales (rediseño Fase 1, ROADMAP A8).
+   Paleta verde como default; variables de marca parametrizadas para white-label.
+   Modo oscuro vía [data-tema="oscuro"] en <html> (ver web/src/lib/tema.ts).
+
+   Las fuentes se sirven desde el backend en /panel/fonts/* (sin CDN, offline/PWA).
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Noto Sans self-hosted (display/headings) — TTF servidos por el backend ── */
+@font-face{font-family:'Noto Sans';font-style:normal;font-weight:400;font-display:swap;src:url('/panel/fonts/NotoSans-Regular.ttf') format('truetype');}
+@font-face{font-family:'Noto Sans';font-style:normal;font-weight:500;font-display:swap;src:url('/panel/fonts/NotoSans-Medium.ttf') format('truetype');}
+@font-face{font-family:'Noto Sans';font-style:normal;font-weight:600;font-display:swap;src:url('/panel/fonts/NotoSans-SemiBold.ttf') format('truetype');}
+@font-face{font-family:'Noto Sans';font-style:normal;font-weight:700;font-display:swap;src:url('/panel/fonts/NotoSans-Bold.ttf') format('truetype');}
+@font-face{font-family:'Noto Sans';font-style:normal;font-weight:800;font-display:swap;src:url('/panel/fonts/NotoSans-ExtraBold.ttf') format('truetype');}
+@font-face{font-family:'Noto Sans';font-style:normal;font-weight:900;font-display:swap;src:url('/panel/fonts/NotoSans-Black.ttf') format('truetype');}
+/* ── Inter (fallback mientras no hay Roboto self-hosted) ── */
+@font-face{font-family:'Inter';font-style:normal;font-weight:400;font-display:swap;src:url('/panel/fonts/inter-400.woff2') format('woff2');}
+@font-face{font-family:'Inter';font-style:normal;font-weight:500;font-display:swap;src:url('/panel/fonts/inter-500.woff2') format('woff2');}
+@font-face{font-family:'Inter';font-style:normal;font-weight:600;font-display:swap;src:url('/panel/fonts/inter-600.woff2') format('woff2');}
+@font-face{font-family:'Inter';font-style:normal;font-weight:700;font-display:swap;src:url('/panel/fonts/inter-700.woff2') format('woff2');}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   TOKENS DE DISEÑO — modo claro (default)
+   ══════════════════════════════════════════════════════════════════════════════ */
+:root, [data-tema="claro"] {
+  /* Controles nativos (inputs de hora, checkboxes, scrollbars) siguen el tema */
+  color-scheme: light;
+
+  /* ── Fuentes ── */
+  --font-display: 'Noto Sans', 'Inter', system-ui, sans-serif;
+  --font-body: 'Noto Sans', 'Inter', system-ui, -apple-system, sans-serif;
+
+  /* ── Escala tipográfica ── */
+  --step--1: .82rem; --step-0: 1rem; --step-1: 1.18rem; --step-2: 1.42rem;
+  --step-3: 1.9rem; --step-4: 2.6rem; --step-5: 3.4rem;
+
+  /* ── Marca (personalizable por tenant — white-label futuro) ── */
+  --brand-accent: #0b7d72;
+  --brand-accent-fg: #ffffff;
+  --brand-header-bg: #0b5c56;
+  --brand-header-fg: #eafcf6;
+
+  /* ── Superficie ── */
+  --bg: #e9efec; --surface: #ffffff; --surface-2: #f4f8f6; --elevated: #ffffff;
+
+  /* ── Texto ── */
+  --text: #0f2723; --text-2: #5e716c; --text-3: #9aaaa4;
+
+  /* ── Bordes ── */
+  --border: #e3ebe7; --border-2: #eef3f0;
+
+  /* ── Acento ── */
+  --accent: var(--brand-accent);
+  --accent-fg: var(--brand-accent-fg);
+  --accent-soft: #d6efe9;
+  --accent-line: #c2e2da;
+  --accent-strong: #084f46;
+  --on-accent: var(--brand-accent-fg);
+
+  /* ── Chat / burbujas ── */
+  --bubble-in: #ffffff; --bubble-out: #d4f2e7; --bubble-out-fg: #0f2723;
+
+  /* ── Header ── */
+  --header-bg: var(--brand-header-bg);
+  --header-fg: var(--brand-header-fg);
+  --header-sub: #9fd8cf;
+
+  /* ── Estados de conversación ── */
+  --bot: #0b7d72; --bot-soft: #d6efe9;
+  --human: #b5620a; --human-soft: #fbe6cf;
+  --active: #eef7f4; --chat-bg: #e5ece9;
+
+  /* ── Feedback ── */
+  --danger: #C72B3F; --danger-soft: #FBEBE8;
+  --success: #58BE4D; --warning: #FA8500; --warning-soft: #FFF1DE;
+  --info: #248DE3; --info-soft: #E6F0FB;
+
+  /* ── Notas privadas (ficha del cliente) — fondo cálido diferenciado, no depende del acento del tenant ── */
+  --notas-bg: #FBF7EE; --notas-border: #EEE3CC; --notas-fg: #8A6D1F;
+  /* ── "Cliente frecuente" — dorado fijo, mismo tono que las estrellas de reseñas ── */
+  --frecuente: #C68A0A; --frecuente-soft: rgba(240,180,41,.18);
+
+  /* ── Forma ── */
+  --radius: 16px; --radius-sm: 10px; --radius-pill: 999px; --av: 13px;
+
+  /* ── Sombras ── */
+  --shadow: 0 1px 2px rgba(15,39,35,.05), 0 10px 30px rgba(15,39,35,.06);
+  --shadow-overlay: 0 1px 2px rgba(15,27,34,.05), 0 16px 40px -12px rgba(15,27,34,.22);
+
+  /* ── Espaciado ── */
+  --space-2xs: 4px; --space-xs: 8px; --space-sm: 12px; --space-md: 16px;
+  --space-lg: 24px; --space-xl: 40px; --space-2xl: 64px;
+
+  /* ── Alias de compatibilidad (componentes aún sin refinar en Fase 3) ── */
+  --verde: var(--accent); --verde-claro: var(--accent-soft); --verde-burbuja: var(--surface-2);
+  --panel: var(--surface); --texto: var(--text); --gris: var(--text-2);
+  --linea: var(--border); --rojo: var(--danger);
+  --text-muted: var(--text-2);
+  --destructive: var(--danger); --destructive-soft: var(--danger-soft);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   TOKENS DE DISEÑO — modo oscuro
+   Se activa via document.documentElement.dataset.tema = "oscuro" (lib/tema.ts)
+   ══════════════════════════════════════════════════════════════════════════════ */
+[data-tema="oscuro"] {
+  color-scheme: dark;
+  --brand-accent: #37b3a3; --brand-accent-fg: #04211d;
+  --brand-header-bg: #0b201d; --brand-header-fg: #e7f1ee;
+
+  --bg: #0a1614; --surface: #0f1f1c; --surface-2: #0c1a18; --elevated: #132825;
+  --text: #e7f1ee; --text-2: #9db4ae; --text-3: #5f7772;
+  --border: #1c302c; --border-2: #162925;
+
+  --accent-soft: #12332e; --accent-line: #1a4039; --accent-strong: #5acbba;
+
+  --bubble-in: #17302b; --bubble-out: #0f463f; --bubble-out-fg: #dff5ef;
+  --header-sub: #6fada4;
+
+  --bot: #37b3a3; --bot-soft: #123330;
+  --human: #e0902f; --human-soft: #3a2a13;
+  --active: #16302b; --chat-bg: #0a1917;
+  --warning-soft: #3a2a13;
+  --info: #5aabf0; --info-soft: #142a3d;
+
+  /* Notas privadas — variante oscura intencional (cálido oscuro, no un claro invertido) */
+  --notas-bg: #241d10; --notas-border: #4a3d22; --notas-fg: #d8b25c;
+  --frecuente: #f0b429; --frecuente-soft: rgba(240,180,41,.16);
+
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 34px rgba(0,0,0,.5);
+  --shadow-overlay: 0 1px 2px rgba(0,0,0,.5), 0 16px 40px -12px rgba(0,0,0,.6);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   BASE
+   ══════════════════════════════════════════════════════════════════════════════ */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #root { height: 100%; }
+body { font-family: var(--font-body); color: var(--text); background: var(--bg); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; overflow-x: hidden; }
+button { font: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.oculto { display: none !important; }
+/* Números tabulares — montos, horas, teléfonos, placas y fechas (nunca "bailan" al cambiar). */
+.tnum { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   LOGIN
+   ══════════════════════════════════════════════════════════════════════════════ */
+/* Shell de dos paneles (solo Login.tsx): marca a la izquierda + #login (form
+   centrado) a la derecha. CambiarClaveObligatorio.tsx reusa #login SOLO (sin
+   .login-shell/.login-marca), como pantalla de un único formulario centrado. */
+.login-shell { display: flex; min-height: 100%; min-height: 100dvh; }
+.login-marca { flex: 0 0 360px; background: var(--header-bg); color: var(--header-fg); display: flex; flex-direction: column; justify-content: space-between; padding: var(--space-2xl) var(--space-xl); }
+.login-marca-brand { display: flex; align-items: center; gap: var(--space-sm); }
+.login-marca-nombre { font-size: var(--step--1); font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--header-fg); }
+.login-marca-titular { font-family: var(--font-display); font-size: clamp(1.6rem, 3vw, var(--step-4)); font-weight: 800; line-height: 1.15; letter-spacing: -.02em; max-width: 30ch; }
+.login-marca-sub { font-size: var(--step--1); color: var(--header-sub); line-height: 1.5; max-width: 32ch; margin-top: var(--space-sm); }
+.login-marca-footer { font-size: 11px; color: var(--header-sub); opacity: .7; }
+.login-marca-movil { display: none; }
+
+#login { flex: 1; min-width: 0; min-height: 100%; display: flex; align-items: center; justify-content: center; padding: var(--space-lg); background: var(--bg); }
+#login form { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-overlay); padding: var(--space-xl); width: 100%; max-width: 384px; }
+.marca { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-xl); }
+.marca-chip { display: grid; place-items: center; width: 38px; height: 38px; background: var(--accent); color: var(--on-accent); border-radius: var(--radius); flex-shrink: 0; font-size: .76rem; font-weight: 800; letter-spacing: .02em; }
+.marca-chip svg { width: 20px; height: 20px; }
+.marca-logo { object-fit: cover; background: var(--surface); }
+.marca-txt { font-size: var(--step--1); font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--text-muted); }
+#login h1 { font-family: var(--font-display); font-size: var(--step-3); font-weight: 900; line-height: 1.04; letter-spacing: -.02em; color: var(--text); }
+#login p { color: var(--text-muted); font-size: var(--step-0); line-height: 1.5; margin-top: var(--space-xs); margin-bottom: var(--space-xl); max-width: 34ch; }
+#login label { display: block; font-size: var(--step--1); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); margin: var(--space-md) 0 var(--space-2xs); }
+#login input { width: 100%; padding: 11px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: var(--step-0); color: var(--text); background: var(--surface); transition: border-color .15s, box-shadow .15s; }
+#login input::placeholder { color: var(--text-muted); }
+#login input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+/* Selector específico (no "#login button" a secas): el toggle de mostrar/ocultar
+   contraseña es OTRO botón dentro del mismo form y no debe heredar este look. */
+#login button[type="submit"] { width: 100%; margin-top: var(--space-xl); background: var(--accent); color: var(--on-accent); padding: 12px; border-radius: var(--radius); font-weight: 700; font-size: var(--step-0); letter-spacing: .01em; transition: background .15s, opacity .15s; }
+#login button[type="submit"]:hover:not(:disabled) { background: var(--accent-strong); }
+#login button[type="submit"]:disabled { opacity: .55; cursor: not-allowed; }
+#loginError { color: var(--destructive); font-size: var(--step--1); margin-top: var(--space-md); min-height: 16px; }
+
+.login-pass-label-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-sm); margin: var(--space-md) 0 var(--space-2xs); }
+.login-pass-label-row label { margin: 0; }
+.login-link { font-size: var(--step--1); font-weight: 600; color: var(--accent); text-transform: none; letter-spacing: normal; }
+.login-link:hover { text-decoration: underline; }
+.login-pass-wrap { position: relative; }
+.login-pass-wrap input { padding-right: 42px; }
+.login-pass-toggle { position: absolute; right: 3px; top: 3px; bottom: 3px; width: 36px; display: grid; place-items: center; color: var(--text-muted); border-radius: var(--radius-sm); transition: background .12s, color .12s; }
+.login-pass-toggle:hover { background: var(--surface-2); color: var(--text); }
+.login-ayuda { display: block; text-align: center; margin-top: var(--space-lg); font-size: var(--step--1); color: var(--text-muted); }
+.login-ayuda:hover { color: var(--accent); text-decoration: underline; }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   LAYOUT PRINCIPAL — flex column con header compartido
+   ══════════════════════════════════════════════════════════════════════════════ */
+#app { height: 100%; min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
+
+/* ── Header de la aplicación (ocupa todo el ancho) ── */
+#appHeader {
+  background: var(--header-bg);
+  color: var(--header-fg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 0 var(--space-md);
+  flex-shrink: 0;
+  min-height: 60px;
+  /* Safe area: se sobreescribe con la regla de env() al final del archivo */
+}
+
+/* Marca — izquierda. Sin min-width:0 explícito: el mínimo automático de flex
+   (= ancho del logo, que no encoge) evita que las tabs lo tapen al achicar
+   la ventana; el texto igual puede colapsar via .hd-marca-txt. */
+.hd-marca { display: flex; align-items: center; gap: var(--space-sm); flex: 1; }
+.hd-marca-txt { min-width: 0; overflow: hidden; }
+.hd-nombre { font-family: var(--font-display); font-size: var(--step-0); font-weight: 700; color: var(--header-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hd-sub { font-size: var(--step--1); color: var(--header-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Tabs segmentadas — centro. Si no caben en una fila, caen a una 2ª (el
+   header no tiene alto fijo, así que crece solo) — igual que .filtros-pill,
+   en vez de depender de un scroll horizontal que en la práctica nadie
+   descubre (ni con mouse ni con touch). */
+.hd-tabs { display: flex; flex-wrap: wrap; gap: 2px; background: rgba(255,255,255,.10); border-radius: var(--radius-sm); padding: 3px; flex-shrink: 1; min-width: 0; }
+.hd-tab {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 16px; border-radius: 8px;
+  font-size: var(--step--1); font-weight: 600;
+  color: rgba(255,255,255,.65);
+  transition: background .15s, color .15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.hd-tab:hover { background: rgba(255,255,255,.12); color: rgba(255,255,255,.9); }
+.hd-tab.activa { background: var(--header-fg); color: var(--header-bg); }
+.hd-tab svg { flex-shrink: 0; }
+/* Pestaña Pro no incluida en el plan del negocio (Carril D, 0.1): visible pero
+   atenuada, abre el modal "Disponible en el plan Pro" en vez de cambiar de vista. */
+.hd-tab-bloqueada { opacity: .55; }
+.hd-tab-bloqueada:hover { opacity: .8; }
+
+/* Badge "🔒 Plan Pro" junto a un título de sección gateada (p. ej. Marca en Mi negocio). */
+.badge-pro { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent-strong); margin-left: 8px; vertical-align: middle; }
+
+/* Acciones — derecha */
+.hd-acciones { display: flex; align-items: center; gap: var(--space-2xs); flex-shrink: 0; }
+.btn-hd-icono { display: grid; place-items: center; width: 36px; height: 36px; border-radius: var(--radius-sm); color: var(--header-sub); transition: background .15s, color .15s; }
+.btn-hd-icono:hover { background: rgba(255,255,255,.12); color: var(--header-fg); }
+.btn-hd-salir { display: flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: var(--radius-sm); color: var(--header-sub); font-size: var(--step--1); font-weight: 600; transition: background .15s, color .15s; }
+.btn-hd-salir:hover { background: rgba(255,255,255,.12); color: var(--header-fg); }
+
+/* BotonNotif en el header oscuro */
+.hd-acciones .btn-ghost.btn-icono { color: var(--header-sub); }
+.hd-acciones .btn-ghost.btn-icono:hover { background: rgba(255,255,255,.12); color: var(--header-fg); border-color: transparent; }
+.hd-acciones .btn-ghost.btn-icono.on { color: var(--header-fg); }
+
+/* Badge naranja para no leídos en la tab Inbox */
+.badge-naranja { background: var(--warning); color: #fff; font-size: 10px; font-weight: 700; min-width: 18px; height: 18px; border-radius: var(--radius-pill); display: grid; place-items: center; padding: 0 5px; }
+
+/* ── Vista principal debajo del header ── */
+#mainView { flex: 1; display: flex; min-height: 0; overflow: hidden; }
+
+/* ── Aviso de cuota mensual (80% / 100% del plan) — entre el header y la vista ── */
+.aviso-cuota { display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-xs) var(--space-md); background: var(--warning-soft); border-bottom: 1px solid color-mix(in srgb, var(--warning) 35%, transparent); color: var(--text); font-size: var(--step--1); line-height: 1.4; }
+.aviso-cuota > svg { color: var(--warning); flex-shrink: 0; }
+.aviso-cuota-txt { flex: 1; min-width: 0; }
+.aviso-cuota-agotada { background: color-mix(in srgb, var(--danger) 14%, var(--surface)); border-bottom-color: color-mix(in srgb, var(--danger) 35%, transparent); }
+.aviso-cuota-agotada > svg { color: var(--danger); }
+.aviso-cuota-btn { flex-shrink: 0; background: var(--accent); color: var(--accent-fg); border-radius: var(--radius-pill); padding: 6px 14px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.aviso-cuota-btn:hover { filter: brightness(1.08); }
+.aviso-cuota-cerrar { flex-shrink: 0; display: inline-flex; padding: 4px; border-radius: var(--radius-sm); color: var(--text-2); background: none; border: 0; cursor: pointer; }
+.aviso-cuota-cerrar:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
+@media (max-width: 760px) {
+  .aviso-cuota { flex-wrap: wrap; padding: var(--space-xs) var(--space-md); }
+  .aviso-cuota-txt { flex-basis: calc(100% - 60px); }
+}
+#inbox-view { flex: 1; display: flex; min-height: 0; overflow: hidden; }
+.inbox-error-wrap { flex: 1; display: flex; align-items: center; justify-content: center; padding: var(--space-lg); }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   LISTA (sidebar)
+   ══════════════════════════════════════════════════════════════════════════════ */
+#lista { width: 360px; max-width: 38%; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+
+/* Buscador */
+.lista-buscador { padding: var(--space-xs) var(--space-md); background: var(--surface); border-bottom: 1px solid var(--border-2); }
+.buscador { display: flex; align-items: center; gap: var(--space-xs); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 7px 10px; color: var(--text-muted); transition: border-color .15s, background .15s; }
+.buscador:focus-within { border-color: var(--accent); background: var(--surface); }
+.buscador input { flex: 1; border: none; background: none; font: inherit; font-size: var(--step--1); color: var(--text); outline: none; }
+.buscador input::placeholder { color: var(--text-muted); }
+
+/* Filtros pill — con flex-wrap en vez de scroll horizontal: en pantallas
+   angostas antes se cortaban pastillas fuera de vista sin ninguna pista de
+   que había scroll; ahora siempre se ven todas, cayendo a una 2ª fila. */
+.filtros-pill { display: flex; flex-wrap: wrap; gap: 4px 6px; padding: var(--space-xs) var(--space-md); border-bottom: 1px solid var(--border); }
+.filtro-pill { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: var(--radius-pill); font-size: var(--step--1); font-weight: 600; color: var(--text-muted); background: var(--surface-2); border: 1px solid var(--border); white-space: nowrap; transition: background .12s, color .12s, border-color .12s; }
+.filtro-pill:hover { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
+.filtro-pill.activo { background: var(--accent); border-color: transparent; color: var(--accent-fg); }
+.filtro-count { font-size: 10px; font-weight: 700; opacity: .65; }
+.filtro-pill.activo .filtro-count { opacity: .8; }
+
+/* Conversaciones */
+#convs { flex: 1; overflow-y: auto; }
+.convs-vacio-wrap { padding: var(--space-lg) var(--space-md); }
+.convs-mas { padding: var(--space-sm) var(--space-md) var(--space-md); }
+.conv { display: flex; gap: var(--space-sm); padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--border); cursor: pointer; align-items: center; transition: background .12s; }
+.conv:hover { background: var(--surface-2); }
+.conv.activa { background: var(--active); box-shadow: inset 3px 0 0 var(--accent); }
+.avatar { width: 44px; height: 44px; border-radius: var(--radius); background: var(--accent-soft); color: var(--accent-strong); display: grid; place-items: center; font-weight: 600; font-size: var(--step--1); flex-shrink: 0; }
+.conv .info { flex: 1; min-width: 0; }
+.conv .fila { display: flex; justify-content: space-between; gap: var(--space-xs); align-items: baseline; }
+.conv .fila + .fila { margin-top: 3px; }
+.conv .num { font-weight: 600; font-size: var(--step-0); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.conv .num.negrita { font-weight: 700; color: var(--text); }
+.conv .hora { font-size: var(--step--1); color: var(--text-muted); flex-shrink: 0; }
+.conv .hora.hora-accent { color: var(--accent); font-weight: 600; }
+.conv .ultimo { font-size: var(--step--1); color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.badges { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+
+/* Medidor de interés — reemplaza el número crudo de leadScore (0-100) por 3
+   barras + etiqueta ("Interés alto/medio/bajo"), igual criterio que antes
+   (scoreClase) pero legible sin leyenda aparte. */
+.interes { display: inline-flex; align-items: center; gap: 6px; }
+.interes-barras { display: flex; align-items: flex-end; gap: 2px; }
+.interes-barra { width: 3px; border-radius: 1px; background: var(--border-2); }
+.interes-barra:nth-child(1) { height: 6px; }
+.interes-barra:nth-child(2) { height: 9px; }
+.interes-barra:nth-child(3) { height: 12px; }
+.interes-barra.on { background: var(--accent); }
+.interes-label { font-size: 11px; color: var(--text-3); }
+
+/* Señal "necesita que intervengas" — fila con cliente esperando una respuesta
+   humana (modo humano + mensajes sin leer): barra de acento ámbar a la
+   izquierda de la fila + chip con el tiempo de espera. */
+.conv.necesita { box-shadow: inset 3px 0 0 var(--warning); }
+.conv.activa.necesita { box-shadow: inset 3px 0 0 var(--accent); }
+.chip-alerta { display: inline-flex; align-items: center; gap: 4px; background: var(--warning-soft); color: var(--warning); font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 6px; white-space: nowrap; }
+
+/* Filtro "Necesita respuesta" — distinto de los demás filtros neutros: color
+   de alerta siempre visible (activo o no), con puntito, para que se note
+   sin tener que activarlo. */
+.filtro-pill.filtro-alerta { background: var(--warning-soft); border-color: transparent; color: var(--warning); }
+.filtro-pill.filtro-alerta:hover { background: var(--warning-soft); color: var(--warning); }
+.filtro-pill.filtro-alerta.activo { background: var(--warning); color: #fff; }
+.filtro-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--warning); flex-shrink: 0; }
+.filtro-pill.filtro-alerta.activo .filtro-dot { background: #fff; }
+
+/* Pills de modo */
+.pill { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 2px 6px; border-radius: var(--radius); }
+.pill.bot    { background: var(--bot-soft);   color: var(--bot); }
+.pill.humano { background: var(--human-soft); color: var(--human); }
+.badge { background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 700; min-width: 18px; height: 18px; border-radius: var(--radius-pill); display: grid; place-items: center; padding: 0 5px; }
+
+/* Shared ghost button */
+.btn-ghost { color: var(--text-muted); font-size: var(--step--1); font-weight: 600; padding: 6px 10px; border-radius: var(--radius); border: 1px solid transparent; transition: background .15s, border-color .15s, color .15s; }
+.btn-ghost:hover { background: var(--surface-2); border-color: var(--border); color: var(--text); }
+.btn-ghost.btn-icono { padding: 6px; display: inline-grid; place-items: center; }
+.btn-ghost.btn-icono svg { width: 18px; height: 18px; display: block; }
+.btn-ghost.btn-icono.on { color: var(--accent); }
+.btn-ghost.btn-icono.on:hover { color: var(--accent-strong); }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   CHAT
+   ══════════════════════════════════════════════════════════════════════════════ */
+#chat { flex: 1; display: flex; flex-direction: column; background: var(--bg); min-width: 0; }
+#chat header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 var(--space-md); display: flex; align-items: center; gap: var(--space-sm); min-height: 60px; }
+.volver { display: none; background: none; color: var(--text-muted); padding: 6px; border-radius: var(--radius); }
+.volver svg { width: 22px; height: 22px; display: block; }
+.chatHead { flex: 1; min-width: 0; cursor: pointer; }
+.chat-head-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+#chatTitulo { font-weight: 700; font-size: var(--step-0); }
+#chatModo { font-size: var(--step--1); color: var(--text-muted); display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.chat-servicio { color: var(--accent); font-weight: 500; }
+.pill-cita { background: var(--bot-soft); color: var(--bot); font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: var(--radius); }
+.pill-cita.confirmada { background: var(--accent-soft); color: var(--accent); }
+.pill-ventana { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: var(--radius); white-space: nowrap; }
+.pill-ventana.abierta { background: color-mix(in srgb, var(--success) 18%, transparent); color: var(--success); }
+.pill-ventana.cerrada { background: var(--danger-soft); color: var(--danger); }
+.estado-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.estado-dot.bot { background: var(--text-muted); }
+.estado-dot.humano { background: var(--accent); }
+/* Pill de estado del header del chat — frase completa ("Lo atiende el bot"), a
+   diferencia de .pill (etiqueta corta en mayúsculas de la fila de la lista). */
+.pill-estado { display: inline-flex; align-items: center; gap: 6px; font-size: var(--step--1); font-weight: 600; padding: 4px 10px; border-radius: var(--radius-pill); }
+.pill-estado.bot    { background: var(--bot-soft);   color: var(--bot); }
+.pill-estado.humano { background: var(--human-soft); color: var(--human); }
+.chatHead .ver { font-size: var(--step--1); color: var(--accent); margin-top: 1px; }
+.toggle { background: var(--accent); color: var(--on-accent); padding: 8px 14px; border-radius: var(--radius); font-size: var(--step--1); font-weight: 600; white-space: nowrap; flex-shrink: 0; transition: background .15s; }
+.toggle:hover { background: var(--accent-strong); }
+.toggle.devolver { background: var(--surface); color: var(--accent); border: 1px solid var(--accent-line); }
+.toggle.devolver:hover { background: var(--accent-soft); }
+
+/* Acciones rápidas */
+.acciones-rapidas { display: flex; gap: var(--space-xs); padding: var(--space-xs) var(--space-md); background: var(--surface); border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
+.acciones-rapidas::-webkit-scrollbar { display: none; }
+.accion { display: inline-flex; align-items: center; gap: 5px; padding: 6px 14px; border-radius: var(--radius-pill); font-size: var(--step--1); font-weight: 600; white-space: nowrap; flex-shrink: 0; transition: background .15s, color .15s, border-color .15s; }
+.accion:disabled { opacity: .5; cursor: not-allowed; }
+.accion-primaria { background: var(--accent); color: var(--accent-fg); }
+.accion-primaria:hover:not(:disabled) { background: var(--accent-strong); }
+.accion-outline { background: var(--surface); color: var(--accent); border: 1px solid var(--accent-line); }
+.accion-outline:hover:not(:disabled) { background: var(--accent-soft); }
+.accion-check { color: var(--success); border-color: color-mix(in srgb, var(--success) 40%, transparent); }
+.accion-check:hover:not(:disabled) { background: #f0fae8; }
+[data-tema="oscuro"] .accion-check:hover:not(:disabled) { background: #1a3017; }
+.accion-check.activa { background: rgba(88,190,77,.14); border-color: var(--success); }
+.accion-alerta { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 45%, transparent); }
+.accion-alerta:hover:not(:disabled) { background: #fef1de; }
+[data-tema="oscuro"] .accion-alerta:hover:not(:disabled) { background: #3a2a13; }
+
+/* Mensajes */
+#msgs { flex: 1; overflow-y: auto; padding: var(--space-lg) 8vw; display: flex; flex-direction: column; gap: var(--space-xs); }
+.b { max-width: 74%; padding: var(--space-xs) var(--space-sm); border-radius: var(--radius); font-size: var(--step-0); line-height: 1.45; white-space: pre-wrap; word-wrap: break-word; border: 1px solid var(--border); }
+.b .meta { font-size: 10px; color: var(--text-muted); margin-top: 4px; text-align: right; }
+.b.cliente { background: var(--surface); align-self: flex-start; }
+.b.bot     { background: var(--accent-soft); border-color: var(--accent-line); align-self: flex-end; }
+.b.humano  { background: var(--surface-2); align-self: flex-end; }
+.b .quien  { font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); margin-bottom: 3px; }
+.b .msg-img { display: block; max-width: 100%; max-height: 320px; border-radius: calc(var(--radius) - 4px); margin-bottom: 4px; object-fit: cover; }
+
+/* Empty state — sin conversación (EstadoVacio) / cargando (texto simple, no es un vacío real) */
+#vacio { flex: 1; display: flex; align-items: center; justify-content: center; padding: var(--space-lg); }
+.vacio-cargando { color: var(--text-muted); font-size: var(--step-0); }
+
+/* Composer */
+#composer { display: flex; gap: var(--space-xs); padding: var(--space-sm) var(--space-md); background: var(--surface); border-top: 1px solid var(--border); align-items: flex-end; }
+#composer textarea { flex: 1; resize: none; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; font: inherit; font-size: var(--step-0); max-height: 120px; background: var(--surface); transition: border-color .15s, box-shadow .15s; }
+#composer textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+#composer button { background: var(--accent); color: var(--on-accent); width: 42px; height: 42px; border-radius: var(--radius-pill); display: grid; place-items: center; flex-shrink: 0; transition: background .15s; }
+#composer button:hover { background: var(--accent-strong); }
+#composer button svg { width: 20px; height: 20px; }
+.composer-cerrado { flex-direction: column; align-items: stretch; gap: var(--space-xs); }
+.composer-cerrado-msg { font-size: var(--step--1); color: var(--danger); }
+.composer-cerrado-ayuda { font-size: var(--step--1); color: var(--text-muted); }
+.composer-cerrado .accion { align-self: flex-start; }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   FICHA DE CLIENTE
+   ══════════════════════════════════════════════════════════════════════════════ */
+.overlay { position: fixed; inset: 0; background: rgba(15,27,34,.45); display: flex; align-items: center; justify-content: center; z-index: 50; padding: var(--space-md); }
+.ficha-modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-overlay); width: 100%; max-width: 440px; max-height: 88vh; max-height: 88dvh; overflow-y: auto; }
+.ficha-head { display: flex; justify-content: space-between; align-items: center; padding: var(--space-md) var(--space-lg); border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); }
+.ficha-head h3 { font-family: var(--font-display); font-size: var(--step-2); font-weight: 700; letter-spacing: -.01em; }
+.ficha-head button { background: none; font-size: var(--step-1); color: var(--text-muted); line-height: 1; padding: 4px; }
+.ficha-body { padding: var(--space-md) var(--space-lg) var(--space-lg); }
+.dato { display: flex; justify-content: space-between; gap: var(--space-sm); padding: 10px 0; border-bottom: 1px solid var(--border); font-size: var(--step-0); }
+.dato span { color: var(--text-muted); }
+.dato b { text-align: right; font-weight: 600; overflow-wrap: anywhere; min-width: 0; }
+/* Campo editable dentro de una fila .dato (ej: reasignar quién atiende, ALTO-07). */
+.dato-select { width: auto; max-width: 60%; padding: 4px 8px; font-size: var(--step--1); }
+.ficha-body h4 { margin: var(--space-lg) 0 var(--space-xs); font-size: var(--step--1); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
+.hist { font-size: var(--step--1); padding: var(--space-xs) var(--space-sm); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 6px; }
+.hist b { color: var(--text); font-weight: 600; }
+
+/* ── Ficha del cliente (rediseño visual, ver design_handoff_panel_whatsapp/) ──
+   Header propio (avatar + nombre + pill "cliente frecuente" + teléfono) encima
+   del .ficha-head genérico; tiles 2×2; historial como timeline vertical con
+   puntos por estado; notas privadas en bloque cálido diferenciado. */
+.ficha-modal-cliente { max-width: 560px; }
+.ficha-cliente-head { align-items: flex-start; gap: var(--space-md); }
+.ficha-cliente-avatar { width: 52px; height: 52px; border-radius: var(--radius); background: var(--accent-soft); color: var(--accent-strong); display: grid; place-items: center; font-family: var(--font-display); font-weight: 700; font-size: var(--step-0); flex-shrink: 0; }
+.ficha-cliente-id { flex: 1; min-width: 0; }
+.ficha-cliente-nombre-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ficha-cliente-nombre-row h3 { overflow-wrap: anywhere; }
+.ficha-cliente-tel { font-size: var(--step--1); color: var(--text-2); margin-top: 3px; }
+.pill-frecuente { display: inline-flex; align-items: center; gap: 4px; background: var(--frecuente-soft); color: var(--frecuente); font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: var(--radius-pill); white-space: nowrap; }
+.pill-frecuente svg { fill: currentColor; }
+
+.ficha-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-sm); margin-bottom: var(--space-md); }
+.ficha-tile { background: var(--surface-2); border-radius: var(--radius-sm); padding: var(--space-sm) var(--space-md); }
+.ficha-tile-label { display: block; font-size: 11px; color: var(--text-3); margin-bottom: 4px; }
+.ficha-tile-valor { display: block; font-size: var(--step-0); font-weight: 700; color: var(--text); overflow-wrap: anywhere; }
+
+/* Historial — timeline vertical: línea conectando puntos de color por estado */
+.ficha-historial { display: flex; flex-direction: column; }
+.ficha-historial-item { display: flex; align-items: flex-start; gap: var(--space-sm); position: relative; padding-bottom: var(--space-md); }
+.ficha-historial-item:last-child { padding-bottom: 0; }
+.ficha-historial-item:not(:last-child)::before { content: ""; position: absolute; left: 5px; top: 14px; bottom: 0; width: 1px; background: var(--border); }
+.ficha-historial-dot { width: 11px; height: 11px; border-radius: 50%; margin-top: 4px; flex-shrink: 0; box-shadow: 0 0 0 2px var(--surface); }
+.ficha-historial-dot-accent { background: var(--accent); }
+.ficha-historial-dot-success { background: var(--success); }
+.ficha-historial-dot-warning { background: var(--warning); }
+.ficha-historial-dot-danger { background: var(--danger); }
+.ficha-historial-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ficha-historial-servicio { font-weight: 600; font-size: var(--step--1); color: var(--text); }
+.ficha-historial-fecha { font-size: 11px; color: var(--text-3); }
+
+/* Notas privadas — bloque cálido diferenciado (nunca depende del acento del tenant) */
+.ficha-notas-card { background: var(--notas-bg); border: 1px solid var(--notas-border); border-radius: var(--radius-sm); padding: var(--space-md); margin-top: var(--space-lg); }
+.ficha-notas-titulo { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--notas-fg); margin-bottom: var(--space-sm); }
+.ficha-notas-input { width: 100%; min-height: 80px; border: 1px solid var(--notas-border); border-radius: var(--radius-sm); padding: 10px 12px; font: inherit; font-size: var(--step-0); resize: vertical; background: var(--surface); transition: border-color .15s, box-shadow .15s; }
+.ficha-notas-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.ficha-notas-guardar { margin-top: var(--space-sm); background: var(--accent); color: var(--on-accent); padding: 10px 16px; border-radius: var(--radius); font-weight: 600; font-size: var(--step--1); transition: background .15s; }
+.ficha-notas-guardar:hover { background: var(--accent-strong); }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   DASHBOARD (tab view — ya no es overlay)
+   ══════════════════════════════════════════════════════════════════════════════ */
+#dashboard { flex: 1; overflow-y: auto; background: var(--bg); }
+.dash-body { padding: var(--space-lg); max-width: 960px; margin: 0 auto; }
+.dash-titulo { margin-bottom: var(--space-lg); }
+.dash-titulo h2 { font-family: var(--font-display); font-size: var(--step-2); font-weight: 700; letter-spacing: -.01em; color: var(--text); }
+.dash-titulo p { font-size: var(--step--1); color: var(--text-muted); margin-top: 3px; }
+
+/* Grupo de KPIs — eyebrow + línea separadora (Dinero / Actividad del bot / Riesgo y calidad) */
+.dash-grupo { display: flex; align-items: center; gap: 10px; margin: var(--space-lg) 0 var(--space-sm); }
+.dash-grupo-titulo { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; font-weight: 700; color: var(--text-3); white-space: nowrap; }
+.dash-grupo-linea { flex: 1; height: 1px; background: var(--border); }
+
+/* Hero "Dinero rescatado por el bot" — el dato #1 del dashboard, aparte de los KPIs */
+.hero-rescate { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: var(--space-lg); margin-bottom: var(--space-md); }
+.hero-eyebrow { display: flex; align-items: center; gap: 7px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); font-weight: 700; margin-bottom: 10px; }
+.hero-monto { font-family: var(--font-display); font-weight: 800; font-size: clamp(1.9rem, 5vw, 2.6rem); letter-spacing: -.02em; color: var(--accent-strong); line-height: 1; }
+.hero-monto span { font-size: .6em; font-weight: 700; color: var(--text-3); margin-right: 2px; }
+.hero-texto { font-size: var(--step-0); color: var(--text-2); line-height: 1.5; margin-top: 10px; max-width: 560px; }
+.hero-texto b { color: var(--text); }
+.hero-submetricas { display: flex; gap: 20px; margin-top: 16px; flex-wrap: wrap; }
+.hero-sub-v { font-family: var(--font-display); font-weight: 700; font-size: var(--step-2); color: var(--text); }
+.hero-sub-l { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.hero-sep { width: 1px; background: var(--border); align-self: stretch; }
+
+/* KPI cards */
+.kpis { display: grid; grid-template-columns: repeat(3,1fr); gap: var(--space-md); margin-bottom: var(--space-lg); }
+.kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-md) var(--space-lg); }
+.kpi-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: var(--space-sm); }
+.kpi-icon-badge { width: 40px; height: 40px; border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; flex-shrink: 0; }
+.kpi-icon-badge.tono-neutro  { background: var(--surface-2); color: var(--text-2); }
+.kpi-icon-badge.tono-success { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
+.kpi-icon-badge.tono-danger  { background: var(--danger-soft); color: var(--danger); }
+.kpi-delta { font-size: var(--step--1); font-weight: 700; color: var(--success); background: rgba(88,190,77,.12); padding: 2px 8px; border-radius: var(--radius-pill); align-self: flex-start; white-space: nowrap; }
+.kpi-delta.malo { color: var(--danger); background: var(--danger-soft); }
+.kpi-n { font-family: var(--font-display); font-size: clamp(var(--step-2), 6vw, var(--step-3)); font-weight: 900; line-height: 1; color: var(--text); letter-spacing: -.02em; overflow-wrap: anywhere; }
+.kpi-l { font-size: var(--step--1); color: var(--text-muted); margin-top: var(--space-xs); }
+
+/* KPIs secundarios — grupos Actividad/Riesgo: grid 2 col, tarjeta más compacta */
+.kpis-sec { display: grid; grid-template-columns: repeat(2,1fr); gap: var(--space-md); margin-bottom: var(--space-lg); }
+.kpi.kpi-compacta { padding: var(--space-sm) var(--space-md); }
+.kpi.kpi-compacta .kpi-icon-badge { width: 30px; height: 30px; }
+.kpi.kpi-compacta .kpi-n { font-size: var(--step-2); margin-top: var(--space-xs); }
+
+/* Barras verticales — "Citas por día" con más aire que la lista horizontal (Servicios/Horas pico) */
+.citas-dia-wrap { display: flex; align-items: flex-end; gap: 12px; height: 150px; }
+.cd-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 8px; height: 100%; }
+.cd-num { font-size: 12px; font-weight: 700; color: var(--text); }
+.cd-bar { width: 100%; max-width: 46px; border-radius: 6px 6px 0 0; background: var(--accent-soft); min-height: 2px; }
+.cd-bar.ultimo { background: var(--accent); }
+.cd-label { font-size: 11px; color: var(--text-3); }
+
+/* Cards genéricas */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-md) var(--space-lg); margin-bottom: var(--space-md); }
+.card h3 { font-size: var(--step--1); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: var(--space-md); }
+.dash-vacio { color: var(--text-muted); font-size: var(--step--1); }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   MI NEGOCIO — editor de servicios (rediseño visual, ver design_handoff_panel_whatsapp/)
+   ══════════════════════════════════════════════════════════════════════════════ */
+.svc-card-wrap { padding: var(--space-lg); }
+.svc-header { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-md); flex-wrap: wrap; margin-bottom: var(--space-md); }
+.svc-titulo { font-family: var(--font-display); font-weight: 700; font-size: var(--step-1); letter-spacing: -.01em; color: var(--text); }
+.svc-subtitulo { font-size: var(--step--1); color: var(--text-3); margin-top: 3px; }
+.svc-nuevo { display: inline-flex; align-items: center; gap: 7px; padding: 10px 16px; border-radius: var(--radius-sm); font-size: var(--step--1); flex-shrink: 0; white-space: nowrap; }
+.svc-aviso-pro { margin-bottom: var(--space-md); }
+
+.svc-lista { display: flex; flex-direction: column; gap: var(--space-md); }
+.svc-item { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+.svc-item.svc-arrastrando { opacity: .45; }
+.svc-item-head { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap; padding: var(--space-md) var(--space-lg); border-bottom: 1px solid var(--border); }
+.svc-item-main { display: flex; align-items: center; gap: var(--space-sm); flex: 1; min-width: 0; }
+.svc-item-actions { display: flex; align-items: center; gap: var(--space-sm); flex-shrink: 0; }
+.svc-grip { color: var(--text-3); cursor: grab; flex-shrink: 0; display: flex; }
+.svc-grip:active { cursor: grabbing; }
+.svc-item-titulo { flex: 1; min-width: 0; }
+/* Prefijo #miNegocio: gana por especificidad a la regla genérica
+   "#miNegocio input" (id) que si no, pisa este estilo "sin caja". */
+#miNegocio .svc-nombre-input { display: block; font-family: var(--font-display); font-weight: 600; font-size: 1.05rem; color: var(--text); background: none; border: none; padding: 2px 0; width: 100%; }
+#miNegocio .svc-nombre-input:focus { outline: none; box-shadow: 0 0 0 2px var(--accent-soft); border-radius: 4px; }
+/* #miNegocio label fuerza display:block + margin en TODOS los <label> del tab
+   (para los campos normales); este chip es un <label> chico, necesita ganarle. */
+#miNegocio .svc-slug { display: inline-flex; align-items: center; gap: 5px; margin: 4px 0 0; max-width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 2px 8px; color: var(--text-3); font-size: 11.5px; font-weight: 400; letter-spacing: normal; }
+#miNegocio .svc-slug-input { font-family: var(--mono, monospace); font-size: 11.5px; color: var(--text-3); background: none; border: none; width: 18ch; max-width: 100%; padding: 0; }
+#miNegocio .svc-slug-input:focus { outline: none; color: var(--text); }
+.svc-pill-agendable { display: inline-flex; align-items: center; gap: 5px; background: var(--accent-soft); color: var(--accent-strong); font-size: 12px; font-weight: 600; padding: 5px 11px; border-radius: var(--radius-pill); flex-shrink: 0; white-space: nowrap; }
+.svc-borrar { width: 34px; height: 34px; border-radius: var(--radius-sm); border: 1px solid var(--border); display: grid; place-items: center; color: var(--text-3); flex-shrink: 0; transition: background .12s, color .12s, border-color .12s; }
+.svc-borrar:hover { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
+
+.svc-item-body { padding: var(--space-md) var(--space-lg); display: grid; grid-template-columns: 1.4fr 1fr; gap: var(--space-lg); }
+.svc-col { display: flex; flex-direction: column; gap: var(--space-md); }
+.svc-label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2); margin-bottom: 6px; }
+.svc-label-hint { font-weight: 400; color: var(--text-3); }
+/* Caja/borde/foco de estos inputs ya los da la regla genérica "#miNegocio input,
+   textarea, select" (arriba, en la sección MI NEGOCIO base) — acá solo lo que
+   necesita ser distinto (textarea compacta). */
+.svc-item-body textarea { min-height: 44px; }
+.svc-row-2 { display: flex; gap: var(--space-sm); }
+.svc-row-2 .campo { flex: 1; min-width: 0; }
+.svc-input-money { display: flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: var(--radius); padding: 0 14px; background: var(--surface); transition: border-color .15s, box-shadow .15s; }
+.svc-input-money span { color: var(--text-3); flex-shrink: 0; }
+#miNegocio .svc-input-money input { border: none; padding: 11px 0; background: none; width: auto; flex: 1; min-width: 0; }
+.svc-input-money:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.svc-input-money:has(input:disabled) { opacity: .55; }
+
+.svc-switches { display: flex; flex-direction: column; gap: 10px; background: var(--bg); border-radius: var(--radius-sm); padding: 14px 16px; }
+.svc-switch-sep { height: 1px; background: var(--border); }
+/* .svc-switch-row es un <label>: "#miNegocio label" (id) le pisaría display/margin/
+   color si no le ganamos en especificidad acá. */
+#miNegocio .svc-switch-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); cursor: pointer; margin: 0; letter-spacing: normal; font-weight: 400; color: inherit; }
+.svc-switch-titulo { font-size: 13px; font-weight: 500; color: var(--text); }
+.svc-switch-ayuda { font-size: 11.5px; color: var(--text-3); margin-top: 1px; }
+
+/* Switch reutilizable (pista + knob) */
+.switch { position: relative; width: 42px; height: 24px; flex-shrink: 0; display: inline-block; }
+.switch input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; z-index: 1; }
+.switch input:disabled { cursor: not-allowed; }
+.switch-track { position: absolute; inset: 0; border-radius: var(--radius-pill); background: var(--border-2); pointer-events: none; transition: background .15s; }
+.switch input:checked + .switch-track { background: var(--accent); }
+.switch input:disabled + .switch-track { opacity: .55; }
+.switch-knob { position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: var(--shadow); transition: transform .15s; }
+.switch input:checked + .switch-track .switch-knob { transform: translateX(18px); }
+.switch input:focus-visible + .switch-track { box-shadow: 0 0 0 3px var(--accent-soft); }
+
+@media (max-width: 760px) {
+  .svc-item-body { grid-template-columns: 1fr; padding: var(--space-sm) var(--space-md); }
+  .svc-item-head { padding: var(--space-sm) var(--space-md); }
+  /* Angosto: nombre/slug ocupan toda la fila, pill+borrar bajan a una segunda línea
+     alineados a la derecha (si no, se aprietan y el nombre queda truncado). */
+  .svc-item-main { flex-basis: 100%; }
+  .svc-item-actions { margin-left: auto; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   MI NEGOCIO — layout de dos columnas (rediseño completo, design_handoff_panel_whatsapp/,
+   pantalla 3): sub-nav con scrollspy + barra "Guardar cambios" fija.
+   ══════════════════════════════════════════════════════════════════════════════ */
+.mn-layout { display: flex; flex: 1; min-width: 0; min-height: 0; }
+
+.mn-subnav { width: 250px; min-width: 0; flex-shrink: 0; background: var(--surface); border-right: 1px solid var(--border); padding: 22px 14px; overflow-y: auto; }
+.mn-subnav-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); padding: 0 10px 10px; }
+.mn-subnav-lista { display: flex; flex-direction: column; gap: 2px; }
+.mn-subnav-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border-radius: var(--radius-sm); border-left: 3px solid transparent; font-size: 13.5px; font-weight: 600; color: var(--text-2); text-align: left; transition: background .12s, color .12s, border-color .12s; }
+.mn-subnav-item svg { flex-shrink: 0; }
+.mn-subnav-item:hover { background: var(--surface-2); color: var(--text); }
+.mn-subnav-item.activo { background: var(--accent-soft); color: var(--accent-strong); border-left-color: var(--accent); }
+
+.mn-content { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; }
+/* min-width:0: .mn-content-inner es un item flex en columna de .mn-content —
+   sin esto, "align-items:stretch" no puede encoger por debajo de su ancho de
+   contenido y el formulario se desborda en móvil. */
+#miNegocio .mn-content-inner { max-width: 880px; min-width: 0; }
+.mn-section-sub { font-size: var(--step--1); color: var(--text-3); margin: -8px 0 var(--space-md); }
+.mn-section-head-switch { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); }
+.mn-section-head-switch h3 { margin-bottom: 0; }
+
+/* Botón punteado — agregar bloqueo/pregunta (ver design_handoff_panel_whatsapp/) */
+.btn-punteado { display: block; width: 100%; text-align: center; padding: 10px; border: 1px dashed var(--border-2); border-radius: var(--radius-sm); color: var(--text-2); font-size: var(--step--1); font-weight: 600; transition: background .12s, border-color .12s, color .12s; }
+.btn-punteado:hover { border-color: var(--accent-line); color: var(--accent); background: var(--accent-soft); }
+
+/* ── Base de conocimiento: editor por ítems + secciones libres (EditorConocimiento.tsx) ──
+   Reemplaza los textarea "una por línea" por filas editables. Compartido por
+   #miNegocio (self-service) y #admin (alta), que estilan sus inputs igual por id. */
+.kb-grupo { padding: var(--space-md) 0; border-top: 1px solid var(--border); }
+.kb-grupo:first-of-type { border-top: none; padding-top: var(--space-2xs); }
+.kb-grupo-cabecera { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); }
+.kb-grupo-titulo { display: flex; align-items: center; gap: 8px; font-size: var(--step-0); font-weight: 700; color: var(--text); }
+.kb-grupo-titulo svg { color: var(--accent); flex-shrink: 0; }
+.kb-grupo-ayuda { font-size: var(--step--1); color: var(--text-muted); margin: 4px 0 var(--space-sm); }
+.kb-count { min-width: 22px; height: 22px; padding: 0 7px; border-radius: var(--radius-pill); background: var(--surface-2); color: var(--text-2); font-size: 12px; font-weight: 700; display: grid; place-items: center; flex-shrink: 0; }
+
+.kb-items { display: flex; flex-direction: column; gap: var(--space-xs); }
+.kb-item { display: flex; align-items: center; gap: var(--space-xs); }
+.kb-item-input { flex: 1; min-width: 0; }
+.kb-item-borrar { flex-shrink: 0; width: 40px; height: 40px; display: grid; place-items: center; border-radius: var(--radius-sm); color: var(--text-3); transition: background .12s, color .12s; }
+.kb-item-borrar:hover { background: var(--danger-soft); color: var(--danger); }
+.kb-empty { font-size: var(--step--1); color: var(--text-muted); margin: 0 0 var(--space-xs); }
+.kb-empty-ej { color: var(--text-3); }
+
+.kb-secciones { display: flex; flex-direction: column; gap: var(--space-md); }
+.kb-seccion { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-md); background: var(--surface-2); }
+.kb-seccion-head { display: flex; align-items: center; gap: var(--space-xs); margin-bottom: var(--space-sm); }
+.kb-seccion-titulo { flex: 1; min-width: 0; font-weight: 700; }
+
+/* Los inputs dentro de #miNegocio/#admin heredan el radius/padding grande de la regla
+   por id; para las filas de ítems queremos algo más compacto (mismo patrón id-prefijado
+   que .svc-*-input). */
+#miNegocio .kb-item-input, #admin .kb-item-input,
+#miNegocio .kb-seccion-titulo, #admin .kb-seccion-titulo { border-radius: var(--radius-sm); padding: 9px 12px; }
+#miNegocio .kb-grupo label, #admin .kb-grupo label { margin-top: 0; }
+
+/* Campos monoespaciados — nombres de plantillas de Meta, Place ID, etc. */
+.mono { font-family: var(--mono, ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace); }
+
+/* Horario — fila por día: switch + Abre/Cierra con ícono + chip de estado */
+.horario-lista { display: flex; flex-direction: column; gap: 8px; }
+.horario-fila { display: grid; grid-template-columns: 180px 1fr 1fr 96px; gap: var(--space-sm); align-items: center; background: var(--surface-2); border-radius: 11px; padding: 10px 14px; }
+.horario-dia { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 13.5px; font-weight: 600; color: var(--text); letter-spacing: normal; text-transform: none; }
+#miNegocio .horario-campo label { margin: 0 0 3px; font-size: 11px; }
+.horario-input-hora { display: flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0 10px; background: var(--surface); color: var(--text-3); transition: border-color .15s, box-shadow .15s, opacity .15s; }
+#miNegocio .horario-input-hora input { border: none; padding: 8px 0; background: none; color: var(--text); }
+.horario-input-hora:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.horario-fila-cerrado .horario-input-hora { opacity: .45; }
+.horario-chip { justify-self: end; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: var(--radius-pill); background: var(--bg); color: var(--text-3); white-space: nowrap; }
+.horario-chip-abierto { background: var(--accent-soft); color: var(--accent-strong); }
+
+/* Quiénes atienden (ALTO-07) — una fila por persona/puesto, con qué servicios hace */
+.equipo-lista { display: flex; flex-direction: column; gap: 8px; margin-bottom: var(--space-md); align-items: flex-start; }
+.equipo-fila { width: 100%; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+/* Inactivo: se atenúa pero sigue legible y editable (es el estado normal de alguien que se fue). */
+.equipo-fila-inactiva { opacity: 0.6; }
+.equipo-fila-head { display: flex; align-items: center; gap: var(--space-sm); }
+#miNegocio .equipo-fila-head input[type="text"], #miNegocio .equipo-fila-head > input { flex: 1; min-width: 0; }
+.equipo-servicios { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding-left: 2px; }
+.equipo-servicios-label { font-size: 12px; color: var(--text-3); }
+
+/* Feriados y bloqueos — fila con chip de ícono ámbar */
+.feriados-lista { display: flex; flex-direction: column; gap: 8px; margin-bottom: var(--space-md); }
+.feriado-fila { display: flex; align-items: center; gap: var(--space-sm); padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.feriado-icono { width: 32px; height: 32px; border-radius: var(--radius-sm); background: var(--warning-soft); color: var(--warning); display: grid; place-items: center; flex-shrink: 0; }
+.feriado-campos { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.feriado-fechas { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#miNegocio .feriado-fechas input { width: auto; flex: 0 1 auto; }
+.feriado-a { color: var(--text-3); font-size: 12px; }
+#miNegocio .feriado-motivo { width: 100%; }
+
+/* Barra "Guardar cambios" — fija al pie del contenido con scroll */
+/* El degradado solo cubre una franja angosta arriba (contenido que se retira
+   detrás); de ahí para abajo tiene que ser opaco o los botones (el "Descartar"
+   ghost no tiene fondo propio) quedan ilegibles sobre el texto que scrollea. */
+.mn-guardar-barra { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); min-width: 0; max-width: 880px; margin: 4px auto 0; padding: 14px var(--space-lg); background: linear-gradient(to bottom, transparent, var(--bg) 14px); }
+.mn-guardar-estado { display: flex; align-items: center; gap: 8px; font-size: var(--step--1); font-weight: 600; color: var(--text-2); }
+.mn-guardar-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warning); flex-shrink: 0; }
+.mn-guardar-acciones { display: flex; gap: 10px; flex-shrink: 0; }
+
+@media (max-width: 760px) {
+  .mn-layout { flex-direction: column; }
+  .mn-subnav { width: 100%; border-right: none; border-bottom: 1px solid var(--border); padding: 10px 12px; }
+  .mn-subnav-lista { flex-direction: row; overflow-x: auto; gap: 6px; }
+  .mn-subnav-eyebrow { display: none; }
+  /* min-height 44px: área de toque WCAG (restricción #4 del handoff) — con
+     solo el padding, el chip quedaba en ~36px de alto. */
+  .mn-subnav-item { width: auto; min-height: 44px; flex-shrink: 0; border-left: none; border-radius: var(--radius-pill); padding: 8px 14px; }
+  .mn-subnav-item.activo { border-left-color: transparent; box-shadow: inset 0 -2px 0 var(--accent); }
+
+  .horario-fila { grid-template-columns: 1fr 1fr; row-gap: 8px; }
+  .horario-dia { grid-column: 1 / -1; }
+  .horario-chip { grid-column: 1 / -1; justify-self: start; }
+
+  /* La barra de guardar queda fija arriba del bottom nav (no tapada debajo de él). */
+  .mn-guardar-barra { position: fixed; left: 0; right: 0; bottom: calc(70px + env(safe-area-inset-bottom)); z-index: 8; max-width: none; margin: 0; background: var(--surface); border-top: 1px solid var(--border); box-shadow: 0 -2px 12px rgba(15,39,35,.06); padding: 10px var(--space-md); }
+  /* margin:0 auto en .dash-body es un margen automático de EJE CRUZADO acá (el
+     eje cruzado de .mn-content, que está en columna, es el ancho): flexbox lo
+     trata como "no estirar, achicate a tu contenido" en vez de "llená el 100%"
+     — de ahí el overflow horizontal. width:100% + margin:0 lo fuerza explícito. */
+  #miNegocio .mn-content-inner { width: 100%; margin: 0; padding-bottom: calc(140px + env(safe-area-inset-bottom)); }
+}
+
+/* Estado vacío enriquecido reutilizable (EstadoVacio/ErrorState: chip de ícono + título
+   + ayuda + CTA) — mismo patrón para vacíos y errores de carga, solo cambia el tono
+   del chip de ícono (ver design_handoff_panel_whatsapp/, sección 7). */
+.estado-vacio { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; background: var(--bg); border-radius: var(--radius); padding: var(--space-xl) var(--space-md); }
+.estado-vacio-icono { width: 56px; height: 56px; border-radius: var(--radius); background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; margin-bottom: var(--space-xs); }
+.estado-vacio-icono-danger { background: var(--danger-soft); color: var(--danger); }
+.estado-vacio-titulo { font-family: var(--font-display); font-weight: 600; font-size: var(--step-1); color: var(--text); }
+.estado-vacio-ayuda { font-size: var(--step--1); color: var(--text-2); line-height: 1.5; max-width: 290px; margin-bottom: var(--space-xs); }
+
+/* Barras horizontales (citas por día) */
+.barra { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-xs); font-size: var(--step--1); }
+.barra .et { width: 84px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-muted); }
+.barra .track { display: block; flex: 1; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); height: 20px; overflow: hidden; }
+.barra .fill  { display: block; height: 100%; background: var(--accent); min-width: 2px; }
+.barra .v { width: 34px; text-align: right; font-weight: 700; color: var(--text); }
+
+/* Grid 2 columnas (servicios + horas pico) */
+.dash-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-md); margin-bottom: var(--space-md); }
+
+/* Ranking de servicios */
+.ranking-row { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-sm); }
+.rank-num { width: 22px; height: 22px; border-radius: 50%; background: var(--surface-2); color: var(--text-muted); display: grid; place-items: center; font-size: 10px; font-weight: 700; flex-shrink: 0; border: 1px solid var(--border); }
+.rank-info { flex: 1; min-width: 0; }
+.rank-nombre { font-size: var(--step--1); font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px; }
+.rank-track { height: 8px; background: var(--surface-2); border-radius: var(--radius-pill); overflow: hidden; }
+.rank-fill  { height: 100%; background: var(--accent); border-radius: var(--radius-pill); min-width: 2px; }
+.rank-v { font-size: var(--step--1); font-weight: 700; color: var(--text); width: 30px; text-align: right; flex-shrink: 0; }
+
+/* Horas pico — barras verticales */
+.horas-pico-wrap { overflow-x: auto; padding-bottom: var(--space-xl); }
+.horas-pico-grid { display: flex; align-items: flex-end; gap: 4px; min-height: 120px; min-width: 280px; }
+.bv-col { display: flex; flex-direction: column; align-items: center; flex: 1; min-width: 24px; gap: 3px; }
+.bv-num { font-size: 9px; font-weight: 700; color: var(--text-muted); min-height: 14px; line-height: 14px; }
+.bv-bar { width: 100%; background: var(--accent); border-radius: 3px 3px 0 0; min-height: 2px; }
+.bv-label { font-size: 8px; color: var(--text-muted); transform: rotate(-32deg); transform-origin: center top; white-space: nowrap; margin-top: 4px; }
+
+/* Split de dos valores (citas bot/manual, clientes nuevos/recurrentes) — C3.3 */
+.split-track { display: flex; height: 10px; background: var(--surface-2); border-radius: var(--radius-pill); overflow: hidden; }
+.split-seg { display: block; height: 100%; min-width: 2px; }
+.split-seg-0 { background: var(--accent); }
+.split-seg-1 { background: var(--human); }
+.split-leyenda { display: flex; gap: var(--space-md); margin-top: var(--space-sm); font-size: var(--step--1); color: var(--text-muted); }
+.split-item b { color: var(--text); font-weight: 700; }
+.split-item-0::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 5px; }
+.split-item-1::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--human); margin-right: 5px; }
+
+/* Reputación en Google — motor de reseñas completo (Carril D, 1.3) */
+.reputacion-resumen { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-md); }
+.reputacion-resumen svg { color: #f0b429; fill: #f0b429; }
+.reputacion-rating { font-size: var(--step-2); font-weight: 700; color: var(--text); }
+.reputacion-total { font-size: var(--step--1); color: var(--text-muted); }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   AGENDA (C2.1) — citas por día/semana + cita manual + estados
+   ══════════════════════════════════════════════════════════════════════════════ */
+#agenda { flex: 1; overflow-y: auto; background: var(--bg); }
+.agenda-vista-toggle { display: flex; gap: 4px; }
+.agenda-dia-vacio { font-size: 11px; color: var(--text-muted); }
+.ficha-modal.agenda-modal { max-width: 480px; }
+.agenda-boton-guardar { margin-top: var(--space-md); }
+.agenda-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); flex-wrap: wrap; margin-bottom: var(--space-md); }
+.agenda-nav { display: flex; align-items: center; gap: var(--space-xs); }
+.agenda-nav-fecha { font-weight: 700; min-width: 150px; text-align: center; }
+
+.badge-estado { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: var(--radius-pill); border: 1px solid var(--border); color: var(--text-muted); white-space: nowrap; }
+.badge-estado.completada { background: var(--accent-soft); color: var(--accent-strong); border-color: transparent; }
+.badge-estado.cancelada { background: var(--danger-soft); color: var(--danger); border-color: transparent; }
+.badge-estado.no_show { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); border-color: transparent; }
+
+/* ── Vista Día — timeline + rail de resumen (design_handoff_panel_whatsapp/) ── */
+.agenda-grid { display: grid; grid-template-columns: 1fr 300px; gap: var(--space-md); align-items: start; }
+.agenda-timeline-card h3 { margin-bottom: var(--space-md); }
+
+.agenda-timeline { position: relative; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); overflow: hidden; }
+.agenda-timeline-filas { display: flex; flex-direction: column; }
+.agenda-timeline-fila { display: flex; align-items: flex-start; border-top: 1px solid var(--border-2); }
+.agenda-timeline-fila:first-child { border-top: none; }
+.agenda-timeline-hora-label { width: 64px; flex-shrink: 0; padding: 4px 8px; font-size: 11px; color: var(--text-3); }
+.agenda-timeline-bloques { position: absolute; inset: 0; left: 64px; }
+
+/* Bloque de cita — posicionado con top/height calculados desde hora + duración del servicio. */
+.agenda-bloque {
+  position: absolute; left: 6px; right: 6px;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 5px 10px; border-radius: var(--radius-sm);
+  border: 1px solid transparent; border-left-width: 3px;
+  text-align: left; overflow: hidden; cursor: pointer;
+  transition: box-shadow .12s, filter .12s;
+}
+/* Carriles por persona (ALTO-07): el componente pasa left+width, así que `right` tiene
+   que soltarse o el bloque queda sobre-restringido. Solo aplica con 2+ carriles. */
+.agenda-bloque-carril { right: auto; }
+.agenda-carriles-head { display: flex; padding-left: 64px; margin-bottom: 4px; }
+.agenda-carril-nombre { padding: 0 6px; font-size: 11px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agenda-bloque:hover { filter: brightness(.98); box-shadow: var(--shadow); z-index: 1; }
+.agenda-bloque-top { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.agenda-bloque-top b { font-size: 11.5px; color: var(--text); flex-shrink: 0; }
+.agenda-bloque-nombre { font-weight: 600; font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agenda-bloque-detalle { font-size: 11px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agenda-bloque-resaltado { box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow); z-index: 1; }
+
+/* Pill de estado — reusada dentro del bloque (desktop), fila móvil y modal de detalle. */
+.pill-cita-estado { align-self: flex-start; font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: var(--radius-pill); white-space: nowrap; }
+
+/* Tono por estado — variantes semánticas (ver Design Tokens del handoff). */
+.agenda-bloque-confirmada { background: var(--accent-soft); border-color: var(--accent-line); border-left-color: var(--accent); }
+.pill-cita-estado-confirmada { background: var(--accent); color: var(--accent-fg); }
+.agenda-bloque-pendiente { background: var(--info-soft); border-color: color-mix(in srgb, var(--info) 30%, transparent); border-left-color: var(--info); }
+.pill-cita-estado-pendiente { background: var(--info); color: #fff; }
+.agenda-bloque-riesgo { background: var(--warning-soft); border-color: color-mix(in srgb, var(--warning) 35%, transparent); border-left-color: var(--warning); }
+.pill-cita-estado-riesgo { background: var(--warning); color: #fff; }
+.agenda-bloque-completada { background: var(--surface-2); border-color: var(--border); border-left-color: var(--accent-strong); opacity: .85; }
+.pill-cita-estado-completada { background: var(--accent-soft); color: var(--accent-strong); }
+.agenda-bloque-cancelada { background: var(--surface-2); border-color: var(--border); border-left-color: var(--danger); opacity: .6; text-decoration: line-through; }
+.pill-cita-estado-cancelada { background: var(--danger-soft); color: var(--danger); }
+.agenda-bloque-no_show { background: var(--surface-2); border-color: var(--border); border-left-color: var(--warning); opacity: .75; }
+.pill-cita-estado-no_show { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); }
+
+/* Rail derecho — resumen del día + aviso de riesgo */
+.agenda-resumen { display: flex; flex-direction: column; gap: var(--space-md); }
+.agenda-resumen-card { display: flex; flex-direction: column; gap: var(--space-sm); }
+.agenda-resumen-fila { display: flex; align-items: center; justify-content: space-between; font-size: var(--step--1); color: var(--text-2); }
+.agenda-resumen-fila b { color: var(--text); font-size: var(--step-0); font-weight: 700; }
+.agenda-resumen-monto { color: var(--accent-strong) !important; }
+
+.agenda-aviso-riesgo { display: flex; gap: var(--space-sm); background: var(--warning-soft); border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent); border-radius: var(--radius-sm); padding: var(--space-sm) var(--space-md); }
+.agenda-aviso-riesgo svg { color: var(--warning); flex-shrink: 0; margin-top: 2px; }
+.agenda-aviso-riesgo p { font-size: var(--step--1); color: var(--text); margin: 0; }
+.agenda-aviso-link { font-size: var(--step--1); font-weight: 600; color: var(--warning); margin-top: 4px; padding: 0; }
+.agenda-aviso-link:hover { text-decoration: underline; }
+
+/* Lista móvil — hora a la izquierda + tarjeta con borde de estado (oculta en desktop) */
+.agenda-lista-movil { display: none; }
+.agenda-fila-movil { display: flex; align-items: stretch; gap: var(--space-sm); width: 100%; text-align: left; background: none; border-radius: var(--radius-sm); }
+.agenda-fila-movil-hora { width: 48px; flex-shrink: 0; padding-top: var(--space-sm); font-weight: 700; font-size: 13px; color: var(--text-2); }
+.agenda-fila-movil-card { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: var(--space-sm) var(--space-md); border: 1px solid var(--border); border-left-width: 3px; border-radius: var(--radius-sm); background: var(--surface); }
+.agenda-fila-movil-nombre { font-weight: 600; font-size: 13.5px; color: var(--text); }
+.agenda-fila-movil-detalle { font-size: 12px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Modal de detalle de cita — acciones (Confirmar/Reprogramar/Completar/No-show/Cancelar) */
+.agenda-detalle-acciones { display: flex; gap: var(--space-xs); flex-wrap: wrap; margin-top: var(--space-md); }
+
+.agenda-semana { display: grid; grid-template-columns: repeat(7, 1fr); gap: var(--space-xs); }
+.agenda-dia-col { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-xs); background: var(--surface); min-height: 120px; }
+.agenda-dia-col.hoy { border-color: var(--accent-line); background: var(--accent-soft); }
+.agenda-dia-col h4 { font-size: var(--step--1); color: var(--text-muted); margin-bottom: var(--space-xs); text-align: center; font-weight: 600; }
+.agenda-chip { display: block; width: 100%; text-align: left; padding: 4px 6px; margin-bottom: 4px; border-radius: var(--radius-sm); font-size: 11px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agenda-chip:hover { border-color: var(--accent-line); }
+.agenda-chip.cancelada { text-decoration: line-through; opacity: .6; }
+.agenda-chip.completada { background: var(--accent-soft); border-color: transparent; }
+.agenda-chip.no_show { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); border-color: transparent; }
+
+.agenda-advertencia { font-size: var(--step--1); color: var(--warning); margin-top: var(--space-2xs); }
+
+/* Formulario de cita manual / reprogramar — mismo look que #admin, sin depender de ese id */
+#agendaForm label { display: block; font-size: var(--step--1); font-weight: 600; letter-spacing: .03em; color: var(--text-muted); margin: var(--space-md) 0 var(--space-2xs); }
+#agendaForm input, #agendaForm select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); font: inherit; font-size: var(--step-0); color: var(--text); background: var(--surface); transition: border-color .15s, box-shadow .15s; }
+#agendaForm input:focus, #agendaForm select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   TOAST
+   ══════════════════════════════════════════════════════════════════════════════ */
+#toasts { position: fixed; bottom: calc(var(--space-xl) + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: var(--space-xs); z-index: 200; pointer-events: none; }
+.toast { background: var(--elevated); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--space-xs) var(--space-md); display: flex; align-items: center; gap: var(--space-sm); box-shadow: var(--shadow); font-size: var(--step--1); font-weight: 500; pointer-events: all; min-width: 180px; max-width: 320px; }
+.toast-txt { flex: 1; color: var(--text); }
+.toast-x { color: var(--text-muted); padding: 2px; border-radius: 4px; display: grid; place-items: center; transition: background .12s; }
+.toast-x:hover { background: var(--surface-2); color: var(--text); }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   SAFE AREAS (PWA — notch / home indicator)
+   ══════════════════════════════════════════════════════════════════════════════ */
+#appHeader { padding-top: env(safe-area-inset-top); min-height: calc(60px + env(safe-area-inset-top)); }
+#composer { padding-bottom: calc(var(--space-sm) + env(safe-area-inset-bottom)); }
+#convs { padding-bottom: env(safe-area-inset-bottom); }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   RESPONSIVE — móvil (≤760px)
+   ══════════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 760px) {
+  #lista { width: 100%; max-width: 100%; }
+  #lista.escondida { display: none; }
+
+  /* Chat en móvil: cubre toda la pantalla incluyendo el appHeader.
+     height:dvh evita que el #composer quede detrás de la barra de URL dinámica. */
+  #chat { position: fixed; inset: 0; height: 100vh; height: 100dvh; z-index: 10; }
+  #chat.escondido { display: none; }
+  /* El appHeader del chat cubre el notch (el appHeader principal queda debajo) */
+  #chat header { padding-top: env(safe-area-inset-top); min-height: calc(60px + env(safe-area-inset-top)); }
+
+  #msgs { padding: var(--space-md); }
+  /* Espacio inferior extra para que el contenido no quede tapado por la barra
+     de navegación fija (bottom nav) — todas las vistas usan .dash-body y la
+     bandeja usa #convs. */
+  .dash-body { padding: var(--space-md); padding-bottom: calc(70px + env(safe-area-inset-bottom)); }
+  #convs { padding-bottom: calc(70px + env(safe-area-inset-bottom)); }
+
+  /* KPIs: 2 col en móvil */
+  .kpis { grid-template-columns: repeat(2,1fr); }
+  /* Grid de 2 col → 1 col */
+  .dash-grid-2 { grid-template-columns: 1fr; }
+  /* Semana de la agenda: 7 columnas no entran en móvil → apilar */
+  .agenda-semana { grid-template-columns: 1fr; }
+
+  /* Día de la agenda: el timeline (denso, requiere ancho) se cambia por la
+     lista simple hora+tarjeta — mismo patrón que el resto del panel en móvil. */
+  .agenda-timeline-card, .agenda-resumen { display: none; }
+  .agenda-grid { display: block; }
+  .agenda-lista-movil { display: flex; flex-direction: column; gap: var(--space-xs); }
+
+  /* Áreas táctiles ≥44px (WCAG 2.5.5) */
+  .btn-ghost, .toggle, .btn-hd-salir, .filtro-pill { min-height: 44px; display: inline-flex; align-items: center; }
+  .volver, #composer button, .ficha-head button, .btn-hd-icono { width: 44px; height: 44px; display: grid; place-items: center; }
+  .accion { min-height: 44px; }
+
+  /* Ocultar el texto "Salir" en móvil, solo ícono */
+  .btn-hd-salir span { display: none; }
+  .btn-hd-salir { padding: 0; }
+
+  /* ── Navegación principal como BARRA INFERIOR (bottom nav) en móvil ──
+     Apilar las tabs dentro del header las hacía crecer en varias filas y se
+     veía mal. El patrón nativo en móvil (y esto es una PWA instalable) es una
+     barra fija abajo, al alcance del pulgar: ícono + etiqueta, repartidas, sin
+     apilarse ni depender de scroll. En desktop siguen siendo tabs en el header.
+     z-index 9 (< 10 del #chat): al abrir un chat a pantalla completa, el chat
+     tapa la barra — no hace falta esconderla por JS. */
+  .hd-tabs {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 9;
+    flex-wrap: nowrap; justify-content: space-around; gap: 0;
+    padding: 4px 2px; padding-bottom: calc(4px + env(safe-area-inset-bottom));
+    background: var(--surface); border-top: 1px solid var(--border);
+    border-radius: 0; box-shadow: 0 -2px 12px rgba(15,39,35,.06);
+  }
+  .hd-tab {
+    flex: 1 1 0; min-width: 0; position: relative;
+    flex-direction: column; gap: 2px;
+    padding: 6px 2px; border-radius: var(--radius-sm);
+    color: var(--text-muted);
+  }
+  .hd-tab svg { width: 22px; height: 22px; }
+  .hd-tab-label { font-size: 10px; font-weight: 600; line-height: 1; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hd-tab:hover { background: transparent; color: var(--text-muted); }
+  .hd-tab.activa { background: transparent; color: var(--accent); }
+  /* Badge de no-leídos: chip pequeño en la esquina del ícono (no en línea). */
+  .hd-tab .badge-naranja { position: absolute; top: 2px; left: 50%; transform: translateX(3px); }
+
+  /* Header sin tabs: hay lugar para mostrar el nombre del negocio otra vez. */
+  .hd-marca-txt { display: block; }
+
+  /* El botón volver en el chat se muestra */
+  .volver { display: grid; }
+
+  /* Header del chat: dejar que el toggle "Atender yo/Devolver" baje a 2ª fila */
+  #chat header { flex-wrap: wrap; row-gap: 6px; }
+
+  /* Admin/Onboarding: reducir padding como hace .dash-body */
+  .admin-body { padding: var(--space-md); }
+
+  /* Botones ‹ › Hoy de la agenda: área táctil cómoda */
+  .agenda-nav .btn-ghost { min-width: 44px; justify-content: center; }
+
+  /* Login: el panel de marca (360px) no entra en móvil — se reemplaza por el
+     bloque compacto de marca dentro del form (logo + nombre), como pide el handoff. */
+  .login-marca { display: none; }
+  .login-marca-movil { display: flex; }
+  .login-pass-toggle { width: 44px; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   ONBOARDING / SUPERADMIN (ROADMAP B3)
+   Reusar los mismos tokens del sistema.
+   ══════════════════════════════════════════════════════════════════════════════ */
+#admin { min-height: 100%; background: var(--bg); overflow-y: auto; }
+#admin-login { min-height: 100%; display: flex; align-items: center; justify-content: center; padding: var(--space-lg); }
+#admin-login form { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-overlay); padding: var(--space-xl); width: 100%; max-width: 384px; }
+#admin-login h1 { font-family: var(--font-display); font-size: var(--step-3); font-weight: 700; line-height: 1.04; color: var(--text); }
+#admin-login p { color: var(--text-muted); font-size: var(--step-0); line-height: 1.5; margin-top: var(--space-xs); margin-bottom: var(--space-lg); }
+#admin label { display: block; font-size: var(--step--1); font-weight: 600; letter-spacing: .03em; color: var(--text-muted); margin: var(--space-md) 0 var(--space-2xs); }
+#admin input, #admin textarea, #admin select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); font: inherit; font-size: var(--step-0); color: var(--text); background: var(--surface); transition: border-color .15s, box-shadow .15s; }
+#admin textarea { resize: vertical; }
+#admin input:focus, #admin textarea:focus, #admin select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+#admin input[type="checkbox"] { width: auto; }
+#admin button[type="submit"], #admin .admin-submit { background: var(--accent); color: var(--on-accent); padding: 12px 18px; border-radius: var(--radius); font-weight: 600; font-size: var(--step-0); transition: background .15s; }
+#admin button[type="submit"]:hover, #admin .admin-submit:hover { background: var(--accent-strong); }
+#admin button[disabled] { opacity: .55; cursor: not-allowed; }
+#admin-login button { width: 100%; margin-top: var(--space-lg); }
+.admin-header { background: var(--surface); border-bottom: 1px solid var(--border); padding: calc(var(--space-md) + env(safe-area-inset-top)) var(--space-lg) var(--space-md); display: flex; align-items: center; gap: var(--space-md); position: sticky; top: 0; z-index: 10; }
+.admin-header h2 { font-family: var(--font-display); font-size: var(--step-2); font-weight: 700; flex: 1; }
+.admin-user { font-size: var(--step--1); color: var(--text-muted); }
+.admin-body { max-width: 920px; margin: 0 auto; padding: var(--space-xl) var(--space-lg); }
+.admin-aviso { background: var(--destructive-soft); color: var(--destructive); border: 1px solid var(--destructive); border-radius: var(--radius); padding: var(--space-sm) var(--space-md); font-size: var(--step--1); margin-bottom: var(--space-md); }
+.admin-form h3 { margin-bottom: var(--space-md); }
+.admin-form h4 { margin: var(--space-lg) 0 var(--space-xs); font-size: var(--step--1); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
+.admin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-xs) var(--space-md); }
+.campo { min-width: 0; }
+/* Ancho completo para los campos de #campanias (no tienen scoping por id).
+   Selector hijo directo para no pisar .admin-servicio input { flex:1 }. */
+.campo > input, .campo > textarea, .campo > select { width: 100%; }
+.campo-inline { display: inline-block; margin-right: var(--space-md); }
+.campo-ayuda { font-size: var(--step--1); color: var(--text-muted); margin-top: var(--space-2xs); }
+/* Las URL/nombres largos de referencia (Place ID API, GUIA-META.md) no tienen
+   espacios para partir — sin esto desbordan la tarjeta en móvil (390px). */
+.campo-ayuda code { overflow-wrap: anywhere; }
+.admin-horario { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-sm) var(--space-md); }
+.admin-dias { display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: center; }
+.admin-dia { display: inline-flex; align-items: center; gap: 4px; font-size: var(--step--1); color: var(--text); margin: 0; }
+.admin-servicio, .admin-faq { display: flex; flex-wrap: wrap; gap: var(--space-xs); align-items: center; padding: var(--space-sm) 0; border-bottom: 1px dashed var(--border); }
+.admin-servicio input, .admin-faq input { width: auto; flex: 1; min-width: 120px; }
+.admin-servicio .admin-ancho { flex-basis: 100%; }
+.admin-check { display: inline-flex; align-items: center; gap: 4px; font-size: var(--step--1); color: var(--text-muted); margin: 0; }
+.admin-submit { margin-top: var(--space-lg); }
+.admin-error { color: var(--destructive); font-size: var(--step--1); margin-top: var(--space-sm); }
+.admin-ok { color: var(--accent-strong); font-size: var(--step--1); margin-top: var(--space-sm); }
+/* Embedded Signup (C4.2): conectar WhatsApp por el popup de Meta. */
+.admin-conectar { display: flex; flex-direction: column; gap: var(--space-xs); align-items: flex-start; }
+.admin-conectado { display: flex; flex-direction: column; gap: var(--space-xs); font-size: var(--step--1); }
+.admin-conectado code, .admin-conectar code { font-family: var(--mono, monospace); }
+.admin-hint { font-size: var(--step--1); color: var(--text-muted); margin: 0; }
+/* Acciones de plataforma por negocio (pausa/WhatsApp/borrar cliente/historial). */
+.admin-acciones { display: grid; gap: var(--space-md); margin-top: var(--space-md); }
+.admin-acciones form { display: grid; gap: var(--space-xs); margin-top: var(--space-sm); }
+.admin-manual { margin-top: var(--space-xs); }
+.admin-manual summary { font-size: var(--step--1); color: var(--text-muted); cursor: pointer; }
+.admin-manual .admin-grid { margin-top: var(--space-sm); }
+.btn-fb { background: #1877f2; color: #fff; padding: 12px 18px; border-radius: var(--radius); font-weight: 600; font-size: var(--step-0); transition: background .15s; }
+.btn-fb:hover:not(:disabled) { background: #145dc0; }
+.btn-fb:disabled { opacity: .6; cursor: default; }
+.admin-tabla-scroll { overflow-x: auto; }
+.admin-tabla { width: 100%; border-collapse: collapse; font-size: var(--step--1); }
+.admin-tabla th, .admin-tabla td { text-align: left; padding: var(--space-xs) var(--space-sm); border-bottom: 1px solid var(--border); white-space: nowrap; }
+.admin-tabla th { color: var(--text-muted); font-weight: 600; }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   MI NEGOCIO — config self-service del operador (ROADMAP C2.2)
+   Misma receta visual que #admin, escopeada a esta pestaña del panel.
+   ══════════════════════════════════════════════════════════════════════════════ */
+/* flex (no overflow-y acá): el scroll ahora vive en .mn-content, a la derecha
+   de la sub-nav (.mn-subnav) — ver sección "MI NEGOCIO — layout de dos columnas".
+   min-width:0: sin esto, el default flex de "no encoger bajo el contenido" deja
+   que la fila de chips de la sub-nav en móvil empuje todo el ancho de la pantalla. */
+#miNegocio { flex: 1; min-width: 0; min-height: 0; display: flex; background: var(--bg); }
+#miNegocio label { display: block; font-size: var(--step--1); font-weight: 600; letter-spacing: .03em; color: var(--text-muted); margin: var(--space-md) 0 var(--space-2xs); }
+#miNegocio input, #miNegocio textarea, #miNegocio select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); font: inherit; font-size: var(--step-0); color: var(--text); background: var(--surface); transition: border-color .15s, box-shadow .15s; }
+#miNegocio textarea { resize: vertical; }
+#miNegocio input:focus, #miNegocio textarea:focus, #miNegocio select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+#miNegocio input[type="checkbox"] { width: auto; }
+#miNegocio input[type="color"] { width: 56px; height: 40px; padding: 4px; }
+#miNegocio input:disabled { opacity: .55; }
+.admin-vacio { color: var(--text-muted); font-size: var(--step--1); }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   USUARIOS + CAMPAÑAS — misma receta visual que #miNegocio/#admin
+   Antes no tenían estilos propios: el contenedor no encogía ni scrolleaba en
+   móvil (la tabla `nowrap` desbordaba el ancho de TODO el panel) y los
+   inputs/selects salían con el look nativo del navegador (cuadrado y feo).
+   ══════════════════════════════════════════════════════════════════════════════ */
+#usuarios, #campanias { flex: 1; min-width: 0; overflow-y: auto; background: var(--bg); }
+#usuarios label, #campanias label { display: block; font-size: var(--step--1); font-weight: 600; letter-spacing: .03em; color: var(--text-muted); margin: var(--space-md) 0 var(--space-2xs); }
+/* Sin width aquí: el ancho lo dan las clases de layout existentes
+   (.campo > * → 100%, .admin-servicio input → flex:1), igual que en las
+   otras pestañas. Fijar width:100% acá rompería las filas inline. */
+#usuarios input, #usuarios textarea, #usuarios select,
+#campanias input, #campanias textarea, #campanias select {
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius);
+  font: inherit; font-size: var(--step-0); color: var(--text); background: var(--surface);
+  transition: border-color .15s, box-shadow .15s;
+}
+#usuarios textarea, #campanias textarea { resize: vertical; }
+#usuarios input:focus, #usuarios textarea:focus, #usuarios select:focus,
+#campanias input:focus, #campanias textarea:focus, #campanias select:focus {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
+}
+#usuarios input[type="checkbox"], #campanias input[type="checkbox"] { width: auto; }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   USUARIOS — equipo/roles (rediseño visual, design_handoff_panel_whatsapp/, pantalla 8)
+   ══════════════════════════════════════════════════════════════════════════════ */
+#usuarios .us-content { max-width: 760px; }
+.us-equipo-header { display: flex; align-items: center; gap: 8px; margin-bottom: var(--space-md); }
+.us-equipo-header h3 { margin-bottom: 0; }
+.us-chip-count { background: var(--surface-2); color: var(--text-2); font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: var(--radius-pill); }
+
+.us-usuario-cell { display: flex; align-items: center; gap: 10px; }
+.us-avatar { width: 38px; height: 38px; border-radius: 10px; background: var(--accent-soft); color: var(--accent-strong); display: grid; place-items: center; font-weight: 700; font-size: 13px; flex-shrink: 0; }
+.us-avatar-dueno { background: var(--accent); color: var(--accent-fg); }
+.us-nombre { font-weight: 600; color: var(--text); white-space: nowrap; }
+.us-vos { font-weight: 400; color: var(--text-3); }
+
+.us-estado-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: var(--radius-pill); background: var(--surface-2); color: var(--text-3); white-space: nowrap; }
+.us-estado-chip .us-estado-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); }
+.us-estado-activo { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
+.us-estado-activo .us-estado-dot { background: var(--success); }
+
+.us-acciones-col { text-align: right; }
+
+/* Tabla en desktop, tarjetas en móvil — mismo patrón que la vista Día de Agenda */
+.us-lista-movil { display: none; }
+.us-card-movil { display: flex; flex-direction: column; gap: 10px; padding: var(--space-sm) var(--space-md); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.us-card-movil + .us-card-movil { margin-top: 8px; }
+.us-card-movil .us-usuario-cell { align-items: center; }
+.us-card-movil-info { flex: 1; min-width: 0; }
+.us-card-movil-rol { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
+.us-card-movil-footer { display: flex; align-items: center; gap: 10px; }
+.us-card-movil-footer select { flex: 1; min-width: 0; }
+
+.us-form-grid { display: grid; grid-template-columns: 1.4fr 1.4fr 1fr; gap: var(--space-md); }
+
+@media (max-width: 760px) {
+  .us-tabla-desktop { display: none; }
+  .us-lista-movil { display: flex; flex-direction: column; gap: 8px; }
+  .us-form-grid { grid-template-columns: 1fr; }
+}
+
+/* ── <select> del panel con chevron propio ──
+   El desplegable nativo del SO se ve tosco/cuadrado; le quitamos el estilo
+   nativo (appearance:none) y le ponemos un chevron SVG y una caja redondeada
+   igual que los inputs. Aplica a TODAS las pestañas admin-like (no solo a las
+   que se reportaron) para que se vean iguales. */
+#admin select, #miNegocio select, #agendaForm select, #usuarios select, #campanias select {
+  -webkit-appearance: none; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235e716c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 38px;
+  cursor: pointer;
+}
+[data-tema="oscuro"] #admin select, [data-tema="oscuro"] #miNegocio select,
+[data-tema="oscuro"] #agendaForm select, [data-tema="oscuro"] #usuarios select,
+[data-tema="oscuro"] #campanias select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239db4ae' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+}
