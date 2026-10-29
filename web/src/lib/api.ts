@@ -234,8 +234,9 @@ export async function apiRequest<T>(method: HttpMethod, path: string, body?: unk
   }
 
   if (error.status === 401 && error.code === "unauthorized") unauthorizedHandler?.(path);
-  // `/auth/me` es quien muestra la pantalla: avisar desde ahí sería un bucle.
-  if (error.code === "business_paused" && path !== "/auth/me") businessPausedHandler?.();
+  // `/auth/me` es quien muestra la pantalla: avisar desde ahí sería un bucle. Las rutas del
+  // cobro (`/billing/*`) las usa la propia pantalla de cuenta pausada para pagar.
+  if (error.code === "business_paused" && path !== "/auth/me" && !path.startsWith("/billing/")) businessPausedHandler?.();
   throw error;
 }
 

@@ -43,7 +43,17 @@ export interface SuperadminSession {
 }
 
 /** Resuelve la sesión del equipo desde el request (cookie). `null` = sin sesión válida → 401. */
-export type SessionResolver = (req: IncomingMessage) => Promise<Session | null>;
+export type SessionResolver = (req: IncomingMessage, options?: SessionResolveOptions) => Promise<Session | null>;
+
+/** Opciones del resolver según la ruta. */
+export interface SessionResolveOptions {
+  /**
+   * La ruta acepta la sesión aunque el negocio esté PAUSADO (sin esto responde 403
+   * `business_paused`). Lo usan las rutas del cobro: la dueña de un negocio pausado por
+   * falta de pago tiene que poder pagar. La ruta decide qué permite en ese estado.
+   */
+  allowPaused?: boolean;
+}
 
 /** Resuelve la sesión del superadmin desde el request. `null` = sin sesión válida → 401. */
 export type SuperadminResolver = (req: IncomingMessage) => Promise<SuperadminSession | null>;
@@ -129,6 +139,11 @@ export interface RouteSpecBase<
   module?: string;
   /** Sucursal del request (solo `auth: "user"`). Sin `location`, el header se ignora. */
   location?: L;
+  /**
+   * Acepta la sesión con el negocio pausado (solo `auth: "user"`; ver
+   * `SessionResolveOptions.allowPaused`). El handler decide qué permite en ese estado.
+   */
+  allowWhenPaused?: boolean;
   params?: PS;
   query?: QS;
   body?: BS;
@@ -137,7 +152,7 @@ export interface RouteSpecBase<
 }
 
 /** Lo que no aplica a rutas sin negocio (superadmin y públicas). */
-type BusinessOnlyFields = { roles?: never; module?: never; location?: never };
+type BusinessOnlyFields = { roles?: never; module?: never; location?: never; allowWhenPaused?: never };
 
 /**
  * Declaración completa: lo de `RouteSpecBase` más las restricciones de tipo (roles, módulo
@@ -186,6 +201,7 @@ export interface Route {
   readonly roles?: readonly Role[];
   readonly module?: string;
   readonly location?: LocationMode;
+  readonly allowWhenPaused?: boolean;
   readonly params?: z.ZodType;
   readonly query?: z.ZodType;
   readonly body?: z.ZodType;

@@ -18,6 +18,7 @@ import {
   whatsappSettingsRoutes,
   type WhatsAppDeps,
 } from "./modules/whatsapp";
+import { onboardingRoutes } from "./onboarding";
 import type { Executor } from "./platform/db/scope";
 import type { Route } from "./platform/http/routeTypes";
 import { systemRoutes } from "./platform/http/systemRoutes";
@@ -105,8 +106,11 @@ export function panelRoutes(deps: RouteDeps): Route[] {
     ...adminRoutes(deps),
     // Alta self-service (I6.7, detrás de SIGNUP_ENABLED): /auth/signup y su config pública.
     ...signupRoutes({ db: deps.db }),
+    // Primeros pasos del Inicio (I6, dueño y admin): /onboarding y /onboarding/dismiss.
+    ...onboardingRoutes({ db: deps.db, plans: deps.plans }),
     // Suscripción por Stripe (I6.6, solo el dueño): /billing/status, /billing/checkout y
-    // /billing/portal. Sin Stripe configurado, el cobro sigue manual.
+    // /billing/portal. Sin Stripe configurado, el cobro sigue manual. Con el negocio pausado
+    // por falta de pago siguen andando: es como la dueña paga y lo reactiva.
     ...billingRoutes({ db: deps.db, stripeGateway: deps.stripeGateway }),
     // Clientes: /clients/*. Los módulos de afuera del núcleo suman acá sus borradores de
     // datos personales para la anonimización (WhatsApp: conversaciones y mensajes). "Mis

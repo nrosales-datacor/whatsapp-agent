@@ -13,6 +13,7 @@ import { formatLongDate, formatTime, formatWhen, STATUS_LABEL } from "../schedul
 import { schedulingApi, useAppointmentStore, useHomeToday, type Appointment, type AppointmentStatus } from "../scheduling/schedulingApi";
 import WaitingCard from "../whatsapp/WaitingCard";
 import HomeOverview from "./HomeOverview";
+import OnboardingChecklist from "./OnboardingChecklist";
 import "../scheduling/agenda.css";
 import "./home.css";
 
@@ -69,6 +70,8 @@ export default function HomePage() {
           Ver agenda
         </Link>
       </PageHeader>
+
+      <OnboardingChecklist />
 
       {hasOverview && <HomeOverview />}
 

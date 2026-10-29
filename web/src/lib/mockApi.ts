@@ -65,6 +65,7 @@ export const MOCK_ACCOUNTS: readonly { email: string; description: string }[] = 
   { email: "temporal@demo.test", description: "Admin con clave temporal (cambio obligatorio)" },
   { email: "sinnegocio@demo.test", description: "Cuenta sin ningún negocio activo (no entra)" },
   { email: "pausada@demo.test", description: "Dueña de un negocio pausado por el superadmin (no entra: cuenta pausada)" },
+  { email: "pago@demo.test", description: "Dueño de un negocio pausado por falta de pago (entra solo a pagar)" },
 ];
 
 const LATENCY_MS = 250;
@@ -102,6 +103,10 @@ interface MockSubscription {
   status: string;
   /** Fin de la prueba gratis (ISO), si la hay. */
   trialEndsAt?: string | null;
+  /** Pausado por falta de pago (ISO): la dueña entra solo a pagar y, al pagar, se reactiva. */
+  billingPausedAt?: string | null;
+  /** Cuándo se pausa si nadie paga (ISO): corre la gracia. */
+  pausesAt?: string | null;
 }
 
 interface MockBusiness extends MeBusiness, MockSubscription {
@@ -208,9 +213,30 @@ const BUSINESSES: Record<string, MockBusiness> = {
     country: "CR",
     createdAt: "2026-08-15T15:00:00.000Z",
   },
+  "5d0a1c7e-2f4b-4b8e-8f3a-6c1d2e3f4a05": {
+    id: "5d0a1c7e-2f4b-4b8e-8f3a-6c1d2e3f4a05",
+    name: "Spa Calma",
+    slug: "spa-calma",
+    plan: "basic",
+    industry: "aesthetics",
+    currency: "CRC",
+    timezone: "America/Costa_Rica",
+    terminology: {},
+    branding: {},
+    locations: [{ id: "0b3c6f2e-6a1d-4c39-9a51-3f0f8c2a1e06", name: "Rohrmoser" }],
+    // Pausado por falta de pago: la prueba venció, pasó la gracia y no se suscribió.
+    extraModules: {},
+    limits: {},
+    billingStatus: "past_due",
+    trialEndsAt: "2026-10-13T12:00:00.000Z",
+    status: "paused",
+    billingPausedAt: "2026-10-20T12:00:00.000Z",
+    country: "CR",
+    createdAt: "2026-09-01T15:00:00.000Z",
+  },
 };
 
-const [DENTAL, AESTHETICS, NAILS, BARBER] = Object.keys(BUSINESSES);
+const [DENTAL, AESTHETICS, NAILS, BARBER, SPA_UNPAID] = Object.keys(BUSINESSES);
 
 interface MockMembership {
   businessId: string;
@@ -304,6 +330,14 @@ const BASE_USERS: MockUser[] = [
     mustChangePassword: false,
     memberships: [{ businessId: BARBER, role: "owner" }],
   },
+  {
+    id: "7e1f0a2b-1111-4c3d-8e4f-000000000010",
+    name: "Tomás Arias",
+    email: "pago@demo.test",
+    totpEnabled: false,
+    mustChangePassword: false,
+    memberships: [{ businessId: SPA_UNPAID, role: "owner" }],
+  },
 ];
 
 interface MockInvitation extends MockMembership {
@@ -350,6 +384,8 @@ interface MockState {
   pendingVerification: string[];
   /** Suscripción simulada de Stripe por negocio (I6.6). */
   stripe: Record<string, { subscribed: boolean; customer: boolean }>;
+  /** Primeros pasos del Inicio por negocio (solo los del alta self-service la muestran). */
+  onboarding: Record<string, Partial<Record<"dismissed" | MockOnboardingStep, boolean>>>;
 }
 
 const STATE_KEY = "selyon.mock.state";
@@ -371,6 +407,7 @@ function emptyState(): MockState {
     signupBusinesses: {},
     pendingVerification: [],
     stripe: {},
+    onboarding: {},
   };
 }
 
@@ -422,6 +459,11 @@ function settingsSeedOf(state: MockState, businessId: string) {
 }
 
 const isPaused = (state: MockState, businessId: string) => businessOf(state, businessId).status === "paused";
+/** Pausado por falta de pago (no por el superadmin): la dueña entra solo a pagar. */
+const isPausedForBilling = (state: MockState, businessId: string) => {
+  const b = businessOf(state, businessId);
+  return b.status === "paused" && Boolean(b.billingPausedAt);
+};
 
 /** Uso del mes simulado: activos de Configuración (o la semilla) y conversaciones ficticias. */
 function planUsageOf(state: MockState, b: MockBusiness, modules: string[]): MePlan["usage"] {
@@ -489,6 +531,7 @@ function buildMe(user: MockUser, businessId: string, state: MockState): Me {
       features: resolved.features,
       billingStatus: base.billingStatus,
       trialEndsAt: base.trialEndsAt ?? null,
+      pausesAt: base.status === "active" ? (base.pausesAt ?? null) : null,
       limits: {
         locations: resolved.limits.locations,
         staff: resolved.limits.staff,
@@ -705,10 +748,50 @@ function mockSignup(state: MockState, body: unknown): TransportResponse {
   return ok({ status: "verification_sent" }, 202);
 }
 
+type MockOnboardingStep = "hours" | "services" | "team" | "whatsapp" | "first_appointment";
+const ONBOARDING_STEPS: readonly MockOnboardingStep[] = ["hours", "services", "team", "whatsapp", "first_appointment"];
+
+/**
+ * `/onboarding` del mock (primeros pasos del Inicio): solo los negocios del alta
+ * self-service la muestran (los de ejemplo ya están configurados). Cada paso se marca solo al
+ * guardar lo que corresponde (ver `trackOnboarding`).
+ */
+function mockOnboarding(state: MockState, businessId: string, modules: readonly string[], dismiss: boolean): TransportResponse {
+  const entry = { ...state.onboarding[businessId] };
+  if (dismiss) {
+    entry.dismissed = true;
+    state.onboarding[businessId] = entry;
+  }
+  const fresh = Boolean(state.signupBusinesses[businessId]);
+  const steps = ONBOARDING_STEPS.filter((id) => id !== "whatsapp" || modules.includes("whatsapp")).map((id) => ({ id, done: !fresh || Boolean(entry[id]) }));
+  const dismissed = !fresh || Boolean(entry.dismissed);
+  const completed = steps.every((step) => step.done);
+  return ok({ visible: !dismissed && !completed, dismissed, completed, steps });
+}
+
+/** Qué paso de los primeros pasos completa un request que salió bien (como lo detecta el backend). */
+function onboardingStepOf(method: string, path: string): MockOnboardingStep | null {
+  if (method === "GET") return null;
+  if (/^\/settings\/locations\/[^/]+(\/hours)?$/.test(path)) return "hours";
+  if (/^\/settings\/(services|service-categories)(\/|$)/.test(path)) return "services";
+  if (method === "POST" && path === "/settings/staff") return "team";
+  if (method === "POST" && /^\/whatsapp\/channels(\/connect)?$/.test(path)) return "whatsapp";
+  if (method === "POST" && path === "/appointments") return "first_appointment";
+  return null;
+}
+
+function trackOnboarding(state: MockState, req: TransportRequest, res: TransportResponse): void {
+  const businessId = state.businessId;
+  if (!businessId || !state.signupBusinesses[businessId] || res.status >= 300) return;
+  const step = onboardingStepOf(req.method, req.path.split("?")[0]);
+  if (step) state.onboarding[businessId] = { ...state.onboarding[businessId], [step]: true };
+}
+
 /** `/billing/*` del mock: Stripe "configurado" con las tres opciones; el Checkout se aplica al toque. */
 function mockBilling(state: MockState, businessId: string, key: string, body: unknown): TransportResponse {
   const b = businessOf(state, businessId);
   const stripe = state.stripe[businessId] ?? { subscribed: false, customer: false };
+  const pausedForBilling = isPausedForBilling(state, businessId);
   if (key === "GET /billing/status") {
     return ok({
       configured: true,
@@ -717,8 +800,12 @@ function mockBilling(state: MockState, businessId: string, key: string, body: un
       canManage: stripe.customer,
       billingStatus: b.billingStatus,
       trialEndsAt: b.trialEndsAt ?? null,
+      pausedForBilling,
+      pausesAt: b.status === "active" ? (b.pausesAt ?? null) : null,
     });
   }
+  // Pausado por el superadmin: pagar en línea no lo reactiva (eso es con nosotros).
+  if (b.status === "paused" && !pausedForBilling) return businessPaused();
   if (key === "POST /billing/portal") {
     if (!stripe.customer) return fail(409, "not_subscribed", "Todavía no te suscribiste en línea.");
     return ok({ url: "/panel/settings/plan" });
@@ -726,13 +813,16 @@ function mockBilling(state: MockState, businessId: string, key: string, body: un
   const option = str(body, "option");
   if (!BILLING_OPTION_LABELS[option]) return invalid({ "body.option": "Opción inválida." });
   if (stripe.subscribed) return fail(409, "already_subscribed", "Tu negocio ya tiene una suscripción. Cambiá de plan desde «Administrar pago».");
-  // Lo que en producción hace el webhook de Stripe tras pagar: plan, módulos y cobro al día.
+  // Lo que en producción hace el webhook de Stripe tras pagar: plan, módulos, cobro al día y,
+  // si estaba pausado por falta de pago, reactivado.
   state.subscriptions[businessId] = {
     ...state.subscriptions[businessId],
     plan: option === "basic" ? "basic" : "pro",
     extraModules: option === "pro_no_agent" ? { whatsapp: false } : {},
     billingStatus: "active",
     trialEndsAt: null,
+    pausesAt: null,
+    ...(pausedForBilling ? { status: "active", billingPausedAt: null } : {}),
   };
   state.stripe[businessId] = { subscribed: true, customer: true };
   return ok({ url: "/panel/settings/plan?billing=ok" });
@@ -759,7 +849,9 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
       path,
     );
   const sessionBusinessId = sessionUser ? (state.businessId ?? sessionUser.memberships[0]?.businessId) : null;
-  if (!publicPath && sessionBusinessId && isPaused(state, sessionBusinessId)) return businessPaused();
+  // Las rutas del cobro siguen andando: con el negocio pausado por falta de pago es como la
+  // dueña paga (mockBilling decide qué permite).
+  if (!publicPath && !path.startsWith("/billing/") && sessionBusinessId && isPaused(state, sessionBusinessId)) return businessPaused();
 
   // Ventas y Comisiones (I4): métodos de pago, cobros, saldo de una cita, pendientes, caja,
   // reglas, movimientos y liquidaciones. Antes que la Agenda (también usa /appointments/:id/*).
@@ -978,6 +1070,14 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
       }
       const activeMemberships = user.memberships.filter((m) => !isPaused(state, m.businessId));
       if (activeMemberships.length === 0) {
+        // Pausado por falta de pago y es la dueña: la sesión queda para pagar (y el 403).
+        const unpaid = user.memberships.find((m) => m.role === "owner" && isPausedForBilling(state, m.businessId));
+        if (unpaid) {
+          state.failedLogins = 0;
+          state.sessionEmail = user.email;
+          state.businessId = unpaid.businessId;
+          return businessPaused();
+        }
         if (user.memberships.length > 0) return businessPaused();
         return fail(
           403,
@@ -1043,6 +1143,14 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
       return str(body, "email").trim() ? noContent() : invalid({ "body.email": "Campo obligatorio." });
 
     // ── Cobro en línea con Stripe (I6.6): solo el dueño ──
+    case "GET /onboarding":
+    case "POST /onboarding/dismiss": {
+      const me = sessionMe();
+      if (!me) return unauthorized();
+      if (me.role !== "owner" && me.role !== "admin") return fail(403, "forbidden_role", "Tu rol no permite hacer esto.");
+      return mockOnboarding(state, me.business.id, me.modules, req.method === "POST");
+    }
+
     case "GET /billing/status":
     case "POST /billing/checkout":
     case "POST /billing/portal": {
@@ -1282,6 +1390,7 @@ export async function mockTransport(req: TransportRequest): Promise<TransportRes
   await new Promise((resolve) => window.setTimeout(resolve, LATENCY_MS));
   const state = loadState();
   const res = route(req, state);
+  trackOnboarding(state, req, res);
   saveState(state);
   if (import.meta.env.DEV) {
     console.debug(`[mock] ${req.method} ${req.path} → ${res.status}`, { location: req.headers["X-Location-Id"] ?? "todas" });

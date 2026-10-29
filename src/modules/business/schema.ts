@@ -93,6 +93,17 @@ export const businesses = pgTable(
     // Fin de la prueba gratis del alta self-service (I6.7). null = sin prueba con fecha
     // (alta del superadmin, cobro manual): el barrido de pruebas vencidas no la toca.
     trialEndsAt: instant("trial_ends_at"),
+    // Desde cuándo el negocio no está al día por una vía automática: Stripe no pudo cobrar,
+    // la suscripción se canceló o la prueba venció sin suscribirse. Vencida la gracia
+    // (BILLING_GRACE_DAYS), el barrido pausa el negocio. null = al día, o un estado cargado
+    // a mano por el superadmin (cobro manual: ese no se pausa solo).
+    unpaidSince: instant("unpaid_since"),
+    // El negocio está pausado POR EL COBRO (lo pausó el barrido, no el superadmin): la dueña
+    // puede entrar a pagar y, al pagar, se reactiva solo.
+    billingPausedAt: instant("billing_paused_at"),
+    // Checklist de primeros pasos del Inicio: cuándo se ocultó (null = se muestra mientras
+    // no esté completa).
+    onboardingDismissedAt: instant("onboarding_dismissed_at"),
     ...timestamps(),
   },
   (t) => [
@@ -101,6 +112,8 @@ export const businesses = pgTable(
     uniqueIndex("businesses_stripe_subscription_uq").on(t.stripeSubscriptionId),
     // Barrido de pruebas vencidas: solo las que tienen fecha.
     index("businesses_trial_ends_idx").on(t.trialEndsAt).where(sql`${t.trialEndsAt} IS NOT NULL`),
+    // Barrido de cobros vencidos con la gracia cumplida: solo los que tienen fecha.
+    index("businesses_unpaid_since_idx").on(t.unpaidSince).where(sql`${t.unpaidSince} IS NOT NULL`),
     check("businesses_slug_check", sql`${t.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`),
     check("businesses_plan_check", oneOf(t.plan, PLANS)),
     check("businesses_status_check", oneOf(t.status, BUSINESS_STATUSES)),

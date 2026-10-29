@@ -44,7 +44,16 @@ export {
 } from "./customFields";
 export type { CustomDataPatchOptions, CustomFieldView, ListCustomFieldsOptions } from "./customFields";
 // Lo contractual (plan, extras, pausa, cobro, Stripe, prueba): lo escribe modules/billing.
-export { countActiveLocationsOf, findBusinessIdByStripeRefs, getBusinessRow, listExpiredTrials, updateBusinessSubscription } from "./subscription";
+export {
+  countActiveLocationsOf,
+  findBusinessIdByStripeRefs,
+  getBusinessRow,
+  listExpiredTrials,
+  listUnpaidSince,
+  updateBusinessSubscription,
+} from "./subscription";
+// Checklist de primeros pasos del Inicio (I6): solo la marca de "oculta" (los pasos los arma src/onboarding.ts).
+export { dismissOnboarding } from "./onboarding";
 export type { SubscriptionChanges } from "./subscription";
 export {
   AI_REGISTERS,

@@ -1,15 +1,13 @@
 import { useEffect, useRef } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { capitalize, terminologyOf } from "../../app/navigation";
 import { ME_QUERY_KEY, useSession } from "../../app/session";
-import { errorMessage } from "../../lib/api";
-import type { BillingOption, BillingStatusView } from "../../lib/contract";
 import { atLimit, BILLING_STATUS_LABELS, monthLabel, MODULES, trialDaysLeft, trialEndsText, usageText } from "../../lib/plans";
-import { FormError } from "../../ui/Field";
 import Icon from "../../ui/Icons";
 import { useToast } from "../../ui/Toast";
-import { BILLING_STATUS_QUERY_KEY, getBillingStatus, openBillingPortal, startCheckout } from "./billingApi";
+import { BILLING_STATUS_QUERY_KEY, getBillingStatus } from "./billingApi";
+import OnlineBilling from "./OnlineBilling";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuración › Plan (solo el dueño): el plan del negocio con sus módulos, el nivel de
@@ -22,13 +20,6 @@ import { BILLING_STATUS_QUERY_KEY, getBillingStatus, openBillingPortal, startChe
 const PLAN_PITCH: Record<string, string> = {
   basic: "El agente de WhatsApp con la agenda, la ficha de clientes y el inicio para operar alrededor de él.",
   pro: "La gestión completa: clientes, cobros, comisiones, reportes, varias sucursales y marca propia.",
-};
-
-/** Lo que trae cada opción que se vende en línea (una línea, junto al botón). */
-const OPTION_PITCH: Record<BillingOption, string> = {
-  basic: "El agente de WhatsApp con la agenda y la ficha de clientes.",
-  pro: "La gestión completa con el agente de WhatsApp.",
-  pro_no_agent: "La gestión completa, sin el agente de WhatsApp.",
 };
 
 function UsageRow({ label, used, limit, note }: { label: string; used: number | null; limit: number | null; note?: string }) {
@@ -48,57 +39,6 @@ function UsageRow({ label, used, limit, note }: { label: string; used: number | 
       )}
       {(note || full) && <span className="plan-usage-note">{full ? "Llegaste al tope de tu plan." : note}</span>}
     </li>
-  );
-}
-
-/** Suscripción en línea (Stripe): suscribirse a una opción o administrar el pago. */
-function OnlineBilling({ status }: { status: BillingStatusView }) {
-  const checkout = useMutation({
-    mutationFn: (option: BillingOption) => startCheckout(option),
-    onSuccess: ({ url }) => window.location.assign(url),
-  });
-  const portal = useMutation({
-    mutationFn: () => openBillingPortal(),
-    onSuccess: ({ url }) => window.location.assign(url),
-  });
-  // Tras el éxito el navegador se va a Stripe: los botones quedan apagados hasta entonces.
-  const pending = checkout.isPending || portal.isPending || checkout.isSuccess || portal.isSuccess;
-  const error = checkout.isError ? errorMessage(checkout.error) : portal.isError ? errorMessage(portal.error) : null;
-
-  return (
-    <section className="card" aria-labelledby="plan-billing">
-      <h3 id="plan-billing" className="card-title">
-        Pago
-      </h3>
-      <p className="settings-help">
-        {status.subscribed
-          ? "Tu suscripción se paga con tarjeta. Cambiá de plan, actualizá la tarjeta o descargá tus facturas desde el portal de pagos."
-          : "Elegí tu plan y pagalo con tarjeta. Podés cambiarlo o cancelarlo cuando quieras."}
-      </p>
-      {!status.subscribed && status.options.length > 0 && (
-        <ul className="plan-options">
-          {status.options.map((o) => (
-            <li key={o.id} className="plan-option">
-              <div className="plan-option-text">
-                <span className="plan-option-name">{o.label}</span>
-                <span className="plan-option-pitch">{OPTION_PITCH[o.id]}</span>
-              </div>
-              <button type="button" className="btn btn-primary btn-small" disabled={pending} onClick={() => checkout.mutate(o.id)}>
-                {checkout.isPending && checkout.variables === o.id ? "Abriendo…" : `Suscribirme al ${o.label}`}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {status.canManage && (
-        <div className="plan-billing-actions">
-          <button type="button" className="btn btn-secondary" disabled={pending} onClick={() => portal.mutate()}>
-            {portal.isPending ? "Abriendo…" : "Administrar pago"}
-          </button>
-        </div>
-      )}
-      <FormError message={error} />
-    </section>
   );
 }
 

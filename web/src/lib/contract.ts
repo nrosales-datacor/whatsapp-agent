@@ -105,6 +105,8 @@ export interface MePlan {
   billingStatus: BillingStatus | string;
   /** Fin de la prueba gratis (ISO), si la hay (alta self-service o prueba de Stripe). */
   trialEndsAt?: string | null;
+  /** Cuándo se pausa el negocio si nadie paga (ISO): corre la gracia por falta de pago. */
+  pausesAt?: string | null;
   limits: PlanLimits;
   usage: PlanUsage;
 }
@@ -126,6 +128,24 @@ export interface BillingStatusView {
   canManage: boolean;
   billingStatus: BillingStatus | string;
   trialEndsAt: string | null;
+  /** Pausado por falta de pago: pagando se reactiva solo. */
+  pausedForBilling: boolean;
+  /** Cuándo se pausa si nadie paga (ISO), si corre la gracia. */
+  pausesAt: string | null;
+}
+
+// ── Primeros pasos del Inicio (I6) ──────────────────────────────────────────
+
+/** Pasos de la checklist. Espejo de `ONBOARDING_STEPS` en src/onboarding.ts. */
+export type OnboardingStepId = "hours" | "services" | "team" | "whatsapp" | "first_appointment";
+
+/** `GET /onboarding` y `POST /onboarding/dismiss` (dueño y admin). */
+export interface OnboardingStatus {
+  /** ¿Se muestra en el Inicio? (ni completa ni oculta). */
+  visible: boolean;
+  dismissed: boolean;
+  completed: boolean;
+  steps: { id: OnboardingStepId; done: boolean }[];
 }
 
 // ── Alta self-service (I6.7) ────────────────────────────────────────────────
@@ -263,6 +283,10 @@ export interface AdminBusinessDetail {
   /** Lo contratado encima del plan: módulos sueltos y cupos. */
   overrides: { modules: Partial<Record<string, boolean>>; limits: AdminLimitOverrides };
   usage: PlanUsage;
+  /** Pausado por falta de pago (lo pausó el barrido, no el superadmin). */
+  pausedForBilling?: boolean;
+  /** Cuándo se pausa solo si nadie paga (ISO), si corre la gracia. */
+  pausesAt?: string | null;
   audit: AuditEntry[];
 }
 

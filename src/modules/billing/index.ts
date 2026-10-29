@@ -48,5 +48,7 @@ export {
   type SubscriptionSnapshot,
 } from "./stripe";
 export { createStripeWebhookHandler, STRIPE_WEBHOOK_PATH, type StripeWebhookOptions } from "./stripeWebhook";
-export { applyStripeEvent, expireTrials, startTrialExpiryLoop, subscriptionPlanChanges } from "./subscriptions";
+export { applyStripeEvent, expireTrials, startBillingSweepLoop, subscriptionPlanChanges } from "./subscriptions";
+// Pausa por falta de pago (I6): gracia, barrido y reactivación al pagar.
+export { BILLING_SWEEP_ACTOR, DEFAULT_GRACE_DAYS, graceDays, isPausedForBilling, pausesAtOf, pauseUnpaidBusinesses } from "./billingPause";
 export type { StripeEvent } from "./schema";

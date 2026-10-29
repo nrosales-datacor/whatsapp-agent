@@ -72,6 +72,8 @@ export interface PlanSnapshot {
   billingStatus: string;
   /** Fin de la prueba gratis (ISO), si la hay (alta self-service o prueba de Stripe). */
   trialEndsAt: string | null;
+  /** Cuándo se pausa el negocio si nadie paga (ISO): corre la gracia por falta de pago. */
+  pausesAt: string | null;
   limits: PlanLimitsView;
   usage: PlanUsageView;
 }

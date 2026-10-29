@@ -18,3 +18,19 @@
 .home-item-main { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .home-item-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .home-item-simple { grid-template-columns: minmax(0, 1fr); }
+
+/* Primeros pasos (I6): checklist arriba del Inicio para los negocios nuevos. */
+.onboarding { display: flex; flex-direction: column; gap: var(--space-sm); margin-bottom: var(--space-md); }
+.onboarding-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-sm); }
+.onboarding-head .card-title { margin-bottom: 2px; }
+.onboarding-progress { height: 6px; border-radius: var(--radius-pill); background: var(--surface-sunken); overflow: hidden; }
+.onboarding-progress span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width var(--dur-slow) var(--ease); }
+.onboarding-steps { display: flex; flex-direction: column; gap: var(--space-xs); list-style: none; padding: 0; margin: 0; }
+.onboarding-step { display: flex; align-items: center; gap: var(--space-sm); min-width: 0; min-height: 44px; }
+.onboarding-check { flex: none; display: inline-grid; place-items: center; width: 22px; height: 22px; border: 1.5px solid var(--border-strong); border-radius: 50%; color: var(--accent-fg); }
+.onboarding-step.done .onboarding-check { border-color: var(--accent); background: var(--accent); }
+.onboarding-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.onboarding-title { font-weight: 500; color: var(--text); overflow-wrap: anywhere; }
+.onboarding-step.done .onboarding-title { color: var(--text-secondary); text-decoration: line-through; }
+.onboarding-step .onboarding-cta { flex: none; min-height: 36px; padding: 6px 12px; }
+@media (prefers-reduced-motion: reduce) { .onboarding-progress span { transition: none; } }

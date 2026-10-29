@@ -111,3 +111,31 @@ test("móvil: el alta sin scroll horizontal", async ({ page }) => {
   await expect(page.getByRole("heading", { level: 1, name: "Creá la cuenta de tu negocio" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
+
+test("pausa por falta de pago: la dueña entra solo a pagar y, al pagar, vuelve al panel", async ({ page }) => {
+  await login(page, "pago@demo.test");
+  await expect(page.getByRole("heading", { level: 1, name: "Cuenta pausada" })).toBeVisible();
+  await expect(page.getByText("Terminó tu prueba gratis.", { exact: false })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Principal" })).toHaveCount(0);
+  const pay = page.getByRole("region", { name: "Reactivá tu cuenta" });
+  await expect(pay).toBeVisible();
+
+  // Checkout (simulado): el pago la reactiva y vuelve a Configuración › Plan, ya adentro.
+  await pay.getByRole("button", { name: "Suscribirme al Básico", exact: true }).click();
+  await expect(page.getByText("¡Listo! Recibimos tu suscripción.", { exact: false })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Principal" })).toBeVisible();
+  await expect(page.getByText("Al día", { exact: true })).toBeVisible();
+});
+
+test("pausa del superadmin: no ofrece pagar en línea", async ({ page }) => {
+  await login(page, "pausada@demo.test");
+  await expect(page.getByText("La cuenta de este negocio está pausada", { exact: false })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Reactivá tu cuenta" })).toHaveCount(0);
+});
+
+test("móvil: la cuenta pausada por falta de pago sin scroll horizontal", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await login(page, "pago@demo.test");
+  await expect(page.getByRole("region", { name: "Reactivá tu cuenta" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});

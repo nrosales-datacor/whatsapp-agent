@@ -98,6 +98,8 @@ export async function seedDev(db: Executor, options: { now?: Date } = {}): Promi
       country: "CR",
       timezone: TIMEZONE,
       reminderChannels: ["whatsapp", "email"],
+      // La demo ya viene configurada: sin el checklist de primeros pasos en el Inicio.
+      onboardingDismissedAt: new Date(),
     });
     // Plantilla de estética: terminología ("especialista"), campos y catálogo de ejemplo.
     await applyIndustryTemplate(tx, { businessId, industry: "aesthetics" }, { seedCatalog: applyCatalogTemplate });
