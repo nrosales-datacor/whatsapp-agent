@@ -13,11 +13,11 @@
 .cp-item:last-child { border-bottom: none; }
 .cp-item:hover { background: var(--surface-2); }
 .cp-item-main { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.cp-item-name { font-weight: 700; overflow-wrap: anywhere; }
+.cp-item-name { font-weight: 600; overflow-wrap: anywhere; }
 .cp-item-meta { color: var(--text-2); font-size: var(--step--1); overflow-wrap: anywhere; }
 .cp-item-counts { color: var(--text-2); font-size: var(--step--1); white-space: nowrap; }
 
-.cp-status { display: inline-flex; align-items: center; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: var(--radius-pill); white-space: nowrap; background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border); }
+.cp-status { display: inline-flex; align-items: center; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: var(--radius-pill); white-space: nowrap; background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border); }
 .cp-status-scheduled, .cp-status-sending { background: var(--info-soft); color: var(--info); border-color: transparent; }
 .cp-status-completed { background: var(--accent-soft, var(--info-soft)); color: var(--accent-strong); border-color: transparent; }
 .cp-status-cancelled { background: var(--warning-soft); color: var(--warning); border-color: transparent; }
@@ -26,20 +26,20 @@
 .cp-editor form { display: flex; flex-direction: column; gap: var(--space-md); min-width: 0; }
 .cp-editor .card { min-width: 0; }
 .cp-preview { position: sticky; top: var(--space-md); display: flex; flex-direction: column; gap: var(--space-xs); }
-.cp-preview-number { font-family: var(--font-display); font-size: var(--step-3); font-weight: 800; line-height: 1; }
+.cp-preview-number { font-family: var(--font-display); font-size: var(--step-3); font-weight: 600; line-height: 1; }
 .cp-preview ul { display: flex; flex-direction: column; gap: 2px; font-size: var(--step--1); color: var(--text-2); }
 .cp-preview .refreshing { opacity: .6; }
 .cp-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.cp-chip { min-height: 36px; padding: 6px 14px; border-radius: var(--radius-pill); border: 1px solid var(--border); background: var(--surface-2); color: var(--text-2); font-size: var(--step--1); font-weight: 700; }
-.cp-chip[aria-pressed="true"] { background: var(--accent); border-color: transparent; color: var(--accent-fg); }
+.cp-chip { min-height: 32px; padding: 0 12px; border-radius: var(--radius-pill); border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary); font-size: var(--step--1); font-weight: 500; }
+.cp-chip[aria-pressed="true"] { background: var(--accent-soft); border-color: transparent; color: var(--accent-hover); }
 .cp-counter { font-size: 12px; color: var(--text-2); text-align: right; }
 .cp-message { min-height: 96px; resize: vertical; }
 .cp-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-xs); }
 
-.cp-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr)); gap: var(--space-sm); margin-bottom: var(--space-md); }
-.cp-kpi { display: flex; flex-direction: column; gap: 2px; padding: var(--space-sm) var(--space-md); }
-.cp-kpi-label { color: var(--text-2); font-size: var(--step--1); font-weight: 600; }
-.cp-kpi-value { font-family: var(--font-display); font-size: var(--step-2); font-weight: 800; }
+.cp-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 170px), 1fr)); gap: var(--space-md); margin-bottom: var(--space-md); }
+.cp-kpi { display: flex; flex-direction: column; gap: 8px; padding: var(--space-card); }
+.cp-kpi-label { font-size: var(--step--1); font-weight: 500; color: var(--text-secondary); }
+.cp-kpi-value { font-size: var(--step-4); line-height: 32px; font-weight: 600; letter-spacing: -.015em; color: var(--text); font-variant-numeric: tabular-nums; }
 .cp-message-box { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-2); border-radius: var(--radius-sm); padding: var(--space-sm) var(--space-md); }
 .cp-recipients { width: 100%; border-collapse: collapse; font-size: var(--step--1); }
 .cp-recipients th, .cp-recipients td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border-2); overflow-wrap: anywhere; }

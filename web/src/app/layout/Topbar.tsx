@@ -13,7 +13,7 @@ export default function Topbar() {
       <LocationSelector />
       <div className="topbar-actions">
         <NewMenu />
-        <UserMenu />
+        <UserMenu variant="compact" />
       </div>
     </header>
   );
