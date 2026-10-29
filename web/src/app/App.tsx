@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from "react-router-dom";
+import AdminBusinessPage from "../modules/admin/AdminBusinessPage";
 import AdminHomePage from "../modules/admin/AdminHomePage";
 import AdminLoginPage from "../modules/admin/AdminLoginPage";
 import RequireAdmin from "../modules/admin/RequireAdmin";
@@ -16,7 +17,10 @@ import SalesPage from "../modules/sales/SalesPage";
 import AgendaPage from "../modules/scheduling/AgendaPage";
 import SettingsLayout from "../modules/settings/SettingsLayout";
 import SettingsSubPage from "../modules/settings/SettingsSubPage";
-import WhatsappPage from "../modules/whatsapp/WhatsappPage";
+import AgentSettingsPage from "../modules/whatsapp/AgentSettingsPage";
+import InboxPage from "../modules/whatsapp/InboxPage";
+import MetricsPage from "../modules/whatsapp/MetricsPage";
+import WhatsappLayout from "../modules/whatsapp/WhatsappLayout";
 import AppLayout from "./layout/AppLayout";
 import NotFoundPage from "./NotFoundPage";
 import SectionGate from "./SectionGate";
@@ -29,9 +33,10 @@ import { PublicOnly, RequireAuth } from "./session";
 //   Acceso:      /login · /forgot-password · /reset-password?token= (enlace del correo)
 //                /accept-invitation?token= (enlace del correo; /invite/:token es alias)
 //                /change-password (obligatorio con clave temporal)
-//   Panel:       / · /agenda · /clients · /clients/:id · /sales · /reports · /whatsapp
-//                /campaigns · /settings/:page
-//   Superadmin:  /admin/login · /admin
+//   Panel:       / · /agenda · /clients · /clients/:id · /sales · /reports · /campaigns
+//                /whatsapp · /whatsapp/conversations/:id · /whatsapp/metrics · /whatsapp/settings
+//                /settings/:page
+//   Superadmin:  /admin/login · /admin · /admin/businesses/:id (plan, cobro y pausa)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -60,6 +65,7 @@ export default function App() {
       <Route path="/admin/login" element={<AdminLoginPage />} />
       <Route path="/admin" element={<RequireAdmin />}>
         <Route index element={<AdminHomePage />} />
+        <Route path="businesses/:id" element={<AdminBusinessPage />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />
       </Route>
 
@@ -118,10 +124,19 @@ export default function App() {
             path="whatsapp"
             element={
               <SectionGate id="whatsapp">
-                <WhatsappPage />
+                <WhatsappLayout />
               </SectionGate>
             }
-          />
+          >
+            {/* Bandeja: la misma pantalla con o sin chat abierto (no se vuelve a montar la lista). */}
+            <Route element={<InboxPage />}>
+              <Route index element={null} />
+              <Route path="conversations/:id" element={null} />
+            </Route>
+            <Route path="metrics" element={<MetricsPage />} />
+            <Route path="settings" element={<AgentSettingsPage />} />
+            <Route path="*" element={<Navigate to="/whatsapp" replace />} />
+          </Route>
           <Route
             path="campaigns"
             element={

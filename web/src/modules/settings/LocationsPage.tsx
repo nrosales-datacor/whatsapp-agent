@@ -9,7 +9,7 @@ import ErrorState from "../../ui/ErrorState";
 import { FormError, SelectField, TextField } from "../../ui/Field";
 import Icon from "../../ui/Icons";
 import { useToast } from "../../ui/Toast";
-import { CheckRow, ConfirmDialog, fieldErrorOf, LoadingState, mutationError, ReadOnlyNotice } from "./common";
+import { CheckRow, ConfirmDialog, fieldErrorOf, LoadingState, mutationError, PlanQuotaHint, ReadOnlyNotice } from "./common";
 import { blocksFromDraft, draftFromBlocks, mapServerErrors, summarizeHours, validateDraft, type HoursDraft } from "./hoursDraft";
 import { TIMEZONE_OPTIONS, withCurrent } from "./regions";
 import { canManageSettings, SETTINGS_KEYS, settingsApi, type LocationView } from "./settingsApi";
@@ -38,6 +38,7 @@ export default function LocationsPage() {
       {!canEdit && <ReadOnlyNotice />}
       {canEdit && me.allLocations && (
         <div className="settings-toolbar">
+          <PlanQuotaHint resource="locations" used={activeCount} />
           <button type="button" className="btn btn-primary" onClick={() => setDialog({ kind: "edit", location: null })}>
             <Icon id="plus" size={16} />
             Nueva {t.location}

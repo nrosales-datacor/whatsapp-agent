@@ -1,0 +1,15 @@
+{
+  "name": "08-cancel",
+  "description": "Cancela la cita existente recién después de que el cliente confirma",
+  "seedAppointments": [{ "service": "Limpieza facial profunda", "inDays": 2, "time": "09:00" }],
+  "history": [
+    { "role": "user", "text": "Necesito cancelar mi cita" },
+    { "role": "assistant", "text": "Entiendo, Marco. ¿Te confirmo la cancelación de tu Limpieza facial profunda del jueves a las 9:00?" }
+  ],
+  "user": "Sí, cancelala por favor",
+  "expect": {
+    "tool": "cancel_appointment",
+    "action": "appointment_cancelled",
+    "handoff": false
+  }
+}

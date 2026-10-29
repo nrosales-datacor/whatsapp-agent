@@ -62,8 +62,8 @@ export default defineConfig(({ mode }) => {
       // ── PWA (instalable + push) ──
       // injectManifest: NUESTRO service worker (src/sw.ts) con los handlers de push;
       // `injectionPoint: undefined` => sin precache (passthrough). El plugin inyecta el
-      // <link rel=manifest>. `injectRegister: false`: el registro lo hace la app cuando
-      // vuelva push (I2). devOptions off: el SW se prueba en el build.
+      // <link rel=manifest>. `injectRegister: false`: el registro lo hace la app (main.tsx
+      // con lib/push.ts). devOptions off: el SW se prueba en el build.
       VitePWA({
         strategies: "injectManifest",
         srcDir: "src",

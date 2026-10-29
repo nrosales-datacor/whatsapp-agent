@@ -1,0 +1,10 @@
+{
+  "name": "03-catalog-price",
+  "description": "Precio de un servicio del catálogo: da el precio de lista, sin escalar",
+  "user": "¿Cuánto cuesta la limpieza facial profunda?",
+  "expect": {
+    "containsAny": ["25 000", "25.000", "25000", "25,000"],
+    "notTool": "book_appointment",
+    "handoff": false
+  }
+}

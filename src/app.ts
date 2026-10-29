@@ -1,6 +1,7 @@
 import { resolveSuperadmin } from "./admin/session";
+import type { PlanService } from "./modules/billing";
 import { createSessionResolver } from "./modules/team";
-import { enabledModules, moduleGate } from "./planModules";
+import { createWhatsAppWebhookHandler, WHATSAPP_WEBHOOK_PATH, type WhatsAppDeps } from "./modules/whatsapp";
 import type { Executor } from "./platform/db/scope";
 import { serveHealth } from "./platform/http/health";
 import { sendJson } from "./platform/http/http";
@@ -9,6 +10,7 @@ import { createRouter, PANEL_API_PREFIX, type RouterOptions } from "./platform/h
 import { serveStaticPanel } from "./platform/http/staticPanel";
 import type { HttpHandler } from "./platform/net/http";
 import { withSecurityHeaders } from "./platform/net/securityHeaders";
+import { createPlans } from "./plans";
 import { panelRoutes } from "./routes";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -33,16 +35,23 @@ export type PanelApiAccess = Pick<RouterOptions, "resolveSession" | "resolveSupe
 /**
  * Acceso real: la sesión del equipo validada contra la base (src/modules/team/session.ts),
  * la del superadmin por cookie firmada (src/admin/session.ts) y los módulos del plan
- * (provisional hasta I2, src/planModules.ts).
+ * (src/modules/billing, compuesto en src/plans.ts).
  */
-export function defaultPanelApiAccess(db: Executor): Required<PanelApiAccess> {
-  return { resolveSession: createSessionResolver(db), resolveSuperadmin, moduleGate };
+export function defaultPanelApiAccess(db: Executor, plans: PlanService = createPlans(db)): Required<PanelApiAccess> {
+  return { resolveSession: createSessionResolver(db), resolveSuperadmin, moduleGate: plans.moduleGate };
 }
 
 export interface AppOptions {
   db: Executor;
   role: ProcessRole;
   panelApi?: PanelApiAccess;
+  /** Dependencias del módulo WhatsApp (los tests inyectan dobles de Graph). Default: las reales. */
+  whatsapp?: WhatsAppDeps;
+  /**
+   * Planes (módulos, cupos, marca, `me.plan`). Default: el servicio real de billing con el
+   * uso del agente de WhatsApp (src/plans.ts).
+   */
+  plans?: PlanService;
 }
 
 function requestUrl(rawUrl: string | undefined): URL {
@@ -51,16 +60,19 @@ function requestUrl(rawUrl: string | undefined): URL {
 }
 
 /**
- * Handler completo (`ROLE=web` y `ROLE=all`): /health, la API del panel (router
- * declarativo, rutas en src/routes.ts), la landing en `/` y el panel estático en `/panel`.
+ * Handler completo (`ROLE=web` y `ROLE=all`): /health, el webhook de WhatsApp, la API del
+ * panel (router declarativo, rutas en src/routes.ts), la landing en `/` y el panel
+ * estático en `/panel`.
  */
-export function createAppHandler({ db, role, panelApi = {} }: AppOptions): HttpHandler {
+export function createAppHandler({ db, role, panelApi = {}, whatsapp, plans = createPlans(db) }: AppOptions): HttpHandler {
   // Se arma una vez por proceso: una declaración de rutas incoherente rompe el arranque.
   const panelApiHandler = createRouter({
-    routes: panelRoutes({ db, enabledModules }),
-    ...defaultPanelApiAccess(db),
+    routes: panelRoutes({ db, plans, whatsapp }),
+    ...defaultPanelApiAccess(db, plans),
     ...panelApi,
   });
+  // Webhook de WhatsApp: lo llama Meta (firma propia; sin sesión ni CSRF del panel).
+  const whatsappWebhook = createWhatsAppWebhookHandler({ db });
 
   return withSecurityHeaders(async (req, res) => {
     const url = requestUrl(req.url);
@@ -68,6 +80,12 @@ export function createAppHandler({ db, role, panelApi = {} }: AppOptions): HttpH
 
     if (pathname === "/health") {
       await serveHealth(res, url, db, { role });
+      return;
+    }
+
+    // Webhook de WhatsApp (Meta): verificación GET y mensajes POST firmados.
+    if (pathname === WHATSAPP_WEBHOOK_PATH) {
+      await whatsappWebhook(req, res);
       return;
     }
 

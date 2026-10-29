@@ -13,9 +13,11 @@ import {
   findUserByEmail,
   findUserById,
   guardCredentialAttempt,
+  hasMembershipInPausedBusiness,
   normalizeEmail,
   recordCredentialFailure,
 } from "./identity";
+import { businessPaused } from "./session";
 import { users, type User } from "./schema";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -71,6 +73,8 @@ export async function login(
   // Credenciales correctas: recién acá se puede explicar por qué no entra (no es un oráculo).
   const memberships = await activeMemberships(db, user.id);
   if (memberships.length === 0) {
+    // Su único negocio está pausado (cobro manual): se lo decimos, para que sepa qué hacer.
+    if (await hasMembershipInPausedBusiness(db, user.id)) throw businessPaused();
     throw new HttpError(
       403,
       "Tu cuenta no tiene acceso a ningún negocio activo. Hablá con quien administra tu negocio.",

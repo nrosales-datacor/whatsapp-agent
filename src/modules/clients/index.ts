@@ -10,6 +10,7 @@ export {
   findOrCreateClientByPhone,
   getClient,
   getClientsByIds,
+  recordMarketingOptOut,
   refreshClientStats,
   UNNAMED_CLIENT,
 } from "./service";

@@ -29,6 +29,9 @@ export {
 } from "./provisioning";
 export type { BusinessSummary, CreatedBusiness, NewBusinessInput, ProvisioningSteps } from "./provisioning";
 export { businessRoutes, type BusinessRouteDeps } from "./routes";
+// Lo contractual (plan, extras, pausa, cobro): lo escribe el superadmin vía modules/billing.
+export { countActiveLocationsOf, getBusinessRow, updateBusinessSubscription } from "./subscription";
+export type { SubscriptionChanges } from "./subscription";
 export {
   AI_REGISTERS,
   INDUSTRIES,
@@ -47,7 +50,9 @@ export type {
   TemplateCustomField,
   TemplateService,
 } from "./templates";
+export { BILLING_STATUSES, BUSINESS_STATUSES, PLANS } from "./schema";
 export type {
+  BillingStatus,
   Business,
   BusinessStatus,
   CustomField,

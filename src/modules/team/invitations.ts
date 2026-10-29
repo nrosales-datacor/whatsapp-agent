@@ -7,10 +7,11 @@ import { queueEmail } from "../../platform/email/enqueue";
 import { invitationEmail } from "../../platform/email/templates";
 import { HttpError, ValidationError } from "../../platform/http/errors";
 import { publicUrl } from "../../platform/http/publicUrl";
+import { assertQuota } from "../../platform/plan/planHooks";
 import { getBusinessContext } from "../business";
 import { verifyUserTotp } from "./auth";
 import { guardCredentialAttempt, NewPasswordSchema, normalizeEmail, recordCredentialFailure } from "./identity";
-import { readMembers, replaceMembershipLocations, type Member } from "./members";
+import { countActiveMembersIn, readMembers, replaceMembershipLocations, type Member } from "./members";
 import { memberships, users, type AuthToken, type User } from "./schema";
 import { consumeToken, findValidToken, INVITATION_TTL_MS, issueAuthToken } from "./tokens";
 
@@ -46,6 +47,12 @@ export interface InviteInput {
   invitedByName: string | null;
   /** Actor del rastro de auditoría ("user:<id>" o "superadmin:<usuario>"). */
   actor: string;
+  /**
+   * Cupo de usuarios del plan (membresías activas; lo resuelve la ruta antes de la
+   * transacción). Sin valor = sin tope (p. ej. el dueño que invita el superadmin al dar
+   * de alta el negocio).
+   */
+  userLimit?: number | null;
 }
 
 /**
@@ -72,11 +79,19 @@ export async function inviteMember(executor: Executor, input: InviteInput): Prom
       .from(memberships)
       .where(and(eq(memberships.businessId, businessId), eq(memberships.userId, user.id)))
       .limit(1);
+    if (existing && user.passwordHash !== null) {
+      throw new HttpError(409, "Esa persona ya es parte del equipo.", "already_member");
+    }
+    // Una invitación nueva (o reenviar una que se había desactivado) ocupa un lugar más.
+    await assertQuota(tx, {
+      businessId,
+      resource: "users",
+      limit: input.userLimit,
+      count: () => countActiveMembersIn(tx, businessId),
+      adding: existing?.active ? 0 : 1,
+    });
     let membershipId: string;
     if (existing) {
-      if (user.passwordHash !== null) {
-        throw new HttpError(409, "Esa persona ya es parte del equipo.", "already_member");
-      }
       // Reenvío a alguien que todavía no aceptó: rol y estado nuevos, solo vale el último link.
       await tx.update(memberships).set({ role: input.role, active: true }).where(eq(memberships.id, existing.id));
       if (input.name?.trim()) await tx.update(users).set({ name: input.name.trim() }).where(eq(users.id, user.id));

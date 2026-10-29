@@ -2,6 +2,7 @@ import { desc, eq, like, or, sql } from "drizzle-orm";
 import { withSystem, withTenant, type Executor, type Tx } from "../../platform/db/scope";
 import { businesses, customFields, locationHours, locations, type Business, type Location } from "./schema";
 import { loadIndustryTemplate, type Industry, type TemplateCatalog } from "./templates";
+import type { ExtraModules } from "./settings";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Alta y listado de negocios (lo usa el superadmin, src/admin). Es cross-tenant por
@@ -160,7 +161,11 @@ export interface BusinessSummary {
   slug: string;
   industry: string;
   plan: string;
+  /** Lo contratado encima del plan (módulos sueltos y cupos); lo interpreta billing. */
+  extraModules: ExtraModules;
   status: string;
+  /** Estado del cobro manual (trial, active, past_due, cancelled). */
+  billingStatus: string;
   currency: string;
   country: string;
   timezone: string;
@@ -178,12 +183,16 @@ export async function listBusinesses(executor: Executor): Promise<BusinessSummar
         slug: businesses.slug,
         industry: businesses.industry,
         plan: businesses.plan,
+        extraModules: businesses.extraModules,
         status: businesses.status,
+        billingStatus: businesses.billingStatus,
         currency: businesses.currency,
         country: businesses.country,
         timezone: businesses.timezone,
         createdAt: businesses.createdAt,
-        locationCount: sql<number>`(SELECT count(*)::int FROM ${locations} WHERE ${locations.businessId} = ${businesses.id})`,
+        // Nombres calificados a mano: dentro del subquery, drizzle deja las columnas sin
+        // tabla y `id` se resolvería a `locations.id` (contaba siempre 0).
+        locationCount: sql<number>`(SELECT count(*)::int FROM "locations" l WHERE l.business_id = "businesses"."id")`,
       })
       .from(businesses)
       .orderBy(desc(businesses.createdAt)),
@@ -199,7 +208,9 @@ export function summarizeBusiness(business: Business, locationCount: number): Bu
     slug: business.slug,
     industry: business.industry,
     plan: business.plan,
+    extraModules: business.extraModules,
     status: business.status,
+    billingStatus: business.billingStatus,
     currency: business.currency,
     country: business.country,
     timezone: business.timezone,

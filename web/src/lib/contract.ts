@@ -65,6 +65,48 @@ export interface Membership {
   role: Role;
 }
 
+// ── Plan (I2) ───────────────────────────────────────────────────────────────
+
+/** Recursos con cupo por plan. */
+export type PlanResource = "locations" | "staff" | "users";
+
+/** Límites del plan (null = sin tope). Espejo de `PlanLimitsView` en src/platform/plan/planHooks.ts. */
+export interface PlanLimits {
+  locations: number | null;
+  staff: number | null;
+  users: number | null;
+  /** Conversaciones del agente por mes. */
+  aiConversations: number | null;
+}
+
+/** Uso actual frente a los límites. */
+export interface PlanUsage {
+  /** `YYYY-MM`. */
+  month: string;
+  locations: number;
+  staff: number;
+  users: number;
+  /** null = todavía no se mide (sin el módulo WhatsApp). */
+  aiConversations: number | null;
+}
+
+export type ClientsTier = "basic" | "full";
+export type BillingStatus = "trial" | "active" | "past_due" | "cancelled";
+
+/** `me.plan`: lo que el panel necesita del plan para mostrar u ocultar lo del Pro. */
+export interface MePlan {
+  id: Plan;
+  /** "Básico", "Pro" o "Pro sin agente". */
+  label: string;
+  clientsTier: ClientsTier;
+  modules: string[];
+  /** Funciones del plan que no son un módulo (p. ej. "branding": marca propia). */
+  features: string[];
+  billingStatus: BillingStatus | string;
+  limits: PlanLimits;
+  usage: PlanUsage;
+}
+
 /** Sesión del usuario en el negocio activo (`GET /auth/me`). */
 export interface Me {
   user: MeUser;
@@ -76,6 +118,8 @@ export interface Me {
   memberships: Membership[];
   /** Módulos habilitados por el plan (y los extras) del negocio activo. */
   modules: string[];
+  /** Plan del negocio: nombre, nivel de clientes, límites y uso del mes. */
+  plan: MePlan;
   /** Profesional vinculado a esta cuenta (su carril en "Mi agenda"), o null. */
   staffId?: string | null;
 }
@@ -137,13 +181,54 @@ export interface AdminBusiness {
   slug: string;
   industry: string;
   plan: string;
+  /** "Básico", "Pro" o "Pro sin agente". */
+  planLabel: string;
+  modules: string[];
+  /** `active` | `paused` | `closed`. */
   status: string;
+  billingStatus: BillingStatus | string;
   currency: string;
   country: string;
   timezone: string;
   locationCount: number;
   /** ISO 8601. */
   createdAt: string;
+}
+
+/** Límites efectivos que ve el superadmin (incluye el tope interno de gasto de LLM, USD/mes). */
+export interface AdminPlanLimits extends PlanLimits {
+  aiLlmUsd: number | null;
+}
+
+export type AdminLimitOverrides = Partial<Record<keyof AdminPlanLimits, number | null>>;
+
+/** Entrada del rastro de auditoría de un negocio. */
+export interface AuditEntry {
+  id: string;
+  action: string;
+  actor: string;
+  details: Record<string, unknown>;
+  /** ISO 8601. */
+  createdAt: string;
+}
+
+/** `GET /admin/businesses/:id` (y la respuesta de cambiar plan, pausar y reactivar). */
+export interface AdminBusinessDetail {
+  business: AdminBusiness;
+  clientsTier: ClientsTier;
+  limits: AdminPlanLimits;
+  /** Lo contratado encima del plan: módulos sueltos y cupos. */
+  overrides: { modules: Partial<Record<string, boolean>>; limits: AdminLimitOverrides };
+  usage: PlanUsage;
+  audit: AuditEntry[];
+}
+
+/** `PATCH /admin/businesses/:id/plan`: `extraModules` y `limits` reemplazan lo contratado. */
+export interface PlanChangeInput {
+  plan?: Plan;
+  extraModules?: Partial<Record<string, boolean>>;
+  limits?: AdminLimitOverrides;
+  billingStatus?: BillingStatus;
 }
 
 export interface CreateBusinessInput {

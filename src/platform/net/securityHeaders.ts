@@ -19,11 +19,16 @@ import type { HttpHandler } from "./http";
 //     manifest propios. `connect-src 'self'`: el panel solo habla con /api/panel/*.
 //     `img-src 'self' data: blob: https:` — data: por los íconos inline del CSS, https:
 //     por las URLs firmadas de Supabase Storage y el logo de marca de cada negocio.
-//   • /panel/admin*: lo mismo + el SDK de Facebook del Embedded Signup (módulo WhatsApp):
-//     script de connect.facebook.net, iframes/llamadas a *.facebook.com, estilos inline
-//     que inyecta el SDK y COOP que permite el popup de Meta.
+//     `media-src 'self' blob: https:` — las notas de voz de la bandeja se reproducen desde
+//     URLs firmadas de Supabase Storage.
+//   • /panel/admin* y /panel/whatsapp/settings*: lo mismo + el SDK de Facebook del
+//     Embedded Signup (módulo WhatsApp, lo usan el superadmin y la configuración del número
+//     del negocio): script de connect.facebook.net, iframes/llamadas a *.facebook.com,
+//     estilos inline que inyecta el SDK y COOP que permite el popup de Meta. La CSP es la
+//     del documento que se CARGÓ: el panel tiene que abrir esas rutas con una carga
+//     completa (no solo navegación interna de la SPA) para que el SDK quede permitido.
 //   • Landing (/, /privacidad, …): HTML estático, sin nada externo.
-//   • API JSON, /health, /webhook: no son documentos → `default-src 'none'`.
+//   • API JSON, /health, /webhook/*: no son documentos → `default-src 'none'`.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const API_CSP = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
@@ -41,6 +46,7 @@ export function panelCsp(admin = false): string {
     "script-src": admin ? "'self' https://connect.facebook.net" : "'self'",
     "style-src": admin ? "'self' 'unsafe-inline'" : "'self'",
     "img-src": "'self' data: blob: https:",
+    "media-src": "'self' blob: https:",
     "font-src": "'self'",
     "connect-src": admin ? "'self' https://*.facebook.com https://graph.facebook.com" : "'self'",
     "frame-src": admin ? "https://*.facebook.com" : "'none'",
@@ -88,12 +94,14 @@ function isPanelPath(pathname: string): boolean {
   return pathname === "/panel" || pathname.startsWith("/panel/");
 }
 
-function isAdminPath(pathname: string): boolean {
-  return pathname === "/panel/admin" || pathname.startsWith("/panel/admin/");
+/** Rutas del panel que cargan el SDK de Facebook (Embedded Signup): superadmin y configuración del número. */
+function isMetaSdkPath(pathname: string): boolean {
+  const under = (prefix: string) => pathname === prefix || pathname.startsWith(`${prefix}/`);
+  return under("/panel/admin") || under("/panel/whatsapp/settings");
 }
 
 function isNonDocument(pathname: string): boolean {
-  return pathname.startsWith("/api/") || pathname === "/health" || pathname === "/webhook";
+  return pathname.startsWith("/api/") || pathname === "/health" || pathname === "/webhook" || pathname.startsWith("/webhook/");
 }
 
 /**
@@ -128,7 +136,7 @@ export function applySecurityHeaders(req: IncomingMessage, res: ServerResponse, 
   }
 
   if (isPanelPath(pathname)) {
-    const admin = isAdminPath(pathname);
+    const admin = isMetaSdkPath(pathname);
     res.setHeader("content-security-policy", panelCsp(admin));
     // El popup de Meta (Embedded Signup) necesita conservar window.opener.
     res.setHeader("cross-origin-opener-policy", admin ? "same-origin-allow-popups" : "same-origin");

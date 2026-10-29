@@ -19,6 +19,8 @@ export interface JobTypeStats {
   dead: number;
   recovered: number;
   timedOut: number;
+  /** Postergados sin correr (negocio pausado). */
+  deferred: number;
   /** Duración de los intentos terminados (ok o con error), en ms. */
   totalMs: number;
   maxMs: number;
@@ -29,13 +31,13 @@ const byType = new Map<string, JobTypeStats>();
 function statsFor(type: string): JobTypeStats {
   let s = byType.get(type);
   if (!s) {
-    s = { claimed: 0, done: 0, retried: 0, dead: 0, recovered: 0, timedOut: 0, totalMs: 0, maxMs: 0 };
+    s = { claimed: 0, done: 0, retried: 0, dead: 0, recovered: 0, timedOut: 0, deferred: 0, totalMs: 0, maxMs: 0 };
     byType.set(type, s);
   }
   return s;
 }
 
-export type JobEvent = "claimed" | "done" | "retried" | "dead" | "recovered" | "timedOut";
+export type JobEvent = "claimed" | "done" | "retried" | "dead" | "recovered" | "timedOut" | "deferred";
 
 /** Suma un evento de `type`; con `durationMs`, además la duración del intento. */
 export function recordJobEvent(type: string, event: JobEvent, durationMs?: number): void {

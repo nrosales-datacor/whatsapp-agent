@@ -27,17 +27,22 @@ export type {
 } from "./appointments";
 export { bookingMinLeadMin, DEFAULT_SLOT_INTERVAL_MIN, findSlots, MAX_SERVICES_PER_APPOINTMENT } from "./availability";
 export type { FindSlotsInput, Slot, SlotStaff } from "./availability";
-export { getHomeToday, type HomeToday } from "./home";
+export { countBookingsByChannel, nextAppointmentsForClients } from "./channelStats";
+export { getHomeToday, type ConversationsWaitingCounter, type HomeToday } from "./home";
 export {
   handleReminderJob,
+  recordReminderDeliveryFailure,
   REMINDER_SEND_JOB,
   startReminderScheduler,
   sweepDueReminders,
   type ReminderJobDeps,
   type ReminderJobPayload,
   type ReminderOutcome,
+  type WhatsAppReminderRequest,
 } from "./reminders";
 export { schedulingRoutes, type SchedulingRouteDeps } from "./routes";
+// Fechas en la zona de una sucursal (bandeja, métricas y recordatorios de otros módulos).
+export { addDays, isLocalDate, localDate, localDayBounds, mondayOf, wallClock } from "./time";
 export type {
   Appointment,
   AppointmentChannel,

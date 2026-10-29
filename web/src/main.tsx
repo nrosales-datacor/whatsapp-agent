@@ -5,13 +5,20 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./app/App";
 import { ME_QUERY_KEY } from "./app/session";
 import { ADMIN_ME_QUERY_KEY } from "./modules/admin/adminApi";
-import { onUnauthorized } from "./lib/api";
+import { onBusinessPaused, onUnauthorized } from "./lib/api";
+import { registerServiceWorker } from "./lib/push";
 import { initTheme } from "./lib/theme";
 import { ToastProvider } from "./ui/Toast";
 import "./global.css";
 
 // El tema se aplica antes del primer render para que no parpadee.
 initTheme();
+
+// Service worker del panel (PWA + push, src/sw.ts): solo en el build, que es donde existe
+// /panel/sw.js (en desarrollo Vite no lo sirve). Si falla, el panel sigue igual.
+if (import.meta.env.PROD) {
+  window.addEventListener("load", () => void registerServiceWorker());
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,6 +33,12 @@ const queryClient = new QueryClient({
 // corresponde y las guardas de ruta mandan al login correcto (panel o superadmin).
 onUnauthorized((path) => {
   queryClient.setQueryData(path.startsWith("/admin") ? ADMIN_ME_QUERY_KEY : ME_QUERY_KEY, null);
+});
+
+// Negocio pausado en medio de la sesión (403 `business_paused`): se vuelve a pedir la
+// sesión, que responde lo mismo, y `RequireAuth` muestra "Cuenta pausada".
+onBusinessPaused(() => {
+  void queryClient.refetchQueries({ queryKey: ME_QUERY_KEY });
 });
 
 createRoot(document.getElementById("root")!).render(
