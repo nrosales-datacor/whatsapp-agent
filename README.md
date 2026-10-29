@@ -102,6 +102,8 @@ npm --prefix web run dev:mock
 | `2fa@demo.test` | Dueña con 2FA |
 | `temporal@demo.test` | Clave temporal (cambio obligatorio) |
 | `sinnegocio@demo.test` | Cuenta sin negocio activo (no entra) |
+| `pausada@demo.test` | Negocio pausado por el superadmin (no entra) |
+| `pago@demo.test` | Negocio pausado por falta de pago (entra solo a pagar) |
 
 Otros atajos del mock: invitación nueva en `/panel/accept-invitation?token=demo`, invitación a una cuenta existente con
 `?token=cuenta-existente`, link de recuperación vencido con `/panel/reset-password?token=vencido`, y superadmin en

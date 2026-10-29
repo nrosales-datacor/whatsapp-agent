@@ -51,6 +51,16 @@ export default function LoginPage() {
       const from = (location.state as LoginRedirectState | null)?.from;
       navigate(from && from !== "/login" ? from : homePathFor(me), { replace: true });
     },
+    onError: async (error) => {
+      // Pausado POR FALTA DE PAGO: el backend deja la sesión para pagar (403 + cookie). Si la
+      // hay, "Cuenta pausada" ofrece pagar; si no (pausa del superadmin), queda el mensaje.
+      if (!isApiError(error, "business_paused")) return;
+      try {
+        await qc.fetchQuery({ queryKey: ME_QUERY_KEY, queryFn: fetchMe, staleTime: 0 });
+      } catch (e) {
+        if (isApiError(e, "business_paused")) navigate("/", { replace: true });
+      }
+    },
   });
 
   useEffect(() => {

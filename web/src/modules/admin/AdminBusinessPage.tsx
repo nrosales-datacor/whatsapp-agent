@@ -134,7 +134,11 @@ function auditSummary(entry: AuditEntry): string | null {
     }
     return parts.join(" · ") || "Módulos o cupos";
   }
-  if (entry.action === "business_paused") return typeof d.reason === "string" && d.reason ? `Motivo: ${d.reason}` : null;
+  if (entry.action === "business_paused") {
+    if (d.reason === "grace_expired") return "Por falta de pago: se cumplió la gracia";
+    return typeof d.reason === "string" && d.reason ? `Motivo: ${d.reason}` : null;
+  }
+  if (entry.action === "business_reactivated" && d.reason === "payment_received") return "Al recibir el pago";
   return null;
 }
 
@@ -283,8 +287,12 @@ function ServiceCard({ detail }: { detail: AdminBusinessDetail }) {
       <p className="admin-service-status">
         <span className={"badge" + (paused ? " badge-warning" : "")}>{BUSINESS_STATUS_LABELS[business.status] ?? business.status}</span>
         {paused
-          ? "El panel del negocio muestra «Cuenta pausada» y la cola no procesa su trabajo nuevo. Los datos están intactos."
-          : "El negocio atiende con normalidad."}
+          ? detail.pausedForBilling
+            ? "Pausado por falta de pago: la dueña puede entrar solo a pagar y, al pagar, se reactiva solo. Los datos están intactos."
+            : "El panel del negocio muestra «Cuenta pausada» y la cola no procesa su trabajo nuevo. Los datos están intactos."
+          : detail.pausesAt
+            ? `El cobro no está al día: si nadie paga, se pausa solo el ${formatDateTime(detail.pausesAt)}.`
+            : "El negocio atiende con normalidad."}
       </p>
       <FormError message={reactivate.isError ? errorMessage(reactivate.error) : null} />
       {business.status === "active" && (

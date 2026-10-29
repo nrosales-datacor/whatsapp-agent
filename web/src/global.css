@@ -270,6 +270,7 @@ form > .btn { margin-top: var(--space-lg); }
 
 .full-page-status { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-md); padding: var(--space-lg); text-align: center; color: var(--text-2); }
 .account-paused-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-sm); }
+.account-paused-billing { width: 100%; max-width: 520px; text-align: left; }
 .spinner { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--text-secondary); animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }

@@ -75,6 +75,14 @@ export function trialDaysLeft(trialEndsAt: string | null | undefined, now = new 
   return Math.max(0, Math.ceil(ms / 86_400_000));
 }
 
+/** "La cuenta se pausa el 5 de noviembre": fin de la gracia por falta de pago (null si no hay fecha válida). */
+export function pausesAtText(pausesAt: string | null | undefined): string | null {
+  if (!pausesAt) return null;
+  const date = new Date(pausesAt);
+  if (Number.isNaN(date.getTime())) return null;
+  return `Si no se resuelve, la cuenta se pausa el ${date.toLocaleDateString("es-CR", { day: "numeric", month: "long" })}`;
+}
+
 /** "Tu prueba gratis termina hoy / mañana / en 5 días". */
 export function trialEndsText(days: number): string {
   if (days <= 0) return "Tu prueba gratis termina hoy";
