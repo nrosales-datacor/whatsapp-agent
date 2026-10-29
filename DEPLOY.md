@@ -967,7 +967,9 @@ Sin estas variables todo sigue con el **cobro manual** (PROCESO-COBRO-MANUAL.md)
 
 Qué hace el webhook: verifica la firma sobre el cuerpo crudo (tolerancia 5 min), aplica cada
 evento UNA vez (`stripe_events`), lee la suscripción fresca de la API y actualiza plan, módulos
-(Pro sin agente) y estado del cobro. Nunca pausa un negocio: pausar sigue siendo del superadmin.
+(Pro sin agente) y estado del cobro. Si el cobro deja de estar al día (pago fallido o
+suscripción cancelada) arranca la gracia de la pausa por falta de pago (ver abajo); al volver a
+estar al día, un negocio pausado por el cobro se reactiva solo.
 Los cupos extra (más profesionales o sucursales) siguen cargándose a mano en el superadmin.
 
 **Alta self-service** (`/panel/signup`): apagada por defecto. Antes de prenderla, cerrar el gate
@@ -975,7 +977,15 @@ de AUDIT-v2 (papeles legales terminados y revisión de seguridad del alta). Para
 `SIGNUP_ENABLED=1` (y opcional `SIGNUP_TRIAL_DAYS`, default 14). El negocio nace en prueba con la
 plantilla de su rubro; la cuenta no entra hasta confirmar el correo (hace falta `RESEND_API_KEY`
 y `PUBLIC_BASE_URL`); al vencer la prueba sin suscripción pasa a "Pago pendiente" (aviso en el
-panel), sin pausarse.
+panel) y arranca la gracia.
+
+**Pausa por falta de pago (I6.8):** el barrido del cobro (proceso worker, cada
+`BILLING_SWEEP_INTERVAL_MS`, default 1 h) pausa el negocio cuando pasan `BILLING_GRACE_DAYS`
+(default 7) desde que el cobro dejó de estar al día por Stripe o por la prueba vencida. La dueña
+puede entrar solo a pagar ("Cuenta pausada" con los botones de Stripe) y, al pagar, el webhook lo
+reactiva. Los demás roles ven "Cuenta pausada" sin pago. El cobro manual (estado cargado por el
+superadmin) nunca se pausa solo; si el superadmin reactiva a mano un negocio que sigue sin pagar,
+la gracia vuelve a empezar.
 
 **Crecimiento (I6.1–I6.4)** no necesita configuración del servidor: cada negocio lo activa en
 WhatsApp IA › Crecimiento y Campañas, y carga sus plantillas por número (GUIA-META.md §E).

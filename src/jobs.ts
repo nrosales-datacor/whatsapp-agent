@@ -1,4 +1,4 @@
-import { startTrialExpiryLoop, type PlanService } from "./modules/billing";
+import { startBillingSweepLoop, type PlanService } from "./modules/billing";
 import { CAMPAIGN_DISPATCH_JOB, handleCampaignDispatchJob } from "./modules/campaigns";
 import { handleReminderJob, REMINDER_SEND_JOB, startReminderScheduler, type ReminderJobPayload } from "./modules/scheduling";
 import {
@@ -92,8 +92,9 @@ export function startModuleSchedulers(db: Executor, plans: PlanService = createP
     startReminderScheduler({ db }),
     // Seguimiento post-servicio y rescate de cotizaciones con lo que permite el plan (I6).
     ...startWhatsAppSchedulers(db, { getGrowth: growthFromPlan(plans) }),
-    // Pruebas gratis vencidas sin suscripción → pago pendiente (I6.7, modules/billing).
-    startTrialExpiryLoop({ db }),
+    // Barrido del cobro (modules/billing): pruebas gratis vencidas → pago pendiente (I6.7) y
+    // pausa por falta de pago con la gracia cumplida.
+    startBillingSweepLoop({ db }),
   ];
 }
 

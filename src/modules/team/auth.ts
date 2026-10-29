@@ -13,6 +13,7 @@ import {
   findUserByEmail,
   findUserById,
   guardCredentialAttempt,
+  billingPausedOwnedBusiness,
   hasMembershipInPausedBusiness,
   normalizeEmail,
   recordCredentialFailure,
@@ -40,7 +41,15 @@ const invalidCredentials = () => new HttpError(401, "Correo o clave incorrectos.
 /** La clave actual no coincide (400, no 401: la sesión SÍ es válida y el panel trata todo 401 como "sesión vencida"). */
 export const invalidPassword = () => new HttpError(400, "La clave actual no es correcta.", "invalid_password");
 
-export type LoginResult = { status: "totp_required" } | { status: "ok"; claims: SessionClaims };
+/**
+ * `paused_for_billing`: su único negocio está pausado POR EL COBRO y es su dueña. La ruta le
+ * deja la sesión en ese negocio (solo sirven las rutas del cobro) y responde 403
+ * `business_paused`; el panel le ofrece pagar.
+ */
+export type LoginResult =
+  | { status: "totp_required" }
+  | { status: "ok"; claims: SessionClaims }
+  | { status: "paused_for_billing"; claims: SessionClaims };
 
 /** ¿El código TOTP vale para esta cuenta (con su 2FA activo)? Consume el código (anti-replay). */
 export function verifyUserTotp(user: User, code: string | undefined): boolean {
@@ -76,7 +85,13 @@ export async function login(
   if (user.emailVerificationPending) throw emailNotVerified();
   const memberships = await activeMemberships(db, user.id);
   if (memberships.length === 0) {
-    // Su único negocio está pausado (cobro manual): se lo decimos, para que sepa qué hacer.
+    // Pausado por falta de pago y es la dueña: entra solo a pagar (la ruta deja la sesión y el 403).
+    const pausedForBilling = await billingPausedOwnedBusiness(db, user.id);
+    if (pausedForBilling) {
+      recordLoginSuccess(input.ip, "login", email);
+      return { status: "paused_for_billing", claims: { businessId: pausedForBilling, userId: user.id, sessionEpoch: user.sessionEpoch } };
+    }
+    // Su único negocio está pausado (por el superadmin): se lo decimos, para que sepa qué hacer.
     if (await hasMembershipInPausedBusiness(db, user.id)) throw businessPaused();
     throw new HttpError(
       403,

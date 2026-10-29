@@ -23,6 +23,7 @@ import {
   type ModuleOverrides,
   type PlanLimits,
 } from "./catalog";
+import { billingClockChanges, isPausedForBilling, pausesAtOf } from "./billingPause";
 import { resolveEntitlements } from "./entitlements";
 import type { PlanService } from "./service";
 
@@ -31,7 +32,8 @@ import type { PlanService } from "./service";
 //
 //   • cambiar plan, módulos sueltos, cupos contratados y estado del cobro;
 //   • pausar (sin servicio: la API del negocio responde 403 `business_paused` y la cola
-//     posterga su trabajo nuevo; los datos quedan intactos) y reactivar;
+//     posterga su trabajo nuevo; los datos quedan intactos) y reactivar (también lo que
+//     pausó el barrido por falta de pago, ./billingPause.ts);
 //   • ver el detalle: plan efectivo, uso del mes y el rastro de auditoría.
 //
 // Cada cambio queda en `audit_log` en la MISMA transacción (o el cambio y su rastro, o
@@ -75,6 +77,10 @@ export interface AdminBusinessDetail {
   /** Lo contratado encima del plan. */
   overrides: { modules: ModuleOverrides; limits: LimitOverrides };
   usage: PlanUsageView;
+  /** Pausado por falta de pago (lo pausó el barrido, no el superadmin). */
+  pausedForBilling: boolean;
+  /** Cuándo se pausa solo si nadie paga (ISO), si corre la gracia. */
+  pausesAt: string | null;
   /** Últimos cambios del negocio (más reciente primero). */
   audit: AuditEntry[];
 }
@@ -126,6 +132,8 @@ export async function getAdminBusinessDetail(db: Executor, plans: Pick<PlanServi
     limits: e.limits,
     overrides: e.overrides,
     usage,
+    pausedForBilling: isPausedForBilling(business),
+    pausesAt: pausesAtOf(business)?.toISOString() ?? null,
     audit,
   };
 }
@@ -147,7 +155,13 @@ export async function changeBusinessPlan(db: Executor, businessId: string, input
         modules: input.extraModules ?? current_.overrides.modules,
         limits: input.limits ?? current_.overrides.limits,
       });
-      return { plan, extraModules: toStoredExtraModules(extra), billingStatus: input.billingStatus };
+      return {
+        plan,
+        extraModules: toStoredExtraModules(extra),
+        billingStatus: input.billingStatus,
+        // A mano no arranca la gracia; pasarlo a al día sí la corta.
+        ...billingClockChanges(current, input.billingStatus, new Date(), "manual"),
+      };
     });
     if (!changed) throw notFound();
     await recordAudit(tx, businessId, "plan_changed", actor, { before: planState(changed.before), after: planState(changed.after) });
@@ -177,7 +191,9 @@ export async function reactivateBusiness(db: Executor, businessId: string, actor
     const changed = await updateBusinessSubscription(tx, businessId, (current) => {
       if (current.status === "active") throw new HttpError(409, "El negocio ya estaba activo.", "already_active");
       if (current.status !== "paused") throw new HttpError(409, "El negocio está dado de baja.", "business_closed");
-      return { status: "active" };
+      // Si sigue sin estar al día, la gracia vuelve a empezar: si no, el barrido lo pausaría
+      // de nuevo en el próximo pase.
+      return { status: "active", billingPausedAt: null, ...(current.unpaidSince ? { unpaidSince: new Date() } : {}) };
     });
     if (!changed) throw notFound();
     await recordAudit(tx, businessId, "business_reactivated", actor, { billingStatus: changed.after.billingStatus });

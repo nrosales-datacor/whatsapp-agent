@@ -16,7 +16,7 @@ import { acceptInvitation, getInvitation, inviteMember } from "./invitations";
 import { buildMe, type Me } from "./me";
 import { assertLocationsOfBusiness, listMembers, updateMember } from "./members";
 import { requestPasswordReset, resetPassword } from "./recovery";
-import { clearSessionCookie, loadSession, setSessionCookie } from "./session";
+import { businessPaused, clearSessionCookie, loadSession, setSessionCookie } from "./session";
 import { disableTotp, enableTotp, setupTotp } from "./twoFactor";
 import { resendEmailVerification, verifyEmail } from "./verification";
 
@@ -96,6 +96,13 @@ export function teamRoutes({ db, plans, onLogin }: TeamRouteDeps): Route[] {
     route({ method: "POST", path: "/auth/login", auth: "public", body: LoginBody }, async ({ req, res, body }) => {
       const result = await login(db, { ...body, ip: getClientIp(req) });
       if (result.status === "totp_required") return { status: "totp_required" as const };
+      if (result.status === "paused_for_billing") {
+        // Pausado por falta de pago: la sesión queda (solo para las rutas del cobro) y el panel
+        // muestra "Cuenta pausada" con el botón para pagar. No cuenta como login en
+        // `daily_usage`: la persona no llega a usar el panel.
+        setSessionCookie(res, result.claims);
+        throw businessPaused();
+      }
       const me = await startSession(res, result.claims);
       if (onLogin) {
         try {

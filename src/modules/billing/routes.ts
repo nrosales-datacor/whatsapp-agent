@@ -4,7 +4,8 @@ import { HttpError } from "../../platform/http/errors";
 import { publicUrl } from "../../platform/http/publicUrl";
 import { route } from "../../platform/http/router";
 import type { Route } from "../../platform/http/routeTypes";
-import { getBusinessRow, type BillingStatus } from "../business";
+import { getBusinessRow, type BillingStatus, type Business } from "../business";
+import { isPausedForBilling, pausesAtOf } from "./billingPause";
 import { stripeGatewayFor } from "./gateway";
 import { BILLING_OPTION_LABELS, BILLING_OPTIONS, stripeConfigFromEnv, type BillingOption, type StripeConfig, type StripeGateway } from "./stripe";
 
@@ -18,6 +19,10 @@ import { BILLING_OPTION_LABELS, BILLING_OPTIONS, stripeConfigFromEnv, type Billi
 //                            suscripción viva (se cambia de plan desde el Portal).
 //   POST /billing/portal     → { url } del Portal del cliente (tarjeta, plan, facturas,
 //                            cancelar). 409 si todavía no se suscribió.
+//
+// Con el negocio pausado POR EL COBRO (./billingPause.ts) las tres siguen andando: es como la
+// dueña paga y lo reactiva. Con una pausa del superadmin, checkout y portal responden 403
+// `business_paused` (eso se arregla con nosotros).
 //
 // Sin configuración, checkout y portal responden 503 `billing_not_configured`. Lo que
 // Stripe cambia en el negocio llega SOLO por el webhook firmado (./stripeWebhook.ts): la
@@ -42,10 +47,17 @@ export interface BillingStatusView {
   billingStatus: BillingStatus;
   /** Fin de la prueba gratis (ISO), si la hay. */
   trialEndsAt: string | null;
+  /** Pausado por falta de pago: pagando se reactiva solo. */
+  pausedForBilling: boolean;
+  /** Cuándo se pausa si nadie paga (ISO), si corre la gracia. */
+  pausesAt: string | null;
 }
 
 const OWNER = ["owner"] as const;
 const CheckoutBody = z.object({ option: z.enum(BILLING_OPTIONS) });
+
+/** Mismo 403 que responde el resto de la API con el negocio pausado por el superadmin. */
+const businessPaused = () => new HttpError(403, "La cuenta de este negocio está pausada. Escribinos para reactivarla.", "business_paused");
 
 const notConfigured = () =>
   new HttpError(503, "El pago en línea todavía no está disponible. Escribinos y lo ajustamos a mano.", "billing_not_configured");
@@ -60,11 +72,18 @@ export function billingRoutes({ db, stripeConfig = () => stripeConfigFromEnv(), 
     return business;
   }
 
+  /** Para pagar: el negocio, salvo que lo haya pausado el superadmin (403 como el resto de la API). */
+  async function payableBusinessOf(businessId: string): Promise<Business> {
+    const business = await businessOf(businessId);
+    if (business.status === "paused" && !isPausedForBilling(business)) throw businessPaused();
+    return business;
+  }
+
   const subscribedOf = (b: { stripeSubscriptionId: string | null; billingStatus: string }) =>
     Boolean(b.stripeSubscriptionId) && b.billingStatus !== "cancelled";
 
   return [
-    route({ method: "GET", path: "/billing/status", auth: "user", roles: OWNER }, async ({ session }): Promise<BillingStatusView> => {
+    route({ method: "GET", path: "/billing/status", auth: "user", roles: OWNER, allowWhenPaused: true }, async ({ session }): Promise<BillingStatusView> => {
       const config = stripeConfig();
       const business = await businessOf(session.businessId);
       return {
@@ -74,15 +93,17 @@ export function billingRoutes({ db, stripeConfig = () => stripeConfigFromEnv(), 
         canManage: config !== null && Boolean(business.stripeCustomerId),
         billingStatus: business.billingStatus as BillingStatus,
         trialEndsAt: business.trialEndsAt?.toISOString() ?? null,
+        pausedForBilling: isPausedForBilling(business),
+        pausesAt: pausesAtOf(business)?.toISOString() ?? null,
       };
     }),
 
-    route({ method: "POST", path: "/billing/checkout", auth: "user", roles: OWNER, body: CheckoutBody }, async ({ session, body, log }) => {
+    route({ method: "POST", path: "/billing/checkout", auth: "user", roles: OWNER, allowWhenPaused: true, body: CheckoutBody }, async ({ session, body, log }) => {
       const config = stripeConfig();
       if (!config) throw notConfigured();
       const priceId = config.prices[body.option];
       if (!priceId) throw new HttpError(400, "Esa opción no se vende en línea todavía.", "option_not_available");
-      const business = await businessOf(session.businessId);
+      const business = await payableBusinessOf(session.businessId);
       if (subscribedOf(business)) {
         throw new HttpError(409, "Tu negocio ya tiene una suscripción. Cambiá de plan desde «Administrar pago».", "already_subscribed");
       }
@@ -99,10 +120,10 @@ export function billingRoutes({ db, stripeConfig = () => stripeConfigFromEnv(), 
       return { url };
     }),
 
-    route({ method: "POST", path: "/billing/portal", auth: "user", roles: OWNER }, async ({ session }) => {
+    route({ method: "POST", path: "/billing/portal", auth: "user", roles: OWNER, allowWhenPaused: true }, async ({ session }) => {
       const config = stripeConfig();
       if (!config) throw notConfigured();
-      const business = await businessOf(session.businessId);
+      const business = await payableBusinessOf(session.businessId);
       if (!business.stripeCustomerId) throw new HttpError(409, "Todavía no te suscribiste en línea.", "not_subscribed");
       return stripeGateway(config).createPortalSession({ customerId: business.stripeCustomerId, returnUrl: publicUrl(PLAN_PATH) });
     }),

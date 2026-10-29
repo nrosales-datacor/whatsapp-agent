@@ -16,6 +16,7 @@ import {
   type Plan,
   type SubscriptionChanges,
 } from "../business";
+import { billingClockChanges, pauseUnpaidBusinesses } from "./billingPause";
 import { normalizeExtraModules, readExtraModules, toStoredExtraModules } from "./catalog";
 import { resolveEntitlements } from "./entitlements";
 import { stripeEvents } from "./schema";
@@ -34,8 +35,9 @@ import { billingStatusOf, optionOfPrice, type BillingOption, type StripeConfig, 
 //   • Precio → plan: Básico, Pro o Pro sin agente (Pro con `whatsapp: false` en
 //     `extra_modules`; los cupos contratados se conservan). Un precio que no es de los
 //     configurados NO toca el plan (no se adivina): solo el estado del cobro.
-//   • Estado → `billing_status` (`billingStatusOf`). Stripe no pausa el servicio: pausar
-//     sigue siendo una decisión del superadmin.
+//   • Estado → `billing_status` (`billingStatusOf`). Stripe no pausa al toque: si el cobro
+//     deja de estar al día corre la gracia y después pausa el barrido (./billingPause.ts);
+//     al volver a estar al día, un negocio pausado por el cobro se reactiva acá.
 //   • Prueba: con la suscripción en `trialing`, `trial_ends_at` = fin de la prueba de
 //     Stripe; en cualquier otro estado se borra (ya no hay prueba nuestra que vencer).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -60,6 +62,7 @@ function auditState(business: Business) {
   return {
     plan: e.plan,
     modules: e.modules,
+    status: business.status,
     billingStatus: business.billingStatus,
     stripeSubscriptionId: business.stripeSubscriptionId,
     trialEndsAt: business.trialEndsAt?.toISOString() ?? null,
@@ -103,7 +106,12 @@ export interface StripeEventInput {
 }
 
 /** Aplica un evento ya verificado. Idempotente por id. */
-export async function applyStripeEvent(db: Executor, config: Pick<StripeConfig, "prices">, event: StripeEventInput): Promise<StripeEventOutcome> {
+export async function applyStripeEvent(
+  db: Executor,
+  config: Pick<StripeConfig, "prices">,
+  event: StripeEventInput,
+  now: Date = new Date(),
+): Promise<StripeEventOutcome> {
   const sub = event.subscription ?? null;
   if (!event.checkout && !sub) {
     // Un tipo que no nos interesa: se registra igual (no se vuelve a mirar).
@@ -128,7 +136,7 @@ export async function applyStripeEvent(db: Executor, config: Pick<StripeConfig, 
       if (subscriptionId && sub?.status !== "canceled") next.stripeSubscriptionId = subscriptionId;
       if (sub) {
         const status = billingStatusOf(sub.status);
-        if (status) next.billingStatus = status;
+        if (status) Object.assign(next, { billingStatus: status }, billingClockChanges(current, status, now, "automatic"));
         // Una suscripción cancelada deja de ser la del negocio (puede volver a suscribirse).
         if (sub.status === "canceled" && current.stripeSubscriptionId === sub.id) next.stripeSubscriptionId = null;
         next.trialEndsAt = sub.status === "trialing" ? sub.trialEnd : null;
@@ -145,18 +153,21 @@ export async function applyStripeEvent(db: Executor, config: Pick<StripeConfig, 
       before: auditState(changed.before),
       after: auditState(changed.after),
     });
+    if (changed.before.status === "paused" && changed.after.status === "active") {
+      await recordAudit(tx, businessId, "business_reactivated", STRIPE_ACTOR, { reason: "payment_received", billingStatus: changed.after.billingStatus });
+    }
     return { outcome: "applied" as const, businessId };
   });
   if (result.outcome === "applied" && result.businessId) invalidateBusinessContext(result.businessId);
   return result.outcome;
 }
 
-// ── Pruebas vencidas (I6.7) ──────────────────────────────────────────────────
+// ── Barrido del cobro: pruebas vencidas (I6.7) y pausa por falta de pago ─────
 
 /**
  * Pasa a pago pendiente (`past_due`) los negocios con la prueba gratis vencida, todavía en
- * `trial` y sin suscripción. NO los pausa: el panel muestra el aviso para suscribirse y
- * pausar sigue siendo del superadmin. Devuelve cuántos cambió.
+ * `trial` y sin suscripción, y arranca la gracia: el panel muestra el aviso para
+ * suscribirse y, si no lo hace a tiempo, el barrido lo pausa. Devuelve cuántos cambió.
  */
 export async function expireTrials(db: Executor, now = new Date()): Promise<number> {
   const ids = await withSystem(db, (tx) => listExpiredTrials(tx, now));
@@ -166,7 +177,7 @@ export async function expireTrials(db: Executor, now = new Date()): Promise<numb
       const result = await updateBusinessSubscription(tx, businessId, (current) =>
         // Releído con lock: si justo se suscribió o cambió el estado, no se toca.
         current.billingStatus === "trial" && !current.stripeSubscriptionId && current.trialEndsAt && current.trialEndsAt <= now
-          ? { billingStatus: "past_due" }
+          ? { billingStatus: "past_due", ...billingClockChanges(current, "past_due", now, "automatic") }
           : {},
       );
       if (!result || result.after.billingStatus !== "past_due" || result.before.billingStatus === "past_due") return false;
@@ -181,21 +192,25 @@ export async function expireTrials(db: Executor, now = new Date()): Promise<numb
   return expired;
 }
 
-/** Barrido periódico de pruebas vencidas (procesos `ROLE=worker|all`, un líder entre réplicas). */
-export function startTrialExpiryLoop(options: { db: Executor; intervalMs?: number }): Loop {
-  const intervalMs = options.intervalMs ?? msFromEnv("TRIAL_EXPIRY_INTERVAL_MS", 60 * 60_000);
+/**
+ * Barrido periódico del cobro (procesos `ROLE=worker|all`, un líder entre réplicas): primero
+ * las pruebas vencidas (arrancan la gracia) y después la pausa de los que la cumplieron.
+ */
+export function startBillingSweepLoop(options: { db: Executor; intervalMs?: number }): Loop {
+  const intervalMs = options.intervalMs ?? msFromEnv("BILLING_SWEEP_INTERVAL_MS", 60 * 60_000);
   return startLeaderLoop({
     db: options.db,
-    label: "trial-expiry",
+    label: "billing-sweep",
     intervalMs,
     tick: async () => {
       const expired = await expireTrials(options.db);
-      if (expired > 0) log.info("trials_expired", { expired });
+      const paused = await pauseUnpaidBusinesses(options.db);
+      if (expired > 0 || paused > 0) log.info("billing_sweep", { expired, paused });
     },
     onError: (e, phase) => {
-      log.error("trial_expiry_failed", { phase, error: e instanceof Error ? e.message : String(e) });
-      captureError(e, { scheduler: "trial-expiry", phase });
+      log.error("billing_sweep_failed", { phase, error: e instanceof Error ? e.message : String(e) });
+      captureError(e, { scheduler: "billing-sweep", phase });
     },
-    scalingHint: "Revisá el índice businesses_trial_ends_idx o bajá TRIAL_EXPIRY_INTERVAL_MS.",
+    scalingHint: "Revisá los índices businesses_trial_ends_idx y businesses_unpaid_since_idx o subí BILLING_SWEEP_INTERVAL_MS.",
   });
 }

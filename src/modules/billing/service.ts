@@ -4,6 +4,7 @@ import type { ModuleGate } from "../../platform/http/routeTypes";
 import type { PlanFeature, PlanHooks, PlanResource, PlanSnapshot, PlanUsageView } from "../../platform/plan/planHooks";
 import { countActiveLocationsOf, getBusinessContext, type Business } from "../business";
 import { countActiveMembers, countActiveStaff } from "../team";
+import { pausesAtOf } from "./billingPause";
 import type { PlanLimits } from "./catalog";
 import { quotaOf, resolveEntitlements, type Entitlements } from "./entitlements";
 
@@ -185,6 +186,7 @@ export function createPlanService(db: Executor, options: PlanServiceOptions = {}
         features: [...e.features],
         billingStatus: e.billingStatus,
         trialEndsAt: found.business.trialEndsAt?.toISOString() ?? null,
+        pausesAt: pausesAtOf(found.business)?.toISOString() ?? null,
         limits: { locations: e.limits.locations, staff: e.limits.staff, users: e.limits.users, aiConversations: e.limits.aiConversations },
         usage: await usageOf(found.business),
       };
