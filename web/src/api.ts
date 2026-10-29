@@ -2,8 +2,9 @@
 // Capa de API tipada del panel (paso A3 del ROADMAP).
 //
 // Envuelve los endpoints /api/panel/* del backend. REUSA los tipos del dominio
-// desde src/types.ts (import SOLO de tipos → se borra en el build, no acopla el
-// runtime del frontend con el del server). En dev, Vite proxya /api al backend
+// desde legacy/src/types.ts (el dominio viejo, fuera del build del backend desde I0.2;
+// este panel se rehace en I0.7). Import SOLO de tipos → se borra en el build, no
+// acopla el runtime del frontend con el del server. En dev, Vite proxya /api al backend
 // (ver vite.config.ts); en prod es el mismo origen, así que la cookie de sesión
 // viaja sola — igual mandamos credentials: "include" por claridad.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -27,7 +28,7 @@ import type {
   SeccionConocimiento,
   SegmentoFiltro,
   Service,
-} from "../../src/types";
+} from "../../legacy/src/types";
 import { desuscribirPushLocal, endpointPushLocal } from "./lib/pushLocal";
 
 export type {

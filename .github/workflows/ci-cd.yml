@@ -5,20 +5,20 @@ on:
     branches: ["**"]
   pull_request:
     branches: [main]
-  # F17: rollback manual de código (nunca de la base de datos, ver job "rollback"
-  # más abajo y la sección "Protocolo expand/contract" de DEPLOY.md).
+  # Rollback manual de código (nunca de la base de datos, ver job "rollback" más abajo y
+  # la sección "Protocolo expand/contract" de DEPLOY.md).
   workflow_dispatch:
     inputs:
       sha:
         description: >-
           SHA del commit al que revertir el código. Vacío = usa el SHA guardado en
-          ~/.ultimo-deploy-ok del droplet (el último deploy cuyo smoke test pasó).
+          ~/.ultimo-deploy-ok del servidor (el último deploy cuyo smoke test pasó).
         required: false
         type: string
 
 jobs:
-  verificar:
-    name: Typecheck + build
+  verify:
+    name: Typecheck + tests + build
     # No corre en un workflow_dispatch (ese trigger es solo para el rollback manual).
     if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -30,24 +30,24 @@ jobs:
 
       # Política de dependencias (CLAUDE.md): versiones EXACTAS, sin ^/~. Sin deps, va primero.
       - name: Guardrail de versiones exactas (package.json raíz y web)
-        run: npm run ci:versiones
+        run: npm run ci:versions
 
       # Toda process.env leída en src/ o scripts/ debe estar en .env.example (o como
-      # excepción explícita `# env-check: ignorar NOMBRE — motivo`). Sin deps.
+      # excepción explícita `# env-check: ignore NOMBRE — motivo`). Sin deps. legacy/ no cuenta.
       - name: Guardrail de .env.example (variables documentadas)
         run: npm run ci:env
 
       - name: Instalar dependencias (backend)
         run: npm ci
 
-      - name: Tests unitarios (backend)
+      - name: Typecheck (backend; legacy/ queda fuera del build)
+        run: npm run typecheck
+
+      - name: Tests (unit, security, reliability; PGlite en el proceso)
         run: npm test
 
-      - name: Guardrail de migraciones (drift de schema, ángulo 7)
+      - name: Guardrail de migraciones (drift entre los schema.ts y ./drizzle)
         run: npm run db:check
-
-      - name: Typecheck (backend)
-        run: npm run typecheck
 
       - name: Instalar dependencias (panel)
         run: npm ci --prefix web
@@ -58,8 +58,8 @@ jobs:
       - name: Build del panel
         run: npm run build --prefix web
 
-  e2e-panel:
-    name: E2E del panel (Playwright)
+  e2e:
+    name: Smoke E2E (Playwright)
     # No corre en un workflow_dispatch (ese trigger es solo para el rollback manual).
     if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -72,39 +72,39 @@ jobs:
       - name: Instalar dependencias (backend, incluye Playwright y tsx)
         run: npm ci
 
-      - name: Build del panel (web/dist — el server E2E lo sirve)
+      - name: Build del panel (web/dist — el server lo sirve en /panel)
         run: npm run web:build
 
       - name: Instalar el navegador de Playwright (Chromium)
         run: npx playwright install --with-deps chromium
 
-      - name: Correr el E2E del panel (memoria + base efímera PGlite, red mockeada)
+      # Smoke del servidor nuevo (/health, landing, /panel, API JSON) sobre una base efímera
+      # en el proceso (PGlite). El E2E completo del panel se rehace en I0.7.
+      - name: Correr el smoke E2E
         run: npx playwright test
 
-  desplegar:
+  deploy:
     name: Deploy a producción
-    needs: [verificar, e2e-panel]
+    needs: [verify, e2e]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
-    # Revisión pre-venta 2026-10 (G9): gate de aprobación. Con el environment
-    # "produccion" configurado en GitHub (Settings → Environments → produccion →
-    # Required reviewers), el deploy espera a que una persona lo apruebe en la pestaña
-    # Actions. Sin esa regla configurada, corre igual que antes (no rompe nada).
+    # Gate de aprobación: con el environment "produccion" configurado en GitHub (Settings →
+    # Environments → produccion → Required reviewers), el deploy espera a que una persona lo
+    # apruebe en la pestaña Actions. El nombre es configuración del repo en GitHub: se
+    # conserva tal cual para no perder la regla.
     environment: produccion
     concurrency:
-      group: deploy-produccion
+      group: deploy-production
       cancel-in-progress: false
     env:
-      # Configurables como variables del repo (Settings → Variables); el default es el actual.
+      # Configurables como variables del repo (Settings → Variables).
       DEPLOY_HOST: ${{ vars.DEPLOY_HOST || '157.230.190.60' }}
       DEPLOY_USER: ${{ vars.DEPLOY_USER || 'sebastian' }}
-      DEPLOY_DIR: "~/lavacar-whatsapp-bot"
-      DEPLOY_PM2_APP: "whatsapp-bot"
-      BASE_URL: "https://wabotlavacar.selyon.app"
-      SALUD_URL: "https://wabotlavacar.selyon.app/salud"
+      DEPLOY_DIR: ${{ vars.DEPLOY_DIR || '~/lavacar-whatsapp-bot' }}
+      BASE_URL: ${{ vars.BASE_URL || 'https://wabotlavacar.selyon.app' }}
     steps:
       # El panel se compila ACÁ (runner limpio, con devDependencies) y se sube armado: el
-      # droplet ya no instala Vite ni compila en producción.
+      # servidor no instala Vite ni compila en producción.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -131,11 +131,8 @@ jobs:
             ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
           fi
 
-      # F17: antes de tocar nada, anotamos qué SHA está corriendo AHORA en el droplet.
-      # Si existe ~/.ultimo-deploy-ok (el último deploy cuyo smoke test pasó) usamos ESE
-      # — es más confiable que el HEAD actual, que podría estar en medio de un deploy
-      # fallido previo. Si el archivo todavía no existe (primera vez tras agregar esto),
-      # caemos al HEAD real del droplet antes del pull. Este valor solo se usa para el
+      # Antes de tocar nada, se anota qué SHA está corriendo AHORA en el servidor (el último
+      # deploy cuyo smoke pasó, o el HEAD si todavía no hay ninguno). Solo se usa para el
       # mensaje de "cómo revertir" si el deploy de hoy falla más abajo.
       - name: Leer el SHA del último deploy bueno (por si hay que revertir)
         run: |
@@ -151,141 +148,108 @@ jobs:
 
       # Deploy del commit EXACTO que pasó CI (no lo que haya en main en este momento), con
       # `npm ci --omit=dev` (lockfile, sin devDependencies en producción) y el panel ya
-      # compilado por este job. Los scripts .ts corren con `node --import tsx` (tsx está en
-      # `dependencies` con versión exacta).
+      # compilado por este job. Los scripts .ts corren con `node --import tsx`.
       - name: Subir el panel compilado
         run: scp -i ~/.ssh/deploy_key panel.tgz "$DEPLOY_USER@$DEPLOY_HOST:panel-${{ github.sha }}.tgz"
 
-      - name: Actualizar código y recargar el bot
+      - name: Actualizar código y recargar el proceso
         run: |
           ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "
             set -e
             cd $DEPLOY_DIR
-            antes=\$(git rev-parse HEAD)
+            before=\$(git rev-parse HEAD)
             git fetch origin
             git checkout -B main ${{ github.sha }}
             npm ci --omit=dev
-            # G9: si este deploy trae migraciones nuevas, backup ANTES de migrar (el
-            # rollback de código no revierte el esquema). Si el backup falla, set -e
-            # corta el deploy sin tocar la base.
-            if [ -n \"\$(git diff --name-only \$antes HEAD -- drizzle/)\" ]; then
+            # Si este deploy trae migraciones nuevas, backup ANTES de migrar (el rollback de
+            # código no revierte el esquema). Si el backup falla, set -e corta el deploy.
+            if [ -n \"\$(git diff --name-only \$before HEAD -- drizzle/)\" ]; then
               echo 'Migraciones nuevas: backup previo de la base…'
               node --import tsx scripts/backupDb.ts
             fi
-            node --import tsx scripts/migrar.ts
-            node --import tsx scripts/seedTenants.ts
+            node --import tsx scripts/migrate.ts
             # Panel: se reemplaza la carpeta entera de una vez (nunca queda a medio copiar).
             rm -rf web/dist.nuevo web/dist.viejo && mkdir -p web/dist.nuevo
             tar -xzf ~/panel-${{ github.sha }}.tgz -C web/dist.nuevo && rm -f ~/panel-${{ github.sha }}.tgz
             if [ -d web/dist ]; then mv web/dist web/dist.viejo; fi
             mv web/dist.nuevo web/dist
-            # reload (no restart): PM2 manda SIGINT y el server se apaga ordenado (deja de
-            # aceptar requests y de reclamar jobs y espera los turnos en curso, ver
-            # src/red/apagado.ts) dentro del kill_timeout de ecosystem.config.cjs.
-            pm2 reload $DEPLOY_PM2_APP --update-env
+            # reload (no restart): PM2 manda SIGINT y el server se apaga ordenado
+            # (src/platform/net/shutdown.ts) dentro del kill_timeout de ecosystem.config.cjs.
+            pm2 startOrReload ecosystem.config.cjs --update-env
           "
 
-      - name: Verificar que el bot responde (/salud)
+      - name: Verificar que el proceso responde (/health)
         run: |
           for i in $(seq 1 10); do
-            if curl -sf "$SALUD_URL" > /dev/null; then
-              echo "✅ /salud respondió OK (intento $i de 10)"
+            if curl -sf "$BASE_URL/health" > /dev/null; then
+              echo "✅ /health respondió OK (intento $i de 10)"
               exit 0
             fi
-            echo "intento $i de 10: /salud no respondió aún, reintento en 3s…"
+            echo "intento $i de 10: /health no respondió aún, reintento en 3s…"
             sleep 3
           done
-          echo "::error::El bot no respondió en /salud tras el deploy (30s de reintentos)"
+          echo "::error::El proceso no respondió en /health tras el deploy (30s de reintentos)"
           exit 1
 
-      # Smoke post-deploy (TESTING.md ángulo 9): más allá de /salud, verifica que las
-      # tres superficies críticas están vivas tras el deploy. Ninguna toca datos ni
-      # requiere credenciales reales, así que es seguro correrlo contra producción.
-      - name: Smoke post-deploy (panel + API + auth)
+      # Smoke post-deploy: más allá de /health, el panel y la API están vivos. Nada toca
+      # datos ni requiere credenciales, así que es seguro contra producción.
+      - name: Smoke post-deploy (panel + API)
         run: |
-          fallo=0
+          fail=0
 
-          # 1) El bundle de React se sirve (no cayó al 503 "corré web:build"). Regresión
-          #    típica: falta el build → /panel devuelve 503 y el panel queda inservible.
+          # 1) El bundle de React se sirve (no cayó al 503 "corré web:build").
           panel="$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/panel")"
-          cuerpo="$(curl -s "$BASE_URL/panel")"
-          if [ "$panel" = "200" ] && printf '%s' "$cuerpo" | grep -qi '<div id="root"'; then
+          body="$(curl -s "$BASE_URL/panel")"
+          if [ "$panel" = "200" ] && printf '%s' "$body" | grep -qi '<div id="root"'; then
             echo "✅ /panel sirve el bundle de React (200 + #root)"
           else
             echo "::error::/panel no sirvió el bundle (HTTP $panel) — ¿falta web:build?"
-            fallo=1
+            fail=1
           fi
 
-          # 2) La API del panel está viva y exige auth: /me sin cookie → 401 (no 500/404).
-          me="$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/api/panel/me")"
-          if [ "$me" = "401" ]; then
-            echo "✅ /api/panel/me sin sesión → 401 (API viva, auth aplicada)"
+          # 2) La API responde JSON (401 con el router y la sesión; 404 mientras no haya rutas).
+          api_code="$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/api/panel/me")"
+          api_type="$(curl -s -o /dev/null -w '%{content_type}' "$BASE_URL/api/panel/me")"
+          if { [ "$api_code" = "401" ] || [ "$api_code" = "404" ]; } && printf '%s' "$api_type" | grep -qi 'application/json'; then
+            echo "✅ /api/panel/me → $api_code JSON (API viva)"
           else
-            echo "::error::/api/panel/me devolvió $me (se esperaba 401)"
-            fallo=1
+            echo "::error::/api/panel/me devolvió $api_code ($api_type); se esperaba 401/404 JSON"
+            fail=1
           fi
 
-          # 3) El login está vivo y consulta el tenantStore (base de datos): con Origin del
-          #    host y credenciales falsas debe dar 401 — un 500/503 delataría que la base o
-          #    el store se rompieron. Es el proxy seguro de "un login real funciona" sin
-          #    usar credenciales reales de demo en producción.
-          login="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/api/panel/login" \
-            -H "Origin: $BASE_URL" -H 'Content-Type: application/json' \
-            -d '{"usuario":"__smoke_inexistente__","password":"__no__"}')"
-          if [ "$login" = "401" ]; then
-            echo "✅ /api/panel/login con credenciales falsas → 401 (auth + tenantStore vivos)"
-          else
-            echo "::error::/api/panel/login devolvió $login (se esperaba 401)"
-            fallo=1
-          fi
+          exit $fail
 
-          exit $fallo
-
-      # F17: recién si TODO lo de arriba salió bien (esta línea no corre tras un `exit 1`
-      # de un paso anterior) marcamos este SHA como el último deploy bueno. El rollback
-      # manual (job "rollback") usa este archivo como destino por defecto cuando no se le
-      # pasa un SHA explícito — así no depende de que alguien se acuerde cuál era.
+      # Recién si TODO lo de arriba salió bien se marca este SHA como el último deploy bueno.
+      # El rollback manual usa este archivo como destino por defecto.
       - name: Guardar este SHA como "último deploy bueno"
         run: |
           ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "echo '${{ github.sha }}' > ~/.ultimo-deploy-ok"
           echo "Guardado ~/.ultimo-deploy-ok = ${{ github.sha }}"
 
-      # Si CUALQUIER paso anterior de este job falló (git pull, npm ci, la migración, el
-      # build, /salud o el smoke), este paso corre igual (if: failure()) y deja bien claro
-      # cómo revertir. A propósito NO dispara el rollback solo: revertir código es
-      # razonablemente seguro de automatizar, pero si la falla vino de una migración de
-      # base de datos, un rollback de código a ciegas puede dejar el código viejo hablando
-      # con un esquema nuevo — mejor que lo confirme una persona (ver DEPLOY.md).
+      # Si CUALQUIER paso anterior falló, este corre igual (if: failure()) y deja claro cómo
+      # revertir. A propósito NO dispara el rollback solo: si la falla vino de una migración,
+      # un rollback de código a ciegas puede dejar el código viejo con un esquema nuevo.
       - name: Si el deploy falló, cómo revertir
         if: failure()
         run: |
-          echo "::error::El deploy de este push falló. Para revertir el CÓDIGO (no la base de datos) corré manualmente el workflow 'CI/CD' desde la pestaña Actions → 'Run workflow', con SHA=${PREV_SHA_OK:-<no había ninguno guardado, revisar a mano>} (o dejalo vacío para usar el último ~/.ultimo-deploy-ok del droplet). Ver 'Rollback' en DEPLOY.md."
+          echo "::error::El deploy de este push falló. Para revertir el CÓDIGO (no la base de datos) corré manualmente el workflow 'CI/CD' desde la pestaña Actions → 'Run workflow', con SHA=${PREV_SHA_OK:-<no había ninguno guardado, revisar a mano>} (o dejalo vacío para usar el último ~/.ultimo-deploy-ok del servidor). Ver 'Rollback' en DEPLOY.md."
 
-  # F17: rollback MANUAL de código. Se dispara a mano (workflow_dispatch), nunca solo.
-  # Revierte `git checkout` + `npm ci` + `pm2 restart` al SHA indicado (o al último
-  # guardado en ~/.ultimo-deploy-ok si no se pasa ninguno). A PROPÓSITO no toca
-  # migraciones ni el esquema de la base de datos: revertir un esquema es peligroso
-  # (puede perder datos escritos con la columna/tabla nueva) y requiere juicio humano,
-  # no un job automático. Si la falla fue por una migración, seguí el protocolo
-  # expand/contract documentado en DEPLOY.md en vez de correr este job.
+  # Rollback MANUAL de código. Se dispara a mano (workflow_dispatch), nunca solo. A
+  # PROPÓSITO no toca migraciones ni el esquema: revertir un esquema puede perder datos y
+  # requiere juicio humano (protocolo expand/contract en DEPLOY.md).
   rollback:
     name: Rollback manual de código (NO revierte la base de datos)
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     concurrency:
-      group: deploy-produccion
+      group: deploy-production
       cancel-in-progress: false
     env:
-      # Configurables como variables del repo (Settings → Variables); el default es el actual.
       DEPLOY_HOST: ${{ vars.DEPLOY_HOST || '157.230.190.60' }}
       DEPLOY_USER: ${{ vars.DEPLOY_USER || 'sebastian' }}
-      DEPLOY_DIR: "~/lavacar-whatsapp-bot"
-      DEPLOY_PM2_APP: "whatsapp-bot"
-      BASE_URL: "https://wabotlavacar.selyon.app"
-      SALUD_URL: "https://wabotlavacar.selyon.app/salud"
+      DEPLOY_DIR: ${{ vars.DEPLOY_DIR || '~/lavacar-whatsapp-bot' }}
+      BASE_URL: ${{ vars.BASE_URL || 'https://wabotlavacar.selyon.app' }}
     steps:
-      # Llave del host FIJADA (secret DEPLOY_HOST_KEY = línea de known_hosts, ver DEPLOY.md
-      # §15): sin ella, ssh-keyscan confía en lo que conteste la IP en ese momento (MITM).
       - name: Configurar SSH
         env:
           DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
@@ -304,25 +268,25 @@ jobs:
         run: |
           sha_input="${{ github.event.inputs.sha }}"
           if [ -n "$sha_input" ]; then
-            resuelto="$sha_input"
+            resolved="$sha_input"
           else
-            resuelto="$(ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" 'cat ~/.ultimo-deploy-ok 2>/dev/null || true')"
-            if [ -z "$resuelto" ]; then
-              echo "::error::No se pasó un SHA (input 'sha') y no existe ~/.ultimo-deploy-ok en el droplet. No hay a qué revertir — pasá el SHA a mano."
+            resolved="$(ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" 'cat ~/.ultimo-deploy-ok 2>/dev/null || true')"
+            if [ -z "$resolved" ]; then
+              echo "::error::No se pasó un SHA (input 'sha') y no existe ~/.ultimo-deploy-ok en el servidor. No hay a qué revertir — pasá el SHA a mano."
               exit 1
             fi
           fi
-          echo "SHA_ROLLBACK=$resuelto" >> "$GITHUB_ENV"
-          echo "Se va a revertir el código del droplet al commit: $resuelto"
+          echo "ROLLBACK_SHA=$resolved" >> "$GITHUB_ENV"
+          echo "Se va a revertir el código del servidor al commit: $resolved"
 
       - name: Advertencia — este rollback es solo de código
         run: |
           echo "::warning::Este job revierte SOLO el código (git checkout + npm ci + panel + pm2 reload)."
-          echo "::warning::NO toca migraciones ni el esquema de la base de datos. Si la falla vino de un cambio de esquema no compatible hacia atrás, este rollback NO alcanza — se necesita juicio humano (protocolo expand/contract en DEPLOY.md)."
+          echo "::warning::NO toca migraciones ni el esquema de la base de datos. Si la falla vino de un cambio de esquema no compatible hacia atrás, este rollback NO alcanza (protocolo expand/contract en DEPLOY.md)."
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
-          ref: ${{ env.SHA_ROLLBACK }}
+          ref: ${{ env.ROLLBACK_SHA }}
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: ".nvmrc"
@@ -333,75 +297,36 @@ jobs:
           tar -czf panel.tgz -C web/dist .
           scp -i ~/.ssh/deploy_key panel.tgz "$DEPLOY_USER@$DEPLOY_HOST:panel-rollback.tgz"
 
-      - name: Revertir el código y recargar el bot
+      - name: Revertir el código y recargar el proceso
         run: |
           ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "
             set -e
             cd $DEPLOY_DIR
             git fetch --all --tags
-            git checkout $SHA_ROLLBACK
+            git checkout $ROLLBACK_SHA
             npm ci --omit=dev
             rm -rf web/dist.nuevo web/dist.viejo && mkdir -p web/dist.nuevo
             tar -xzf ~/panel-rollback.tgz -C web/dist.nuevo && rm -f ~/panel-rollback.tgz
             if [ -d web/dist ]; then mv web/dist web/dist.viejo; fi
             mv web/dist.nuevo web/dist
-            pm2 reload $DEPLOY_PM2_APP --update-env
+            pm2 startOrReload ecosystem.config.cjs --update-env
           "
 
-      - name: Verificar que el bot responde (/salud)
+      - name: Verificar que el proceso responde (/health)
         run: |
           for i in $(seq 1 10); do
-            if curl -sf "$SALUD_URL" > /dev/null; then
-              echo "✅ /salud respondió OK (intento $i de 10)"
+            if curl -sf "$BASE_URL/health" > /dev/null; then
+              echo "✅ /health respondió OK (intento $i de 10)"
               exit 0
             fi
-            echo "intento $i de 10: /salud no respondió aún, reintento en 3s…"
+            echo "intento $i de 10: /health no respondió aún, reintento en 3s…"
             sleep 3
           done
-          echo "::error::El bot no respondió en /salud tras el rollback (30s de reintentos)"
+          echo "::error::El proceso no respondió en /health tras el rollback (30s de reintentos)"
           exit 1
 
-      # Mismo smoke que el deploy normal (ver comentario allá arriba) — un rollback de
-      # código también puede fallar (por ejemplo, si el SHA elegido es demasiado viejo
-      # y ya no es compatible con el esquema actual de la base: otra razón más por la
-      # que este job nunca toca migraciones solo).
-      - name: Smoke post-rollback (panel + API + auth)
-        run: |
-          fallo=0
-
-          panel="$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/panel")"
-          cuerpo="$(curl -s "$BASE_URL/panel")"
-          if [ "$panel" = "200" ] && printf '%s' "$cuerpo" | grep -qi '<div id="root"'; then
-            echo "✅ /panel sirve el bundle de React (200 + #root)"
-          else
-            echo "::error::/panel no sirvió el bundle (HTTP $panel)"
-            fallo=1
-          fi
-
-          me="$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/api/panel/me")"
-          if [ "$me" = "401" ]; then
-            echo "✅ /api/panel/me sin sesión → 401 (API viva, auth aplicada)"
-          else
-            echo "::error::/api/panel/me devolvió $me (se esperaba 401)"
-            fallo=1
-          fi
-
-          login="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE_URL/api/panel/login" \
-            -H "Origin: $BASE_URL" -H 'Content-Type: application/json' \
-            -d '{"usuario":"__smoke_inexistente__","password":"__no__"}')"
-          if [ "$login" = "401" ]; then
-            echo "✅ /api/panel/login con credenciales falsas → 401 (auth + tenantStore vivos)"
-          else
-            echo "::error::/api/panel/login devolvió $login (se esperaba 401)"
-            fallo=1
-          fi
-
-          exit $fallo
-
-      # Solo si el smoke post-rollback pasó: el SHA revertido pasa a ser la realidad del
-      # droplet, así que lo dejamos como el nuevo "último bueno" (si se necesitara otro
-      # rollback después, o si el deploy normal corre de nuevo, parten de este dato real).
+      # Solo si /health pasó: el SHA revertido pasa a ser el nuevo "último bueno".
       - name: Marcar el SHA revertido como "último deploy bueno"
         run: |
-          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "echo '$SHA_ROLLBACK' > ~/.ultimo-deploy-ok"
-          echo "Guardado ~/.ultimo-deploy-ok = $SHA_ROLLBACK"
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "echo '$ROLLBACK_SHA' > ~/.ultimo-deploy-ok"
+          echo "Guardado ~/.ultimo-deploy-ok = $ROLLBACK_SHA"

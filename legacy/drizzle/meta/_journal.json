@@ -1,0 +1,286 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1781232724746,
+      "tag": "0000_curved_kingpin",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1781915043965,
+      "tag": "0001_lying_supernaut",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781916671348,
+      "tag": "0002_clever_moondragon",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1781917635877,
+      "tag": "0003_material_the_phantom",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1782020634751,
+      "tag": "0004_aromatic_virginia_dare",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1782502818153,
+      "tag": "0005_same_hannibal_king",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1782882830514,
+      "tag": "0006_daily_nomad",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783295833895,
+      "tag": "0007_confirmada_en",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783438650276,
+      "tag": "0008_third_toad_men",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1783534220846,
+      "tag": "0009_lush_black_tom",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1783559185019,
+      "tag": "0010_petite_surge",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1783562489792,
+      "tag": "0011_colorful_siren",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1783637496212,
+      "tag": "0012_dapper_ronan",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1783654377870,
+      "tag": "0013_petite_james_howlett",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1783690164743,
+      "tag": "0014_panoramic_jack_flag",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1783964935763,
+      "tag": "0015_strange_metal_master",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1784093934937,
+      "tag": "0016_first_terror",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1784129992422,
+      "tag": "0017_legal_silver_samurai",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1784215436638,
+      "tag": "0018_bored_baron_zemo",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1784237764794,
+      "tag": "0019_clean_masque",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1784240684960,
+      "tag": "0020_clever_master_mold",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1784300030884,
+      "tag": "0021_jittery_bucky",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1784578525205,
+      "tag": "0022_majestic_rictor",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1785435561456,
+      "tag": "0023_gifted_wolfsbane",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1785555282786,
+      "tag": "0024_concerned_preak",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1786121994590,
+      "tag": "0025_tense_veda",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1786123025316,
+      "tag": "0026_adorable_kylun",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1786124118800,
+      "tag": "0027_workable_meggan",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1786153727267,
+      "tag": "0028_smiling_sharon_carter",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1786153968754,
+      "tag": "0029_tiresome_marauders",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1786218600349,
+      "tag": "0030_square_gressill",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1786227626131,
+      "tag": "0031_glossy_kabuki",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1790899525507,
+      "tag": "0032_rls_sin_politicas",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1790901468954,
+      "tag": "0033_auditoria",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1790915070526,
+      "tag": "0034_consentimiento_marketing",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1790977434857,
+      "tag": "0035_push_subs_por_usuario",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1790996873389,
+      "tag": "0036_textos_cliente",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1791067380528,
+      "tag": "0037_f1_rls_y_cola",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1791067424962,
+      "tag": "0038_mensajes_tenant_not_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1791099717092,
+      "tag": "0039_bandeja_paginada",
+      "breakpoints": true
+    }
+  ]
+}

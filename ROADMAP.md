@@ -12,7 +12,10 @@
 
 **Leyenda:** ✅ hecho · 🔵 en progreso · ⬜ pendiente · 🔴 bloqueante crítico para escalar
 
-**Última actualización:** 2026-10-19 — Carril I: reestructura a software de gestión multi-sucursal y multi-rubro
+**Última actualización:** 2026-10-19 — Carril I, I0.2–I0.3: el dominio viejo pasa a `legacy/` (fuera del build), la
+plataforma a `src/platform/` en inglés, esquema de plataforma (`leader_leases`, `audit_log`, rol `app_runtime`) con
+migración base nueva y servidor nuevo mínimo (rama `i0/platform`).
+Antes, 2026-10-19 — Carril I: reestructura a software de gestión multi-sucursal y multi-rubro
 (plan acordado en [`PLAN-GESTION.md`](PLAN-GESTION.md); nombre provisional "Selyon CRM"; I0 arrancó en la rama `carril-i`).
 Antes, 2026-10-10 — E14: chequeo rápido de producción (`scripts/verificarProduccion.ts`).
 Antes, 2026-10-04 — Carril H (auditoría de arquitectura): ráfagas que descartaban
@@ -31,7 +34,7 @@ negocios con cita (dental, estética, uñas), multi-sucursal, con WhatsApp IA co
 ## Carril I — Reestructura a software de gestión ([`PLAN-GESTION.md`](PLAN-GESTION.md))
 
 - [x] ✅ **I-plan — Análisis de brechas, veredicto de arquitectura, modelo de datos, planes y fases.** Acordado: Básico = agente de WhatsApp, Pro = gestión completa (con o sin agente), identificadores en inglés, nombre provisional "Selyon CRM".
-- [ ] 🔵 **I0 — Cimientos** (rama `carril-i`, pasos en `PLAN-GESTION.md` §10; I0.1 hecho). Tag del estado actual, Supabase nuevo, módulos por dominio, router declarativo + Zod + permisos, esquema base con RLS, caché nuevo, correo de plataforma, login por email, sin lavacar ni `wa_`, identificadores en inglés.
+- [ ] 🔵 **I0 — Cimientos** (rama `carril-i`, pasos en `PLAN-GESTION.md` §10; I0.1–I0.3 hechos: dominio viejo en `legacy/`, plataforma en `src/platform/` en inglés, migración base nueva con `app_runtime` y `btree_gist`, servidor mínimo). Tag del estado actual, Supabase nuevo, módulos por dominio, router declarativo + Zod + permisos, esquema base con RLS, caché nuevo, correo de plataforma, login por email, sin lavacar ni `wa_`, identificadores en inglés.
 - [ ] ⬜ **I1 — Núcleo del Básico.** Disponibilidad con horario por profesional, buffers, varios servicios y `EXCLUDE`; Agenda, profesionales, ficha del cliente, navegación nueva, Inicio básico, plantillas de rubro.
 - [ ] ⬜ **I2 — Agente y lanzamiento del Básico.** Agente sobre los servicios del núcleo, bandeja, recordatorios por WhatsApp y correo, superadmin y alta de negocios portados, planes y límites, cobro manual.
 - [ ] ⬜ **I3 — CRM y equipo (Pro).** Estados configurables, campos personalizados, CSV, usuario por profesional con roles, varias sucursales.
