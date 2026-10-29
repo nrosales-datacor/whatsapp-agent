@@ -30,4 +30,6 @@ export {
   UNNAMED_CLIENT,
 } from "./service";
 export type { ClientDataEraser, ClientDetail, ClientRef, ClientScope, ClientStats, ClientView, FindOrCreateInput } from "./service";
+// Reportes e Inicio completo (I5): altas en un rango y clientes en riesgo (estado `at_risk` del CRM).
+export { countRegisteredClients, listClientsAtRisk, type AtRiskClient, type AtRiskClients } from "./stats";
 export type { Client, ClientChannel, NewClient } from "./schema";

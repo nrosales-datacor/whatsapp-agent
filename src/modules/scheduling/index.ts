@@ -21,6 +21,7 @@ export {
   updateAppointmentNotes,
 } from "./appointments";
 export type {
+  AppointmentBookedHook,
   AppointmentCompletedHook,
   AppointmentDetailsPatch,
   AppointmentLineView,
@@ -33,6 +34,29 @@ export type {
 export { bookingMinLeadMin, DEFAULT_SLOT_INTERVAL_MIN, findSlots, MAX_SERVICES_PER_APPOINTMENT } from "./availability";
 export type { FindSlotsInput, Slot, SlotStaff } from "./availability";
 export { countBookingsByChannel, nextAppointmentsForClients } from "./channelStats";
+// Agregados en SQL para Reportes e Inicio completo (I5) y el reparto de montos por cita que usa sales.
+export {
+  attributeAmounts,
+  CHANNEL_LABELS,
+  getAppointmentBreakdown,
+  getBookedMinutesByStaff,
+  getClientVisitStats,
+  getServiceLineStats,
+} from "./stats";
+export type {
+  AmountsSubquery,
+  AppointmentBreakdown,
+  AppointmentCounts,
+  AppointmentGroup,
+  AppointmentGroupBy,
+  Attribution,
+  AttributedGroup,
+  AttributionInput,
+  AttributionKey,
+  ClientVisitStats,
+  ServiceLineStats,
+  StatsRange,
+} from "./stats";
 export { getHomeToday, type ConversationsWaitingCounter, type HomeToday } from "./home";
 export {
   handleReminderJob,
@@ -47,7 +71,8 @@ export {
 } from "./reminders";
 export { schedulingRoutes, type SchedulingRouteDeps } from "./routes";
 // Fechas en la zona de una sucursal (bandeja, métricas y recordatorios de otros módulos).
-export { addDays, isLocalDate, localDate, localDayBounds, mondayOf, wallClock } from "./time";
+export { addDays, isLocalDate, localDate, localDatesBetween, localDayBounds, mondayOf, wallClock } from "./time";
+export { APPOINTMENT_CHANNELS, APPOINTMENT_STATUSES } from "./schema";
 export type {
   Appointment,
   AppointmentChannel,

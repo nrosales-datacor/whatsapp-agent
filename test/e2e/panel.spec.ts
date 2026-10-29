@@ -56,9 +56,9 @@ test("dueña Pro: recorre todas las secciones del menú con la terminología del
     await nav.getByRole("link", { name, exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`${path}$`));
     await expect(heading(page, name)).toBeVisible();
-    // Inicio, Agenda, Clientes (I1), WhatsApp IA (I2) y Ventas (I4) ya tienen contenido (ver
-    // agenda/clients/whatsapp/sales.panel.spec.ts); el resto, el estado de la etapa.
-    if (!["/panel", "/panel/agenda", "/panel/clients", "/panel/whatsapp", "/panel/sales"].includes(path)) await expect(page.getByText("Esto llega en la próxima etapa")).toBeVisible();
+    // Inicio, Agenda, Clientes (I1), WhatsApp IA (I2), Ventas (I4) y Reportes (I5) ya tienen
+    // contenido (ver agenda/clients/whatsapp/sales/reports.panel.spec.ts); el resto, el estado de la etapa.
+    if (!["/panel", "/panel/agenda", "/panel/clients", "/panel/whatsapp", "/panel/sales", "/panel/reports"].includes(path)) await expect(page.getByText("Esto llega en la próxima etapa")).toBeVisible();
   }
 
   await nav.getByRole("link", { name: "Configuración", exact: true }).click();

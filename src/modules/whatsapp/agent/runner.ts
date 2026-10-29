@@ -9,6 +9,7 @@ import type { Executor } from "../../../platform/db/scope";
 import { isTransientError } from "../../../platform/net/transient";
 import { log } from "../../../platform/observability/log";
 import { captureError } from "../../../platform/observability/sentry";
+import type { AppointmentBookedHook } from "../../scheduling";
 import type { AgentReply, AgentRunner, AgentTurnInput, AgentTurnResult } from "../agentContract";
 import { agentMaxSteps, agentModel, historyMaxDays, historyMaxMessages, openAiRetries, openAiTimeoutMs } from "./config";
 import { loadAgentContext, type AgentContext } from "./context";
@@ -77,6 +78,8 @@ export interface AgentRunnerDeps {
   reportError?: ErrorReporter;
   /** Se llama por cada tool ejecutada. */
   onToolCall?: (event: ToolCallEvent) => void;
+  /** Aviso de cada cita que agenda el agente, ya confirmada (la composición cuenta el uso en `daily_usage`). */
+  onAppointmentBooked?: AppointmentBookedHook;
 }
 
 /** Largo máximo de un mensaje de WhatsApp (Meta corta en 4096). */
@@ -148,7 +151,7 @@ export function createAgentRunner(deps: AgentRunnerDeps = {}): AgentRunner {
     if (!ctx) throw new Error("agent: el negocio del turno no existe");
 
     const effects: TurnEffects = emptyEffects();
-    const runtime: ToolRuntime = { executor, ctx, input, effects };
+    const runtime: ToolRuntime = { executor, ctx, input, effects, onAppointmentBooked: deps.onAppointmentBooked };
     const tokens: TokenUsage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 };
     const usage = () => ({
       inputTokens: tokens.inputTokens,

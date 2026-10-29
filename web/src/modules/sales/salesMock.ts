@@ -334,6 +334,17 @@ function payoutView(session: MockSalesSession, p: StoredPayout): Payout {
   return { ...rest, staff: s ? { id: s.id, name: s.name, color: s.color } : null, entryCount: entries.length };
 }
 
+/**
+ * Pagos (con método y sucursal) y movimientos de comisión del negocio, para los Reportes y
+ * el Inicio completo simulados (I5). Siembra Ventas si todavía no se usó.
+ */
+export function mockSalesOf(session: MockSalesSession): { payments: Payment[]; commissions: CommissionEntry[] } {
+  const state = loadState();
+  const biz = (state.businesses[session.businessId] ??= seedBiz(state, session));
+  saveState(state);
+  return { payments: biz.payments.map((p) => paymentView(session, biz, p)), commissions: commissionEntries(session, biz) };
+}
+
 // ── Rutas ───────────────────────────────────────────────────────────────────
 
 /** ¿La ruta es de Ventas o Comisiones? (para que lib/mockApi.ts la mande acá). */
