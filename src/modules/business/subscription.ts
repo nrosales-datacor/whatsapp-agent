@@ -21,6 +21,8 @@ export interface SubscriptionChanges {
   stripeCustomerId?: string | null;
   stripeSubscriptionId?: string | null;
   trialEndsAt?: Date | null;
+  unpaidSince?: Date | null;
+  billingPausedAt?: Date | null;
 }
 
 /** La fila del negocio leída de la base (no del caché), en contexto de sistema. null si no existe. */
@@ -51,6 +53,8 @@ export async function updateBusinessSubscription(
   if (next.stripeCustomerId !== undefined) set.stripeCustomerId = next.stripeCustomerId;
   if (next.stripeSubscriptionId !== undefined) set.stripeSubscriptionId = next.stripeSubscriptionId;
   if (next.trialEndsAt !== undefined) set.trialEndsAt = next.trialEndsAt;
+  if (next.unpaidSince !== undefined) set.unpaidSince = next.unpaidSince;
+  if (next.billingPausedAt !== undefined) set.billingPausedAt = next.billingPausedAt;
   if (Object.keys(set).length === 0) return { before, after: before };
   const [after] = await tx.update(businesses).set(set).where(eq(businesses.id, businessId)).returning();
   return { before, after };
@@ -95,6 +99,21 @@ export async function listExpiredTrials(tx: Tx, now: Date, limit = 100): Promise
       ),
     )
     .orderBy(asc(businesses.trialEndsAt))
+    .limit(limit);
+  return rows.map((r) => r.id);
+}
+
+/**
+ * Negocios activos que no están al día desde `cutoff` o antes (por una vía automática:
+ * `unpaid_since` con fecha). El barrido de billing los pausa por el cobro. Corre con el
+ * contexto de `tx` (sistema). Los más viejos primero, hasta `limit`.
+ */
+export async function listUnpaidSince(tx: Tx, cutoff: Date, limit = 100): Promise<string[]> {
+  const rows = await tx
+    .select({ id: businesses.id })
+    .from(businesses)
+    .where(and(isNotNull(businesses.unpaidSince), lte(businesses.unpaidSince, cutoff), eq(businesses.status, "active")))
+    .orderBy(asc(businesses.unpaidSince))
     .limit(limit);
   return rows.map((r) => r.id);
 }

@@ -71,6 +71,13 @@
       "when": 1792971289696,
       "tag": "0009_billing_signup",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793293662752,
+      "tag": "0010_billing_pause_onboarding",
+      "breakpoints": true
     }
   ]
 }
