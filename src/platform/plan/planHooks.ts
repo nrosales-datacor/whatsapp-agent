@@ -13,6 +13,10 @@ import { HttpError } from "../http/errors";
 //     lo resuelve ANTES de abrir la transacción (lee el caché con el pool) y lo hace
 //     cumplir ADENTRO con `assertQuota` (lock por negocio y recurso + conteo).
 //   • `hasFeature`: lo del plan que no es una ruta entera (p. ej. la marca propia).
+//   • `clientsTier`: nivel de clientes (`basic` = ficha automática; `full` = CRM del Pro:
+//     estados, filtros, campos personalizados, importar/exportar). Lo del CRM vive en las
+//     mismas rutas que la ficha, así que no alcanza con `module`: la ruta pregunta el nivel
+//     y corta con `assertFullClients` (403 `module_not_in_plan`).
 //   • `snapshot`: plan, módulos, nivel de clientes, límites y uso para `me` y el panel.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -72,7 +76,31 @@ export interface PlanHooks {
   enabledModules(businessId: string): Promise<readonly string[]>;
   quota: PlanQuota;
   hasFeature(businessId: string, feature: PlanFeature): Promise<boolean>;
+  /** Nivel de clientes del negocio (`basic` si no existe). */
+  clientsTier(businessId: string): Promise<ClientsTier>;
   snapshot(businessId: string): Promise<PlanSnapshot>;
+}
+
+/** Lo que las rutas del CRM necesitan del plan. */
+export type ClientsTierHook = Pick<PlanHooks, "clientsTier">;
+
+/** 403 `module_not_in_plan`: lo pedido es del CRM completo (plan Pro). */
+export function fullClientsRequired(): HttpError {
+  return new HttpError(
+    403,
+    "Esta función es del CRM de clientes del plan Pro. Para usarla, ampliá tu plan en Configuración › Plan.",
+    "module_not_in_plan",
+  );
+}
+
+/** ¿El plan del negocio trae el CRM completo de clientes? */
+export async function hasFullClients(plans: ClientsTierHook, businessId: string): Promise<boolean> {
+  return (await plans.clientsTier(businessId)) === "full";
+}
+
+/** Corta con 403 `module_not_in_plan` si el plan no trae el CRM completo de clientes. */
+export async function assertFullClients(plans: ClientsTierHook, businessId: string): Promise<void> {
+  if (!(await hasFullClients(plans, businessId))) throw fullClientsRequired();
 }
 
 // ── Cupos dentro de la transacción ──────────────────────────────────────────

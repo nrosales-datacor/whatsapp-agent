@@ -43,6 +43,13 @@
       "when": 1792651155960,
       "tag": "0005_sales_commissions",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792696768351,
+      "tag": "0006_clients_crm",
+      "breakpoints": true
     }
   ]
 }
