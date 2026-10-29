@@ -5,6 +5,7 @@ import { getBusinessContext } from "../../src/modules/business";
 import { businesses, customFields } from "../../src/modules/business/schema";
 import { getServices } from "../../src/modules/catalog";
 import { clients } from "../../src/modules/clients/schema";
+import { commissionEntries } from "../../src/modules/commissions/schema";
 import { appointments } from "../../src/modules/scheduling/schema";
 import { memberships, staff, users } from "../../src/modules/team/schema";
 import { verifyPassword } from "../../src/platform/auth/password";
@@ -56,6 +57,10 @@ test("seed:dev: crea el negocio demo completo con citas de esta semana, y es ide
 
   const [maria] = await withTenant(db, first.businessId, (tx) => tx.select().from(clients).where(eq(clients.name, "María Fernández")));
   assert.equal(maria.visitCount, 1, "la caché del cliente refleja la cita completada");
+  // Comisiones de demo sobre lo cobrado: una por línea de las 3 citas cobradas (Carla hizo mani + pedi).
+  const entries = await withTenant(db, first.businessId, (tx) => tx.select().from(commissionEntries));
+  assert.equal(entries.length, 4);
+  assert.ok(entries.some((e) => e.rule.value === 1500), "Ana en la limpieza facial: 15 %");
 
   // Los usuarios demo entran con la clave conocida de desarrollo.
   assert.equal(first.password, DEMO_PASSWORD);

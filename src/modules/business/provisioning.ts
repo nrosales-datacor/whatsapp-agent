@@ -12,8 +12,9 @@ import type { ExtraModules } from "./settings";
 // El alta aplica la plantilla del rubro (`applyIndustryTemplate`, ver ./templates.ts): lo
 // que es de business (terminología, reglas de estado de cliente, campos personalizados)
 // lo escribe acá; el catálogo lo escribe modules/catalog a través de `ProvisioningSteps`
-// (business no puede importar catalog: catalog depende de business). La sección `ai` la
-// aplica el módulo whatsapp en I2.
+// (business no puede importar catalog: catalog depende de business). Igual los métodos de
+// pago de modules/sales (`seedPaymentMethods`). La sección `ai` la aplica el módulo
+// whatsapp en I2.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Horario con el que nace la primera sucursal: lunes a viernes 8–18 y sábado 8–12 (0 = domingo). */
@@ -72,6 +73,11 @@ export interface CreatedBusiness {
 export interface ProvisioningSteps {
   /** Carga las categorías y servicios de la plantilla (`applyCatalogTemplate` de modules/catalog). */
   seedCatalog: (tx: Tx, input: { businessId: string; catalog: TemplateCatalog }) => Promise<unknown>;
+  /**
+   * Carga los métodos de pago default (`seedDefaultPaymentMethods` de modules/sales). El
+   * alta real siempre lo pasa (src/provisioning.ts); sin él, el negocio nace sin métodos.
+   */
+  seedPaymentMethods?: (tx: Tx, input: { businessId: string }) => Promise<unknown>;
 }
 
 /**
@@ -113,8 +119,8 @@ export async function applyIndustryTemplate(
 }
 
 /**
- * Crea el negocio con su primera sucursal, el horario default (`DEFAULT_LOCATION_HOURS`)
- * y la plantilla de su rubro (`applyIndustryTemplate`). El slug sale del nombre; si ya
+ * Crea el negocio con su primera sucursal, el horario default (`DEFAULT_LOCATION_HOURS`),
+ * la plantilla de su rubro (`applyIndustryTemplate`) y los métodos de pago default. El slug sale del nombre; si ya
  * existe, se le suma `-2`, `-3`…
  */
 export async function createBusiness(executor: Executor, input: NewBusinessInput, steps: ProvisioningSteps): Promise<CreatedBusiness> {
@@ -151,6 +157,7 @@ export async function createBusiness(executor: Executor, input: NewBusinessInput
       .insert(locationHours)
       .values(DEFAULT_LOCATION_HOURS.map((h) => ({ businessId: business.id, locationId: location.id, ...h })));
     const withTemplate = await applyIndustryTemplate(tx, { businessId: business.id, industry: input.industry }, steps);
+    if (steps.seedPaymentMethods) await steps.seedPaymentMethods(tx, { businessId: business.id });
     return { business: withTemplate, location };
   });
 }

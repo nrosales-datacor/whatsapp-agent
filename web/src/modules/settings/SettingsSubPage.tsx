@@ -5,6 +5,7 @@ import { LockedContent } from "../../app/SectionGate";
 import { useSession } from "../../app/session";
 import EmptyState from "../../ui/EmptyState";
 import PageHeader from "../../ui/PageHeader";
+import PaymentMethodsPage from "../sales/PaymentMethodsPage";
 import BusinessSettingsPage from "./BusinessSettingsPage";
 import LocationsPage from "./LocationsPage";
 import PlanPage from "./PlanPage";
@@ -14,8 +15,8 @@ import UsersPage from "./UsersPage";
 import "./settings.css";
 
 // Una subsección de Configuración (/settings/:page): encabezado + la pantalla de esa
-// sección. Las del plan Pro que todavía no tienen pantalla (campos personalizados,
-// métodos de pago) muestran el candado; en el Básico, el aviso del plan Pro.
+// sección. Las del plan Pro que todavía no tienen pantalla muestran el candado; en el
+// Básico, el aviso del plan Pro.
 
 const PAGES: Record<string, ComponentType> = {
   business: BusinessSettingsPage,
@@ -24,6 +25,8 @@ const PAGES: Record<string, ComponentType> = {
   team: TeamPage,
   users: UsersPage,
   plan: PlanPage,
+  // Del módulo Ventas (I4): vive en modules/sales.
+  "payment-methods": PaymentMethodsPage,
 };
 
 export default function SettingsSubPage() {

@@ -3,6 +3,8 @@ import type { PlanService } from "./modules/billing";
 import { businessRoutes, type LocationReferenceCheck } from "./modules/business";
 import { clientsRoutes } from "./modules/clients";
 import { catalogRoutes, isLocationRestrictingServices } from "./modules/catalog";
+import { commissionsRoutes, recalculateAppointmentCommissions } from "./modules/commissions";
+import { salesRoutes } from "./modules/sales";
 import { schedulingRoutes } from "./modules/scheduling";
 import { isLocationAssigned, staffRoutes, teamRoutes } from "./modules/team";
 import {
@@ -54,6 +56,15 @@ export interface RouteDeps {
 const isLocationReferenced: LocationReferenceCheck = async (executor, businessId, locationId) =>
   (await isLocationAssigned(executor, businessId, locationId)) || (await isLocationRestrictingServices(executor, businessId, locationId));
 
+/**
+ * Comisiones sobre lo cobrado (I4): se recalculan al completar una cita y con cada cobro o
+ * devolución de una cita, en la misma transacción. commissions depende de scheduling y de
+ * sales (lee la cita y lo cobrado); ninguno de los dos la conoce, así que el recálculo se
+ * les inyecta acá como gancho (sin ciclos entre módulos).
+ */
+const onCommissionableChange = (tx: Executor, businessId: string, appointmentId: string) =>
+  recalculateAppointmentCommissions(tx, businessId, appointmentId);
+
 export function panelRoutes(deps: RouteDeps): Route[] {
   const whatsapp = deps.whatsapp ?? createWhatsAppDeps(deps.db);
   return [
@@ -72,7 +83,13 @@ export function panelRoutes(deps: RouteDeps): Route[] {
     ...clientsRoutes({ db: deps.db, clientErasers: [whatsappClientEraser] }),
     // Agenda e Inicio básico (I1): /availability, /appointments/*, /clients/:id/appointments
     // y /home/today (con las conversaciones esperando a una persona, del módulo WhatsApp).
-    ...schedulingRoutes({ db: deps.db, countConversationsWaiting }),
+    ...schedulingRoutes({ db: deps.db, countConversationsWaiting, onAppointmentCompleted: onCommissionableChange }),
+    // Ventas (I4, Pro): métodos de pago, cobros y señas, devoluciones, pendientes y caja
+    // (/settings/payment-methods, /appointments/:id/payments|balance, /sales/*).
+    ...salesRoutes({ db: deps.db, onPaymentsChanged: onCommissionableChange }),
+    // Comisiones (I4, Pro): reglas, movimientos, resumen y liquidaciones
+    // (/settings/commission-rules, /commissions/*).
+    ...commissionsRoutes({ db: deps.db }),
     // WhatsApp IA (I2): canales, bandeja, resumen, métricas y push (/whatsapp/*, /push/*) y
     // el alta manual de un número del superadmin (/admin/businesses/:id/whatsapp).
     ...whatsappRoutes({ db: deps.db, deps: whatsapp }),

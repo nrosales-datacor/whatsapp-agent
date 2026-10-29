@@ -34,7 +34,11 @@ export default function Drawer({ open, onClose, title, subtitle, children, foote
       ref={ref}
       className="drawer"
       aria-labelledby={titleId}
-      onClose={onClose}
+      // React propaga `close` por el árbol de componentes: el cierre de un diálogo abierto
+      // ADENTRO (p. ej. "Cobrar" en el panel de una cita) no tiene que cerrar este.
+      onClose={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

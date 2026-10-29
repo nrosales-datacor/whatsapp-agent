@@ -42,7 +42,9 @@ import { MINUTE_MS } from "./time";
 //     puede ir directo a completed, cancelled o no_show). Los finales no se mueven.
 //     Completar o marcar no-show exige que la cita ya haya empezado.
 //   • Completar refresca la caché de visitas del cliente en la MISMA transacción
-//     (`refreshClientStats` con valores absolutos calculados desde las citas completadas).
+//     (`refreshClientStats` con valores absolutos calculados desde las citas completadas)
+//     y corre el gancho `onCompleted` (comisiones, que inyecta la composición: scheduling
+//     no conoce a commissions, que sí depende de scheduling).
 //   • Reservar/reprogramar programa los recordatorios; cancelar, completar o no-show
 //     invalida los pendientes (./reminders.ts).
 //   • Margen mínimo (`BOOKING_MIN_LEAD_MIN`) para lo que agenda el cliente (agente, web);
@@ -667,6 +669,12 @@ export function reassignStaff(
 
 // ── Estados ─────────────────────────────────────────────────────────────────
 
+/**
+ * Efecto interno al completar una cita, en la MISMA transacción (si falla, la cita no queda
+ * completada). Lo inyecta la composición (src/routes.ts): hoy, las comisiones.
+ */
+export type AppointmentCompletedHook = (tx: Tx, businessId: string, appointmentId: string) => Promise<void>;
+
 async function transition(
   executor: Executor,
   businessId: string,
@@ -674,6 +682,7 @@ async function transition(
   to: AppointmentStatus,
   action: string,
   apply: (tx: Tx, row: Appointment, t: Terminology) => Promise<Partial<Appointment>>,
+  after?: (tx: Tx, row: Appointment) => Promise<void>,
 ): Promise<AppointmentView> {
   const t = await terminology(executor, businessId);
   if (!isTenantId(appointmentId)) throw notFound(t);
@@ -694,6 +703,7 @@ async function transition(
       .where(and(eq(appointments.businessId, businessId), eq(appointments.id, row.id)));
     if (!isActiveStatus(to)) await cancelPendingReminders(tx, businessId, row.id);
     if (to === "completed") await refreshVisits(tx, businessId, row.clientId);
+    if (after) await after(tx, row);
   });
   return getOrThrow(executor, businessId, appointmentId);
 }
@@ -722,11 +732,25 @@ export function confirmAppointment(executor: Executor, businessId: string, appoi
   return transition(executor, businessId, appointmentId, "confirmed", "confirmar", async () => ({ confirmedAt: options.now ?? new Date() }));
 }
 
-export function completeAppointment(executor: Executor, businessId: string, appointmentId: string, options: { now?: Date } = {}) {
-  return transition(executor, businessId, appointmentId, "completed", "completar", async (_tx, row, t) => {
-    assertStarted(row, options.now ?? new Date(), t, "completada");
-    return {};
-  });
+export function completeAppointment(
+  executor: Executor,
+  businessId: string,
+  appointmentId: string,
+  options: { now?: Date; onCompleted?: AppointmentCompletedHook } = {},
+) {
+  const { onCompleted } = options;
+  return transition(
+    executor,
+    businessId,
+    appointmentId,
+    "completed",
+    "completar",
+    async (_tx, row, t) => {
+      assertStarted(row, options.now ?? new Date(), t, "completada");
+      return {};
+    },
+    onCompleted ? (tx, row) => onCompleted(tx, businessId, row.id) : undefined,
+  );
 }
 
 export function markNoShow(executor: Executor, businessId: string, appointmentId: string, options: { now?: Date } = {}) {

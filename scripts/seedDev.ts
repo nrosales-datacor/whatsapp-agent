@@ -6,7 +6,10 @@ import { businesses, locationHours, locations } from "../src/modules/business/sc
 import { applyCatalogTemplate } from "../src/modules/catalog";
 import { serviceLocations, services, staffServices } from "../src/modules/catalog/schema";
 import { clients } from "../src/modules/clients/schema";
-import { paymentMethods, payments } from "../src/modules/sales/schema";
+import { recalculateAppointmentCommissions } from "../src/modules/commissions";
+import { commissionRules } from "../src/modules/commissions/schema";
+import { seedDefaultPaymentMethods } from "../src/modules/sales";
+import { payments } from "../src/modules/sales/schema";
 import { appointments, appointmentServices, type AppointmentChannel, type AppointmentStatus } from "../src/modules/scheduling/schema";
 import { membershipLocations, memberships, staff, staffHours, users } from "../src/modules/team/schema";
 import { hashPassword } from "../src/platform/auth/password";
@@ -209,10 +212,8 @@ export async function seedDev(db: Executor, options: { now?: Date } = {}): Promi
       { businessId, staffId: diego.id, serviceId: drenaje.id, durationMin: 45 },
     ]);
 
-    const methodRows = await tx
-      .insert(paymentMethods)
-      .values(["Efectivo", "SINPE Móvil", "Tarjeta", "Transferencia"].map((name, position) => ({ businessId, name, position })))
-      .returning({ id: paymentMethods.id, name: paymentMethods.name });
+    // Métodos de pago default, igual que el alta real (src/provisioning.ts).
+    const methodRows = await seedDefaultPaymentMethods(tx, { businessId });
     const method = Object.fromEntries(methodRows.map((m) => [m.name, m.id]));
 
     // ── Clientes ──
@@ -281,6 +282,12 @@ export async function seedDev(db: Executor, options: { now?: Date } = {}): Promi
       { day: 5, time: "11:00", staffId: diego.id, locationId: heredia.id, clientId: clientRows[0].id, lines: [masaje], channel: "phone", outcome: "pending" },
     ];
 
+    // Comisiones de demo (Pro): 10 % general y 15 % para Ana en la limpieza facial.
+    await tx.insert(commissionRules).values([
+      { businessId, kind: "percent", value: 1000 },
+      { businessId, staffId: ana.id, serviceId: limpieza.id, kind: "percent", value: 1500 },
+    ]);
+
     let appointmentCount = 0;
     let paymentCount = 0;
     for (const p of bookings) {
@@ -346,6 +353,8 @@ export async function seedDev(db: Executor, options: { now?: Date } = {}): Promi
             totalSpentCents: c.totalSpentCents + totalCents,
           })
           .where(eq(clients.id, p.clientId));
+        // Comisión sobre lo cobrado (en la app la calcula el gancho de completar / cobrar).
+        await recalculateAppointmentCommissions(tx, businessId, appt.id, { now });
       }
     }
 

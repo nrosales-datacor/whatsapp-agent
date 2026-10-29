@@ -1,7 +1,8 @@
 import { mockAgendaSetup, mockPlanUsage, settingsMockRoute, settingsOverlay, type MockMemberSeed } from "../modules/settings/settingsMock";
 import type { TransportRequest, TransportResponse } from "./api";
 import { mockClientsOf, routeClientsMock } from "../modules/clients/clientsMock";
-import { routeSchedulingMock } from "../modules/scheduling/schedulingMock";
+import { isSalesMockPath, routeSalesMock } from "../modules/sales/salesMock";
+import { mockAppointmentsOf, routeSchedulingMock } from "../modules/scheduling/schedulingMock";
 import { routeWhatsappMock } from "../modules/whatsapp/whatsappMock";
 import type {
   AdminBusiness,
@@ -630,6 +631,33 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
     ["/auth/login", "/auth/logout", "/auth/password/forgot", "/auth/password/reset"].includes(path);
   const sessionBusinessId = sessionUser ? (state.businessId ?? sessionUser.memberships[0]?.businessId) : null;
   if (!publicPath && sessionBusinessId && isPaused(state, sessionBusinessId)) return businessPaused();
+
+  // Ventas y Comisiones (I4): métodos de pago, cobros, saldo de una cita, pendientes, caja,
+  // reglas, movimientos y liquidaciones. Antes que la Agenda (también usa /appointments/:id/*).
+  if (isSalesMockPath(path)) {
+    const me = sessionMe();
+    if (!me || !sessionUser) return unauthorized();
+    const b = businessOf(state, me.business.id);
+    const membership = sessionUser.memberships.find((m) => m.businessId === b.id);
+    const setup = mockAgendaSetup(settingsSeedOf(state, b.id), membersOf(state, b.id));
+    const clients = mockClientsOf(b.id, b.locations);
+    const scheduling = { businessId: b.id, userId: me.user.id, role: me.role, locationIds: membership?.locationIds, staffId: me.staffId ?? null, setup, clients };
+    return routeSalesMock(req, {
+      businessId: b.id,
+      userId: me.user.id,
+      role: me.role,
+      locationIds: membership?.locationIds,
+      staffId: me.staffId ?? null,
+      modules: me.modules,
+      currency: me.business.currency,
+      timezone: me.business.timezone,
+      locations: setup.locations.map((l) => ({ id: l.id, name: l.name, timezone: l.timezone })),
+      staff: setup.staff.map((s) => ({ id: s.id, name: s.name, color: s.color })),
+      services: setup.services.map((s) => ({ id: s.id, name: s.name, categoryId: s.categoryId })),
+      clients,
+      appointments: mockAppointmentsOf(scheduling),
+    }) ?? fail(404, "not_found", "Ruta inexistente en el mock.");
+  }
 
   // Agenda e Inicio (I1): /availability, /appointments*, /clients/:id/appointments y /home/today.
   if (path === "/availability" || path === "/appointments" || path.startsWith("/appointments/") || path === "/home/today" || /^\/clients\/[^/]+\/appointments$/.test(path)) {
