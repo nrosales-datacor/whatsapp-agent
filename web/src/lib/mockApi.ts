@@ -1,4 +1,7 @@
+import { mockAgendaSetup, settingsMockRoute, settingsOverlay, type MockMemberSeed } from "../modules/settings/settingsMock";
 import type { TransportRequest, TransportResponse } from "./api";
+import { mockClientsOf, routeClientsMock } from "../modules/clients/clientsMock";
+import { routeSchedulingMock } from "../modules/scheduling/schedulingMock";
 import type { AdminBusiness, LocationRef, Me, MeBusiness, Role } from "./contract";
 import { readStorage, writeStorage } from "./storage";
 
@@ -276,9 +279,19 @@ function passwordOf(state: MockState, email: string): string {
   return state.overrides[email]?.password ?? MOCK_PASSWORD;
 }
 
-function buildMe(user: MockUser, businessId: string): Me {
+/** Profesional vinculado a la cuenta en ese negocio (Configuración simulada › Equipo), o null. */
+function staffIdOf(state: MockState, user: MockUser, businessId: string): string | null {
+  const setup = mockAgendaSetup(BUSINESSES[businessId], membersOf(state, businessId));
+  const membershipId = setup.members.find((m) => m.email === user.email)?.membershipId;
+  return (membershipId && setup.staff.find((s) => s.membershipId === membershipId)?.id) || null;
+}
+
+function buildMe(user: MockUser, businessId: string, state: MockState): Me {
   const membership = user.memberships.find((m) => m.businessId === businessId) ?? user.memberships[0];
-  const b = BUSINESSES[membership.businessId];
+  // Lo que se cambió en Configuración (nombre, terminología, sucursales…) pisa la semilla.
+  const base = BUSINESSES[membership.businessId];
+  const overlay = settingsOverlay(base.id);
+  const b: MockBusiness = overlay ? { ...base, ...overlay } : base;
   const all = membership.locationIds === undefined;
   return {
     user: {
@@ -308,6 +321,7 @@ function buildMe(user: MockUser, businessId: string): Me {
       role: m.role,
     })),
     modules: b.modules,
+    staffId: staffIdOf(state, user, membership.businessId),
   };
 }
 
@@ -389,7 +403,42 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
   const path = req.path.split("?")[0];
   const { body } = req;
   const sessionUser = state.sessionEmail ? findUser(state, state.sessionEmail) : null;
-  const sessionMe = () => (sessionUser ? buildMe(sessionUser, state.businessId ?? sessionUser.memberships[0].businessId) : null);
+  const sessionMe = () => (sessionUser ? buildMe(sessionUser, state.businessId ?? sessionUser.memberships[0].businessId, state) : null);
+
+  // Agenda e Inicio (I1): /availability, /appointments*, /clients/:id/appointments y /home/today.
+  if (path === "/availability" || path === "/appointments" || path.startsWith("/appointments/") || path === "/home/today" || /^\/clients\/[^/]+\/appointments$/.test(path)) {
+    const me = sessionMe();
+    if (!me || !sessionUser) return unauthorized();
+    const b = BUSINESSES[me.business.id];
+    const membership = sessionUser.memberships.find((m) => m.businessId === b.id);
+    return (
+      routeSchedulingMock(req, {
+        businessId: b.id,
+        userId: me.user.id,
+        role: me.role,
+        locationIds: membership?.locationIds,
+        staffId: me.staffId ?? null,
+        setup: mockAgendaSetup(b, membersOf(state, b.id)),
+        clients: mockClientsOf(b.id, b.locations),
+      }) ?? fail(404, "not_found", "Ruta inexistente en el mock.")
+    );
+  }
+
+  // Clientes (I1): su propio archivo, con la sesión ya resuelta.
+  if (path === "/clients" || path.startsWith("/clients/")) {
+    const me = sessionMe();
+    if (!me) return unauthorized();
+    const b = BUSINESSES[me.business.id];
+    return (
+      routeClientsMock(req, {
+        businessId: b.id,
+        role: me.role,
+        locations: b.locations,
+        country: b.country,
+        clientTerm: b.terminology.client ?? "cliente",
+      }) ?? fail(404, "not_found", "Ruta inexistente en el mock.")
+    );
+  }
 
   const invitationMatch = /^\/auth\/invitations\/([^/]+)$/.exec(path);
   if (req.method === "GET" && invitationMatch) {
@@ -437,7 +486,7 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
       state.failedLogins = 0;
       state.sessionEmail = user.email;
       state.businessId = user.memberships[0].businessId;
-      return ok({ status: "ok", me: buildMe(user, state.businessId) });
+      return ok({ status: "ok", me: buildMe(user, state.businessId, state) });
     }
 
     case "POST /auth/logout":
@@ -452,7 +501,7 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
         return fail(403, "business_forbidden", "No tenés acceso a ese negocio.");
       }
       state.businessId = businessId;
-      return ok(buildMe(sessionUser, businessId));
+      return ok(buildMe(sessionUser, businessId, state));
     }
 
     case "POST /auth/password/forgot": {
@@ -544,7 +593,7 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
         state.usedInvitations.push(token);
         state.sessionEmail = user.email;
         state.businessId = invitation.businessId;
-        return ok(buildMe(user, invitation.businessId));
+        return ok(buildMe(user, invitation.businessId, state));
       }
 
       // Cuenta existente: confirma con su clave (y su 2FA). Nunca se le cambia la clave acá.
@@ -565,7 +614,7 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
       state.sessionEmail = existing.email;
       state.businessId = invitation.businessId;
       const user = findUser(state, existing.email);
-      return user ? ok(buildMe(user, invitation.businessId)) : invalidInvitation(400);
+      return user ? ok(buildMe(user, invitation.businessId, state)) : invalidInvitation(400);
     }
 
     // ── Superadmin ──
@@ -630,7 +679,29 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
     }
   }
 
+  // Configuración (/settings/*) y equipo (/team/*): modules/settings/settingsMock.ts.
+  const me = sessionMe();
+  const membership = sessionUser?.memberships.find((m) => m.businessId === me?.business.id);
+  const settings = settingsMockRoute(
+    req,
+    me && membership ? { userId: me.user.id, businessId: me.business.id, role: me.role, locationIds: membership.locationIds } : null,
+    me ? BUSINESSES[me.business.id] : null,
+    me ? membersOf(state, me.business.id) : [],
+  );
+  if (settings) return settings;
+
   return fail(404, "not_found", "Ruta inexistente en el mock.");
+}
+
+/** Miembros de un negocio según las cuentas del mock (semilla de Configuración > Usuarios). */
+function membersOf(state: MockState, businessId: string): MockMemberSeed[] {
+  return [...BASE_USERS, ...state.extraUsers].flatMap((u) => {
+    const user = findUser(state, u.email);
+    const m = user?.memberships.find((x) => x.businessId === businessId);
+    return user && m
+      ? [{ userId: user.id, name: user.name, email: user.email, role: m.role, locationIds: m.locationIds, totpEnabled: user.totpEnabled, mustChangePassword: user.mustChangePassword }]
+      : [];
+  });
 }
 
 /** Transporte simulado: misma firma que el de red (ver lib/api.ts). */

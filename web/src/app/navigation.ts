@@ -23,6 +23,8 @@ interface Gate {
   roles: readonly Role[];
   /** Módulo del plan que hace falta, según el rol. Sin módulo = núcleo, siempre incluido. */
   module?: (role: Role) => string | undefined;
+  /** Solo en el plan Pro, aunque no tenga un módulo propio (p. ej. campos personalizados). */
+  proOnly?: boolean;
   /** Si el plan Básico no trae el módulo: candado (true) u oculto (false). */
   upsell?: boolean;
 }
@@ -150,7 +152,8 @@ export const SECTIONS: readonly SectionDef[] = [
     path: "/settings",
     icon: "gear",
     group: "settings",
-    roles: MANAGERS,
+    // Recepción la ve en modo lectura (servicios, precios, horarios); edita dueño/admin.
+    roles: ["owner", "admin", "front_desk"],
     label: () => "Configuración",
     planned: () => [],
     description: () => "Todo lo que define cómo trabaja tu negocio en el panel.",
@@ -166,7 +169,8 @@ export function getSection(id: SectionId): SectionDef {
 export function accessFor(me: Me, gate: Gate): Access {
   if (!gate.roles.includes(me.role)) return "hidden";
   const required = gate.module?.(me.role);
-  if (!required || me.modules.includes(required)) return "open";
+  const inPlan = (!required || me.modules.includes(required)) && (!gate.proOnly || me.business.plan === "pro");
+  if (inPlan) return "open";
   return gate.upsell && me.business.plan !== "pro" ? "locked" : "hidden";
 }
 
@@ -197,36 +201,44 @@ export interface SettingsPageDef extends Gate {
   slug: string;
   label: (t: Terminology) => string;
   description: (t: Terminology) => string;
+  /** Del plan Pro y todavía sin pantalla (llega en I3/I4): candado también en el Pro. */
+  comingSoon?: boolean;
 }
+
+/** Leen la configuración del negocio (recepción solo lee; profesionales no la ven en el menú). */
+const SETTINGS_READERS: readonly Role[] = ["owner", "admin", "front_desk"];
 
 export const SETTINGS_PAGES: readonly SettingsPageDef[] = [
   {
     slug: "business",
-    roles: MANAGERS,
+    roles: SETTINGS_READERS,
     label: () => "Negocio",
     description: () => "Nombre, rubro, moneda, zona horaria y la marca de tu negocio.",
   },
   {
     slug: "locations",
-    roles: MANAGERS,
+    roles: SETTINGS_READERS,
     label: (t) => capitalize(t.locations),
     description: (t) => `Tus ${t.locations} con su dirección, teléfono y horario.`,
   },
   {
     slug: "services",
-    roles: MANAGERS,
+    roles: SETTINGS_READERS,
     label: () => "Servicios",
     description: () => "Categorías y servicios con su duración, precio y tiempo de preparación.",
   },
   {
     slug: "team",
-    roles: MANAGERS,
+    roles: SETTINGS_READERS,
     label: () => "Equipo",
-    description: (t) => `${capitalize(t.staff)}, sus horarios y sus comisiones.`,
+    description: (t) => `${capitalize(t.staff)}, sus horarios, los servicios que hacen y sus ausencias.`,
   },
   {
     slug: "custom-fields",
     roles: MANAGERS,
+    proOnly: true,
+    upsell: true,
+    comingSoon: true,
     label: () => "Campos personalizados",
     description: (t) => `Datos extra para la ficha de cada ${t.client} y para cada ${t.appointment}.`,
   },
@@ -235,6 +247,7 @@ export const SETTINGS_PAGES: readonly SettingsPageDef[] = [
     roles: MANAGERS,
     module: () => "sales",
     upsell: true,
+    comingSoon: true,
     label: () => "Métodos de pago",
     description: () => "Efectivo, SINPE, tarjeta, transferencia: los que aceptás en tu negocio.",
   },

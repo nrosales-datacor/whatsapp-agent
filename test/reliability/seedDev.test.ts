@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { and, eq, gte, lt, sql } from "drizzle-orm";
 import { getBusinessContext } from "../../src/modules/business";
-import { businesses } from "../../src/modules/business/schema";
+import { businesses, customFields } from "../../src/modules/business/schema";
+import { getServices } from "../../src/modules/catalog";
 import { clients } from "../../src/modules/clients/schema";
 import { appointments } from "../../src/modules/scheduling/schema";
-import { memberships, users } from "../../src/modules/team/schema";
+import { memberships, staff, users } from "../../src/modules/team/schema";
 import { verifyPassword } from "../../src/platform/auth/password";
 import { withSystem, withTenant } from "../../src/platform/db/scope";
-import { DEMO_FRONT_DESK_EMAIL, DEMO_OWNER_EMAIL, DEMO_PASSWORD, DEMO_SLUG, seedDev } from "../../scripts/seedDev";
+import { DEMO_FRONT_DESK_EMAIL, DEMO_OWNER_EMAIL, DEMO_PASSWORD, DEMO_SLUG, DEMO_STAFF_EMAIL, seedDev } from "../../scripts/seedDev";
 import { createEphemeralDb } from "../helpers/pgliteDb";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -26,13 +27,21 @@ test("seed:dev: crea el negocio demo completo con citas de esta semana, y es ide
   const now = new Date("2026-10-21T18:00:00Z"); // miércoles 12:00 en Costa Rica
   const first = await seedDev(db, { now });
   assert.equal(first.replaced, false);
-  assert.deepEqual(first.counts, { locations: 2, staff: 3, services: 6, clients: 11, appointments: 12, payments: 3 });
+  // 9 servicios: el catálogo de la plantilla de estética (src/modules/business/templates/aesthetics.json).
+  assert.deepEqual(first.counts, { locations: 2, staff: 3, services: 9, clients: 11, appointments: 12, payments: 3 });
 
   const ctx = await getBusinessContext(db, first.businessId);
   assert.ok(ctx);
   assert.equal(ctx.locations.length, 2);
   assert.ok(ctx.locations.every((l) => l.hours.length > 0), "cada sucursal con su horario");
-  assert.equal(ctx.terminology.staffMember, "especialista");
+  assert.equal(ctx.terminology.staffMember, "especialista", "terminología de la plantilla de estética");
+
+  // Catálogo y campos personalizados de la plantilla, con precios de demo.
+  const catalog = await getServices(db, first.businessId);
+  assert.equal(catalog.length, 9);
+  assert.ok(catalog.every((s) => s.priceCents > 0), "el seed les pone precio a todos los servicios");
+  const fields = await withTenant(db, first.businessId, (tx) => tx.select({ key: customFields.key }).from(customFields));
+  assert.deepEqual(fields.map((f) => f.key).sort(), ["allergies", "skin_type"]);
 
   // Semana del lunes 19 al domingo 25 de octubre, hora de Costa Rica.
   const week = await withTenant(db, first.businessId, (tx) =>
@@ -48,9 +57,9 @@ test("seed:dev: crea el negocio demo completo con citas de esta semana, y es ide
   const [maria] = await withTenant(db, first.businessId, (tx) => tx.select().from(clients).where(eq(clients.name, "María Fernández")));
   assert.equal(maria.visitCount, 1, "la caché del cliente refleja la cita completada");
 
-  // Los dos usuarios demo entran con la clave conocida de desarrollo.
+  // Los usuarios demo entran con la clave conocida de desarrollo.
   assert.equal(first.password, DEMO_PASSWORD);
-  for (const email of [DEMO_OWNER_EMAIL, DEMO_FRONT_DESK_EMAIL]) {
+  for (const email of [DEMO_OWNER_EMAIL, DEMO_FRONT_DESK_EMAIL, DEMO_STAFF_EMAIL]) {
     const [user] = await withSystem(db, (tx) => tx.select().from(users).where(eq(users.email, email)));
     assert.equal(await verifyPassword(DEMO_PASSWORD, user.passwordHash ?? undefined), true, email);
   }
@@ -60,7 +69,12 @@ test("seed:dev: crea el negocio demo completo con citas de esta semana, y es ide
       .select({ role: memberships.role, locations: sql<number>`(SELECT count(*)::int FROM membership_locations ml WHERE ml.membership_id = ${memberships.id})` })
       .from(memberships),
   );
-  assert.deepEqual(access.map((a) => [a.role, Number(a.locations)]).sort(), [["front_desk", 1], ["owner", 0]]);
+  assert.deepEqual(access.map((a) => [a.role, Number(a.locations)]).sort(), [["front_desk", 1], ["owner", 0], ["staff", 0]]);
+  // La especialista queda vinculada a su carril de la agenda.
+  const linked = await withTenant(db, first.businessId, (tx) =>
+    tx.select({ name: staff.name }).from(staff).innerJoin(memberships, eq(memberships.id, staff.membershipId)),
+  );
+  assert.deepEqual(linked.map((s) => s.name), ["Ana Rojas"]);
 
   const second = await seedDev(db, { now });
   assert.equal(second.replaced, true);

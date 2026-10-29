@@ -1,0 +1,117 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Sección Clientes (lista y ficha). Usa los tokens de global.css; todas las clases llevan
+   el prefijo clients-/client- para no chocar con las de otras secciones. Este archivo puede
+   cargarse ANTES que global.css: lo que pisa una clase global (.card, .input) lo hace con
+   más especificidad, no por orden.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Lista ── */
+.clients-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-sm); margin-bottom: var(--space-md); }
+.clients-search { position: relative; flex: 1 1 260px; min-width: 0; color: var(--text-2); }
+.clients-search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; }
+.clients-search .input { padding-left: 40px; }
+.clients-sort { display: flex; align-items: center; gap: var(--space-xs); flex: 0 0 auto; }
+.clients-sort-label { font-size: var(--step--1); font-weight: 600; color: var(--text-2); white-space: nowrap; }
+.clients-sort .select { width: auto; min-width: 150px; }
+
+.clients-loading { display: flex; align-items: center; justify-content: center; gap: var(--space-sm); padding: var(--space-xl) 0; color: var(--text-2); }
+
+.card.clients-table-card { padding: 0; overflow: hidden; }
+.clients-table { width: 100%; border-collapse: collapse; font-size: var(--step--1); }
+.clients-table th { text-align: left; font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text-3); padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--border); background: var(--surface-2); }
+.clients-table td { padding: var(--space-sm) var(--space-md); border-bottom: 1px solid var(--border-2); vertical-align: middle; color: var(--text); }
+.clients-table tbody tr { position: relative; transition: background .12s; }
+.clients-table tbody tr:last-child td { border-bottom: none; }
+.clients-table tbody tr:hover { background: var(--surface-2); }
+/* El enlace del nombre cubre toda la fila (clic en cualquier parte), sin perder la semántica de tabla. */
+.clients-row-link { font-weight: 700; font-size: var(--step-0); color: var(--text); text-decoration: none; overflow-wrap: anywhere; }
+.clients-row-link::after { content: ""; position: absolute; inset: 0; }
+.clients-row-link:focus-visible { outline: none; }
+.clients-row-link:focus-visible::after { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
+.clients-row-sub { display: none; color: var(--text-2); font-size: var(--step--1); margin-top: 2px; }
+.clients-col-num { text-align: right; width: 1%; white-space: nowrap; }
+.clients-table th.clients-col-num { text-align: right; }
+
+.clients-more { display: flex; flex-direction: column; align-items: center; gap: var(--space-xs); margin-top: var(--space-md); }
+
+@media (max-width: 767px) {
+  .clients-col-phone { display: none; }
+  .clients-row-sub { display: block; }
+  .clients-table th, .clients-table td { padding: var(--space-sm); }
+  .clients-sort { flex: 1 1 100%; }
+  .clients-sort .select { flex: 1; }
+}
+
+/* ── Formularios y diálogos ── */
+.client-form-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: var(--space-xs); margin-top: var(--space-lg); }
+
+.client-picker-results { margin-top: var(--space-sm); min-height: 24px; }
+.client-picker-list { display: flex; flex-direction: column; gap: 4px; max-height: 280px; overflow-y: auto; }
+.client-picker-option { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; min-height: 48px; padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border); text-align: left; color: var(--text); }
+.client-picker-option:hover, .client-picker-option:focus-visible { background: var(--accent-soft); border-color: var(--accent-line); }
+.client-picker-name { font-weight: 700; }
+
+/* ── Ficha ── */
+.client-fieldset { border: none; min-width: 0; }
+.client-readonly-note { display: inline-flex; align-items: center; gap: 6px; font-size: var(--step--1); font-weight: 600; color: var(--text-2); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-pill); padding: 4px 12px; margin-bottom: var(--space-md); }
+.client-detail-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-md); }
+.client-col { display: flex; flex-direction: column; gap: var(--space-md); min-width: 0; }
+.client-section { margin-top: 0; }
+.page > .client-section, .page > .client-danger { margin-top: var(--space-md); }
+.client-section .form-grid > .field:first-child, .client-section .card-title + .form-grid .field { margin-top: var(--space-sm); }
+
+.client-guardian { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-xs) var(--space-sm); min-height: 44px; padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); font-size: var(--step--1); }
+.client-guardian-actions { margin-left: auto; display: inline-flex; gap: var(--space-xs); }
+.client-fieldset:disabled .client-guardian { background: var(--surface); }
+
+.client-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: var(--space-sm) var(--space-md); }
+.client-summary dt { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+.client-summary dd { font-size: var(--step-0); font-weight: 700; color: var(--text); margin-top: 2px; overflow-wrap: anywhere; }
+
+.input.client-notes { min-height: 120px; resize: vertical; line-height: 1.5; }
+
+.client-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.client-tag { display: inline-flex; align-items: center; gap: 4px; font-size: var(--step--1); font-weight: 600; color: var(--accent-strong); background: var(--accent-soft); border-radius: var(--radius-pill); padding: 4px 6px 4px 12px; max-width: 100%; overflow-wrap: anywhere; }
+.client-fieldset:disabled .client-tag { padding-right: 12px; }
+.client-tag-remove { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; color: inherit; flex-shrink: 0; }
+.client-tag-remove:hover { background: var(--accent-line); }
+.client-tag-add { display: flex; gap: var(--space-xs); margin-top: var(--space-sm); }
+.client-tag-add .input { flex: 1; min-width: 0; }
+
+.client-history-placeholder { display: flex; align-items: flex-start; gap: var(--space-sm); padding: var(--space-md); border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); color: var(--text-2); }
+.client-history-placeholder > svg { flex-shrink: 0; color: var(--accent-strong); margin-top: 2px; }
+.client-history-title { font-weight: 700; color: var(--text); }
+
+.card.client-danger { border-color: color-mix(in srgb, var(--danger) 35%, var(--border)); }
+.client-danger .card-title { color: var(--danger); }
+.client-danger > .muted { margin-bottom: var(--space-md); max-width: 70ch; line-height: 1.55; }
+.client-danger-list { list-style: disc; padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; }
+
+/* Barra de "cambios sin guardar": pegada abajo, por encima de la barra inferior en móvil. */
+.client-savebar { position: sticky; bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom) + var(--space-xs)); z-index: 20; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-sm); margin-top: var(--space-md); padding: var(--space-sm) var(--space-md); background: var(--elevated); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-overlay); font-size: var(--step--1); font-weight: 600; }
+.client-savebar-text { flex: 1 1 200px; min-width: 0; }
+.client-savebar-text .form-error { margin-top: 0; }
+.client-savebar-actions { display: flex; gap: var(--space-xs); flex-wrap: wrap; }
+
+@media (min-width: 768px) {
+  .client-savebar { bottom: var(--space-md); }
+}
+
+@media (min-width: 1000px) {
+  .client-detail-grid { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); align-items: start; }
+}
+
+/* ── Historial de citas (componente de modules/scheduling) ── */
+.client-history-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); flex-wrap: wrap; margin-bottom: var(--space-sm); }
+.client-history-head .card-title { margin-bottom: 0; }
+.client-next { font-size: var(--step--1); color: var(--text-2); margin-bottom: var(--space-sm); }
+.client-history-list { display: flex; flex-direction: column; }
+.client-history-item { display: grid; grid-template-columns: minmax(130px, auto) minmax(0, 1fr) auto; align-items: center; gap: var(--space-xs) var(--space-sm); padding: var(--space-xs) var(--space-2xs); border-bottom: 1px solid var(--border-2); text-decoration: none; color: var(--text); font-size: var(--step--1); min-height: 48px; }
+.client-history-list li:last-child .client-history-item { border-bottom: none; }
+.client-history-item:hover { background: var(--surface-2); }
+.client-history-when { font-weight: 700; }
+.client-history-what { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 767px) {
+  .client-history-item { grid-template-columns: minmax(0, 1fr) auto; }
+  .client-history-what { grid-column: 1 / -1; grid-row: 2; }
+}

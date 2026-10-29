@@ -6,6 +6,7 @@ import { created, noContent, route } from "../platform/http/router";
 import type { Route } from "../platform/http/routeTypes";
 import { getClientIp } from "../platform/net/clientIp";
 import { createBusiness, INDUSTRIES, isValidTimeZone, listBusinesses, summarizeBusiness } from "../modules/business";
+import { applyCatalogTemplate } from "../modules/catalog";
 import { inviteMember } from "../modules/team";
 import { adminLogin, clearAdminSessionCookie, setAdminSessionCookie, superadminUsername } from "./session";
 
@@ -72,14 +73,19 @@ export function adminRoutes({ db }: AdminRouteDeps): Route[] {
     route({ method: "POST", path: "/admin/businesses", auth: "superadmin", body: CreateBusinessBody }, async ({ session, body, log }) => {
       const actor = superadminActor(session.adminId);
       const summary = await withSystem(db, async (tx) => {
-        const { business } = await createBusiness(tx, {
-          name: body.name,
-          industry: body.industry,
-          timezone: body.timezone,
-          currency: body.currency,
-          country: body.country,
-          locationName: body.locationName,
-        });
+        // La plantilla del rubro precarga terminología, campos y el catálogo de ejemplo.
+        const { business } = await createBusiness(
+          tx,
+          {
+            name: body.name,
+            industry: body.industry,
+            timezone: body.timezone,
+            currency: body.currency,
+            country: body.country,
+            locationName: body.locationName,
+          },
+          { seedCatalog: applyCatalogTemplate },
+        );
         await inviteMember(tx, {
           business: { id: business.id, name: business.name },
           email: body.ownerEmail,

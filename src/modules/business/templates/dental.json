@@ -1,0 +1,69 @@
+{
+  "$comment": "Plantilla de rubro (ver src/modules/business/templates.ts). Clínica dental. Sin historia clínica (PLAN-GESTION.md §0): solo alergias y medicamentos como campos personalizados. Precios en null: los carga la clínica.",
+  "industry": "dental",
+  "label": "Odontología",
+  "terminology": {
+    "client": "paciente",
+    "clients": "pacientes",
+    "staffMember": "especialista",
+    "staff": "especialistas"
+  },
+  "clientStatusRules": {
+    "newMaxVisits": 1,
+    "vipMinVisits": 8,
+    "atRiskAfterDays": 210,
+    "inactiveAfterDays": 400
+  },
+  "customFields": [
+    { "entity": "client", "key": "allergies", "label": "Alergias", "type": "long_text" },
+    { "entity": "client", "key": "current_medications", "label": "Medicamentos actuales", "type": "long_text" },
+    { "entity": "client", "key": "health_insurance", "label": "Seguro médico", "type": "text" },
+    { "entity": "appointment", "key": "tooth", "label": "Pieza dental", "type": "text" }
+  ],
+  "catalog": {
+    "categories": [
+      {
+        "name": "Diagnóstico y prevención",
+        "services": [
+          { "name": "Valoración inicial", "description": "Revisión general y plan de tratamiento.", "durationMin": 30, "bufferMin": 10, "priceCents": null },
+          { "name": "Limpieza dental", "description": "Profilaxis y eliminación de sarro.", "durationMin": 45, "bufferMin": 15, "priceCents": null },
+          { "name": "Aplicación de flúor", "durationMin": 20, "bufferMin": 10, "priceCents": null },
+          { "name": "Radiografía periapical", "durationMin": 15, "bufferMin": 5, "priceCents": null }
+        ]
+      },
+      {
+        "name": "Restauración",
+        "services": [
+          { "name": "Resina (calza)", "durationMin": 60, "bufferMin": 15, "priceCents": null, "variablePrice": true },
+          { "name": "Endodoncia", "description": "Tratamiento de conducto.", "durationMin": 90, "bufferMin": 15, "priceCents": null, "variablePrice": true, "onlineBooking": false }
+        ]
+      },
+      {
+        "name": "Estética dental",
+        "services": [
+          { "name": "Blanqueamiento", "durationMin": 60, "bufferMin": 15, "priceCents": null }
+        ]
+      },
+      {
+        "name": "Ortodoncia",
+        "services": [
+          { "name": "Control de ortodoncia", "durationMin": 30, "bufferMin": 10, "priceCents": null }
+        ]
+      },
+      {
+        "name": "Cirugía",
+        "services": [
+          { "name": "Extracción simple", "durationMin": 45, "bufferMin": 15, "priceCents": null, "variablePrice": true, "onlineBooking": false }
+        ]
+      }
+    ]
+  },
+  "ai": {
+    "register": "usted",
+    "instructions": "Usted es el asistente virtual de la clínica dental por WhatsApp. Responde con cortesía y claridad las preguntas sobre tratamientos, precios, horarios y ubicación, y agenda, reprograma o cancela citas con la disponibilidad real de cada especialista. No da diagnósticos ni recomendaciones clínicas: para eso ofrece una valoración. Si el paciente describe dolor fuerte, sangrado o inflamación, lo trata como urgencia y pasa la conversación a una persona del equipo. Los tratamientos de precio variable se cotizan en la valoración.",
+    "reminders": {
+      "dayBefore": "Hola, {clientName}. Le recordamos su cita de mañana {date} a las {time} con {staffName} en {businessName} ({locationName}). ¿Nos confirma su asistencia? Si necesita reprogramar, puede escribirnos por este medio.",
+      "sameDay": "Hola, {clientName}. Hoy a las {time} lo esperamos en {businessName} ({locationName}). Le agradecemos llegar 10 minutos antes."
+    }
+  }
+}

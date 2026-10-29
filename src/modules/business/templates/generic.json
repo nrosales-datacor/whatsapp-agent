@@ -1,0 +1,33 @@
+{
+  "$comment": "Plantilla de rubro (ver src/modules/business/templates.ts). Rubro genérico: negocio con cita que no calza en otra plantilla. Precios en null: el negocio los carga en Configuración > Servicios.",
+  "industry": "generic",
+  "label": "Otro rubro",
+  "terminology": {},
+  "clientStatusRules": {
+    "newMaxVisits": 1,
+    "vipMinVisits": 10,
+    "atRiskAfterDays": 60,
+    "inactiveAfterDays": 120
+  },
+  "customFields": [],
+  "catalog": {
+    "categories": [
+      {
+        "name": "Servicios",
+        "services": [
+          { "name": "Consulta", "description": "Primera visita para conocer el caso.", "durationMin": 30, "bufferMin": 0, "priceCents": null },
+          { "name": "Sesión", "durationMin": 60, "bufferMin": 0, "priceCents": null },
+          { "name": "Seguimiento", "durationMin": 30, "bufferMin": 0, "priceCents": null }
+        ]
+      }
+    ]
+  },
+  "ai": {
+    "register": "vos",
+    "instructions": "Sos el asistente virtual del negocio por WhatsApp. Respondés con amabilidad y en pocas palabras las preguntas sobre servicios, precios, horarios y ubicación, y agendás, reprogramás o cancelás citas con la disponibilidad real. Si un precio es variable, explicás que se confirma en la cita. Si la persona pide hablar con alguien del equipo, o el tema no es de agenda ni de información general, pasás la conversación a una persona.",
+    "reminders": {
+      "dayBefore": "Hola, {clientName}. Te recordamos tu cita de mañana {date} a las {time} en {businessName} ({locationName}). ¿Nos confirmás si venís? Si necesitás cambiarla, escribinos por acá.",
+      "sameDay": "Hola, {clientName}. Hoy a las {time} te esperamos en {businessName} ({locationName}). ¡Nos vemos!"
+    }
+  }
+}
