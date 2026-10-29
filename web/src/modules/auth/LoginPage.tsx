@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { homePathFor } from "../../app/navigation";
 import { fetchMe, ME_QUERY_KEY, useSetSession, type LoginRedirectState } from "../../app/session";
@@ -7,7 +7,7 @@ import { errorMessage, isApiError } from "../../lib/api";
 import type { LoginInput } from "../../lib/contract";
 import { FormError, PasswordField, TextField } from "../../ui/Field";
 import AuthLayout from "./AuthLayout";
-import { login } from "./authApi";
+import { getSignupConfig, login, resendVerification, SIGNUP_CONFIG_QUERY_KEY } from "./authApi";
 
 function loginErrorMessage(error: unknown, step: "credentials" | "totp"): string {
   // En el paso del código, el backend responde el mismo `invalid_credentials` (no revela
@@ -33,6 +33,9 @@ export default function LoginPage() {
   const [totpCode, setTotpCode] = useState("");
   const [step, setStep] = useState<"credentials" | "totp">("credentials");
   const totpRef = useRef<HTMLInputElement>(null);
+  // Alta self-service (I6.7): el link "Crear una cuenta" solo si está abierta en el backend.
+  const signupConfig = useQuery({ queryKey: SIGNUP_CONFIG_QUERY_KEY, queryFn: getSignupConfig, staleTime: 60_000, retry: false });
+  const resend = useMutation({ mutationFn: (value: string) => resendVerification(value) });
 
   const mutation = useMutation({
     mutationFn: (input: LoginInput) => login(input),
@@ -127,9 +130,28 @@ export default function LoginPage() {
           }
         />
         <FormError message={error} />
+        {isApiError(mutation.error, "email_not_verified") && (
+          <div className="auth-resend">
+            {resend.isSuccess ? (
+              <p role="status">Listo: te mandamos un enlace nuevo. Revisá tu correo.</p>
+            ) : (
+              <button type="button" className="btn btn-secondary btn-block" disabled={resend.isPending} onClick={() => resend.mutate(email.trim())}>
+                {resend.isPending ? "Enviando…" : "Reenviar el enlace de confirmación"}
+              </button>
+            )}
+          </div>
+        )}
         <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={mutation.isPending}>
           {mutation.isPending ? "Entrando…" : "Entrar"}
         </button>
+        {signupConfig.data?.enabled && (
+          <p className="auth-signup">
+            ¿Tu negocio todavía no tiene cuenta?{" "}
+            <Link to="/signup" className="link">
+              Crear una cuenta
+            </Link>
+          </p>
+        )}
       </form>
     </AuthLayout>
   );

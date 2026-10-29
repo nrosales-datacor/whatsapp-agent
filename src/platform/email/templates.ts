@@ -29,6 +29,8 @@ export interface BrandOptions {
   businessName: string;
   /** Color de marca del negocio en hex ("#0b7d72" o "#0b7"); si falta o no es válido, el de la plataforma. */
   brandColor?: string | null;
+  /** Logo del negocio (marca propia, I6.5): solo https; cualquier otra cosa se ignora y va el nombre solo. */
+  logoUrl?: string | null;
 }
 
 /** Color de la plataforma (el acento del panel, web/src/global.css). */
@@ -60,6 +62,17 @@ function required(value: string | null | undefined, field: string): string {
 }
 
 /** URL apta para un link de correo: solo http/https. Lanza sin mostrar la URL (puede llevar un token). */
+/** Logo utilizable en un correo: solo https (un http lo bloquea el cliente de correo; otra cosa, nunca). */
+function safeLogoUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" ? parsed.href : null;
+  } catch {
+    return null;
+  }
+}
+
 function safeUrl(url: string, field: string): string {
   let parsed: URL;
   try {
@@ -211,6 +224,13 @@ function renderHtml(parts: EmailParts): string {
     ? `<p style="margin:0;font-size:13px;line-height:1.5;color:#6b7280;">${e(parts.footnote)}</p>`
     : "";
 
+  // Marca propia: el logo del negocio a la izquierda del nombre (con alt: si el cliente de
+  // correo bloquea imágenes, se lee el nombre igual).
+  const logoUrl = safeLogoUrl(parts.brand.logoUrl);
+  const logo = logoUrl
+    ? `<img src="${e(logoUrl)}" alt="" height="32" style="height:32px;max-width:120px;vertical-align:middle;margin-right:12px;border:0;">`
+    : "";
+
   return (
     `<!doctype html><html lang="es"><head><meta charset="utf-8">` +
     `<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light">` +
@@ -219,7 +239,7 @@ function renderHtml(parts: EmailParts): string {
     `<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${e(parts.preheader)}</div>` +
     `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f5f7;"><tr><td align="center" style="padding:24px 12px;">` +
     `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background:${WHITE};border-radius:8px;font-family:Arial,Helvetica,sans-serif;">` +
-    `<tr><td style="background:${brand};color:${onBrand};padding:20px 24px;font-size:18px;font-weight:bold;border-radius:8px 8px 0 0;">${e(businessName)}</td></tr>` +
+    `<tr><td style="background:${brand};color:${onBrand};padding:20px 24px;font-size:18px;font-weight:bold;border-radius:8px 8px 0 0;">${logo}${e(businessName)}</td></tr>` +
     `<tr><td style="padding:24px;">` +
     `<h1 style="margin:0 0 16px;font-size:20px;line-height:1.3;color:${INK};">${e(parts.heading)}</h1>` +
     paragraphs +
@@ -247,7 +267,7 @@ function render(parts: EmailParts): EmailContent {
 }
 
 function brandOf(data: BrandOptions, field = "businessName"): BrandOptions {
-  return { businessName: required(data.businessName, field), brandColor: data.brandColor };
+  return { businessName: required(data.businessName, field), brandColor: data.brandColor, logoUrl: data.logoUrl };
 }
 
 function greeting(name: string | null | undefined): string {
@@ -318,6 +338,70 @@ export function passwordResetEmail(data: PasswordResetEmailData): EmailContent {
     ],
     actions: [{ label: "Elegir una clave nueva", url: resetUrl, primary: true }],
     footnote: `Este enlace vence en ${expires}. Si no pediste este cambio, ignorá este correo: tu clave actual sigue funcionando.`,
+  });
+}
+
+// ── Alta self-service (I6.7) ──
+
+export interface EmailVerificationEmailData {
+  userName?: string | null;
+  /** Negocio recién creado (va en el saludo; la marca es la del producto: todavía no hay otra). */
+  businessName?: string | null;
+  /** Link para confirmar el correo. */
+  verifyUrl: string;
+  /** Minutos de vigencia del link. */
+  expiresInMinutes: number;
+}
+
+/** Confirmá tu correo: el último paso del registro antes de poder entrar. */
+export function emailVerificationEmail(data: EmailVerificationEmailData): EmailContent {
+  const brand: BrandOptions = { businessName: PRODUCT_NAME };
+  const verifyUrl = safeUrl(data.verifyUrl, "verifyUrl");
+  const expires = formatDuration(data.expiresInMinutes);
+  const business = oneLine(data.businessName);
+  return render({
+    subject: `Confirmá tu correo para entrar a ${PRODUCT_NAME}`,
+    brand,
+    preheader: "Un clic y tu cuenta queda lista.",
+    heading: greeting(data.userName),
+    paragraphs: [
+      business
+        ? `Creaste la cuenta de ${business} en ${PRODUCT_NAME}. Para entrar, confirmá que este correo es tuyo.`
+        : `Creaste una cuenta en ${PRODUCT_NAME}. Para entrar, confirmá que este correo es tuyo.`,
+    ],
+    actions: [{ label: "Confirmar mi correo", url: verifyUrl, primary: true }],
+    footnote: `Este enlace vence en ${expires}. Si no creaste esta cuenta, ignorá este correo: sin confirmar, nadie puede entrar con ella.`,
+  });
+}
+
+export interface SignupAttemptEmailData {
+  userName?: string | null;
+  /** Link al login del panel. */
+  loginUrl: string;
+  /** Link a "olvidé mi clave". */
+  forgotUrl: string;
+}
+
+/**
+ * Alguien quiso registrarse con un correo que ya tiene cuenta. La respuesta del registro es
+ * la misma exista o no (no es un oráculo de cuentas): el aviso llega solo al dueño del correo.
+ */
+export function signupAttemptEmail(data: SignupAttemptEmailData): EmailContent {
+  const brand: BrandOptions = { businessName: PRODUCT_NAME };
+  return render({
+    subject: `Ya tenés una cuenta en ${PRODUCT_NAME}`,
+    brand,
+    preheader: "Alguien quiso crear una cuenta nueva con este correo.",
+    heading: greeting(data.userName),
+    paragraphs: [
+      `Alguien (quizás vos) quiso crear una cuenta nueva en ${PRODUCT_NAME} con este correo, pero ya tenés una.`,
+      "Entrá con tu clave de siempre o, si no la recordás, elegí una nueva.",
+    ],
+    actions: [
+      { label: "Entrar", url: safeUrl(data.loginUrl, "loginUrl"), primary: true },
+      { label: "Olvidé mi clave", url: safeUrl(data.forgotUrl, "forgotUrl"), primary: false },
+    ],
+    footnote: "Si no fuiste vos, no tenés que hacer nada: tu cuenta sigue igual.",
   });
 }
 

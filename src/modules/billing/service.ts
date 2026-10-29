@@ -184,6 +184,7 @@ export function createPlanService(db: Executor, options: PlanServiceOptions = {}
         modules: [...e.modules],
         features: [...e.features],
         billingStatus: e.billingStatus,
+        trialEndsAt: found.business.trialEndsAt?.toISOString() ?? null,
         limits: { locations: e.limits.locations, staff: e.limits.staff, users: e.limits.users, aiConversations: e.limits.aiConversations },
         usage: await usageOf(found.business),
       };

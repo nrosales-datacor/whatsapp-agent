@@ -27,6 +27,9 @@ export interface Entitlements {
 
 type PlanFields = Pick<Business, "plan" | "extraModules" | "status" | "billingStatus">;
 
+/** Funciones que hace el agente de WhatsApp: sin el módulo (Pro sin agente) no aplican. */
+const AGENT_FEATURES: ReadonlySet<PlanFeature> = new Set<PlanFeature>(["reviews", "quote_recovery", "upsell"]);
+
 function definitionOf(plan: string, plans: Record<Plan, PlanDefinition>): PlanDefinition {
   // La base solo acepta planes conocidos (CHECK); un valor raro cae al Básico, nunca a más.
   return plan === "pro" ? plans.pro : plans.basic;
@@ -47,7 +50,7 @@ export function resolveEntitlements(business: PlanFields, plans: Record<Plan, Pl
     label,
     clientsTier: def.clientsTier,
     modules,
-    features: [...def.features],
+    features: def.features.filter((f) => modules.includes("whatsapp") || !AGENT_FEATURES.has(f)),
     limits,
     overrides,
     status: business.status,

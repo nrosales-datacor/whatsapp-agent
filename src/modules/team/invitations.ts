@@ -217,6 +217,8 @@ export async function acceptInvitation(
   }
   const consumed = await withSystem(db, async (tx) => {
     if (!(await consumeToken(tx, inv.token.id))) return false;
+    // El link llegó a su correo: queda verificado (alta self-service sin confirmar, I6.7).
+    if (user.emailVerificationPending) await tx.update(users).set({ emailVerificationPending: false }).where(eq(users.id, user.id));
     await recordAudit(tx, inv.businessId, "invitation_accepted", userActor(user.id), { newAccount: false });
     return true;
   });

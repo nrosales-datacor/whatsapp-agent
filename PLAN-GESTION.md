@@ -350,3 +350,26 @@ con la versión congelada (tag `whatsapp-agent-final`) hasta que I2 esté lista 
 | **I0.6** | Identidad: `users`/`memberships`, login por email, sesión con epoch, TOTP, recuperación de clave con `platform/email`; superadmin mínimo para crear un negocio | E2E de login en verde |
 | **I0.7** | Panel web: shell con rutas (`react-router-dom`, ya instalado), login, layout con el menú nuevo; CI y E2E ajustados a la rama | CI en verde en `carril-i` |
 | **Vos** | Crear el proyecto nuevo de Supabase y el rol de la app (para staging; dev y tests usan PGlite) | Antes de I2 |
+
+---
+
+## 11. I6 paso a paso
+
+Rama **`i6/growth`** (sobre `i5/reports`). Todo lo de crecimiento es del **Pro**: Campañas es el módulo `campaigns`
+(se puede vender suelto como extra del Básico); reseñas, rescate de cotizaciones y upsell son funciones del plan
+(`PlanFeature`: `reviews`, `quote_recovery`, `upsell`) que el módulo WhatsApp recibe inyectadas, igual que los topes del
+agente (WhatsApp no importa billing).
+
+| Paso | Qué | Listo cuando |
+|---|---|---|
+| **I6.1** | **Consentimiento de marketing + Campañas.** El agente pregunta "¿te avisamos de promociones?" (Sí/No) tras la primera cita agendada, solo si el negocio tiene Campañas; respuesta y BAJA como acciones directas; el dueño también puede registrarlo en la ficha. Campañas: segmento = los filtros del CRM (`ClientFilters`) + consentimiento y sin baja, vista previa con excluidos, envío ya o programado por la cola genérica (un job que despacha lotes con pausa entre envíos, re-chequea consentimiento antes de cada uno y respeta la pausa del negocio), cancelar, métricas (enviados, fallidos, omitidos, respuestas, citas generadas). Plantilla de marketing del número. Panel Campañas. | Tests de segmento, envío, cancelación y permisos; E2E mock |
+| **I6.2** | **Reseñas (seguimiento post-servicio).** Al completar una cita, pasadas N horas, "¿Cómo te fue?" con botones Excelente/Bien/Mal (dentro de la ventana) o plantilla `followUp` del número (fuera de ella). Excelente → link de reseñas de Google; Mal → aviso al equipo y a una persona. Configuración (link, horas) en el agente; métrica de reseñas pedidas. | Tests del barrido, de los botones y de la plantilla |
+| **I6.3** | **Rescate de cotizaciones.** Tool `record_quote` cuando el agente da un precio y el cliente no agenda; agendar cierra la cotización (`booked`/`recovered` con monto). Barrido: toque 1 (texto con horarios como botones, dentro de la ventana) y toque 2 (plantilla `quoteRecovery`), saltando clientes en modo humano o con baja. Configuración (activo, horas de espera, textos) en el agente; métricas de recuperado. | Tests de los toques, cierre y frenos |
+| **I6.4** | **Upsell.** Reglas "a quien agenda X ofrecele Y" en la configuración del agente; tras agendar, el agente ofrece Y si entra a continuación con la misma persona y no lo rechazó hace poco; tools `add_service_to_appointment` (alarga la cita, re-chequea solapes) y `decline_upsell`. | Tests de la oferta, el agregado y el rechazo |
+| **I6.5** | **Marca propia.** Ya está desde I2 (colores y logo en el panel, color en los correos): se verifica y se suma el logo a los correos. | Test de la plantilla de correo |
+| **I6.6** | **Stripe** (absorbe C4.3). Checkout por plan (precios en el entorno), Portal del cliente y webhook firmado e idempotente que mantiene plan y estado del cobro. Sin `STRIPE_SECRET_KEY` todo sigue con cobro manual. Configuración › Plan con suscribirse / administrar el pago. | Tests del webhook (firma, idempotencia, estados) |
+| **I6.7** | **Alta self-service** detrás de `SIGNUP_ENABLED` (apagada por defecto): registro público (negocio, rubro, país, dueño, correo y clave) con tope por IP, verificación del correo, prueba gratis con fin y aviso; al vencer sin suscripción pasa a pendiente de pago. | Tests del alta, la verificación y el tope |
+
+Fuera de I6 (siguen como pendientes operativos): aprobar en Meta las plantillas de cada negocio (recordatorio,
+marketing, seguimiento y rescate), crear los productos y precios en Stripe y decidir cuándo abrir el alta self-service
+(AUDIT-v2: gate de seguridad y legal antes del modelo b).

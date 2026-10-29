@@ -1,6 +1,6 @@
 import { desc, eq, like, or, sql } from "drizzle-orm";
 import { withSystem, withTenant, type Executor, type Tx } from "../../platform/db/scope";
-import { businesses, customFields, locationHours, locations, type Business, type Location } from "./schema";
+import { businesses, customFields, locationHours, locations, type BillingStatus, type Business, type Location, type Plan } from "./schema";
 import { loadIndustryTemplate, type Industry, type TemplateCatalog } from "./templates";
 import type { ExtraModules } from "./settings";
 
@@ -59,6 +59,12 @@ export interface NewBusinessInput {
   /** ISO 3166-1 alfa-2 en mayúsculas ("CR"). */
   country: string;
   locationName: string;
+  /** Plan con el que nace (default: el de la tabla, `basic`). */
+  plan?: Plan;
+  /** Estado del cobro con el que nace (default: `trial`). */
+  billingStatus?: BillingStatus;
+  /** Fin de la prueba gratis (alta self-service); sin valor = sin fecha (cobro manual). */
+  trialEndsAt?: Date | null;
 }
 
 export interface CreatedBusiness {
@@ -147,6 +153,9 @@ export async function createBusiness(executor: Executor, input: NewBusinessInput
         currency: input.currency,
         country: input.country,
         timezone: input.timezone,
+        ...(input.plan ? { plan: input.plan } : {}),
+        ...(input.billingStatus ? { billingStatus: input.billingStatus } : {}),
+        trialEndsAt: input.trialEndsAt ?? null,
       })
       .returning();
     const [location] = await tx

@@ -696,6 +696,86 @@ export function reassignStaff(
   return moveAppointment(executor, businessId, appointmentId, { ...options, staffId }, "reasignar");
 }
 
+/**
+ * Suma un servicio AL FINAL de una cita viva, con la misma persona y a continuación (el
+ * upsell del agente, I6: "¿te agrego el esmaltado?"). Duración y precio del servicio son
+ * los de esa persona según el catálogo de hoy; las líneas que ya tenía no cambian. Re-chequea
+ * que el tramo nuevo caiga en su horario y sin ausencias (el solape lo frena el EXCLUDE: 409
+ * `slot_taken`). Errores: 400 si el servicio no existe, no se ofrece en la sucursal o esa
+ * persona no lo hace; 409 si la cita no está viva o el servicio ya está en la cita.
+ */
+export async function addServiceToAppointment(
+  executor: Executor,
+  businessId: string,
+  appointmentId: string,
+  serviceId: string,
+  options: { now?: Date; onlineOnly?: boolean } = {},
+): Promise<AppointmentView> {
+  const t = await terminology(executor, businessId);
+  const current = await getOrThrow(executor, businessId, appointmentId);
+  if (!isActiveStatus(current.status)) throw invalidTransition(t, current.status, "agregarle un servicio a");
+  const wanted = serviceId.toLowerCase();
+  if (current.services.some((l) => l.serviceId === wanted)) {
+    throw new HttpError(409, `Ese servicio ya está en la ${t.appointment}.`, "service_already_added");
+  }
+  const location = await locationForSchedule(executor, businessId, current.locationId);
+  const { candidates } = await loadCandidates(executor, businessId, {
+    locationId: location.id,
+    serviceIds: [wanted],
+    staffId: current.staffId,
+    onlineOnly: options.onlineOnly,
+  });
+  const extra = candidates[0]?.terms[0];
+  if (!extra) throw new ValidationError({ serviceId: `${current.staff?.name ?? `Ese ${t.staffMember}`} no hace ese servicio.` });
+
+  const id = await withTenant(executor, businessId, async (tx) => {
+    const [row] = await tx
+      .select()
+      .from(appointments)
+      .where(and(eq(appointments.businessId, businessId), eq(appointments.id, current.id)))
+      .limit(1)
+      .for("update");
+    if (!row) throw notFound(t);
+    if (!isActiveStatus(row.status)) throw invalidTransition(t, row.status as AppointmentStatus, "agregarle un servicio a");
+    const base = candidateFromLines(row, current.services);
+    // El buffer del que era el último pasa a ser el de entre servicios; el nuevo trae el suyo.
+    const candidate: StaffCandidate = {
+      ...base,
+      terms: [...base.terms, extra],
+      workMin: base.workMin + base.trailingBufferMin + extra.durationMin,
+      trailingBufferMin: extra.bufferMin,
+      totalCents: row.totalCents + extra.priceCents,
+    };
+    // Misma hora de inicio: el margen mínimo no aplica (la cita ya estaba agendada).
+    const rules: StartRules = { now: options.now ?? new Date(), minLeadMin: 0, ignoreHours: false, allowPast: false };
+    const problem = await recheck(tx, businessId, location, candidate, row.startsAt, rules, row.id);
+    if (problem) throw startProblemError(problem, t);
+    const endsAt = new Date(row.startsAt.getTime() + (candidate.workMin + candidate.trailingBufferMin) * MINUTE_MS);
+    try {
+      await tx.transaction(async (sp) => {
+        await sp
+          .update(appointments)
+          .set({ endsAt, totalCents: candidate.totalCents })
+          .where(and(eq(appointments.businessId, businessId), eq(appointments.id, row.id)));
+        await sp.insert(appointmentServices).values({
+          businessId,
+          appointmentId: row.id,
+          serviceId: extra.serviceId,
+          name: extra.name,
+          durationMin: extra.durationMin,
+          priceCents: extra.priceCents,
+          position: current.services.length,
+        });
+      });
+    } catch (error) {
+      if (isOverlapViolation(error)) throw slotTaken();
+      throw error;
+    }
+    return row.id;
+  });
+  return getOrThrow(executor, businessId, id);
+}
+
 // ── Estados ─────────────────────────────────────────────────────────────────
 
 /**

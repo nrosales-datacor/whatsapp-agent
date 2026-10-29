@@ -286,7 +286,8 @@ test("resumen y métricas: formas del contrato y validación del rango", async (
   const metrics = await owner.get(`${API}/whatsapp/metrics`);
   assert.equal(metrics.status, 200);
   const m = metrics.body.data;
-  assert.deepEqual(Object.keys(m).sort(), ["aiCostMicros", "bookingsByAgent", "byDay", "conversations", "handoffs", "resolvedWithoutHuman"]);
+  assert.deepEqual(Object.keys(m).sort(), ["aiCostMicros", "bookingsByAgent", "byDay", "conversations", "growth", "handoffs", "resolvedWithoutHuman"]);
+  assert.deepEqual(Object.keys(m.growth).sort(), ["followUps", "quotes"]);
   assert.equal(m.byDay.length, 30);
   assert.deepEqual(Object.keys(m.byDay[0]).sort(), ["bookings", "conversations", "date"]);
   assert.ok(m.conversations >= 3);

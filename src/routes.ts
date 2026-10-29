@@ -1,14 +1,16 @@
 import { adminRoutes } from "./admin/routes";
-import type { PlanService } from "./modules/billing";
+import { billingRoutes, type PlanService, type StripeConfig, type StripeGateway } from "./modules/billing";
 import { businessRoutes, clientSettingsRoutes, type LocationReferenceCheck } from "./modules/business";
+import { campaignsRoutes } from "./modules/campaigns";
 import { clientsRoutes } from "./modules/clients";
 import { catalogRoutes, isLocationRestrictingServices } from "./modules/catalog";
 import { commissionsRoutes, recalculateAppointmentCommissions } from "./modules/commissions";
 import { reportsRoutes } from "./modules/reports";
 import { salesRoutes } from "./modules/sales";
-import { clientIdsWithStaffAppointments, schedulingRoutes } from "./modules/scheduling";
+import { clientIdsWithStaffAppointments, schedulingRoutes, type AppointmentBookedHook } from "./modules/scheduling";
 import { isLocationAssigned, staffRoutes, teamRoutes } from "./modules/team";
 import {
+  closeQuotesForAppointment,
   countConversationsWaiting,
   createWhatsAppDeps,
   whatsappClientEraser,
@@ -19,6 +21,8 @@ import {
 import type { Executor } from "./platform/db/scope";
 import type { Route } from "./platform/http/routeTypes";
 import { systemRoutes } from "./platform/http/systemRoutes";
+import { growthFromPlan } from "./plans";
+import { signupRoutes } from "./signup";
 import { createUsageTracker, type UsageTracker } from "./usage";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -50,6 +54,8 @@ export interface RouteDeps {
   whatsapp?: WhatsAppDeps;
   /** Métricas de producto en `daily_usage` (src/usage.ts). Default: uno nuevo. */
   usage?: UsageTracker;
+  /** Cliente de Stripe (los tests pasan un doble). Default: el SDK real con la clave del entorno. */
+  stripeGateway?: (config: StripeConfig) => StripeGateway;
 }
 
 /**
@@ -69,6 +75,18 @@ const isLocationReferenced: LocationReferenceCheck = async (executor, businessId
 const onCommissionableChange = (tx: Executor, businessId: string, appointmentId: string) =>
   recalculateAppointmentCommissions(tx, businessId, appointmentId);
 
+/**
+ * Cita agendada desde el panel: suma a `daily_usage` y cierra las cotizaciones abiertas del
+ * cliente por esos servicios (rescate de cotizaciones, I6: si agendó por teléfono o en el
+ * mostrador después del toque, el rescate igual cuenta). scheduling no conoce WhatsApp.
+ */
+function panelBookedHook(usage: UsageTracker): AppointmentBookedHook {
+  return async (executor, businessId, appointment) => {
+    await usage.appointmentBooked(executor, businessId, appointment);
+    await closeQuotesForAppointment(executor, businessId, appointment);
+  };
+}
+
 export function panelRoutes(deps: RouteDeps): Route[] {
   const whatsapp = deps.whatsapp ?? createWhatsAppDeps(deps.db);
   const usage = deps.usage ?? createUsageTracker();
@@ -85,6 +103,11 @@ export function panelRoutes(deps: RouteDeps): Route[] {
     ...staffRoutes(deps),
     // Superadmin: /admin/*.
     ...adminRoutes(deps),
+    // Alta self-service (I6.7, detrás de SIGNUP_ENABLED): /auth/signup y su config pública.
+    ...signupRoutes({ db: deps.db }),
+    // Suscripción por Stripe (I6.6, solo el dueño): /billing/status, /billing/checkout y
+    // /billing/portal. Sin Stripe configurado, el cobro sigue manual.
+    ...billingRoutes({ db: deps.db, stripeGateway: deps.stripeGateway }),
     // Clientes: /clients/*. Los módulos de afuera del núcleo suman acá sus borradores de
     // datos personales para la anonimización (WhatsApp: conversaciones y mensajes). "Mis
     // clientes" del profesional: la subconsulta de sus citas la arma scheduling.
@@ -102,7 +125,7 @@ export function panelRoutes(deps: RouteDeps): Route[] {
       countConversationsWaiting,
       plans: deps.plans,
       onAppointmentCompleted: onCommissionableChange,
-      onAppointmentBooked: usage.appointmentBooked,
+      onAppointmentBooked: panelBookedHook(usage),
     }),
     // Ventas (I4, Pro): métodos de pago, cobros y señas, devoluciones, pendientes y caja
     // (/settings/payment-methods, /appointments/:id/payments|balance, /sales/*). Cada seña o
@@ -116,7 +139,10 @@ export function panelRoutes(deps: RouteDeps): Route[] {
     // WhatsApp IA (I2): canales, bandeja, resumen, métricas y push (/whatsapp/*, /push/*) y
     // el alta manual de un número del superadmin (/admin/businesses/:id/whatsapp).
     ...whatsappRoutes({ db: deps.db, deps: whatsapp }),
-    // WhatsApp IA > Configuración del agente (I2): /whatsapp/settings.
-    ...whatsappSettingsRoutes(deps),
+    // WhatsApp IA > Configuración del agente (I2): /whatsapp/settings, y crecimiento (I6):
+    // /whatsapp/growth con lo que permite el plan.
+    ...whatsappSettingsRoutes({ db: deps.db, getGrowth: growthFromPlan(deps.plans) }),
+    // Campañas (I6, módulo `campaigns`): /campaigns/*.
+    ...campaignsRoutes({ db: deps.db }),
   ];
 }

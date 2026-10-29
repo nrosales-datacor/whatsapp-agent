@@ -48,12 +48,12 @@ test("catálogo: Básico = agenda, clientes (nivel básico) y WhatsApp; 1 sucurs
   assert.equal(buildPlans({}).basic.limits.aiConversations, 500, "default sin env");
 });
 
-test("catálogo: Pro = todos los módulos, CRM completo y marca propia; tope de conversaciones mayor que el Básico", () => {
+test("catálogo: Pro = todos los módulos, CRM completo, marca propia y crecimiento del agente; tope de conversaciones mayor que el Básico", () => {
   const pro = PLANS.pro;
   assert.deepEqual([...pro.modules], [...MODULES]);
   assert.deepEqual([...MODULES], ["scheduling", "clients", "sales", "commissions", "reports", "whatsapp", "campaigns"]);
   assert.equal(pro.clientsTier, "full");
-  assert.deepEqual([...pro.features], ["branding"]);
+  assert.deepEqual([...pro.features], ["branding", "reviews", "quote_recovery", "upsell"]);
   const defaults = buildPlans({});
   assert.ok((defaults.pro.limits.aiConversations ?? 0) > (defaults.basic.limits.aiConversations ?? 0));
   assert.ok((defaults.pro.limits.aiLlmUsd ?? 0) > (defaults.basic.limits.aiLlmUsd ?? 0));
@@ -86,7 +86,7 @@ test("entitlements: Pro sin agente = Pro con whatsapp apagado; un plan desconoci
   assert.ok(!noAgent.modules.includes("whatsapp"));
   assert.ok(noAgent.modules.includes("scheduling"), "la agenda (y sus recordatorios) sigue");
   assert.ok(noAgent.modules.includes("sales"));
-  assert.deepEqual(noAgent.features, ["branding"]);
+  assert.deepEqual(noAgent.features, ["branding"], "reseñas, rescate y upsell son del agente: sin él no aplican");
 
   const weird = resolveEntitlements(row({ plan: "enterprise" }));
   assert.equal(weird.plan, "basic");

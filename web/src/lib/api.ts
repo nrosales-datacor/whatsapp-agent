@@ -50,6 +50,11 @@ export const ERROR_MESSAGES: Readonly<Record<string, string>> = {
   already_paused: "El negocio ya estaba pausado.",
   already_active: "El negocio ya estaba activo.",
   business_closed: "El negocio está dado de baja.",
+  // Cobro en línea (I6.6)
+  billing_not_configured: "El pago en línea todavía no está disponible. Escribinos y lo ajustamos a mano.",
+  already_subscribed: "Tu negocio ya tiene una suscripción. Cambiá de plan desde «Administrar pago».",
+  not_subscribed: "Todavía no te suscribiste en línea.",
+  option_not_available: "Esa opción no se vende en línea todavía.",
   // Identidad (I0.6)
   invalid_credentials: "Correo o clave incorrectos.",
   no_active_business: "Tu cuenta no tiene acceso a ningún negocio activo. Hablá con quien administra tu negocio.",
@@ -61,6 +66,7 @@ export const ERROR_MESSAGES: Readonly<Record<string, string>> = {
   totp_not_enabled: "La verificación en dos pasos no está activa.",
   totp_not_setup: "Primero generá el código para tu app de autenticación.",
   invalid_token: "El enlace no es válido o venció. Pedí uno nuevo.",
+  email_not_verified: "Todavía no confirmaste tu correo. Buscá el enlace que te mandamos (o pedí uno nuevo).",
   already_member: "Esa persona ya es parte del equipo.",
   last_owner: "Debe quedar al menos un dueño activo en el negocio.",
   user_inactive: "Esa cuenta está desactivada en la plataforma.",

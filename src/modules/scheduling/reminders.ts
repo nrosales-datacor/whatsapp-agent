@@ -344,6 +344,7 @@ export async function handleReminderJob(
       const content = appointmentReminderEmail({
         businessName: business.business.name,
         brandColor: business.business.branding.accentColor ?? null,
+        logoUrl: business.business.branding.logoUrl ?? null,
         clientName: client.name,
         services: lines.map((l) => l.name),
         startsAt: appointment.startsAt,

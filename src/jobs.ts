@@ -1,10 +1,12 @@
-import type { PlanService } from "./modules/billing";
+import { startTrialExpiryLoop, type PlanService } from "./modules/billing";
+import { CAMPAIGN_DISPATCH_JOB, handleCampaignDispatchJob } from "./modules/campaigns";
 import { handleReminderJob, REMINDER_SEND_JOB, startReminderScheduler, type ReminderJobPayload } from "./modules/scheduling";
 import {
   createAgentRunner,
   createWhatsAppDeps,
   isWhatsAppConnected,
   queueWhatsAppReminder,
+  sendMarketingTemplate,
   startWhatsAppSchedulers,
   whatsappJobHandlers,
   type AgentRunner,
@@ -14,7 +16,7 @@ import type { Executor } from "./platform/db/scope";
 import { handleSendEmailJob, SEND_EMAIL_JOB, type SendEmailJobPayload } from "./platform/email/job";
 import type { Loop } from "./platform/net/scheduler";
 import { registerJobHandler } from "./platform/queue";
-import { aiLimitsFromPlan, createPlans } from "./plans";
+import { aiLimitsFromPlan, createPlans, growthFromPlan } from "./plans";
 import { createUsageTracker } from "./usage";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -60,19 +62,39 @@ export function registerJobHandlers(options: JobDeps = {}): void {
 
   // WhatsApp: mensajes entrantes (pipeline + agente), recordatorios y borrado de adjuntos.
   // Las dependencias se arman con el pool del proceso la primera vez que corre un job; los
-  // topes del agente son los del plan de cada negocio.
+  // topes del agente y lo de crecimiento (I6) son los del plan de cada negocio.
   let whatsapp = options.whatsapp;
-  const whatsappDeps = (db: Executor): WhatsAppDeps =>
-    (whatsapp ??= createWhatsAppDeps(db, { agent: whatsappAgentRunner, getAiLimits: aiLimitsFromPlan(options.plans ?? createPlans(db)) }));
+  const whatsappDeps = (db: Executor): WhatsAppDeps => {
+    if (whatsapp) return whatsapp;
+    const plans = options.plans ?? createPlans(db);
+    whatsapp = createWhatsAppDeps(db, { agent: whatsappAgentRunner, getAiLimits: aiLimitsFromPlan(plans), getGrowth: growthFromPlan(plans) });
+    return whatsapp;
+  };
   for (const spec of whatsappJobHandlers(whatsappDeps)) registerJobHandler(spec.type, spec.handler, spec.options);
+
+  // Campañas (I6): cada lote de una campaña; el envío lo hace el módulo WhatsApp con la
+  // plantilla de marketing del número (campaigns no conoce Graph).
+  registerJobHandler(
+    CAMPAIGN_DISPATCH_JOB,
+    async (payload, ctx) => {
+      await handleCampaignDispatchJob(payload, ctx, { send: (db, businessId, input) => sendMarketingTemplate(db, whatsappDeps(db), businessId, input) });
+    },
+    { timeoutMs: 180_000 },
+  );
 }
 
 /**
  * Loops periódicos de los módulos (procesos `ROLE=worker|all`). Cada uno se coordina entre
  * réplicas con su lease (src/platform/net/leaderLease.ts).
  */
-export function startModuleSchedulers(db: Executor): Loop[] {
-  return [startReminderScheduler({ db }), ...startWhatsAppSchedulers(db)];
+export function startModuleSchedulers(db: Executor, plans: PlanService = createPlans(db)): Loop[] {
+  return [
+    startReminderScheduler({ db }),
+    // Seguimiento post-servicio y rescate de cotizaciones con lo que permite el plan (I6).
+    ...startWhatsAppSchedulers(db, { getGrowth: growthFromPlan(plans) }),
+    // Pruebas gratis vencidas sin suscripción → pago pendiente (I6.7, modules/billing).
+    startTrialExpiryLoop({ db }),
+  ];
 }
 
 /**

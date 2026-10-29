@@ -187,7 +187,7 @@ test("baja de un negocio: la cascada borra TODAS sus filas (incluidas las de pla
     });
     const [camp] = await tx
       .insert(campaigns)
-      .values({ businessId: f.businessId, name: "Promo", message: "Hola", segment: { type: "all" } })
+      .values({ businessId: f.businessId, name: "Promo", message: "Hola", segment: {} })
       .returning({ id: campaigns.id });
     await tx.insert(campaignSends).values({ businessId: f.businessId, campaignId: camp.id, clientId: f.clientId });
     await tx.insert(pushSubscriptions).values({ businessId: f.businessId, userId: user.id, sessionEpoch: 0, endpoint: `https://push.example/${f.businessId}`, p256dh: "k", auth: "a" });

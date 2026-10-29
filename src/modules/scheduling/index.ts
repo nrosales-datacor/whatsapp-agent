@@ -2,6 +2,7 @@
 // pueden importar de acá (test/architecture/moduleBoundaries.test.ts). Disponibilidad y
 // reserva son UN solo servicio para el panel y el agente de WhatsApp (I2).
 export {
+  addServiceToAppointment,
   APPOINTMENT_TRANSITIONS,
   bookAppointment,
   cancelAppointment,
@@ -70,6 +71,15 @@ export {
   type WhatsAppReminderRequest,
 } from "./reminders";
 export { schedulingRoutes, type SchedulingRouteDeps } from "./routes";
+// Segmentos y resultados de Campañas (I6): subconsultas de clientes y citas generadas.
+export {
+  clientIdsLapsedForService,
+  clientIdsWithUpcomingAppointments,
+  countAppointmentsAfterSends,
+  listCompletedAppointmentsEndedBetween,
+  type AppointmentsAfterSends,
+  type CompletedAppointmentRef,
+} from "./segments";
 // Fechas en la zona de una sucursal (bandeja, métricas y recordatorios de otros módulos).
 export { addDays, isLocalDate, localDate, localDatesBetween, localDayBounds, mondayOf, wallClock } from "./time";
 export { APPOINTMENT_CHANNELS, APPOINTMENT_STATUSES } from "./schema";

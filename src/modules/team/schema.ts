@@ -73,6 +73,11 @@ export const users = pgTable(
     // El panel exige elegir una clave nueva antes de seguir (p. ej. tras una clave
     // temporal puesta por soporte). Cambiarla o restablecerla lo apaga.
     mustChangePassword: boolean("must_change_password").notNull().default(false),
+    // Alta self-service (I6.7): la cuenta todavía no confirmó su correo y no puede entrar.
+    // Solo la prende el registro público; las cuentas que crea el superadmin o una
+    // invitación ya prueban el correo con el link que reciben. La apaga el link de
+    // verificación (o uno de recuperación de clave o de invitación: también llegan al correo).
+    emailVerificationPending: boolean("email_verification_pending").notNull().default(false),
     active: boolean("active").notNull().default(true),
     ...timestamps(),
   },
@@ -221,8 +226,9 @@ export const timeOff = pgTable(
 ).enableRLS();
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tokens de un solo uso que viajan por correo: recuperación de clave (vence en 1 h) e
-// invitación al equipo de un negocio (vence en 7 días). En la base queda solo el sha256
+// Tokens de un solo uso que viajan por correo: recuperación de clave (vence en 1 h),
+// invitación al equipo de un negocio (vence en 7 días) y verificación del correo del alta
+// self-service (vence en 48 h). En la base queda solo el sha256
 // del token (un dump no permite usar ningún link vigente); el token en claro existe solo
 // en el correo. `used_at` lo marca un UPDATE atómico (`… WHERE used_at IS NULL`): dos
 // clics simultáneos en el mismo link no lo consumen dos veces.
@@ -230,7 +236,7 @@ export const timeOff = pgTable(
 // Solo de sistema: se leen ANTES de que exista una sesión (el link llega sin cookie) y
 // ningún negocio tiene por qué ver los tokens de nadie.
 // ─────────────────────────────────────────────────────────────────────────────
-export const AUTH_TOKEN_KINDS = ["password_reset", "invitation"] as const;
+export const AUTH_TOKEN_KINDS = ["password_reset", "invitation", "email_verification"] as const;
 export type AuthTokenKind = (typeof AUTH_TOKEN_KINDS)[number];
 
 export const authTokens = pgTable(

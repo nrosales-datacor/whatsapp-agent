@@ -12,6 +12,7 @@ import "./whatsapp.css";
 //   /whatsapp                       bandeja (en desktop, lista + "elegí una conversación")
 //   /whatsapp/conversations/:id     bandeja con el chat abierto (enlazable desde un push)
 //   /whatsapp/metrics               métricas del agente
+//   /whatsapp/growth                crecimiento: reseñas, rescate y sugerencias (dueño y admin, I6)
 //   /whatsapp/settings              configuración del agente y números (dueño y admin)
 // La guarda del módulo (plan y rol) es la de la sección, en App.tsx.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -27,6 +28,7 @@ interface Tab {
 const TABS: readonly Tab[] = [
   { path: "/whatsapp", label: "Bandeja" },
   { path: "/whatsapp/metrics", label: "Métricas" },
+  { path: "/whatsapp/growth", label: "Crecimiento", managersOnly: true },
   { path: "/whatsapp/settings", label: "Configuración", managersOnly: true },
 ];
 
@@ -34,6 +36,7 @@ const TABS: readonly Tab[] = [
 function activeTab(pathname: string): string {
   if (pathname.startsWith("/whatsapp/metrics")) return "/whatsapp/metrics";
   if (pathname.startsWith("/whatsapp/settings")) return "/whatsapp/settings";
+  if (pathname.startsWith("/whatsapp/growth")) return "/whatsapp/growth";
   return "/whatsapp";
 }
 

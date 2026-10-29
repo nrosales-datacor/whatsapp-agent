@@ -3,6 +3,9 @@ import type { Loop } from "../../platform/net/scheduler";
 import type { JobHandler, JobHandlerOptions } from "../../platform/queue";
 import type { WhatsAppDeps } from "./deps";
 import { handleMediaEraseJob, WHATSAPP_MEDIA_ERASE_JOB } from "./eraser";
+import { handleFollowUpJob, startFollowUpLoop, WHATSAPP_FOLLOW_UP_JOB } from "./followUps";
+import type { GrowthResolver } from "./growth";
+import { handleQuoteTouchJob, startQuoteRecoveryLoop, WHATSAPP_QUOTE_TOUCH_JOB } from "./quotes";
 import { WHATSAPP_INBOUND_JOB } from "./ingest";
 import { handleInboundJob } from "./pipeline";
 import { startRawWebhookLoop } from "./rawWebhooks";
@@ -58,10 +61,33 @@ export function whatsappJobHandlers(deps: WhatsAppDeps | ((db: Executor) => What
       },
       options: { timeoutMs: 120_000 },
     },
+    // Crecimiento (I6): seguimiento post-servicio y toques del rescate de cotizaciones.
+    {
+      type: WHATSAPP_FOLLOW_UP_JOB,
+      handler: async (payload, ctx) => {
+        await handleFollowUpJob(payload, ctx, resolve(ctx.db));
+      },
+      options: { timeoutMs: 60_000 },
+    },
+    {
+      type: WHATSAPP_QUOTE_TOUCH_JOB,
+      handler: async (payload, ctx) => {
+        await handleQuoteTouchJob(payload, ctx, resolve(ctx.db));
+      },
+      options: { timeoutMs: 60_000 },
+    },
   ];
 }
 
-/** Loops del módulo (procesos `ROLE=worker|all`): reproceso y purga de `raw_webhooks`. */
-export function startWhatsAppSchedulers(db: Executor): Loop[] {
-  return [startRawWebhookLoop({ db, ingest: reingestRawPayload(db) })];
+/**
+ * Loops del módulo (procesos `ROLE=worker|all`): reproceso y purga de `raw_webhooks` y,
+ * con lo de crecimiento del plan (`getGrowth`, I6), los barridos del seguimiento
+ * post-servicio y del rescate de cotizaciones.
+ */
+export function startWhatsAppSchedulers(db: Executor, options: { getGrowth?: GrowthResolver } = {}): Loop[] {
+  const loops = [startRawWebhookLoop({ db, ingest: reingestRawPayload(db) })];
+  if (options.getGrowth) {
+    loops.push(startFollowUpLoop({ db, getGrowth: options.getGrowth }), startQuoteRecoveryLoop({ db, getGrowth: options.getGrowth }));
+  }
+  return loops;
 }

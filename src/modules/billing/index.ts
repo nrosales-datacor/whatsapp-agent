@@ -1,4 +1,4 @@
-// API pública del módulo billing (planes, módulos y límites; Stripe en I6): lo único que
+// API pública del módulo billing (planes, módulos y límites; Stripe desde I6.6): lo único que
 // la composición (src/app.ts, src/routes.ts, src/jobs.ts), el superadmin y otros módulos de
 // afuera del núcleo pueden importar de acá (test/architecture/moduleBoundaries.test.ts).
 // El núcleo NO lo importa: recibe lo que necesita como `PlanHooks`
@@ -33,3 +33,20 @@ export {
   reactivateBusiness,
 } from "./admin";
 export type { AdminBusinessDetail, AdminBusinessRow, PlanChangeInputValue } from "./admin";
+// Stripe (I6.6): rutas del dueño, webhook firmado y el barrido de pruebas vencidas (I6.7).
+export { billingRoutes, type BillingRouteDeps, type BillingStatusView } from "./routes";
+export {
+  BILLING_OPTIONS,
+  billingStatusOf,
+  isValidStripeSignature,
+  optionOfPrice,
+  signStripePayload,
+  stripeConfigFromEnv,
+  type BillingOption,
+  type StripeConfig,
+  type StripeGateway,
+  type SubscriptionSnapshot,
+} from "./stripe";
+export { createStripeWebhookHandler, STRIPE_WEBHOOK_PATH, type StripeWebhookOptions } from "./stripeWebhook";
+export { applyStripeEvent, expireTrials, startTrialExpiryLoop, subscriptionPlanChanges } from "./subscriptions";
+export type { StripeEvent } from "./schema";

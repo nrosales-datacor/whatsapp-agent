@@ -103,8 +103,51 @@ export interface MePlan {
   /** Funciones del plan que no son un módulo (p. ej. "branding": marca propia). */
   features: string[];
   billingStatus: BillingStatus | string;
+  /** Fin de la prueba gratis (ISO), si la hay (alta self-service o prueba de Stripe). */
+  trialEndsAt?: string | null;
   limits: PlanLimits;
   usage: PlanUsage;
+}
+
+// ── Cobro en línea con Stripe (I6.6) ────────────────────────────────────────
+
+/** Lo que se vende por Stripe. Espejo de `BILLING_OPTIONS` en src/modules/billing/stripe.ts. */
+export type BillingOption = "basic" | "pro" | "pro_no_agent";
+
+/** `GET /billing/status` (solo el dueño). */
+export interface BillingStatusView {
+  /** false = sin Stripe: el cobro es manual. */
+  configured: boolean;
+  /** Opciones con precio cargado. */
+  options: { id: BillingOption; label: string }[];
+  /** Tiene una suscripción viva. */
+  subscribed: boolean;
+  /** Puede abrir el Portal de Stripe (ya es cliente). */
+  canManage: boolean;
+  billingStatus: BillingStatus | string;
+  trialEndsAt: string | null;
+}
+
+// ── Alta self-service (I6.7) ────────────────────────────────────────────────
+
+/** `GET /auth/signup/config` (público). */
+export interface SignupConfig {
+  enabled: boolean;
+  trialDays: number;
+}
+
+/** `POST /auth/signup` → 202 `{ status: "verification_sent" }` (exista o no el correo). */
+export interface SignupInput {
+  businessName: string;
+  industry: string;
+  country: string;
+  currency: string;
+  timezone: string;
+  plan: Plan;
+  ownerName: string;
+  email: string;
+  password: string;
+  acceptTerms: boolean;
 }
 
 /** Sesión del usuario en el negocio activo (`GET /auth/me`). */

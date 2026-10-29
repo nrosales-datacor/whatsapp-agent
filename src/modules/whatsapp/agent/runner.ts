@@ -17,7 +17,7 @@ import { computeCostMicros, type TokenUsage } from "./cost";
 import { historyToMessages, pendingUserStart, trimHistory } from "./history";
 import { buildSystemPrompt, buildTurnContext } from "./prompt";
 import { agentText } from "./texts";
-import { emptyEffects, executeTool, TOOL_DEFINITIONS, type ErrorReporter, type ToolRuntime, type TurnEffects } from "./tools";
+import { emptyEffects, executeTool, toolDefinitionsFor, type ErrorReporter, type ToolRuntime, type TurnEffects } from "./tools";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Bucle del agente (puerto de legacy/src/agent/runAgent.ts sobre el contrato nuevo,
@@ -110,7 +110,7 @@ export function buildMessages(ctx: AgentContext, input: AgentTurnInput, history:
   const trimmed = trimHistory(input.history, { ...history, now: input.now });
   const start = pendingUserStart(trimmed);
   return [
-    { role: "system", content: buildSystemPrompt(ctx) },
+    { role: "system", content: buildSystemPrompt(ctx, input.growth) },
     ...historyToMessages(trimmed.slice(0, start), ctx.timezone, input.now),
     { role: "system", content: buildTurnContext(ctx, { now: input.now, channelLocationId: input.locationId, clientName: input.clientName }) },
     ...historyToMessages(trimmed.slice(start), ctx.timezone, input.now).filter((m) => m.role !== "system"),
@@ -151,7 +151,8 @@ export function createAgentRunner(deps: AgentRunnerDeps = {}): AgentRunner {
     if (!ctx) throw new Error("agent: el negocio del turno no existe");
 
     const effects: TurnEffects = emptyEffects();
-    const runtime: ToolRuntime = { executor, ctx, input, effects, onAppointmentBooked: deps.onAppointmentBooked };
+    const runtime: ToolRuntime = { executor, ctx, input, effects, onAppointmentBooked: deps.onAppointmentBooked, reportError };
+    const tools = toolDefinitionsFor(input.growth);
     const tokens: TokenUsage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 };
     const usage = () => ({
       inputTokens: tokens.inputTokens,
@@ -174,7 +175,7 @@ export function createAgentRunner(deps: AgentRunnerDeps = {}): AgentRunner {
     const body = (): ChatCompletionCreateParamsNonStreaming => ({
       model,
       messages,
-      tools: TOOL_DEFINITIONS,
+      tools,
       // Con `strict`, OpenAI no garantiza el esquema en llamadas paralelas: una por paso.
       parallel_tool_calls: false,
       // Agrupa en el mismo caché las requests del negocio (comparten el prefijo largo).

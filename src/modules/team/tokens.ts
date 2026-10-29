@@ -16,10 +16,12 @@ import { authTokens, type AuthToken, type AuthTokenKind } from "./schema";
 
 export const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000; // 1 hora
 export const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 días
+export const EMAIL_VERIFICATION_TTL_MS = 48 * 60 * 60 * 1000; // 48 horas
 
 const TTL_BY_KIND: Record<AuthTokenKind, number> = {
   password_reset: PASSWORD_RESET_TTL_MS,
   invitation: INVITATION_TTL_MS,
+  email_verification: EMAIL_VERIFICATION_TTL_MS,
 };
 
 /** Forma de un token emitido acá (base64url de 32 bytes = 43 caracteres). */

@@ -4,12 +4,14 @@ import {
   appointmentConfirmationEmail,
   appointmentReminderEmail,
   DEFAULT_BRAND_COLOR,
+  emailVerificationEmail,
   escapeHtml,
   formatAppointmentDateTime,
   formatDuration,
   invitationEmail,
   normalizeBrandColor,
   passwordResetEmail,
+  signupAttemptEmail,
   type AppointmentReminderEmailData,
 } from "../../src/platform/email/templates";
 
@@ -92,6 +94,16 @@ test("color de marca: hex válido se usa (y el texto se adapta al contraste); cu
   assert.ok(light.includes("background:#fde68a;color:#111827"), "texto oscuro sobre color claro");
   const injected = invitationEmail({ businessName: "N", brandColor: `#fff"><script>`, acceptUrl: "https://a.co/i" }).html;
   assert.ok(!injected.includes("<script>") && injected.includes(`background:${DEFAULT_BRAND_COLOR}`));
+});
+
+test("marca propia: el logo https va en el encabezado (escapado); http, javascript: o basura se ignoran", () => {
+  const base = { ...reminder, businessName: "Clínica <Sonrisa>" };
+  const withLogo = appointmentReminderEmail({ ...base, logoUrl: "https://cdn.example.com/logo.png?a=1&b=2" });
+  assert.match(withLogo.html, /<img src="https:\/\/cdn\.example\.com\/logo\.png\?a=1&amp;b=2" alt="" height="32"/);
+  assert.match(withLogo.html, /Clínica &lt;Sonrisa&gt;/, "el nombre sigue al lado del logo");
+  for (const bad of ["http://cdn.example.com/logo.png", "javascript:alert(1)", "no es una url", null]) {
+    assert.doesNotMatch(appointmentReminderEmail({ ...base, logoUrl: bad }).html, /<img /, String(bad));
+  }
 });
 
 test("fecha y hora: en la zona horaria de la sucursal, con Intl es-CR", () => {
@@ -179,4 +191,24 @@ test("formatDuration: minutos, horas y días en español", () => {
   assert.equal(formatDuration(1440), "1 día");
   assert.equal(formatDuration(10080), "7 días");
   assert.equal(formatDuration(1500), "25 horas");
+});
+
+test("alta self-service: verificación del correo (link, vencimiento, negocio escapado) y aviso de cuenta existente", () => {
+  const verify = emailVerificationEmail({
+    userName: "Ana",
+    businessName: "<b>Clínica</b>",
+    verifyUrl: "https://app.example.test/panel/verify-email?token=abc",
+    expiresInMinutes: 48 * 60,
+  });
+  assert.match(verify.subject, /Confirmá tu correo/);
+  assert.ok(verify.text.includes("https://app.example.test/panel/verify-email?token=abc"));
+  assert.ok(verify.html.includes("&lt;b&gt;Clínica&lt;/b&gt;"));
+  assert.ok(!verify.html.includes("<b>Clínica</b>"));
+  assert.match(verify.text, /2 días/);
+  assert.throws(() => emailVerificationEmail({ verifyUrl: "javascript:alert(1)", expiresInMinutes: 60 }));
+
+  const attempt = signupAttemptEmail({ userName: "Ana", loginUrl: "https://app.example.test/panel/login", forgotUrl: "https://app.example.test/panel/forgot-password" });
+  assert.match(attempt.subject, /Ya tenés una cuenta/);
+  assert.ok(attempt.text.includes("https://app.example.test/panel/login"));
+  assert.ok(attempt.text.includes("https://app.example.test/panel/forgot-password"));
 });

@@ -230,3 +230,18 @@
 @media (min-width: 1100px) {
   .wa-inbox { grid-template-columns: 380px minmax(0, 1fr); }
 }
+
+/* ── Crecimiento (I6) ── */
+.wa-growth { display: flex; flex-direction: column; gap: var(--space-md); }
+.wa-growth-card form { display: flex; flex-direction: column; gap: var(--space-sm); }
+.wa-growth-card.locked .field, .wa-growth-card.locked .check-row { opacity: .6; }
+.wa-growth-lock { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.wa-upsell-rules { display: flex; flex-direction: column; gap: var(--space-xs); }
+.wa-upsell-rule { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: var(--space-xs) var(--space-sm); align-items: end; }
+.wa-upsell-remove { margin-bottom: 6px; }
+@media (max-width: 600px) {
+  .wa-upsell-rule { grid-template-columns: minmax(0, 1fr); }
+  .wa-upsell-remove { justify-self: end; }
+}
+.wa-growth-metrics { margin-top: var(--space-md); }
+.wa-growth-metrics .wa-kpis { margin-top: var(--space-sm); }

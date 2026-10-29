@@ -943,6 +943,43 @@ Para que el aislamiento lo garantice la base (prerrequisito: §19.2 hecho, resto
 `test/security/rlsAplicado.test.ts` corre toda la app con el rol `app_wa` sobre PGlite: si una
 consulta nueva se olvida del alcance, ese test falla en CI.
 
+## 25. Cobro con Stripe y alta self-service (Carril I, I6.6–I6.7, OPCIONAL)
+
+Sin estas variables todo sigue con el **cobro manual** (PROCESO-COBRO-MANUAL.md): Configuración
+› Plan muestra el texto de siempre y `/webhook/stripe` responde 503.
+
+**Stripe (una vez, en el dashboard de Stripe):**
+
+1. Crear un producto por opción que se vende (Básico, Pro y, si se vende, Pro sin agente) con su
+   precio recurrente mensual. Copiar cada **Price ID** (`price_…`).
+2. *Developers › Webhooks › Add endpoint*: `https://<dominio>/webhook/stripe`, con los eventos
+   `checkout.session.completed`, `checkout.session.async_payment_succeeded` y
+   `customer.subscription.created|updated|deleted|paused|resumed`. Copiar el **signing secret**
+   (`whsec_…`).
+3. *Settings › Billing › Customer portal*: activarlo (cambiar tarjeta, cancelar, facturas). Si
+   se permite cambiar de plan desde el portal, ofrecer SOLO los precios de arriba (un precio que
+   no está en el `.env` no cambia el plan del negocio, solo el estado del cobro).
+4. En el `.env` del droplet: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_BASIC`,
+   `STRIPE_PRICE_PRO` y (opcional) `STRIPE_PRICE_PRO_NO_AGENT`. `pm2 reload … --update-env`.
+5. Probar en **modo test** de Stripe (claves `sk_test_…`) con una tarjeta de prueba: el negocio
+   debe pasar a "Al día" con el plan comprado (Configuración › Plan) y quedar en el rastro de
+   auditoría (`stripe_subscription_synced`). Recién después, las claves de producción.
+
+Qué hace el webhook: verifica la firma sobre el cuerpo crudo (tolerancia 5 min), aplica cada
+evento UNA vez (`stripe_events`), lee la suscripción fresca de la API y actualiza plan, módulos
+(Pro sin agente) y estado del cobro. Nunca pausa un negocio: pausar sigue siendo del superadmin.
+Los cupos extra (más profesionales o sucursales) siguen cargándose a mano en el superadmin.
+
+**Alta self-service** (`/panel/signup`): apagada por defecto. Antes de prenderla, cerrar el gate
+de AUDIT-v2 (papeles legales terminados y revisión de seguridad del alta). Para abrirla:
+`SIGNUP_ENABLED=1` (y opcional `SIGNUP_TRIAL_DAYS`, default 14). El negocio nace en prueba con la
+plantilla de su rubro; la cuenta no entra hasta confirmar el correo (hace falta `RESEND_API_KEY`
+y `PUBLIC_BASE_URL`); al vencer la prueba sin suscripción pasa a "Pago pendiente" (aviso en el
+panel), sin pausarse.
+
+**Crecimiento (I6.1–I6.4)** no necesita configuración del servidor: cada negocio lo activa en
+WhatsApp IA › Crecimiento y Campañas, y carga sus plantillas por número (GUIA-META.md §E).
+
 ## Mantenimiento rápido
 
 | Acción | Comando |

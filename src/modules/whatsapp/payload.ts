@@ -184,22 +184,51 @@ export function classifyWebhookPayload(part: unknown): ClassifiedPayload {
 
 // ── Protocolo de los botones (`tipo|arg`) ────────────────────────────────────
 // Los ids de los botones los definimos nosotros al enviar (recordatorio: confirmar o
-// cancelar la cita); al llegar la respuesta se traducen a una frase para el historial.
-// Codificador y decodificador viven juntos para que no se desincronicen.
+// cancelar la cita; consentimiento de promociones; seguimiento post-servicio); al llegar la
+// respuesta se traducen a una frase para el historial. Codificador y decodificador viven
+// juntos para que no se desincronicen.
 
 export const CONFIRM_APPOINTMENT_PREFIX = "confirm";
 export const CANCEL_APPOINTMENT_PREFIX = "cancel";
+export const MARKETING_CONSENT_PREFIX = "mkt";
+export const FOLLOW_UP_PREFIX = "fu";
+
+export const FOLLOW_UP_ANSWERS = ["positive", "neutral", "negative"] as const;
+export type FollowUpAnswer = (typeof FOLLOW_UP_ANSWERS)[number];
 
 /** Botones del recordatorio de cita (el título ≤ 20 caracteres, límite de Meta). */
 export function reminderButtonIds(appointmentId: string): { confirm: string; cancel: string } {
   return { confirm: `${CONFIRM_APPOINTMENT_PREFIX}|${appointmentId}`, cancel: `${CANCEL_APPOINTMENT_PREFIX}|${appointmentId}` };
 }
 
+/** Botones de "¿te avisamos de promociones?" (I6). */
+export function marketingConsentButtonIds(): { yes: string; no: string } {
+  return { yes: `${MARKETING_CONSENT_PREFIX}|yes`, no: `${MARKETING_CONSENT_PREFIX}|no` };
+}
+
+/** Botones del seguimiento post-servicio de una cita (I6): Excelente / Bien / Mal. */
+export function followUpButtonIds(appointmentId: string): Record<FollowUpAnswer, string> {
+  return {
+    positive: `${FOLLOW_UP_PREFIX}|${appointmentId}|positive`,
+    neutral: `${FOLLOW_UP_PREFIX}|${appointmentId}|neutral`,
+    negative: `${FOLLOW_UP_PREFIX}|${appointmentId}|negative`,
+  };
+}
+
+const FOLLOW_UP_PHRASES: Record<FollowUpAnswer, string> = {
+  positive: "¡Excelente! 😀",
+  neutral: "Bien 🙂",
+  negative: "No me fue bien 😕",
+};
+
 /** Frase que "diría" el cliente al tocar el botón; si el id no es nuestro, el título visible. */
 export function describeInteractiveReply(id: string, title: string): string {
-  const [kind] = id.split("|");
+  const [kind, arg, answer] = id.split("|");
   if (kind === CONFIRM_APPOINTMENT_PREFIX) return "Confirmo mi cita ✅";
   if (kind === CANCEL_APPOINTMENT_PREFIX) return "Quiero cancelar mi cita";
+  if (kind === MARKETING_CONSENT_PREFIX && arg === "yes") return "Sí, quiero recibir promociones";
+  if (kind === MARKETING_CONSENT_PREFIX && arg === "no") return "No quiero recibir promociones";
+  if (kind === FOLLOW_UP_PREFIX && (FOLLOW_UP_ANSWERS as readonly string[]).includes(answer)) return FOLLOW_UP_PHRASES[answer as FollowUpAnswer];
   return title;
 }
 

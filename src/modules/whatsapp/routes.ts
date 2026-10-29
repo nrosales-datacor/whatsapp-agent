@@ -73,7 +73,14 @@ const PatchChannelBody = z
   .object({
     locationId: z.uuid().nullable().optional(),
     templates: z
-      .object({ reminder: Template.nullable().optional(), reopen: Template.nullable().optional(), marketing: Template.nullable().optional() })
+      .object({
+        reminder: Template.nullable().optional(),
+        reopen: Template.nullable().optional(),
+        marketing: Template.nullable().optional(),
+        // Crecimiento (I6): seguimiento post-servicio y segundo toque del rescate.
+        followUp: Template.nullable().optional(),
+        quoteRecovery: Template.nullable().optional(),
+      })
       .strict()
       .optional(),
   })

@@ -24,8 +24,12 @@ import { HttpError } from "../http/errors";
 export const PLAN_RESOURCES = ["locations", "staff", "users"] as const;
 export type PlanResource = (typeof PLAN_RESOURCES)[number];
 
-/** Funciones del plan que no son un módulo con rutas propias. */
-export const PLAN_FEATURES = ["branding"] as const;
+/**
+ * Funciones del plan que no son un módulo con rutas propias: la marca propia y lo de
+ * crecimiento que hace el agente de WhatsApp (I6): seguimiento post-servicio con pedido de
+ * reseña, rescate de cotizaciones y upsell.
+ */
+export const PLAN_FEATURES = ["branding", "reviews", "quote_recovery", "upsell"] as const;
 export type PlanFeature = (typeof PLAN_FEATURES)[number];
 
 /** Nivel de la ficha de clientes: `basic` (ficha automática) o `full` (CRM del Pro). */
@@ -64,8 +68,10 @@ export interface PlanSnapshot {
   /** Módulos habilitados (plan + extras − apagados). Igual que `me.modules`. */
   modules: string[];
   features: PlanFeature[];
-  /** Estado del cobro manual (`trial` | `active` | `past_due` | `cancelled`). */
+  /** Estado del cobro (`trial` | `active` | `past_due` | `cancelled`): manual o por Stripe. */
   billingStatus: string;
+  /** Fin de la prueba gratis (ISO), si la hay (alta self-service o prueba de Stripe). */
+  trialEndsAt: string | null;
   limits: PlanLimitsView;
   usage: PlanUsageView;
 }

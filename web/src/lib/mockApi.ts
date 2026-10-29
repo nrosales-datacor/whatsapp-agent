@@ -6,7 +6,8 @@ import { mockBusinessUsage, mockPlatformMetrics, resolveMockRange } from "../mod
 import { isReportsMockPath, routeReportsMock } from "../modules/reports/reportsMock";
 import { isSalesMockPath, mockSalesOf, routeSalesMock, type MockSalesSession } from "../modules/sales/salesMock";
 import { mockAppointmentsOf, mockClientIdsForStaff, routeSchedulingMock } from "../modules/scheduling/schedulingMock";
-import { routeWhatsappMock } from "../modules/whatsapp/whatsappMock";
+import { mockMarketingChannelStatus, routeWhatsappMock, type MockWhatsappSession } from "../modules/whatsapp/whatsappMock";
+import { routeCampaignsMock } from "../modules/campaigns/campaignsMock";
 import type {
   AdminBusiness,
   AdminBusinessDetail,
@@ -33,6 +34,10 @@ import { readStorage, writeStorage } from "./storage";
 // `me.plan`, cupos y marca propia; el superadmin simulado cambia plan, módulos, cupos y
 // cobro, y pausa/reactiva (la sesión de ese negocio pasa a 403 `business_paused`).
 //
+// Crecimiento (I6.6–I6.7): alta self-service abierta (la cuenta nueva confirma el correo con
+// el token `confirmar`) y Stripe "configurado" para el dueño: el Checkout se aplica al
+// instante (lo que en producción hace el webhook) y vuelve a Configuración › Plan.
+//
 // Solo se carga con VITE_MOCK_API=1 (import dinámico desde lib/api.ts): no viaja en el
 // build normal. Los datos son ficticios.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -44,6 +49,8 @@ export const MOCK_INVITATION_TOKEN = "demo";
 /** Invitación a una cuenta que ya existe y tiene 2FA (confirma con su clave y su código). */
 export const MOCK_EXISTING_INVITATION_TOKEN = "cuenta-existente";
 export const MOCK_EXPIRED_RESET_TOKEN = "vencido";
+/** Link de confirmación del correo del alta self-service (I6.7): confirma la última cuenta registrada. */
+export const MOCK_VERIFY_EMAIL_TOKEN = "confirmar";
 export const MOCK_ADMIN_USERNAME = "admin";
 const MOCK_ADMIN_ME = { username: MOCK_ADMIN_USERNAME, totpEnabled: true };
 
@@ -62,6 +69,8 @@ export const MOCK_ACCOUNTS: readonly { email: string; description: string }[] = 
 
 const LATENCY_MS = 250;
 
+const AGENT_FEATURES = ["reviews", "quote_recovery", "upsell"];
+
 const ALL_MODULES = ["scheduling", "clients", "sales", "commissions", "reports", "whatsapp", "campaigns"];
 
 /** Espejo de PLANS en src/modules/billing/catalog.ts (con los topes default del agente). */
@@ -77,7 +86,7 @@ const PLAN_CATALOG: Record<Plan, { label: string; clientsTier: MePlan["clientsTi
     label: "Pro",
     clientsTier: "full",
     modules: ALL_MODULES,
-    features: ["branding"],
+    features: ["branding", "reviews", "quote_recovery", "upsell"],
     limits: { locations: 1, staff: 5, users: 8, aiConversations: 3000, aiLlmUsd: 40 },
   },
 };
@@ -91,6 +100,8 @@ interface MockSubscription {
   limits: AdminLimitOverrides;
   billingStatus: string;
   status: string;
+  /** Fin de la prueba gratis (ISO), si la hay. */
+  trialEndsAt?: string | null;
 }
 
 interface MockBusiness extends MeBusiness, MockSubscription {
@@ -108,7 +119,9 @@ function resolvePlan(sub: MockSubscription) {
     if (value !== undefined) limits[key] = value;
   }
   const label = sub.plan === "pro" && !modules.includes("whatsapp") ? "Pro sin agente" : def.label;
-  return { label, clientsTier: def.clientsTier, modules, features: [...def.features], limits };
+  // Reseñas, rescate y upsell los hace el agente: sin WhatsApp IA no aplican.
+  const features = def.features.filter((f) => modules.includes("whatsapp") || !AGENT_FEATURES.includes(f));
+  return { label, clientsTier: def.clientsTier, modules, features, limits };
 }
 
 const LOC_ESCAZU = "0b3c6f2e-6a1d-4c39-9a51-3f0f8c2a1e01";
@@ -151,6 +164,8 @@ const BUSINESSES: Record<string, MockBusiness> = {
     extraModules: {},
     limits: {},
     billingStatus: "trial",
+    // La prueba termina en 5 días: el dueño ve el aviso arriba del contenido.
+    trialEndsAt: new Date(Date.now() + 5 * 86_400_000).toISOString(),
     status: "active",
     country: "CR",
     createdAt: "2026-09-20T15:00:00.000Z",
@@ -329,6 +344,12 @@ interface MockState {
   subscriptions: Record<string, Partial<MockSubscription>>;
   /** Rastro de auditoría simulado por negocio (más reciente primero). */
   audit: Record<string, AuditEntry[]>;
+  /** Negocios del alta self-service (I6.7). */
+  signupBusinesses: Record<string, MockBusiness>;
+  /** Cuentas del alta que todavía no confirmaron el correo (la última es la del link del mock). */
+  pendingVerification: string[];
+  /** Suscripción simulada de Stripe por negocio (I6.6). */
+  stripe: Record<string, { subscribed: boolean; customer: boolean }>;
 }
 
 const STATE_KEY = "selyon.mock.state";
@@ -347,6 +368,9 @@ function emptyState(): MockState {
     usedInvitations: [],
     subscriptions: {},
     audit: {},
+    signupBusinesses: {},
+    pendingVerification: [],
+    stripe: {},
   };
 }
 
@@ -380,9 +404,14 @@ function passwordOf(state: MockState, email: string): string {
   return state.overrides[email]?.password ?? MOCK_PASSWORD;
 }
 
+/** La semilla de un negocio: los de ejemplo o uno del alta self-service. */
+function seedOf(state: MockState, businessId: string): MockBusiness {
+  return BUSINESSES[businessId] ?? state.signupBusinesses[businessId];
+}
+
 /** El negocio con lo que cambió el superadmin y su plan efectivo. */
 function businessOf(state: MockState, businessId: string): MockBusiness & { resolved: ReturnType<typeof resolvePlan> } {
-  const b: MockBusiness = { ...BUSINESSES[businessId], ...state.subscriptions[businessId] };
+  const b: MockBusiness = { ...seedOf(state, businessId), ...state.subscriptions[businessId] };
   return { ...b, resolved: resolvePlan(b) };
 }
 
@@ -448,7 +477,7 @@ function buildMe(user: MockUser, businessId: string, state: MockState): Me {
       .filter((m) => !isPaused(state, m.businessId))
       .map((m) => ({
         businessId: m.businessId,
-        businessName: BUSINESSES[m.businessId].name,
+        businessName: seedOf(state, m.businessId).name,
         role: m.role,
       })),
     modules: resolved.modules,
@@ -459,6 +488,7 @@ function buildMe(user: MockUser, businessId: string, state: MockState): Me {
       modules: resolved.modules,
       features: resolved.features,
       billingStatus: base.billingStatus,
+      trialEndsAt: base.trialEndsAt ?? null,
       limits: {
         locations: resolved.limits.locations,
         staff: resolved.limits.staff,
@@ -614,6 +644,100 @@ function mockId(n: number): string {
   return `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 }
 
+// ── Alta self-service y Stripe (I6.6–I6.7) ──────────────────────────────────
+
+const SIGNUP_TRIAL_DAYS = 14;
+const PLAN_KEYS = new Set(["basic", "pro"]);
+const BILLING_OPTION_LABELS: Record<string, string> = { basic: "Básico", pro: "Pro", pro_no_agent: "Pro sin agente" };
+const SIGNUP_TIMEZONES: Record<string, string> = { CR: "America/Costa_Rica", PA: "America/Panama", MX: "America/Mexico_City", CO: "America/Bogota" };
+
+/** `POST /auth/signup` del mock: crea el negocio (con una sucursal) y la cuenta sin verificar. */
+function mockSignup(state: MockState, body: unknown): TransportResponse {
+  const value = (key: string) => str(body, key).trim();
+  const fields: Record<string, string> = {};
+  for (const key of ["businessName", "ownerName"]) if (!value(key)) fields[`body.${key}`] = "Campo obligatorio.";
+  if (!INDUSTRIES.includes(value("industry"))) fields["body.industry"] = "Rubro inválido.";
+  if (!PLAN_KEYS.has(value("plan"))) fields["body.plan"] = "Plan inválido.";
+  if (!/^[A-Z]{2}$/.test(value("country"))) fields["body.country"] = "País inválido (código ISO de 2 letras, ej. CR).";
+  if (!RE_EMAIL.test(value("email"))) fields["body.email"] = "Escribí un correo válido.";
+  if (str(body, "password").length < 8) fields["body.password"] = "La clave tiene que tener al menos 8 caracteres.";
+  const accepted = typeof body === "object" && body !== null && (body as Record<string, unknown>).acceptTerms === true;
+  if (!accepted) fields["body.acceptTerms"] = "Tenés que aceptar los términos y el aviso de privacidad.";
+  if (Object.keys(fields).length > 0) return invalid(fields);
+
+  const email = value("email").toLowerCase();
+  // Correo con cuenta: la misma respuesta y nada nuevo (el backend le avisa por correo).
+  if (findUser(state, email)) return ok({ status: "verification_sent" }, 202);
+  const n = Object.keys(state.signupBusinesses).length;
+  const id = mockId(500 + n);
+  const country = value("country");
+  const business: MockBusiness = {
+    id,
+    name: value("businessName"),
+    slug: slugify(value("businessName")),
+    plan: value("plan") as Plan,
+    industry: value("industry"),
+    currency: value("currency").toUpperCase() || "CRC",
+    timezone: value("timezone") || SIGNUP_TIMEZONES[country] || "America/Costa_Rica",
+    terminology: value("industry") === "dental" ? { client: "paciente", clients: "pacientes" } : {},
+    branding: {},
+    locations: [{ id: mockId(600 + n), name: "Principal" }],
+    extraModules: {},
+    limits: {},
+    billingStatus: "trial",
+    trialEndsAt: new Date(Date.now() + SIGNUP_TRIAL_DAYS * 86_400_000).toISOString(),
+    status: "active",
+    country,
+    createdAt: new Date().toISOString(),
+  };
+  state.signupBusinesses[id] = business;
+  const user: MockUser = {
+    id: mockId(700 + n),
+    name: value("ownerName"),
+    email,
+    totpEnabled: false,
+    mustChangePassword: false,
+    memberships: [{ businessId: id, role: "owner" }],
+  };
+  state.extraUsers = [...state.extraUsers, user];
+  setOverride(state, email, { password: str(body, "password") });
+  state.pendingVerification = [...state.pendingVerification, email];
+  return ok({ status: "verification_sent" }, 202);
+}
+
+/** `/billing/*` del mock: Stripe "configurado" con las tres opciones; el Checkout se aplica al toque. */
+function mockBilling(state: MockState, businessId: string, key: string, body: unknown): TransportResponse {
+  const b = businessOf(state, businessId);
+  const stripe = state.stripe[businessId] ?? { subscribed: false, customer: false };
+  if (key === "GET /billing/status") {
+    return ok({
+      configured: true,
+      options: Object.entries(BILLING_OPTION_LABELS).map(([id, label]) => ({ id, label })),
+      subscribed: stripe.subscribed,
+      canManage: stripe.customer,
+      billingStatus: b.billingStatus,
+      trialEndsAt: b.trialEndsAt ?? null,
+    });
+  }
+  if (key === "POST /billing/portal") {
+    if (!stripe.customer) return fail(409, "not_subscribed", "Todavía no te suscribiste en línea.");
+    return ok({ url: "/panel/settings/plan" });
+  }
+  const option = str(body, "option");
+  if (!BILLING_OPTION_LABELS[option]) return invalid({ "body.option": "Opción inválida." });
+  if (stripe.subscribed) return fail(409, "already_subscribed", "Tu negocio ya tiene una suscripción. Cambiá de plan desde «Administrar pago».");
+  // Lo que en producción hace el webhook de Stripe tras pagar: plan, módulos y cobro al día.
+  state.subscriptions[businessId] = {
+    ...state.subscriptions[businessId],
+    plan: option === "basic" ? "basic" : "pro",
+    extraModules: option === "pro_no_agent" ? { whatsapp: false } : {},
+    billingStatus: "active",
+    trialEndsAt: null,
+  };
+  state.stripe[businessId] = { subscribed: true, customer: true };
+  return ok({ url: "/panel/settings/plan?billing=ok" });
+}
+
 /** Invitación vigente del token, o null. */
 function pendingInvitation(state: MockState, token: string): MockInvitation | null {
   const invitation = INVITATIONS[token];
@@ -631,7 +755,9 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
   const publicPath =
     path.startsWith("/admin/") ||
     path.startsWith("/auth/invitations/") ||
-    ["/auth/login", "/auth/logout", "/auth/password/forgot", "/auth/password/reset"].includes(path);
+    ["/auth/login", "/auth/logout", "/auth/password/forgot", "/auth/password/reset", "/auth/signup", "/auth/signup/config", "/auth/verify-email", "/auth/verify-email/resend"].includes(
+      path,
+    );
   const sessionBusinessId = sessionUser ? (state.businessId ?? sessionUser.memberships[0]?.businessId) : null;
   if (!publicPath && sessionBusinessId && isPaused(state, sessionBusinessId)) return businessPaused();
 
@@ -724,6 +850,8 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
         staffId: me.staffId ?? null,
         setup: mockAgendaSetup(settingsSeedOf(state, b.id), membersOf(state, b.id)),
         clients: mockClientsOf(b.id, b.locations),
+        industry: b.industry,
+        crmFull: me.plan.clientsTier === "full",
       }) ?? fail(404, "not_found", "Ruta inexistente en el mock.")
     );
   }
@@ -751,6 +879,7 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
       routeClientsMock(req, {
         businessId: b.id,
         role: me.role,
+        modules: me.modules,
         locations: b.locations,
         country: b.country,
         clientTerm: b.terminology.client ?? "cliente",
@@ -775,26 +904,36 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
     );
   }
 
-  // WhatsApp IA y push (I2): su propio archivo, con la sesión ya resuelta.
-  if (path.startsWith("/whatsapp/") || path.startsWith("/push/")) {
+  // WhatsApp IA y push (I2) y Campañas (I6): sus propios archivos, con la sesión ya resuelta.
+  if (path.startsWith("/whatsapp/") || path.startsWith("/push/") || path === "/campaigns" || path.startsWith("/campaigns/")) {
     const me = sessionMe();
     if (!me) return unauthorized();
-    const b = BUSINESSES[me.business.id];
-    return (
-      routeWhatsappMock(
-        req,
-        {
+    const b = seedOf(state, me.business.id);
+    const whatsappSession: MockWhatsappSession = {
+      businessId: b.id,
+      businessName: me.business.name,
+      industry: b.industry,
+      role: me.role,
+      modules: me.modules,
+      features: me.plan.features,
+      serviceIds: mockAgendaSetup(settingsSeedOf(state, b.id), membersOf(state, b.id)).services.filter((s) => s.active).map((s) => s.id),
+      locations: b.locations,
+      clients: mockClientsOf(b.id, b.locations),
+    };
+    if (path === "/campaigns" || path.startsWith("/campaigns/")) {
+      return (
+        routeCampaignsMock(req, {
           businessId: b.id,
-          businessName: me.business.name,
-          industry: b.industry,
           role: me.role,
           modules: me.modules,
+          industry: b.industry,
+          timezone: me.business.timezone,
           locations: b.locations,
-          clients: mockClientsOf(b.id, b.locations),
-        },
-        req.headers["X-Location-Id"],
-      ) ?? fail(404, "not_found", "Ruta inexistente en el mock.")
-    );
+          channels: () => mockMarketingChannelStatus(whatsappSession),
+        }) ?? fail(404, "not_found", "Ruta inexistente en el mock.")
+      );
+    }
+    return routeWhatsappMock(req, whatsappSession, req.headers["X-Location-Id"]) ?? fail(404, "not_found", "Ruta inexistente en el mock.");
   }
 
   const invitationMatch = /^\/auth\/invitations\/([^/]+)$/.exec(path);
@@ -832,6 +971,10 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
       if (user.totpEnabled && totpCode !== MOCK_TOTP_CODE) {
         state.failedLogins += 1;
         return invalidCredentials();
+      }
+      // Alta self-service sin el correo confirmado (I6.7).
+      if (state.pendingVerification.includes(user.email)) {
+        return fail(403, "email_not_verified", "Todavía no confirmaste tu correo. Buscá el enlace que te mandamos (o pedí uno nuevo) y volvé a entrar.");
       }
       const activeMemberships = user.memberships.filter((m) => !isPaused(state, m.businessId));
       if (activeMemberships.length === 0) {
@@ -877,6 +1020,36 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
         return fail(400, "invalid_token", "El enlace no es válido o venció. Pedí uno nuevo.");
       }
       return noContent();
+    }
+
+    // ── Alta self-service (I6.7) ──
+    case "GET /auth/signup/config":
+      return ok({ enabled: true, trialDays: SIGNUP_TRIAL_DAYS });
+
+    case "POST /auth/signup":
+      return mockSignup(state, body);
+
+    case "POST /auth/verify-email": {
+      const email = state.pendingVerification.at(-1);
+      if (str(body, "token") !== MOCK_VERIFY_EMAIL_TOKEN || !email) {
+        return fail(400, "invalid_token", "El enlace no es válido o venció. Pedí uno nuevo desde la pantalla de entrada.");
+      }
+      state.pendingVerification = state.pendingVerification.filter((e) => e !== email);
+      return noContent();
+    }
+
+    case "POST /auth/verify-email/resend":
+      // Misma respuesta exista o no la cuenta.
+      return str(body, "email").trim() ? noContent() : invalid({ "body.email": "Campo obligatorio." });
+
+    // ── Cobro en línea con Stripe (I6.6): solo el dueño ──
+    case "GET /billing/status":
+    case "POST /billing/checkout":
+    case "POST /billing/portal": {
+      const me = sessionMe();
+      if (!me) return unauthorized();
+      if (me.role !== "owner") return fail(403, "forbidden_role", "Tu rol no permite hacer esto.");
+      return mockBilling(state, me.business.id, `${req.method} ${path}`, body);
     }
 
     case "POST /auth/password/change": {

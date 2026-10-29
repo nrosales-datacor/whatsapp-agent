@@ -1,9 +1,9 @@
 import { once } from "node:events";
 import type { SQL } from "drizzle-orm";
 import { z } from "zod";
-import { userActor } from "../../platform/audit/auditLog";
+import { recordAudit, userActor } from "../../platform/audit/auditLog";
 import type { Role } from "../../platform/auth/sessionToken";
-import type { Executor } from "../../platform/db/scope";
+import { withTenant, type Executor } from "../../platform/db/scope";
 import { HttpError } from "../../platform/http/errors";
 import { created, route } from "../../platform/http/router";
 import type { Route, Session } from "../../platform/http/routeTypes";
@@ -12,9 +12,19 @@ import { CustomDataInput, getBusinessContext } from "../business";
 import { getStaffIdForUser, listStaffOptions } from "../team";
 import { exportClientsCsv } from "./exporter";
 import { importClients, MAX_IMPORT_ROWS } from "./importer";
+import { recordMarketingConsent } from "./marketing";
 import { CLIENT_CHANNELS } from "./schema";
 import { CLIENT_SORTS, countClientsByStatus, DEFAULT_PAGE_SIZE, listClients, listClientTags, MAX_PAGE_SIZE, usesCrmFilters, type ClientFilters } from "./search";
-import { anonymizeClient, clientIdIn, createClient, getClientDetail, updateClient, type ClientDataEraser, type ClientScope } from "./service";
+import {
+  anonymizeClient,
+  clientIdIn,
+  createClient,
+  getClientDetail,
+  recordMarketingOptOut,
+  updateClient,
+  type ClientDataEraser,
+  type ClientScope,
+} from "./service";
 import { CLIENT_STATUSES } from "./status";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -33,6 +43,8 @@ import { CLIENT_STATUSES } from "./status";
 //   GET    /clients/:id              ficha (todos; en Pro con estado y VIP calculados)
 //   PATCH  /clients/:id              edición (dueño, admin, recepción; `vip`/`customData`: Pro)
 //   POST   /clients/:id/anonymize    eliminar sus datos personales (solo dueño)
+//   PUT    /clients/:id/marketing-consent  el cliente aceptó (o retiró) recibir promociones,
+//                                    dicho en persona (dueño, admin, recepción; con Campañas)
 //
 // "Mis clientes" (rol `staff`, en cualquier plan): el profesional solo ve los clientes con
 // citas suyas, pasadas o futuras (no cuentan las canceladas), y en solo lectura. La
@@ -186,6 +198,7 @@ const ListQuery = z.intersection(
 
 const ClientParams = z.object({ id: z.uuid() });
 const AnonymizeBody = z.object({ confirmation: z.string().trim().min(1, "Escribí la confirmación.").max(200) });
+const MarketingConsentBody = z.object({ granted: z.boolean() }).strict();
 
 /** Tope del CSV a importar (caracteres) y del cuerpo JSON que lo trae. */
 const MAX_IMPORT_CSV_CHARS = 2_000_000;
@@ -341,6 +354,27 @@ export function clientsRoutes({ db, plans, clientErasers = [], staffClients }: C
         });
         log.info("client_anonymized", { clientId: client.id });
         return getClientDetail(db, session.businessId, client.id);
+      },
+    ),
+
+    // Consentimiento dado (o retirado) en persona. Es la base legal de las promociones: queda
+    // en el rastro de auditoría junto con el cambio (quién, cuándo, sí/no; nada personal).
+    // Retirarlo acá es una baja (vale igual que "BAJA" por WhatsApp).
+    route(
+      { method: "PUT", path: "/clients/:id/marketing-consent", auth: "user", roles: EDITORS, module: "campaigns", params: ClientParams, body: MarketingConsentBody },
+      async ({ session, params, body }) => {
+        const now = new Date();
+        await withTenant(db, session.businessId, async (tx) => {
+          const found = body.granted
+            ? await recordMarketingConsent(tx, session.businessId, params.id, true, now)
+            : await recordMarketingOptOut(tx, session.businessId, params.id, now);
+          if (!found) throw new HttpError(404, "Ese cliente no existe.", "not_found");
+          await recordAudit(tx, session.businessId, body.granted ? "client_marketing_consent_granted" : "client_marketing_consent_revoked", userActor(session.userId), {
+            clientId: params.id,
+            source: "panel",
+          });
+        });
+        return getClientDetail(db, session.businessId, params.id, { crm: await hasFullClients(plans, session.businessId) });
       },
     ),
   ];

@@ -6,6 +6,10 @@ export type { Me } from "./me";
 export { activeMemberSessionEpochs, countActiveMembers, isLocationAssigned } from "./members";
 export type { Member, MemberStatus } from "./members";
 export { RESET_PASSWORD_PATH } from "./recovery";
+// Alta self-service (I6.7): la cuenta dueña sin verificar y la verificación del correo.
+export { guardCredentialAttempt, NewPasswordSchema, normalizeEmail, recordCredentialFailure } from "./identity";
+export { createSelfServiceOwner, emailHasAccount, noticeExistingAccount, VERIFY_EMAIL_PATH } from "./verification";
+export type { SelfServiceOwnerInput } from "./verification";
 export { createSessionResolver, type SessionSeenHook } from "./session";
 // Reportes e Inicio (I5): minutos disponibles por profesional (ocupación) y último día de actividad.
 export { getStaffAvailableMinutes, markMemberActive, type LocationSchedule } from "./availability";

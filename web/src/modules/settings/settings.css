@@ -105,3 +105,12 @@ fieldset.field > legend { font-size: var(--step--1); font-weight: 600; color: va
   .settings-item-actions .btn-small { padding: 6px 10px; }
   .form-actions .btn { flex: 1 1 auto; }
 }
+
+/* Configuración › Plan: pago en línea (I6.6) */
+.plan-trial { margin-top: var(--space-xs); font-size: var(--step--1); font-weight: 600; color: var(--warning); }
+.plan-options { display: flex; flex-direction: column; gap: var(--space-xs); margin-top: var(--space-sm); }
+.plan-option { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); flex-wrap: wrap; padding: var(--space-sm); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.plan-option-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 220px; }
+.plan-option-name { font-weight: 700; }
+.plan-option-pitch { font-size: var(--step--1); color: var(--text-2); }
+.plan-billing-actions { display: flex; gap: var(--space-xs); flex-wrap: wrap; margin-top: var(--space-sm); }
