@@ -23,6 +23,23 @@ for (const file of FILES) {
       if (!EXACT.test(version)) violations.push(`${file} → ${section}.${name}: "${version}"`);
     }
   }
+  // `overrides` (p. ej. parchar una transitiva vulnerable, ver scripts/ci/checkAudit.mjs):
+  // también exactos. Pueden anidarse ({ "padre": { "hija": "1.2.3" } }); la clave "." de un
+  // objeto anidado es la versión del propio padre.
+  checkOverrides(file, "overrides", pkg.overrides ?? {});
+}
+
+function checkOverrides(file, where, node) {
+  for (const [name, value] of Object.entries(node)) {
+    const at = `${where}.${name}`;
+    if (typeof value === "string") {
+      if (!EXACT.test(value)) violations.push(`${file} → ${at}: "${value}"`);
+    } else if (value && typeof value === "object") {
+      checkOverrides(file, at, value);
+    } else {
+      violations.push(`${file} → ${at}: valor inválido`);
+    }
+  }
 }
 
 if (violations.length > 0) {
