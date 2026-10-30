@@ -14,4 +14,5 @@ Línea base en `prod/readiness` (`74516e8`, Node 22 en la nube): `typecheck` en 
 
 | Slug | Estado (hecho/saltado/bloqueado) | Rama | Base (sha) | Pendientes humanos |
 |---|---|---|---|---|
-| secretos-fuera-del-repo | en curso | `prod/secretos-fuera-del-repo` | `74516e8` | — |
+| secretos-fuera-del-repo | hecho (`2665723`, mergeado) | `prod/secretos-fuera-del-repo` | `b393abd` | URGENTE: rotar la contraseña del panel del piloto (repo público, sigue en el historial) → `rotar-llaves`. Crear el secret de GitHub `CHECK_SECRETS_DENYLIST`. Antes de mergear a `main`: revisar que el `.env` del droplet cumpla los mínimos nuevos (≥32 caracteres al azar en `PANEL_SESSION_SECRET`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`; `TOKENS_ENCRYPTION_KEY` sin patrón; `HEALTH_DETAIL_TOKEN` no placeholder). |
+| auditoria-de-dependencias | en curso | `prod/auditoria-de-dependencias` | — | — |
