@@ -78,7 +78,7 @@ npm ci                                    # recompila lo nativo contra el Node n
 npm ci --prefix web --include=dev && npm run build --prefix web
 pm2 restart whatsapp-bot && pm2 save
 pm2 logs whatsapp-bot                     # debe decir "Agente escuchando..."
-curl -s https://wabotlavacar.selyon.app/salud
+curl -s https://wabotlavacar.selyon.app/health
 ```
 
 ## 3. Bajar el código
@@ -104,7 +104,7 @@ selyon). Ese puerto lo usamos en el paso 6.
 ## 5. Crear las tablas en la base (Supabase)
 
 ```bash
-node --import tsx scripts/migrar.ts
+node --import tsx scripts/migrate.ts
 ```
 
 Debe decir "Migración aplicada" y listar las tablas `wa_*`. (Si ya existían de las
@@ -124,7 +124,7 @@ pm2 logs whatsapp-bot   # para ver que diga "Agente escuchando..." (Ctrl+C para 
 > Node carga el loader de `tsx` en el mismo proceso (sin proceso hijo, así las señales de PM2
 > llegan directo). `tsx` está en **`dependencies`** con versión exacta, así que `npm ci` lo
 > instala aunque el droplet tenga `NODE_ENV=production` (que omite las devDependencies).
-> Los scripts (`migrar.ts`, `seedTenants.ts`, `backupDb.ts`, …) se corren igual:
+> Los scripts (`migrate.ts`, `backupDb.ts`, …) se corren igual:
 > `node --import tsx scripts/X.ts`, que usa el `tsx` del `node_modules` local. **No uses
 > `npx tsx` en el droplet**: si `tsx` no estuviera instalado, `npx` bajaría la última versión
 > del registry sin pasar por la política de dependencias (CLAUDE.md). No compilamos a JS
@@ -263,12 +263,10 @@ Debe decir: **"Agente de WhatsApp corriendo ✅"**
 
 En la carpeta del proyecto, en el Droplet:
 
-```bash
-node --import tsx scripts/configurarWebhook.ts https://rosalescarwash-bot.duckdns.org/webhook
-```
-
-Debe decir "✅ Webhook apuntado a …". (La cuenta de WhatsApp ya está suscrita a la
-app desde las pruebas, no hay que hacer nada más en Meta.)
+> El script que apuntaba el webhook desde el droplet era del producto anterior y ya no existe.
+> El webhook se configura en Meta for Developers (app → WhatsApp → Configuración → Webhook) con
+> la URL `https://TU-DOMINIO/webhook/whatsapp` (`WHATSAPP_WEBHOOK_PATH`,
+> `src/modules/whatsapp/webhook.ts`) y el token de verificación del `.env`.
 
 ## 12. ¡Probar de verdad!
 
@@ -338,33 +336,16 @@ cd ~/lavacar-whatsapp-bot
 nano .env        # pegá las líneas de arriba. Guardá: Ctrl+O, Enter, Ctrl+X.
 git pull
 npm ci
-node --import tsx scripts/migrar.ts        # crea/actualiza las tablas (idempotente)
-node --import tsx scripts/seedTenants.ts   # siembra el negocio + usuario del panel en la base (idempotente, ver nota 🆕 tenants)
+node --import tsx scripts/migrate.ts        # crea/actualiza las tablas (idempotente)
 npm run web:build                # compila el panel React (web/) → web/dist (ver nota abajo)
 pm2 restart whatsapp-bot
 pm2 logs whatsapp-bot            # debe decir "Agente escuchando" + "Notificaciones push: configuradas ✅"
 ```
 
-> 🆕 **Los negocios ahora viven en la base (no en el código).** `scripts/seedTenants.ts`
-> inserta/actualiza el negocio `selyon` y su usuario de panel en las tablas
-> `wa_tenants`/`wa_usuarios` a partir de la config + `PANEL_PASSWORD_HASH_SELYON` del
-> `.env`. **Corre DESPUÉS de `migrar.ts` y ANTES del `pm2 restart`** para que al reiniciar
-> el bot ya encuentre al negocio en la base. Es idempotente (se puede correr en cada deploy).
-> **Red de seguridad:** si la base quedara sin negocios o no respondiera, el bot cae a una
-> copia interna de `lavacar-rosales` y sigue atendiendo (en los logs aparece un aviso
-> ruidoso indicando que hay que correr el seed) — así esta migración no puede dejar el bot
-> caído. Dar de alta OTRO negocio = insertar filas en `wa_tenants`/`wa_usuarios` (el bot lo
-> toma solo en ~1 min, sin redeploy); también se puede por pantalla (onboarding, ver paso 14).
-
-> ⚠️ **El seed NO pisa lo que el dueño editó** (auditoría ALTO-08, arreglado el 2026-07-30).
-> Como el script corre en **cada push a `main`** por el pipeline, antes hacía un
-> `onConflictDoUpdate` con TODOS los campos: si el dueño afinaba su base de conocimiento,
-> sus servicios o su horario desde "Mi negocio" un martes, el próximo deploy —aunque fuera
-> por un cambio de CSS— le revertía todo, y su contraseña volvía a la del `.env`. Ahora:
-> el INSERT siembra todo (bootstrap), y el UPDATE toca **solo** `phone_number_id` y
-> `access_token` (infraestructura que administramos nosotros). El usuario del panel se crea
-> si no existe y su contraseña **nunca** se sobreescribe — para resetear una clave está el
-> flujo del superadmin (`/panel/admin` → Detalle → "Resetear clave").
+> 🆕 **Los negocios viven en la base (no en el código).** El script de siembra de negocios del
+> producto anterior ya no existe: en Selyon CRM los negocios se crean desde el alta self-service o
+> el área de superadmin (§14, §25). `scripts/seedDev.ts` es **solo para desarrollo** (se niega a
+> correr con `NODE_ENV=production`).
 
 > 📅 **Google Calendar es por negocio, no por `.env`** (auditoría BLOQ-05, arreglado el
 > 2026-07-30). En el `.env` van solo las credenciales de la **service account** (globales,
@@ -482,7 +463,7 @@ cualquier otra rama, o un PR contra `main`, solo corre el typecheck/build (sin t
    `main` corre CI completo, pero el job de deploy **espera** a que lo apruebes en la pestaña
    *Actions* ("Review deployments"). Sin esta regla configurada, el deploy sigue siendo automático.
 6. **Backup antes de migrar (G9):** si el push trae archivos nuevos en `drizzle/`, el deploy corre
-   `scripts/backupDb.ts` antes de `migrar.ts`; si el backup falla, el deploy se corta **sin tocar la
+   `scripts/backupDb.ts` antes de `migrate.ts`; si el backup falla, el deploy se corta **sin tocar la
    base**. Requiere lo de la §19.1 en el droplet (`postgresql-client` + `BACKUP_DATABASE_URL`).
 
 El host y el usuario se pueden cambiar con las **variables** del repo `DEPLOY_HOST` y
@@ -491,13 +472,19 @@ valores actuales. Carpeta y nombre del proceso PM2 siguen en `.github/workflows/
 
 **Qué hace el deploy:** compila el panel en el runner de GitHub (el droplet ya no instala Vite ni
 compila), lo sube como `panel-<sha>.tgz`, hace `git checkout` del **commit exacto** que pasó CI,
-`npm ci --omit=dev`, backup si hay migraciones, `migrar.ts` + `seedTenants.ts`, cambia
-`web/dist` de una vez y `pm2 reload`. Si algo falla antes del reload, el proceso viejo sigue
-atendiendo.
+`npm ci --omit=dev`, backup si hay migraciones, `migrate.ts`, cambia `web/dist` de una vez y
+`pm2 reload`. Si algo falla antes del reload, el proceso viejo sigue atendiendo. Después espera el
+`/health` (con reintentos) y corre el **smoke post-deploy** `scripts/ci/smoke.sh "$BASE_URL"`:
+`/panel` con el bundle, router de la API (404 JSON), `GET /api/panel/auth/me` sin cookie → **401**
+y `POST /api/panel/auth/login` con el correo de smoke `smoke-test@selyon-smoke.invalid` → **401**
+`invalid_credentials` (CSRF + validación + base). Recién si todo pasa guarda el SHA como último
+deploy bueno. El login falso es **un** intento fallido por deploy: suma al rate-limit de la IP del
+runner y aparece en los logs con ese correo (dominio reservado `.invalid`); es esperable, no un
+ataque. No hay usuario de smoke en producción: el login exitoso se prueba en CI (TESTING.md §9).
 
 ### Si el pipeline falla
 
-`pm2 restart` solo corre si `git pull`/`npm ci`/`migrar.ts`/`seedTenants.ts`/el build del panel
+`pm2 reload` solo corre si `git checkout`/`npm ci`/`migrate.ts`/el panel
 salieron bien (`set -e` en el script remoto) — el bot sigue corriendo con el código viejo hasta que
 un deploy completo tenga éxito. Mirá la pestaña **Actions** del repo para ver en qué paso falló. El
 propio job de deploy imprime, en su último paso (`if: failure()`), el SHA al que revertir si hace
@@ -512,7 +499,7 @@ de abajo sigue funcionando igual que siempre.
 > el `package.json`** (falla si no lo está) — si alguna vez ves el deploy romperse ahí, corré
 > `npm install` local, commiteá el lockfile actualizado, y volvé a pushear.
 > Además, los `package.json` (raíz y `web/`) fijan **versiones exactas** (sin `^`/`~`), y el CI
-> lo verifica con `npm run ci:versiones` (`scripts/ci/verificarVersionesExactas.mjs`): un rango
+> lo verifica con `npm run ci:versions` (`scripts/ci/checkExactVersions.mjs`): un rango
 > nuevo rompe el job "Typecheck + build".
 
 ### Rollback — revertir el CÓDIGO de un deploy fallido (ROADMAP F17)
@@ -529,8 +516,9 @@ verdad de "qué era lo último que funcionaba".
    el `~/.ultimo-deploy-ok` que ya está guardado en el droplet — no hace falta que nadie se acuerde
    cuál era.
 3. Correr. El job **`rollback`** hace `git fetch` + `git checkout <sha>` + `npm ci` (backend y
-   panel) + `pm2 restart`, y corre el mismo `/salud` + smoke de 3 superficies que un deploy normal.
-   Si el smoke pasa, ese SHA queda guardado como el nuevo `~/.ultimo-deploy-ok`.
+   panel) + `pm2 reload`, y corre el mismo `/health` + `scripts/ci/smoke.sh` que un deploy normal
+   (el script sale del commit del workflow, no del SHA revertido). Si el smoke pasa, ese SHA queda
+   guardado como el nuevo `~/.ultimo-deploy-ok`.
 
 > ⚠️ **Este rollback es SOLO de código — nunca de la base de datos.** El job automático
 > deliberadamente **no** revierte ni corre migraciones. Revertir un esquema (borrar una columna,
@@ -547,7 +535,7 @@ verdad de "qué era lo último que funcionaba".
 
 ### Protocolo expand/contract — migraciones que no son puramente aditivas (ROADMAP F17)
 
-`node --import tsx scripts/migrar.ts` corre **antes** del `pm2 restart`, así que hay una ventana (breve, pero
+`node --import tsx scripts/migrate.ts` corre **antes** del `pm2 restart`, así que hay una ventana (breve, pero
 real) en la que el código **viejo** sigue respondiendo pedidos contra el esquema **ya migrado**. Una
 migración puramente aditiva (agregar una tabla, o una columna **nullable** o con **default**) es
 segura en esa ventana: el código viejo simplemente no la usa. Una migración que **no** es aditiva —
@@ -565,9 +553,9 @@ La salida es partir el cambio en varios deploys chicos, cada uno reversible por 
    (la columna puede venir `null` para las filas viejas). Este es un deploy normal, revertible con
    el rollback de arriba sin drama: si algo sale mal, el código anterior sigue funcionando contra el
    esquema ampliado sin quejarse (porque el paso 1 lo dejó opcional).
-3. **Backfill:** script aparte (idempotente, en lotes — mismo patrón que `scripts/cifrarTokens.ts`
-   o la purga de `wa_jobs`, nunca un `UPDATE` masivo de una sola vez) que llena la columna/tabla
-   nueva para las filas que ya existían.
+3. **Backfill:** script aparte (idempotente, en lotes — mismo patrón que la purga de la cola,
+   nunca un `UPDATE` masivo de una sola vez) que llena la columna/tabla nueva para las filas que
+   ya existían.
 4. **Contract:** recién en un deploy **posterior** (con el backfill ya confirmado 100 % completo)
    una migración que hace la columna `NOT NULL`, borra la columna vieja que quedó reemplazada, o
    saca el fallback del código. Este paso es el que ya NO es seguro revertir con un rollback de
@@ -618,14 +606,14 @@ Con **UptimeRobot** (gratis, no hace falta tarjeta):
 2. **+ Add New Monitor**:
    - Monitor Type: `HTTP(s)`
    - Friendly Name: `Lavacar Rosales — bot WhatsApp`
-   - URL: `https://wabotlavacar.selyon.app/salud`
+   - URL: `https://wabotlavacar.selyon.app/health`
    - Monitoring Interval: `5 minutes` (el mínimo del free tier)
 3. En **Alert Contacts**, agregá tu email (y opcionalmente Slack/Telegram/SMS si querés
    más canales) y asignalo al monitor.
-4. Guardá. UptimeRobot pega un GET a `/salud` cada 5 min; si no devuelve `200`
+4. Guardá. UptimeRobot pega un GET a `/health` cada 5 min; si no devuelve `200`
    (droplet caído, proceso muerto, DNS roto, etc.) manda la alerta.
 
-No requiere ningún cambio de código: `/salud` ya existe y devuelve `200 OK` con texto
+No requiere ningún cambio de código: `/health` ya existe y devuelve `200 OK` con texto
 plano (`src/server.ts`). Es 100% configuración externa — no hay nada para deployar.
 
 ## 18. Métricas internas (ROADMAP B5)
@@ -705,7 +693,7 @@ piloto real:
    conteos tabla por tabla contra la base de origen):
    ```bash
    RESTORE_DATABASE_URL="postgresql://postgres:...@db.yyyy.supabase.co:5432/postgres" \
-     node --import tsx scripts/verificarRestore.ts            # o pasale un .sql.gz puntual
+     node --import tsx scripts/verifyRestore.ts            # o pasale un .sql.gz puntual
    ```
    Se niega a escribir en la base de la app o en una que ya tenga tablas `wa_*`. Termina con
    ✅ si el volcado se restauró completo (todas las tablas, ninguna vacía que no lo esté en el
@@ -719,16 +707,18 @@ es un backup confiable.
 
 ### 19.3 Chequeo rápido de producción (E14)
 
-```bash
-cd ~/lavacar-whatsapp-bot && node --import tsx scripts/verificarProduccion.ts   # o npm run verificar:produccion
-```
+El verificador automático que corría en el droplet era del producto anterior y ya no existe.
+Hasta que se reescriba (ROADMAP, Carril P), el chequeo es:
 
-Corrido **en el droplet**, resume en 10 s lo que se puede leer del propio servidor: si
-`SENTRY_DSN` está puesto, si el cron de §19.1 existe, si hay un `.sql.gz` de menos de
-48 h (y ningún `.parcial` huérfano), si `BACKUP_DATABASE_URL` y `BACKUP_COMANDO_COPIA`
-están configurados. Sale con código 1 si algo crítico falla. **No reemplaza** el restore
-de §19.2 ni confirmar las alertas de Sentry/UptimeRobot en sus dashboards — eso sigue
-siendo manual — pero evita depender de la memoria de nadie para el resto.
+1. **Desde afuera** (cualquier máquina con `bash` y `curl`): el mismo smoke que corre el pipeline
+   después de cada deploy, `bash scripts/ci/smoke.sh https://TU-DOMINIO` (§15; suma un login
+   fallido con el correo de smoke, como cada deploy).
+2. **En el droplet, a mano:** que `SENTRY_DSN` esté en el `.env`, que el cron de §19.1 exista
+   (`crontab -l`), que haya un `.sql.gz` de menos de 48 h en `backups/` (y ningún `.partial`
+   huérfano) y que `BACKUP_DATABASE_URL` y `BACKUP_COPY_COMMAND` estén configurados.
+
+**No reemplaza** el restore de §19.2 ni confirmar las alertas de Sentry/UptimeRobot en sus
+dashboards: eso sigue siendo manual.
 
 ## 20. Cifrado del `access_token` de WhatsApp en reposo (ROADMAP F2)
 
@@ -749,12 +739,8 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 > (mismo fail-closed que `PANEL_SESSION_SECRET`). En desarrollo sin base se permite seguir sin
 > ella (se usa una clave aleatoria por corrida, solo para no bloquear el desarrollo local).
 
-**Migrar tokens que ya estaban en texto plano** (idempotente — se puede correr las veces que
-haga falta, no vuelve a tocar lo ya cifrado):
-
-```bash
-node --import tsx scripts/cifrarTokens.ts
-```
+> El script que migraba tokens guardados en texto plano era del producto anterior y ya no existe:
+> en Selyon CRM los tokens se guardan cifrados desde el alta.
 
 ### Rotar la clave
 
@@ -804,10 +790,10 @@ importar.
 
 ### Cómo queda
 
-- **`ROL=web`**: sirve webhook + panel + landing + `/salud` completo. NO arranca ningún worker
+- **`ROL=web`**: sirve webhook + panel + landing + `/health` completo. NO arranca ningún worker
   de cola ni scheduler.
 - **`ROL=worker`**: arranca los 3 workers de cola y los 3 schedulers. Sirve un HTTP **mínimo**
-  que solo responde `/salud` (health check del proceso; sin webhook, sin panel, sin landing —
+  que solo responde `/health` (health check del proceso; sin webhook, sin panel, sin landing —
   eso lo atiende la réplica `web`).
 - Los workers de cola (mensajes, campañas, rescate) son seguros ante N réplicas por su claim
   atómico (`FOR UPDATE SKIP LOCKED`); se puede correr **más de una** réplica `worker` sin
@@ -835,7 +821,7 @@ cd ~/lavacar-whatsapp-bot
 # App "web": webhook + panel + landing. Usa el puerto público (el que ya tenías).
 PORT=3001 ROL=web pm2 start npm --name whatsapp-bot-web -- start
 
-# App "worker": workers de cola + schedulers. Puerto DISTINTO (solo para su /salud
+# App "worker": workers de cola + schedulers. Puerto DISTINTO (solo para su /health
 # interno; no necesita quedar expuesto públicamente detrás de Caddy/nginx).
 PORT=3011 ROL=worker pm2 start npm --name whatsapp-bot-worker -- start
 
@@ -848,7 +834,7 @@ pm2 save
 Migrá **antes** de arrancar la app `worker` (crea `wa_lideres`, la tabla del lease):
 
 ```bash
-node --import tsx scripts/migrar.ts
+node --import tsx scripts/migrate.ts
 ```
 
 Con esto, el resto del deploy (CI/CD, paso 15) sigue igual: `pm2 restart whatsapp-bot-web` y
@@ -863,7 +849,7 @@ la tabla `wa_lideres` queda simplemente sin usar.
 
 ## 22. Alertas de "bot mudo" a la plataforma (OPCIONAL, recomendado)
 
-`/salud` solo responde 503 si se cae la base o el caché de tenants. Hay fallas que dejan a
+`/health` solo responde 503 si se cae la base o el caché de tenants. Hay fallas que dejan a
 UN negocio sin bot sin que nada se caiga: worker colgado (cola atascada), mensajes que
 agotan reintentos (DLQ), un token de Meta revocado (HTTP 401 / error Graph 190), un número
 que dejó de recibir webhooks, o el tope del plan agotado. Para eso corre un scheduler de
@@ -876,12 +862,12 @@ proceso líder) y el envío a WhatsApp detecta el token inválido al momento.
 2. Ajustá los umbrales si hace falta (`ALERTA_*` en `.env.example`). El de "sin entrantes"
    cuenta horas **hábiles** según el horario y la zona horaria de cada negocio.
 3. `pm2 restart whatsapp-bot`. Al arrancar se loguea `Alertas a la plataforma: log + …`.
-4. Para ver el estado en vivo (requiere `SALUD_DETALLE_TOKEN` en el `.env`): `curl -s "https://TU-DOMINIO/salud?detalle=1&token=$SALUD_DETALLE_TOKEN" | jq .vigilancia`
+4. Para ver el estado en vivo (requiere `HEALTH_DETAIL_TOKEN` en el `.env`): `curl -s "https://TU-DOMINIO/health?detail=1&token=$HEALTH_DETAIL_TOKEN" | jq .vigilancia`
    (sin datos personales: solo ids de negocio, conteos y tiempos). Es informativo: **no**
    cambia el 200/503 del uptime monitor.
 
 Con procesos separados (paso 21), la marca de "token inválido" vive en el proceso
-`worker`: mirá su `/salud?detalle=1` (puerto del worker). La alerta sale igual al momento.
+`worker`: mirá su `/health?detail=1` (puerto del worker). La alerta sale igual al momento.
 
 Para el botón "Mejorar plan" del aviso de cuota del panel, definí
 `PLATAFORMA_CONTACTO_WHATSAPP` (solo dígitos) o `PLATAFORMA_CONTACTO_EMAIL`.
@@ -952,12 +938,12 @@ Mientras la app siga conectada como `postgres`, las políticas no aplican (ese r
 
 Para que el aislamiento lo garantice la base (prerrequisito: §19.2 hecho, restore probado):
 
-1. Correr `scripts/rls/01-rol-aplicacion.sql` en el SQL Editor de Supabase (le da login con
+1. Correr `scripts/rls/01-app-role.sql` en el SQL Editor de Supabase (le da login con
    clave al rol y verifica que no tenga BYPASSRLS).
 2. Probar la conexión del rol desde el droplet (comandos en el mismo archivo).
 3. En el `.env` del droplet: `DATABASE_URL_MIGRACIONES` = la URL actual (rol `postgres`, la usan
-   `migrar.ts`, `seedTenants.ts`, backups y demás scripts) y `DATABASE_URL` = la del rol `app_wa`.
-4. `pm2 reload whatsapp-bot --update-env` y verificar `/salud?detalle=1`, un mensaje de punta a
+   `migrate.ts`, backups y demás scripts) y `DATABASE_URL` = la del rol `app_wa`.
+4. `pm2 reload whatsapp-bot --update-env` y verificar `/health?detail=1`, un mensaje de punta a
    punta y el panel. Rollback: volver `DATABASE_URL` al rol `postgres` y recargar.
 
 `test/security/rlsAplicado.test.ts` corre toda la app con el rol `app_wa` sobre PGlite: si una
@@ -1017,13 +1003,13 @@ WhatsApp IA › Crecimiento y Campañas, y carga sus plantillas por número (GUI
 | Ver estado | `pm2 status` |
 | Ver registros | `pm2 logs whatsapp-bot` |
 | Reiniciar | `pm2 restart whatsapp-bot` |
-| Actualizar el código (manual, red de seguridad — lo normal es el push a `main`) | `cd ~/lavacar-whatsapp-bot && git checkout main && git pull && npm ci && node --import tsx scripts/migrar.ts && node --import tsx scripts/seedTenants.ts && npm ci --prefix web --include=dev && npm run build --prefix web && pm2 restart whatsapp-bot` |
+| Actualizar el código (manual, red de seguridad — lo normal es el push a `main`) | `cd ~/lavacar-whatsapp-bot && git checkout main && git pull && npm ci && node --import tsx scripts/migrate.ts && npm ci --prefix web --include=dev && npm run build --prefix web && pm2 restart whatsapp-bot` |
 | Revertir un deploy malo (solo código, ver **Rollback** arriba) | Actions → CI/CD → **Run workflow**, con `sha` vacío o el commit al que volver |
 
 **Landing de venta (ROADMAP C4.4):** vive en `landing/` (HTML/CSS estático, sin build) y la sirve
 el mismo proceso Node en el root del dominio (`GET /`). No agrega pasos al redeploy — el `git pull`
 de la fila de arriba ya la trae. Si algo (uptime monitor, script de verificación) usaba `GET /` como
-health check, ahora es `GET /salud` (el texto "Agente de WhatsApp corriendo ✅" se movió ahí).
+health check, ahora es `GET /health` (el texto "Agente de WhatsApp corriendo ✅" se movió ahí).
 
 ## Si algo falla
 - **El panel se ve VIEJO (no es el React nuevo)** → el server está sirviendo el
