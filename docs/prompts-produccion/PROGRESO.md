@@ -10,6 +10,14 @@ Lo mantiene el orquestador (`/prod-readiness`). Ver `00-INDICE.md`.
 
 Línea base en `prod/readiness` (`74516e8`, Node 22 en la nube): `typecheck` en verde; `npm test` 697/699, con 2 cancelados que ya venían de antes en `test/unit/emailResend.test.ts` ("timeout: Resend colgado…" y "2xx sin id…", `cancelledByParent`). El repo pide Node 24 (`.nvmrc`).
 
+## Modo paralelo (desde 2026-10-30, aprobado por el usuario)
+
+Tres carriles a la vez, cada agente en su worktree; preguntas y merges a `prod/readiness` siguen siendo de a uno con aprobación.
+
+- **A — infra:** rotar-llaves → staging → dominio-y-ssl → … (sigue el orden del índice para lo de infraestructura).
+- **B — agente IA:** evals → limites-de-tokens → prompt-injection → tests-de-regresion.
+- **C — legal/panel:** privacidad-y-terminos → tests-unitarios → multiples-dispositivos → accesibilidad.
+
 ## Prompts
 
 | Slug | Estado (hecho/saltado/bloqueado) | Rama | Base (sha) | Pendientes humanos |
@@ -17,4 +25,4 @@ Línea base en `prod/readiness` (`74516e8`, Node 22 en la nube): `typecheck` en 
 | secretos-fuera-del-repo | hecho (`2665723`, mergeado) | `prod/secretos-fuera-del-repo` | `b393abd` | URGENTE: rotar la contraseña del panel del piloto (repo público, sigue en el historial) → `rotar-llaves`. Crear el secret de GitHub `CHECK_SECRETS_DENYLIST`. Antes de mergear a `main`: revisar que el `.env` del droplet cumpla los mínimos nuevos (≥32 caracteres al azar en `PANEL_SESSION_SECRET`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`; `TOKENS_ENCRYPTION_KEY` sin patrón; `HEALTH_DETAIL_TOKEN` no placeholder). |
 | auditoria-de-dependencias | hecho (`6789dfa`, mergeado) | `prod/auditoria-de-dependencias` | `8059782` | Activar alertas de Dependabot (Settings → Code security, sin PRs). Desde 2026-11-06: `vite` 6.4.4 en `web/` (o 6.4.5 desde 11-21). Desde 2026-11-19/22: transitivas del build de `web/` (`fast-uri`, `serialize-javascript`). 2026-11-30: primer repaso mensual (README §7) y evaluar `drizzle-kit` 0.31.x. Excepción aprobada: `zod@4.6.6` antes del mes. |
 | auth-en-endpoints | hecho (`7b6bf74`, mergeado) | `prod/auth-en-endpoints` | `9da878b` | Antes del primer deploy: `npx tsx scripts/generateTotp.ts admin` y cargar `PANEL_SUPERADMIN_TOTP_SECRET` (DEPLOY.md §14); sin él no arranca. Opcional: avisar en la UI que "Cerrar sesión" cierra todos los dispositivos. Más adelante (P1.3b): superadmins por persona y logout del admin que revoque. Decidido: `staff` puede leer `GET /whatsapp/settings` y `/whatsapp/growth` (está bien así). |
-| smoke-tests | en curso | `prod/smoke-tests` | — | — |
+| smoke-tests | hecho (`0137348`, mergeado) | `prod/smoke-tests` | `0296c2b` | Con el servidor nuevo: ver en Actions el primer "Smoke post-deploy" (5 ✅) y probar una vez el rollback manual. Confirmar que nginx/Caddy reenvían `Host` (si no, el login falso da 403). Avisar que un `invalid_credentials` de `smoke-test@selyon-smoke.invalid` por deploy es esperable. Primer push: job `e2e` en verde con el arranque sembrado. |
