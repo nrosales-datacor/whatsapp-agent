@@ -46,6 +46,18 @@ jobs:
         env:
           CHECK_SECRETS_DENYLIST: ${{ secrets.CHECK_SECRETS_DENYLIST }}
 
+      # Auditoría de dependencias (scripts/ci/checkAudit.mjs, sin deps; `npm audit` lee los
+      # lockfiles, no necesita node_modules). BLOQUEANTE: un aviso alto/crítico de producción
+      # (`npm audit --omit=dev`, nivel high) en raíz o web/ que no esté en
+      # scripts/ci/auditAllowlist.json, o un ítem de esa allowlist vencido.
+      - name: Auditoría de dependencias de producción (raíz y web; altas/críticas fallan)
+        run: npm run ci:audit
+
+      # Informativo, nunca falla: `npm audit` completo (con devDependencies) y si cada aviso
+      # está evaluado en la allowlist. Es la foto para el repaso mensual (README.md).
+      - name: Auditoría completa de dependencias (informativa)
+        run: npm run ci:audit:report
+
       - name: Instalar dependencias (backend)
         run: npm ci
 

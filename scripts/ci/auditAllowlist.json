@@ -1,0 +1,40 @@
+{
+  "$formato": [
+    "Allowlist de `npm run ci:audit` (scripts/ci/checkAudit.mjs). Repaso mensual: README.md § 'Auditoría de dependencias'.",
+    "produccion: avisos ALTOS/CRÍTICOS de dependencias de producción aceptados TEMPORALMENTE (el CI no falla por ellos).",
+    "  { aviso: 'GHSA-xxxx-xxxx-xxxx', paquete, proyecto?: 'raíz'|'web', motivo, vence: 'AAAA-MM-DD' }",
+    "  `vence` = día en que la versión parcheada cumple el mes de la política (CLAUDE.md). Desde ese día el CI FALLA: hay que subirla.",
+    "desarrollo: evaluación de los avisos de devDependencies (solo informativa, `npm run ci:audit:report`; nunca falla).",
+    "  { paquetes: [...], avisos?: ['GHSA-…'], proyecto: 'raíz'|'web', motivo, revisar: 'AAAA-MM-DD' }",
+    "  Pasado `revisar`, el reporte avisa. Si `avisos` está, un aviso nuevo del mismo paquete sale como SIN EVALUAR."
+  ],
+  "produccion": [],
+  "desarrollo": [
+    {
+      "paquetes": ["vite"],
+      "avisos": ["GHSA-698v-4r3x-3vcv", "GHSA-r825-w8mm-5pxw", "GHSA-587h-7wmj-h5pm", "GHSA-9jrq-w75r-8gcw", "GHSA-rq7h-c2jc-7f22"],
+      "proyecto": "web",
+      "motivo": "Solo el dev server de Vite (launch-editor, fs.allow, middleware cross-origin): el bundle que sirve producción no lo incluye y el server de desarrollo escucha en localhost. Mientras tanto, no navegar sitios no confiables con `npm run web:dev` abierto. vite@6.4.4 (2026-10-06) cumple el mes el 2026-11-06.",
+      "revisar": "2026-11-06"
+    },
+    {
+      "paquetes": ["brace-expansion", "browserslist", "fast-uri", "nanoid", "postcss", "source-map-js", "baseline-browser-mapping"],
+      "proyecto": "web",
+      "motivo": "Transitivas del build del panel (Vite, PostCSS, Babel, workbox/ajv). Son DoS o lecturas de .map con entradas maliciosas, pero en el build solo procesan código y configuración propios del repo, nunca datos de usuarios; nada de esto llega al bundle servido. Ya hay versión corregida con +1 mes de brace-expansion (2.1.7 / 5.0.12), browserslist (4.29.3), nanoid (3.3.19), postcss (8.5.28), baseline-browser-mapping (2.11.x) y source-map-js (1.2.2, cumple el mes el 2026-10-30); fast-uri 3.1.9 lo cumple el 2026-11-19. Se suben juntas al refrescar el lockfile de web/ (con overrides exactos si el rango del padre trae versiones de menos de un mes).",
+      "revisar": "2026-11-30"
+    },
+    {
+      "paquetes": ["serialize-javascript", "deepmerge", "@rollup/plugin-node-resolve", "workbox-build", "vite-plugin-pwa"],
+      "proyecto": "web",
+      "motivo": "Severidad baja, cadena de vite-plugin-pwa → workbox-build usada solo al compilar el service worker con nuestra configuración. El arreglo que propone npm es bajar vite-plugin-pwa a 0.2.1 (no aplica). deepmerge no tiene versión corregida (4.3.1 es la última); serialize-javascript 7.1.3 (2026-10-22) cumple el mes el 2026-11-22.",
+      "revisar": "2026-11-30"
+    },
+    {
+      "paquetes": ["drizzle-kit", "@esbuild-kit/core-utils", "@esbuild-kit/esm-loader", "esbuild"],
+      "avisos": ["GHSA-67mh-4wv8-2f99"],
+      "proyecto": "raíz",
+      "motivo": "Moderada, solo desarrollo: el aviso es del servidor de desarrollo de esbuild (`esbuild --serve`), que drizzle-kit no levanta (solo transpila drizzle.config.ts y los schema.ts). El arreglo es drizzle-kit 0.31.x (cambio de versión con impacto en `db:generate`/`db:check`): se evalúa aparte.",
+      "revisar": "2026-11-30"
+    }
+  ]
+}

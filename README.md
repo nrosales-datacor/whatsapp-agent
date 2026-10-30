@@ -162,6 +162,40 @@ npm run ci:env
 npm run ci:versions
 ```
 
+```bash
+npm run ci:audit
+```
+
+### 7. Auditoría de dependencias (repaso mensual)
+
+El job `verify` del CI corre dos pasos con `scripts/ci/checkAudit.mjs`:
+
+- `npm run ci:audit` (**bloqueante**): `npm audit --omit=dev` en la raíz y en `web/`. Falla si aparece un aviso
+  **alto o crítico de producción** que no esté en `scripts/ci/auditAllowlist.json`, o si un ítem de esa allowlist
+  venció (el día `vence` ya falla).
+- `npm run ci:audit:report` (informativo, nunca falla): `npm audit` completo, con devDependencies, marcando cada
+  paquete como evaluado (sección `desarrollo` de la allowlist, con motivo y fecha `revisar`) o `SIN EVALUAR`.
+
+Procedimiento, **una vez al mes** (y cada vez que el CI avise de un vencimiento):
+
+1. Correr `npm run ci:audit` y `npm run ci:audit:report` (con `web/node_modules` instalado o no: `npm audit` lee
+   los lockfiles).
+2. Por cada aviso con versión parcheada: verificar la fecha con `npm view <paquete> time --json` y subir **solo a una
+   versión con más de un mes** (CLAUDE.md, política de dependencias), exacta. Directa: `npm install <paquete>@<versión>
+   --save-exact` (en `web/` con `--prefix web`). Transitiva: `overrides` en el `package.json` con versión exacta
+   (`npm run ci:versions` también lo revisa). No usar `npm audit fix` a ciegas: toma la última versión, aunque tenga
+   días.
+3. Si el arreglo todavía no cumple el mes y el aviso es alto/crítico de producción: agregarlo a `produccion` en la
+   allowlist con el GHSA, el paquete, el motivo y `vence` = el día en que la versión cumple el mes. Saltarse el mes
+   es una excepción que aprueba el dueño del producto y se anota en el ROADMAP y en el commit.
+4. Avisos de desarrollo: evaluarlos en `desarrollo` (por qué no afectan a producción) con fecha `revisar`; borrar los
+   ítems que el reporte marca como "ya no aparece".
+5. Verificar: `npm ci`, `npm run typecheck`, `npm test`, `npm ci --prefix web`, `npm run build --prefix web`.
+
+**Alertas de Dependabot (solo alertas, sin PRs automáticos):** se activan en GitHub → Settings → Code security →
+Dependabot alerts (no se versiona un `dependabot.yml`: no se quieren PRs que suban a versiones de días). Las alertas
+que lleguen se tratan con este mismo procedimiento.
+
 ---
 
 ## Estructura

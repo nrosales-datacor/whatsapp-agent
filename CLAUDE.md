@@ -44,3 +44,7 @@ Antes de instalar **cualquier** paquete (`npm install`), se cumplen las TRES reg
 1. **Ampliamente usado.** Paquete establecido y popular (no nicho, no recién nacido).
 2. **Publisher conocido.** Autor/organización reputada y reconocible.
 3. **Versión con +1 mes de publicada.** Nunca se instala una versión recién salida (ventana para detectar paquetes comprometidos). Verificar con `npm view <pkg> time --json` y **fijar la versión exacta** (sin `^`/`~`) a una que tenga más de un mes.
+
+Lo mismo vale para las transitivas que se fijan con `overrides` (versión exacta; `npm run ci:versions` lo revisa). Saltarse la regla 3 es una excepción que solo aprueba el usuario, para un paquete y una versión, y queda anotada en el ROADMAP y en el commit (única hasta hoy: `zod@4.6.6`, 2026-10-30, por GHSA-mrhx-c7xc-m3w5).
+
+**Auditoría:** `npm run ci:audit` (bloqueante en CI: altas/críticas de producción fuera de `scripts/ci/auditAllowlist.json`, o un ítem vencido) y `npm run ci:audit:report` (informativo). Repaso mensual y alertas de Dependabot (solo alertas): README.md § "Auditoría de dependencias".
