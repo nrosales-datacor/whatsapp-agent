@@ -6,6 +6,8 @@ node_modules/
 .env
 .env.local
 .env.*.local
+# Cadenas prohibidas locales para `npm run ci:secrets` (p. ej. contraseñas filtradas)
+.secrets-denylist
 
 # Build / salida
 dist/

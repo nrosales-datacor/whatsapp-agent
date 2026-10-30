@@ -47,7 +47,7 @@ seria si no se hacen primero:
     prerequisito de todo lo demás.
   - *Listo cuando:* `curl https://wabotlavacar.selyon.app/panel | grep /panel/assets/`
     devuelve el bundle React, y en Supabase existe `wa_jobs` con jobs procesados.
-- [ ] 🔴 **Cambiar la contraseña del panel** (`lavacar2026` es pública en git).
+- [ ] 🔴 **Cambiar la contraseña del panel** (la anterior quedó pública en el historial de git; la vigente se pide a Nathan / está en el gestor de contraseñas).
   - *Cómo:* el hash nuevo ya está generado (sesión 2026-07-03); setear
     `PANEL_PASSWORD_HASH_ROSALES` en el `.env` del droplet, re-correr `seedTenants.ts`
     (upserta el hash) y `pm2 restart`.

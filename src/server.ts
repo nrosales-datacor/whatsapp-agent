@@ -25,11 +25,12 @@ initSentry(); // antes de aceptar tráfico: registra los handlers globales de er
 
 // ── Fail-closed de secretos en producción ──
 // Antes de cargar la app (que importa los módulos de sesión y de cifrado): sin
-// PANEL_SESSION_SECRET o TOKENS_ENCRYPTION_KEY el proceso no atiende ni un request, y el
-// mensaje lista TODO lo que falta de una vez. Ver src/platform/config/requiredSecrets.ts.
+// PANEL_SESSION_SECRET o TOKENS_ENCRYPTION_KEY (o con un placeholder de .env.example, o
+// un secreto corto/adivinable) el proceso no atiende ni un request, y el mensaje lista
+// TODO lo que falla de una vez. Ver src/platform/config/requiredSecrets.ts.
 const secretProblems = productionSecretProblems();
 if (secretProblems.length > 0) {
-  console.error(`❌ Faltan secretos obligatorios en producción:\n${secretProblems.map((p) => `   • ${p}`).join("\n")}`);
+  console.error(`❌ Faltan secretos obligatorios en producción (o no sirven):\n${secretProblems.map((p) => `   • ${p}`).join("\n")}`);
   process.exit(1);
 }
 for (const warning of productionConfigWarnings()) console.warn(`⚠️  ${warning}`);

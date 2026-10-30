@@ -48,7 +48,7 @@ Poco esfuerzo, y sin esto lo nuevo se construye sobre arena:
 
 - [ ] **A8 Fase 4** — verificación del rediseño (design-verify móvil/desktop, claro/oscuro, PWA,
       regresión admin). Ver `PLAN-REDISENO-PANEL.md` §6.
-- [ ] **Contraseña temporal del panel** (`lavacar2026`) — generar hash y rotar.
+- [ ] **Contraseña temporal del panel** (pedila a Nathan / está en el gestor de contraseñas) — generar hash y rotar.
 - [ ] **Plantilla Utility de recordatorios** — dar seguimiento a la aprobación de Meta y setear
       `WHATSAPP_TEMPLATE_RECORDATORIO`. Los recordatorios fuera de 24h dependen de esto (y C1
       construye encima).
