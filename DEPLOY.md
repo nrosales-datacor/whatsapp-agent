@@ -309,7 +309,8 @@ migraciones** (la base cambió: columnas `modo`, `no_leidos`, `notas`, `precio`,
 Google Calendar y la tabla `wa_push_subs`).
 
 > ⚠️ Sin `PANEL_SESSION_SECRET` el servidor **NO arranca en producción** (se cae el
-> bot que ya funciona). Sin `PANEL_PASSWORD_HASH_SELYON` nadie puede entrar al panel.
+> bot que ya funciona). Tampoco arranca si es el placeholder de `.env.example`, si tiene
+> menos de 32 caracteres o si es un patrón adivinable (ver §23, "Secretos al arrancar"). Sin `PANEL_PASSWORD_HASH_SELYON` nadie puede entrar al panel.
 
 Líneas a agregar al `.env`. **Las 5 te las pasa Nathan** (ya están generadas — NO las
 generes vos: si las VAPID cambian, se rompen todas las suscripciones de push):
@@ -436,7 +437,7 @@ vacíos, el área existe pero nadie puede entrar.
 > la PWA salen de ese mismo build.
 
 Probá en el navegador (PC o celular): **https://wabotlavacar.selyon.app/panel**
-Usuario `lavacar-rosales`, contraseña `lavacar2026` (cambiala cuanto antes).
+Usuario `lavacar-rosales`; la contraseña **no va en el repo**: pedísela a Nathan (está en el gestor de contraseñas).
 En el celular: abrí ese link → menú del navegador → **"Agregar a pantalla de inicio"**
 para instalarla como app. Adentro, tocá la 🔔 (arriba a la derecha) para activar las
 notificaciones (te pedirá permiso y te llegará una de prueba).
@@ -919,6 +920,22 @@ PANEL_SUPERADMIN_TOTP_SECRET=...        # §14 (npx tsx scripts/generarTotp.ts)
   (si no, basta tocar la 🔔 de nuevo). Solo se aceptan endpoints https de los servicios de
   push de los navegadores (FCM, Apple, Mozilla, Windows) y hasta
   `PANEL_PUSH_MAX_POR_USUARIO` (5) dispositivos por usuario.
+- **Secretos al arrancar** (`src/platform/config/requiredSecrets.ts`) — con
+  `NODE_ENV=production` el proceso **no arranca** (sale con la lista de problemas, sin
+  imprimir valores) si `PANEL_SESSION_SECRET` falta, es un placeholder de `.env.example`
+  (que es público), tiene menos de 32 caracteres o poca entropía (`aaaa…`, patrones
+  repetidos); si `TOKENS_ENCRYPTION_KEY` no es 64 hex o es un patrón; y, **si están
+  definidos**, con el mismo criterio para `WHATSAPP_APP_SECRET` y `WHATSAPP_VERIFY_TOKEN`, y
+  si `HEALTH_DETAIL_TOKEN` es el placeholder. **Antes de deployar este cambio** revisá el
+  `.env` del droplet: si alguno no cumple, generá uno nuevo con
+  `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` (el verify
+  token nuevo hay que cargarlo también en Meta, §11; cambiar el de sesión desloguea a todos).
+- **Guardrail de secretos en CI** (`npm run ci:secrets`, job `verify`) — falla si un
+  archivo versionado trae una llave conocida (Stripe, Meta, PEM, OpenAI, JWT, URL de
+  Postgres con clave…), una contraseña en texto plano en un `.md` o una cadena prohibida.
+  Las prohibidas (p. ej. contraseñas que ya se filtraron) **no van en el repo**: van en el
+  secret de GitHub `CHECK_SECRETS_DENYLIST` (Settings → Secrets → Actions; una por línea) y,
+  en local, en `.secrets-denylist` (gitignoreado).
 - **Anti-replay del TOTP en memoria** — con una sola réplica `web` (el deploy actual) es
   exacto. Si algún día hay varias réplicas `web` (§21), un mismo código podría usarse una
   vez en cada una dentro de sus ~90 s de validez: aceptable, pero tenelo presente.

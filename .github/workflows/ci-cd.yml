@@ -37,6 +37,15 @@ jobs:
       - name: Guardrail de .env.example (variables documentadas)
         run: npm run ci:env
 
+      # Ninguna credencial en los archivos versionados: patrones de llaves conocidas (Stripe,
+      # Meta, PEM, OpenAI, JWT, URLs de Postgres con clave…) y cadenas prohibidas. La lista de
+      # prohibidas NO vive en el repo (sería re-filtrarlas): sale del secret de GitHub
+      # CHECK_SECRETS_DENYLIST (una por línea; vacío = solo patrones). Sin deps.
+      - name: Guardrail de secretos (scripts/ci/checkSecrets.mjs)
+        run: npm run ci:secrets
+        env:
+          CHECK_SECRETS_DENYLIST: ${{ secrets.CHECK_SECRETS_DENYLIST }}
+
       - name: Instalar dependencias (backend)
         run: npm ci
 

@@ -20,6 +20,7 @@
     "eval": "tsx eval/runEval.ts",
     "ci:versions": "node scripts/ci/checkExactVersions.mjs",
     "ci:env": "node scripts/ci/checkEnvExample.mjs",
+    "ci:secrets": "node scripts/ci/checkSecrets.mjs",
     "web:dev": "npm --prefix web run dev",
     "web:build": "npm --prefix web install --include=dev && npm --prefix web run build"
   },
