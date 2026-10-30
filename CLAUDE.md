@@ -24,6 +24,10 @@ Agente de WhatsApp con IA (soporte + agenda de citas) para lavacar, multi-tenant
 - Al editar el ROADMAP, actualiza la fecha de "Última actualización".
 - Antes de proponer trabajo de arquitectura, lee el ROADMAP para no duplicar ni contradecir el plan acordado.
 
+## Preparación para producción
+
+`docs/prompts-produccion/` es una serie de prompts (uno por punto del checklist de producción). Se arranca con `/prod-readiness`: el orquestador trabaja siempre sobre la cabeza del **último PR abierto** (ver `00-INDICE.md`) y lleva el estado en `PROGRESO.md`. Cada prompt corre en su rama `prod/<slug>` y se mergea a `prod/readiness` solo con aprobación del usuario.
+
 ## Convenciones del repo
 
 - **Identificadores en inglés** (decisión del 2026-10-19): clases, funciones, variables, tipos, archivos, carpetas,
