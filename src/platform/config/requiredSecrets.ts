@@ -12,6 +12,10 @@
 //     reciben el mismo trato que el secreto de sesión (el primero firma los webhooks de
 //     Meta: con un valor conocido cualquiera inyecta mensajes falsos).
 //   • HEALTH_DETAIL_TOKEN: opcional; si está definido, no puede ser el placeholder.
+//   • PANEL_SUPERADMIN_TOTP_SECRET: con el superadmin configurado (usuario + hash real) es
+//     OBLIGATORIO y tiene que ser un base32 válido de ≥128 bits. El superadmin crea
+//     negocios, cambia planes y pausa cuentas de TODOS los clientes: sin segundo factor,
+//     una clave filtrada alcanza. Se genera con `npx tsx scripts/generateTotp.ts`.
 //
 // Ningún valor conocido de .env.example (que es PÚBLICO) se acepta en producción. La
 // lista de abajo se mantiene a mano; test/security/requiredSecrets.test.ts lee
@@ -22,6 +26,8 @@
 // con TODOS los problemas juntos y un mensaje claro, y no con el stack del primer import.
 // Los mensajes NUNCA incluyen el valor del secreto.
 // ─────────────────────────────────────────────────────────────────────────────
+
+import { decodeBase32 } from "../auth/totp";
 
 type Env = Record<string, string | undefined>;
 
@@ -89,6 +95,37 @@ const HEX_64 = /^[0-9a-fA-F]{64}$/;
 /** Generador sugerido en los mensajes (32 bytes al azar en hex). */
 const GENERATE_HINT = `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`;
 
+/** Mínimo del secreto TOTP del superadmin, en bytes (RFC 4226 R6: 128 bits; el script genera 160). */
+export const MIN_TOTP_SECRET_BYTES = 16;
+
+/**
+ * ¿Hay un superadmin que puede entrar? Usuario y hash definidos, y el hash no es el
+ * placeholder de .env.example (con ese nadie entra: ya lo avisa `productionConfigWarnings`).
+ */
+function isSuperadminConfigured(env: Env): boolean {
+  const hash = env.PANEL_SUPERADMIN_HASH?.trim();
+  return !!env.PANEL_SUPERADMIN_USERNAME?.trim() && !!hash && !isKnownPlaceholder(hash);
+}
+
+/** Problema del secreto TOTP del superadmin (null = está bien o no hay superadmin). */
+function superadminTotpProblem(env: Env): string | null {
+  if (!isSuperadminConfigured(env)) return null;
+  const hint = "generalo con `npx tsx scripts/generateTotp.ts` (DEPLOY.md §14)";
+  const raw = (env.PANEL_SUPERADMIN_TOTP_SECRET ?? "").trim();
+  if (!raw) return `PANEL_SUPERADMIN_TOTP_SECRET falta: el superadmin no puede quedar sin segundo factor en producción; ${hint}.`;
+  if (isKnownPlaceholder(raw)) return `PANEL_SUPERADMIN_TOTP_SECRET es un valor de ejemplo: ${hint}.`;
+  const key = decodeBase32(raw);
+  if (!key) return `PANEL_SUPERADMIN_TOTP_SECRET no es base32 válido (A–Z y 2–7): ${hint}.`;
+  if (key.length < MIN_TOTP_SECRET_BYTES) {
+    return `PANEL_SUPERADMIN_TOTP_SECRET es corto (mínimo ${MIN_TOTP_SECRET_BYTES * 8} bits): ${hint}.`;
+  }
+  const clean = raw.replace(/[\s=-]/g, "").toUpperCase();
+  if (new Set(key).size < MIN_DISTINCT_CHARS || isPeriodic(clean)) {
+    return `PANEL_SUPERADMIN_TOTP_SECRET tiene poca entropía (parece un patrón): ${hint}.`;
+  }
+  return null;
+}
+
 /** Problemas de configuración de secretos (vacío = todo bien). Fuera de producción no exige nada. */
 export function productionSecretProblems(env: Env = process.env): string[] {
   if (env.NODE_ENV !== "production") return [];
@@ -108,6 +145,7 @@ export function productionSecretProblems(env: Env = process.env): string[] {
   if (env.HEALTH_DETAIL_TOKEN?.trim() && isKnownPlaceholder(env.HEALTH_DETAIL_TOKEN)) {
     problems.push("HEALTH_DETAIL_TOKEN es el valor de ejemplo de .env.example (público): generá uno nuevo al azar.");
   }
+  add(superadminTotpProblem(env));
   return problems;
 }
 

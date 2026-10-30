@@ -187,6 +187,30 @@ test("logout: borra la cookie y la sesión deja de servir en ese navegador", asy
   assert.equal((await b.get("/api/panel/auth/me")).status, 401);
 });
 
+test("logout: revoca la sesión — una cookie copiada antes del logout (y la de otro dispositivo) responde 401 después", async () => {
+  const biz = await createTestBusiness(db);
+  const owner = await createTestMember(db, { businessId: biz.businessId, role: "owner" });
+  const b = await loggedIn(owner.email, owner.password!);
+  const copied = b.clone(); // la cookie robada (XSS, equipo compartido, extensión)
+  const phone = await loggedIn(owner.email, owner.password!); // otro dispositivo
+  assert.equal((await copied.get("/api/panel/auth/me")).status, 200);
+  assert.equal((await b.post("/api/panel/auth/logout")).status, 204);
+  assert.equal((await copied.get("/api/panel/auth/me")).status, 401, "la cookie copiada ya no sirve");
+  assert.equal((await phone.get("/api/panel/auth/me")).status, 401, "cerrar sesión cierra TODAS las sesiones de la persona");
+
+  // Una cookie ya revocada no vuelve a subir el epoch: no puede echar a la persona de su sesión nueva.
+  const again = await loggedIn(owner.email, owner.password!);
+  assert.equal((await copied.post("/api/panel/auth/logout")).status, 204);
+  assert.equal((await again.get("/api/panel/auth/me")).status, 200);
+});
+
+test("logout: sin sesión (o con una cookie inválida) responde 204 y no revoca nada", async () => {
+  const anonymous = browser();
+  assert.equal((await anonymous.post("/api/panel/auth/logout")).status, 204);
+  anonymous.cookies.set("panel_session", "basura");
+  assert.equal((await anonymous.post("/api/panel/auth/logout")).status, 204);
+});
+
 test("rate limit: tras 5 fallos desde la misma IP contra el mismo email → 429 too_many_attempts (aun con la clave correcta); desde otra IP entra", async () => {
   const biz = await createTestBusiness(db);
   const owner = await createTestMember(db, { businessId: biz.businessId, role: "owner" });

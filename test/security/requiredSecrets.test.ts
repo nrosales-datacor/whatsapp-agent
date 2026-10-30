@@ -126,6 +126,38 @@ test("secretos: avisos de producción por PUBLIC_BASE_URL y superadmin sin confi
   );
 });
 
+// Secreto TOTP base32 de 160 bits con pinta de aleatorio (como el de scripts/generateTotp.ts; no es de ningún sistema real).
+const TOTP = "JBSWY3DPEHPK3PXPMZXW6YTBOI5HKQ2L";
+const SUPERADMIN = { PANEL_SUPERADMIN_USERNAME: "root", PANEL_SUPERADMIN_HASH: "a1b2c3:d4e5f6" };
+
+test("secretos: con superadmin configurado en producción, PANEL_SUPERADMIN_TOTP_SECRET es obligatorio", () => {
+  const missing = prod(SUPERADMIN);
+  assert.equal(missing.length, 1);
+  assert.match(missing[0], /PANEL_SUPERADMIN_TOTP_SECRET falta/);
+  assert.match(missing[0], /generateTotp/);
+  assert.match(prod({ ...SUPERADMIN, PANEL_SUPERADMIN_TOTP_SECRET: "   " })[0], /PANEL_SUPERADMIN_TOTP_SECRET falta/);
+  assert.deepEqual(prod({ ...SUPERADMIN, PANEL_SUPERADMIN_TOTP_SECRET: TOTP }), []);
+  // Fuera de producción sigue siendo opcional (desarrollo y tests).
+  assert.deepEqual(productionSecretProblems({ ...SUPERADMIN }), []);
+});
+
+test("secretos: PANEL_SUPERADMIN_TOTP_SECRET inválido (no base32, corto, patrón o ejemplo) → problema sin repetir el valor", () => {
+  const bad = (v: string) => prod({ ...SUPERADMIN, PANEL_SUPERADMIN_TOTP_SECRET: v });
+  assert.match(bad("no-es-base32-0189!")[0], /no es base32 válido/);
+  assert.match(bad("JBSWY3DPEHPK3PXP")[0], /es corto/); // 80 bits: lo acepta el login, no producción
+  assert.match(bad("A".repeat(32))[0], /poca entropía/);
+  assert.match(bad("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")[0], /poca entropía/); // el vector público del RFC 6238
+  assert.match(bad("cambiame")[0], /valor de ejemplo/);
+  for (const v of ["no-es-base32-0189!", "JBSWY3DPEHPK3PXP"]) assert.ok(!bad(v)[0].includes(v), "el mensaje no repite el valor");
+});
+
+test("secretos: sin superadmin (o con el hash de ejemplo, que no deja entrar a nadie) no se exige el TOTP", () => {
+  assert.deepEqual(prod({}), []);
+  assert.deepEqual(prod({ PANEL_SUPERADMIN_USERNAME: "root" }), []);
+  assert.deepEqual(prod({ PANEL_SUPERADMIN_HASH: "a1b2c3:d4e5f6" }), []);
+  assert.deepEqual(prod({ PANEL_SUPERADMIN_USERNAME: "admin", PANEL_SUPERADMIN_HASH: envExampleValue("PANEL_SUPERADMIN_HASH")! }), []);
+});
+
 function startServer(env: Record<string, string>) {
   return spawnSync(process.execPath, ["--import", "tsx", "src/server.ts"], {
     cwd: process.cwd(),
