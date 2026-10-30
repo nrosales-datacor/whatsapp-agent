@@ -14,11 +14,12 @@ import {
   findUserById,
   guardCredentialAttempt,
   billingPausedOwnedBusiness,
+  bumpSessionEpoch,
   hasMembershipInPausedBusiness,
   normalizeEmail,
   recordCredentialFailure,
 } from "./identity";
-import { businessPaused } from "./session";
+import { businessPaused, loadSession } from "./session";
 import { users, type User } from "./schema";
 import { emailNotVerified } from "./verification";
 
@@ -32,8 +33,8 @@ import { emailNotVerified } from "./verification";
 //     MISMO 401 genérico para "no existe", "clave mala", "cuenta inactiva" y "código malo".
 //   • El 2FA se pide recién con la clave correcta (`totp_required`): así un código
 //     equivocado de alguien sin la clave no gasta el anti-replay ni revela nada.
-//   • El login NO sube el epoch: entrar desde otro dispositivo no echa a los demás. Solo
-//     cambiar clave, rol o estado revoca sesiones.
+//   • El login NO sube el epoch: entrar desde otro dispositivo no echa a los demás.
+//     Cambiar clave, rol o estado revoca sesiones, y también cerrar sesión (`logout`).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const invalidCredentials = () => new HttpError(401, "Correo o clave incorrectos.", "invalid_credentials");
@@ -101,6 +102,24 @@ export async function login(
   }
   recordLoginSuccess(input.ip, "login", email);
   return { status: "ok", claims: { businessId: memberships[0].businessId, userId: user.id, sessionEpoch: user.sessionEpoch } };
+}
+
+/**
+ * Cerrar sesión REVOCA (decisión del 2026-10-30, pista V2-48): si la cookie trae una sesión
+ * válida, se sube el epoch de la cuenta y TODAS sus sesiones (en todos sus negocios y
+ * dispositivos) dejan de valer. Sin esto, una cookie copiada (XSS, equipo compartido,
+ * extensión) seguiría sirviendo hasta 7 días después del logout. El costo: cerrar sesión
+ * en la compu también saca al celular (no hay ids de sesión por dispositivo).
+ *
+ * Solo con una sesión VIGENTE (`loadSession`, que valida el epoch contra la base): una
+ * cookie ya revocada no puede volver a subir el epoch y echar a la persona de sus sesiones
+ * nuevas. Con el negocio pausado también revoca (`allowPaused`). Devuelve si revocó.
+ */
+export async function logout(db: Executor, claims: SessionClaims): Promise<boolean> {
+  const session = await loadSession(db, claims, { allowPaused: true });
+  if (!session) return false;
+  await withTenant(db, session.businessId, (tx) => bumpSessionEpoch(tx, session.userId));
+  return true;
 }
 
 /** Claims de la sesión en otro negocio de la misma persona (mismo epoch). 403 si no es miembro activo. */

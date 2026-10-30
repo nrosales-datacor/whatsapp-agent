@@ -10,13 +10,13 @@ import { log } from "../../platform/observability/log";
 import type { PlanHooks } from "../../platform/plan/planHooks";
 import { getClientIp } from "../../platform/net/clientIp";
 import { getBusinessContext } from "../business";
-import { changePassword, login, switchBusiness } from "./auth";
+import { changePassword, login, logout, switchBusiness } from "./auth";
 import { findUserById, NewPasswordSchema, PasswordInputSchema, TotpCodeSchema } from "./identity";
 import { acceptInvitation, getInvitation, inviteMember } from "./invitations";
 import { buildMe, type Me } from "./me";
 import { assertLocationsOfBusiness, listMembers, updateMember } from "./members";
 import { requestPasswordReset, resetPassword } from "./recovery";
-import { businessPaused, clearSessionCookie, loadSession, setSessionCookie } from "./session";
+import { businessPaused, clearSessionCookie, loadSession, readSessionClaims, setSessionCookie } from "./session";
 import { disableTotp, enableTotp, setupTotp } from "./twoFactor";
 import { resendEmailVerification, verifyEmail } from "./verification";
 
@@ -114,8 +114,13 @@ export function teamRoutes({ db, plans, onLogin }: TeamRouteDeps): Route[] {
       return { status: "ok" as const, me };
     }),
 
-    route({ method: "POST", path: "/auth/logout", auth: "public" }, ({ res }) => {
+    // Pública (sin sesión también responde 204 y borra la cookie), pero si trae una sesión
+    // válida la revoca en todos los dispositivos (`logout`, sube el epoch). La cookie se
+    // borra primero: si la revocación falla (500), este navegador igual queda afuera.
+    route({ method: "POST", path: "/auth/logout", auth: "public" }, async ({ req, res }) => {
       clearSessionCookie(res);
+      const claims = readSessionClaims(req);
+      if (claims) await logout(db, claims);
       return noContent();
     }),
 

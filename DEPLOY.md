@@ -391,16 +391,19 @@ node --import tsx scripts/hashPassword.ts "UNA_CLAVE_FUERTE"   # copiá el salt:
 nano .env
 ```
 ```
-PANEL_SUPERADMIN_USUARIO=admin          # usuario DISTINTO de los de panel
+PANEL_SUPERADMIN_USERNAME=admin         # usuario DISTINTO de los de panel
 PANEL_SUPERADMIN_HASH=salt:hash         # el hash recién generado
-PANEL_SUPERADMIN_TOTP_SECRET=...        # segundo factor (MUY recomendado, ver abajo)
+PANEL_SUPERADMIN_TOTP_SECRET=...        # segundo factor: OBLIGATORIO en producción (ver abajo)
 ```
 
-**Segundo factor (TOTP) del superadmin** — es la llave de TODOS los negocios (alta, baja
-con export, reset de claves, tokens de WhatsApp), así que en producción va con 2FA:
+**Segundo factor (TOTP) del superadmin — OBLIGATORIO en producción.** Es la llave de TODOS
+los negocios (alta, planes, pausa, tokens de WhatsApp): con `NODE_ENV=production` y el
+superadmin configurado (usuario + hash), si falta `PANEL_SUPERADMIN_TOTP_SECRET` o no es un
+base32 de al menos 128 bits, **el proceso no arranca** (`src/platform/config/requiredSecrets.ts`).
+Generalo y cargalo en el `.env` del servidor ANTES del primer deploy:
 
 ```bash
-npx tsx scripts/generarTotp.ts admin
+npx tsx scripts/generateTotp.ts admin
 ```
 
 Imprime `PANEL_SUPERADMIN_TOTP_SECRET=...` (pegalo en el `.env`) y una URI `otpauth://...`:
@@ -410,7 +413,7 @@ configuración" (tipo "basada en tiempo") usando el secreto. Comprobá que el "c
 que imprime el script coincide con la app. Desde el `pm2 restart`, el login de
 `/panel/admin` pide usuario + clave + **código de 6 dígitos**; un código ya usado no se
 acepta dos veces, y las sesiones de admin abiertas antes de activar el 2FA dejan de valer.
-La sesión del admin dura 8 h (`PANEL_ADMIN_SESSION_HORAS`, tope 12) y se puede revocar sola
+La sesión del admin dura 8 h (`PANEL_ADMIN_SESSION_HOURS`, tope 12) y se puede revocar sola
 subiendo `PANEL_ADMIN_SESSION_VERSION`. Los logins del admin (y los rechazados por código
 inválido — señal de que la clave se filtró), los resets de clave y los exports quedan en
 `wa_auditoria` (los logins con `tenant_id = '_plataforma'`).
@@ -889,7 +892,7 @@ Lo que hay que **setear a mano** en el `.env` del droplet (el resto es automáti
 
 ```
 TRUST_PROXY=loopback                    # OBLIGATORIO detrás de Caddy/nginx (ver abajo)
-PANEL_SUPERADMIN_TOTP_SECRET=...        # §14 (npx tsx scripts/generarTotp.ts)
+PANEL_SUPERADMIN_TOTP_SECRET=...        # §14, OBLIGATORIO (npx tsx scripts/generateTotp.ts)
 ```
 
 - **`TRUST_PROXY`** — el rate limit del login (por IP, por par IP+usuario y un freno
