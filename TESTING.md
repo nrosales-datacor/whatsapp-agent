@@ -248,19 +248,42 @@ aleatorio-por-arranque del modo dev).
 - [ ] `/security-review` sobre el diff antes de cada merge grande **es un paso de proceso** (no un test automatizable);
   el slash-command `/security-review` queda como checklist previo a merges grandes.
 
-### 9. ✅ Smoke test post-deploy
+### 9. ✅ Smoke tests (CI y post-deploy)
 
-En `.github/workflows/ci-cd.yml`, paso **"Smoke post-deploy"** del job `desplegar` (corre tras el `/salud` contra
-la URL pública de producción). Solo golpea superficies que **no tocan datos ni requieren credenciales reales**, así que
-es seguro contra producción:
+Dos capas, con los mismos chequeos de API. Cada uno falla si se rompe una capa distinta (router, sesión, login,
+base), no solo si el proceso está caído.
 
-- [x] **El bundle React sirve** (`/panel` → 200 y contiene `<div id="root">`) — atrapa la regresión de "falta el
-  build → 503" que dejaría el panel inservible.
-- [x] **La API del panel está viva y exige auth** (`/api/panel/me` sin cookie → **401**, no 500/404).
-- [x] **Login vivo + tenantStore/DB sanos** (`/api/panel/login` con `Origin` del host y credenciales falsas → **401**;
-  un 500/503 delataría que la base o el store se rompieron). Es el **proxy seguro** de "un login real funciona" sin
-  meter credenciales de demo en producción.
-- Si cualquiera falla, el paso sale con código ≠ 0 y marca el deploy en rojo.
+**Post-deploy y post-rollback: `scripts/ci/smoke.sh <BASE_URL>`** (bash + curl, sin dependencias). Lo corre
+`.github/workflows/ci-cd.yml` en el job `deploy` (paso "Smoke post-deploy", después del `/health` con reintentos)
+y en el job `rollback` (paso "Smoke post-rollback"; el script sale del commit del workflow, no del SHA revertido).
+Si falla, el SHA **no** se guarda como `~/.ultimo-deploy-ok`. No usa credenciales reales ni toca datos:
+
+- [x] **`/health` → 200 `…: ok`** (proceso + ping a la base).
+- [x] **El bundle React sirve** (`/panel` → 200 y contiene `<div id="root">`): atrapa "falta el build".
+- [x] **El router de la API está montado** (`GET /api/panel/<ruta inexistente>` → **404** JSON `not_found`).
+- [x] **La sesión se valida** (`GET /api/panel/auth/me` sin cookie → **401** JSON `unauthorized`; un 404 delata
+  que la ruta desapareció y un 500 que algo se rompió).
+- [x] **Login vivo + base sana** (`POST /api/panel/auth/login` con `Origin` del host y el correo de smoke
+  `smoke-test@selyon-smoke.invalid` → **401** `invalid_credentials`; pasa CSRF + validación y consulta la base, así
+  que un 500 la delata). Es **un** intento fallido por corrida: suma al rate-limit de la IP del runner y queda en los
+  logs con ese correo (dominio reservado `.invalid`, reconocible). Aceptado por el usuario el 2026-10-30.
+- **No** hay usuario de smoke en producción (decisión del 2026-10-30): el login **exitoso** se prueba solo en CI.
+- Si cualquiera falla, el script sale con código ≠ 0 (los corre todos y lista cada falla) y el job queda en rojo.
+- A mano, contra un server local (`npm run dev` sobre PGlite): `bash scripts/ci/smoke.sh http://localhost:3000`.
+  Contra producción lo corre solo el pipeline (cada corrida suma un login fallido).
+
+**En CI: `test/e2e/smoke.spec.ts`** (proyecto `server` de Playwright, job `e2e`, bloquea el deploy). El server real
+arranca con `test/e2e/seededServer.ts`: PGlite nuevo en una carpeta temporal + migraciones + `scripts/seedDev.ts`
+(negocio demo con la clave pública de desarrollo), y recién después `src/server.ts` sobre esa misma carpeta. Cubre
+lo mismo que `smoke.sh` (salvo correr contra producción) y además:
+
+- [x] **Login real de punta a punta:** la dueña demo entra por la UI del panel compilado (no el mock), llega al
+  **Inicio** con la tarjeta del día (sale de la API) y su cookie vale contra `GET /api/panel/auth/me` (200, negocio
+  "Estética Demo"). Es el único E2E contra el backend real; el resto de los E2E del panel corre contra
+  `web/src/lib/mockApi.ts`.
+- [x] La landing (`/`) carga.
+- Correrlo: `npm run web:build && npx playwright test --project=server`. En un contenedor con un Chromium que no es la
+  revisión de `@playwright/test`, `E2E_CHROMIUM_PATH=/ruta/al/chrome` (solo local; CI usa `npx playwright install`).
 
 ### 10. ⬜ QA manual en dispositivo (lo único que no se automatiza barato)
 

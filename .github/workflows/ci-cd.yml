@@ -99,9 +99,11 @@ jobs:
       - name: Instalar el navegador de Playwright (Chromium)
         run: npx playwright install --with-deps chromium
 
-      # Smoke del servidor nuevo (/health, landing, /panel, API JSON) sobre una base efímera
-      # en el proceso (PGlite). El E2E completo del panel se rehace en I0.7.
-      - name: Correr el smoke E2E
+      # Proyecto "server": smoke del servidor REAL sobre una base efímera en el proceso (PGlite
+      # + migraciones + seed de desarrollo, test/e2e/seededServer.ts): /health, router (404
+      # JSON), sesión (/auth/me → 401), login falso → 401 y un login de verdad por la UI del
+      # panel hasta el Inicio. Proyecto "panel-mock": el panel contra la API simulada.
+      - name: Correr el smoke E2E y los E2E del panel
         run: npx playwright test
 
   deploy:
@@ -212,33 +214,13 @@ jobs:
           echo "::error::El proceso no respondió en /health tras el deploy (30s de reintentos)"
           exit 1
 
-      # Smoke post-deploy: más allá de /health, el panel y la API están vivos. Nada toca
-      # datos ni requiere credenciales, así que es seguro contra producción.
-      - name: Smoke post-deploy (panel + API)
-        run: |
-          fail=0
-
-          # 1) El bundle de React se sirve (no cayó al 503 "corré web:build").
-          panel="$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/panel")"
-          body="$(curl -s "$BASE_URL/panel")"
-          if [ "$panel" = "200" ] && printf '%s' "$body" | grep -qi '<div id="root"'; then
-            echo "✅ /panel sirve el bundle de React (200 + #root)"
-          else
-            echo "::error::/panel no sirvió el bundle (HTTP $panel) — ¿falta web:build?"
-            fail=1
-          fi
-
-          # 2) La API responde JSON (401 con el router y la sesión; 404 mientras no haya rutas).
-          api_code="$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/api/panel/me")"
-          api_type="$(curl -s -o /dev/null -w '%{content_type}' "$BASE_URL/api/panel/me")"
-          if { [ "$api_code" = "401" ] || [ "$api_code" = "404" ]; } && printf '%s' "$api_type" | grep -qi 'application/json'; then
-            echo "✅ /api/panel/me → $api_code JSON (API viva)"
-          else
-            echo "::error::/api/panel/me devolvió $api_code ($api_type); se esperaba 401/404 JSON"
-            fail=1
-          fi
-
-          exit $fail
+      # Smoke post-deploy (scripts/ci/smoke.sh, el mismo que corre el rollback): /panel con el
+      # bundle, router de la API (404 JSON), /api/panel/auth/me → 401 y un login con un correo
+      # de smoke `.invalid` → 401 invalid_credentials (CSRF + validación + base). No usa
+      # credenciales reales ni toca datos; el login falso es UN intento por deploy (suma al
+      # rate-limit de la IP del runner y queda en logs, aceptado: TESTING.md §9).
+      - name: Smoke post-deploy (panel + API + sesión + login)
+        run: bash scripts/ci/smoke.sh "$BASE_URL"
 
       # Recién si TODO lo de arriba salió bien se marca este SHA como el último deploy bueno.
       # El rollback manual usa este archivo como destino por defecto.
@@ -308,6 +290,15 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ env.ROLLBACK_SHA }}
+      # El smoke sale de ESTE workflow (github.sha), no del commit revertido: un SHA viejo puede
+      # no tener scripts/ci/smoke.sh o tener uno desactualizado. Va en una carpeta aparte, después
+      # del checkout de arriba (que limpia la raíz del workspace).
+      - name: Traer el smoke de este workflow (scripts/ci)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.sha }}
+          path: .ci-tools
+          sparse-checkout: scripts/ci
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: ".nvmrc"
@@ -346,7 +337,12 @@ jobs:
           echo "::error::El proceso no respondió en /health tras el rollback (30s de reintentos)"
           exit 1
 
-      # Solo si /health pasó: el SHA revertido pasa a ser el nuevo "último bueno".
+      # El mismo smoke que el deploy (scripts/ci/smoke.sh): un rollback que levanta el proceso
+      # pero deja la API, la sesión o la base rotas no se marca como bueno.
+      - name: Smoke post-rollback (panel + API + sesión + login)
+        run: bash .ci-tools/scripts/ci/smoke.sh "$BASE_URL"
+
+      # Solo si /health y el smoke pasaron: el SHA revertido pasa a ser el nuevo "último bueno".
       - name: Marcar el SHA revertido como "último deploy bueno"
         run: |
           ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" "echo '$ROLLBACK_SHA' > ~/.ultimo-deploy-ok"
