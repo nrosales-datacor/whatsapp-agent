@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { withTenant, type Executor } from "../../platform/db/scope";
 import { log } from "../../platform/observability/log";
+import { captureError } from "../../platform/observability/sentry";
 import { getBusinessContext } from "../business";
 import type { AgentRunner } from "./agentContract";
 import { recordTokenStatus } from "./channels";
@@ -22,7 +23,8 @@ import { registerFor, type TextProfile } from "./texts";
 // `getAiLimits` (la composición los saca del plan del negocio, src/plans.ts; sin
 // inyectar, sin tope: lo usan las rutas del panel y los tests, ver ./limits.ts). Lo de
 // crecimiento del plan (consentimiento, reseñas, rescate, upsell): `getGrowth` (./growth.ts;
-// sin inyectar, nada).
+// sin inyectar, nada). Los errores no esperados del turno: `reportError` (Sentry por
+// defecto, no-op sin SENTRY_DSN; los tests lo reemplazan para verificar qué se reporta).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface WhatsAppDeps {
@@ -34,6 +36,8 @@ export interface WhatsAppDeps {
   agent: AgentRunner;
   getAiLimits: AiLimitsResolver;
   getGrowth: GrowthResolver;
+  /** Reporta un error no esperado (Sentry). El contexto va SIN datos personales: ids, etapa, intento. */
+  reportError: (error: unknown, context: Record<string, unknown>) => void;
   now: () => Date;
 }
 
@@ -53,6 +57,7 @@ export function createWhatsAppDeps(db: Executor, overrides: Partial<WhatsAppDeps
     agent: overrides.agent ?? handoffAgentRunner,
     getAiLimits: overrides.getAiLimits ?? noAiLimits,
     getGrowth: overrides.getGrowth ?? noGrowth,
+    reportError: overrides.reportError ?? captureError,
     now: overrides.now ?? (() => new Date()),
   };
 }
