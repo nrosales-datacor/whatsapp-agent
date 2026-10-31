@@ -3,7 +3,8 @@
 //
 //   1. Patrones de llaves conocidas: Stripe (sk_live_/rk_live_, sk_test_, whsec_), tokens
 //      de Meta (EAA…), llaves privadas PEM, OpenAI (sk-…), GitHub (ghp_…), AWS (AKIA…),
-//      Google API (AIza…), webhooks de Slack, JWT completos (eyJ….eyJ….firma).
+//      Google API (AIza…), webhooks de Slack, tokens de bot de Telegram (123…:AA…), JWT
+//      completos (eyJ….eyJ….firma).
 //   2. URLs de Postgres con usuario:clave@ cuya clave no sea un placeholder evidente
 //      (pass, clave, TU_PASSWORD, ..., <x>, ${X}) ni apunte a localhost.
 //   3. Una contraseña en texto plano en la documentación (.md): `contraseña \`valor\``.
@@ -43,6 +44,8 @@ const RULES = [
   { id: "github-token", label: "token de GitHub", re: /\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,})/g },
   { id: "aws-key", label: "access key de AWS", re: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g },
   { id: "google-api-key", label: "API key de Google", re: /\bAIza[0-9A-Za-z_-]{35}\b/g },
+  // Bot de Telegram de las alertas (ALERTS_TELEGRAM_BOT_TOKEN): "<id numérico>:AA<35>".
+  { id: "telegram-bot-token", label: "token de bot de Telegram", re: /\b\d{8,10}:AA[0-9A-Za-z_-]{33}(?![0-9A-Za-z_-])/g },
   {
     id: "slack-webhook",
     label: "webhook de Slack",

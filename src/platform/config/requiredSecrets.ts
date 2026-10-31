@@ -28,6 +28,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { decodeBase32 } from "../auth/totp";
+import { alertChannelsWarning } from "../observability/alerts";
 
 type Env = Record<string, string | undefined>;
 
@@ -161,5 +162,8 @@ export function productionConfigWarnings(env: Env = process.env): string[] {
   } else if (isKnownPlaceholder(env.PANEL_SUPERADMIN_HASH)) {
     warnings.push("PANEL_SUPERADMIN_HASH es el valor de ejemplo de .env.example: nadie puede entrar como superadmin.");
   }
+  // Alertas que no le llegan a nadie (solo log, o Telegram a medias): avisa, no frena.
+  const alerts = alertChannelsWarning(env);
+  if (alerts) warnings.push(alerts);
   return warnings;
 }
