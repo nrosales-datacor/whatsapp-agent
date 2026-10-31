@@ -14,7 +14,11 @@ GitHub (`prod/readiness`) cada vez que cambia algo.
 4. Estado **"en curso"**: el agente estaba trabajando en una copia local que NO está en GitHub. Si la sesión que lo
    corría se perdió, relanzar ese prompt desde `prod/readiness` (`git checkout -b prod/<slug> prod/readiness`) con
    las decisiones anotadas en la sección "Decisiones ya tomadas".
-5. Nunca mergear a `main` ni a las ramas del stack (#2→#15): eso es por PR que aprueba el usuario.
+5. Ramas `wip/<slug>` en GitHub: **respaldo** del trabajo sin terminar ni verificar de un agente (se guardó el
+   2026-10-31 tras un corte por límite de uso). Si la sesión se perdió, se puede seguir desde ahí
+   (`git checkout -b prod/<slug> wip/<slug>`) en vez de empezar de cero: revisar, terminar, verificar y commitear.
+   Cuando la rama `prod/<slug>` final esté en GitHub, la `wip/<slug>` se puede borrar.
+6. Nunca mergear a `main` ni a las ramas del stack (#2→#15): eso es por PR que aprueba el usuario.
 
 ## Base
 
@@ -41,12 +45,12 @@ Tres carriles a la vez, cada agente en su worktree; preguntas y merges a `prod/r
 | auth-en-endpoints | hecho (`7b6bf74`, mergeado) | `prod/auth-en-endpoints` | `9da878b` | Antes del primer deploy: `npx tsx scripts/generateTotp.ts admin` y cargar `PANEL_SUPERADMIN_TOTP_SECRET` (DEPLOY.md §14); sin él no arranca. Opcional: avisar en la UI que "Cerrar sesión" cierra todos los dispositivos. Más adelante (P1.3b): superadmins por persona y logout del admin que revoque. Decidido: `staff` puede leer `GET /whatsapp/settings` y `/whatsapp/growth` (está bien así). |
 | smoke-tests | hecho (`0137348`, mergeado) | `prod/smoke-tests` | `0296c2b` | Con el servidor nuevo: ver en Actions el primer "Smoke post-deploy" (5 ✅) y probar una vez el rollback manual. Confirmar que nginx/Caddy reenvían `Host` (si no, el login falso da 403). Avisar que un `invalid_credentials` de `smoke-test@selyon-smoke.invalid` por deploy es esperable. Primer push: job `e2e` en verde con el arranque sembrado. |
 | rotar-llaves | listo, espera merge (`cc896de`, solo docs: DEPLOY.md §26) | `prod/rotar-llaves` | `cabf4a5` | URGENTE (DEPLOY.md §26.1): desactivar `lavacar-rosales` por SQL en el Supabase viejo y reiniciar; cargar `CHECK_SECRETS_DENYLIST`; rotar la key de OpenAI y los secretos de Meta del sistema viejo. Elegir gestor de contraseñas (recomendado: Bitwarden). Decidir si el stack nuevo usa app de Meta propia. **Antes del primer push a `main` del stack nuevo: configurar `DEPLOY_HOST`/`DEPLOY_USER`/`DEPLOY_DIR`/`BASE_URL` y una deploy key nueva — hoy el CI apunta por defecto al droplet viejo** (§26.4). Validar el calendario de rotación propuesto. |
-| evals | en curso (carril B) | `prod/evals` | `cabf4a5` | — |
-| privacidad-y-terminos | en curso (carril C) | `prod/privacidad-y-terminos` | `cabf4a5` | — |
-| tests-unitarios | en curso (carril D) | `prod/tests-unitarios` | `bf99b79` | — |
-| error-tracking | en curso (carril E) | `prod/error-tracking` | `a3e04ed` | — |
-| alertas | en curso (carril F) | `prod/alertas` | `a3e04ed` | — |
-| limites-de-tokens | en curso (carril G) | `prod/limites-de-tokens` | `a3e04ed` | — |
+| evals | en curso (carril B; respaldo en `wip/evals`) | `prod/evals` | `cabf4a5` | — |
+| privacidad-y-terminos | en curso (carril C; respaldo en `wip/privacidad-y-terminos`) | `prod/privacidad-y-terminos` | `cabf4a5` | — |
+| tests-unitarios | en curso (carril D; respaldo en `wip/tests-unitarios`) | `prod/tests-unitarios` | `bf99b79` | — |
+| error-tracking | en curso (carril E; respaldo en `wip/error-tracking`) | `prod/error-tracking` | `a3e04ed` | — |
+| alertas | en curso (carril F; respaldo en `wip/alertas`) | `prod/alertas` | `a3e04ed` | — |
+| limites-de-tokens | en curso (carril G; respaldo en `wip/limites-de-tokens`) | `prod/limites-de-tokens` | `a3e04ed` | — |
 
 ## Decisiones ya tomadas para los que siguen en cola
 
