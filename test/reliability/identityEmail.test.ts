@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, test } from "node:test";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Recuperación de clave e invitaciones de PUNTA A PUNTA (I0.6): la request encola el
@@ -20,7 +20,8 @@ process.env.PUBLIC_BASE_URL = "https://app.example.test";
 
 const { createAppHandler } = await import("../../src/app");
 const { registerJobHandlers } = await import("../../src/jobs");
-const { authTokens, users } = await import("../../src/modules/team/schema");
+const { authTokens, legalAcceptances, users } = await import("../../src/modules/team/schema");
+const { LEGAL_VERSION } = await import("../../src/platform/legal");
 const { withSystem } = await import("../../src/platform/db/scope");
 const { clearTestOutbox, getTestOutbox } = await import("../../src/platform/email/email");
 const { _resetJobHandlersForTests } = await import("../../src/platform/queue/handlers");
@@ -187,12 +188,16 @@ test("invitación: el dueño invita → correo de 7 días → ver la invitación
   assert.equal(info.status, 200);
   assert.deepEqual(info.body.data, { email, businessName: "Estética Prueba", role: "staff", hasAccount: false });
 
-  const missingName = await browser().post("/api/panel/auth/invitations/accept", { token, password: "clave-elegida-1" });
+  const missingName = await browser().post("/api/panel/auth/invitations/accept", { token, password: "clave-elegida-1", acceptTerms: true });
   assert.equal(missingName.status, 400);
   assert.ok(missingName.body.fields["body.name"]);
+  // Sin aceptar los términos y el aviso de privacidad no entra (y el link sigue valiendo).
+  const noTerms = await browser().post("/api/panel/auth/invitations/accept", { token, name: "Nueva Persona", password: "clave-elegida-1" });
+  assert.equal(noTerms.status, 400);
+  assert.ok(noTerms.body.fields["body.acceptTerms"]);
 
   const newcomer = browser();
-  const accepted = await newcomer.post("/api/panel/auth/invitations/accept", { token, name: "Nueva Persona", password: "clave-elegida-1" });
+  const accepted = await newcomer.post("/api/panel/auth/invitations/accept", { token, name: "Nueva Persona", password: "clave-elegida-1", acceptTerms: true });
   assert.equal(accepted.status, 200, JSON.stringify(accepted.body));
   assert.ok(accepted.setCookies.some((c) => c.startsWith("panel_session=")));
   const me = accepted.body.data;
@@ -203,10 +208,19 @@ test("invitación: el dueño invita → correo de 7 días → ver la invitación
   assert.equal(me.allLocations, false);
   assert.deepEqual(me.locations, [{ id: biz.locationIds[1], name: "Norte" }]);
   assert.equal((await newcomer.get("/api/panel/auth/me")).status, 200);
+  // La invitada también aceptó los términos y el aviso de privacidad: queda la versión y la fecha.
+  assert.equal(me.legal.mustAccept, false);
+  const [acceptance] = await withSystem(db, (tx) =>
+    tx.select().from(legalAcceptances).where(and(eq(legalAcceptances.businessId, biz.businessId), eq(legalAcceptances.userId, me.user.id))),
+  );
+  assert.equal(acceptance.context, "invitation");
+  assert.equal(acceptance.role, "staff");
+  assert.equal(acceptance.termsVersion, LEGAL_VERSION);
+  assert.equal(acceptance.privacyVersion, LEGAL_VERSION);
 
   // Un solo uso, y la persona ya figura activa.
   assert.equal((await browser().get(`/api/panel/auth/invitations/${token}`)).status, 404);
-  assert.equal((await browser().post("/api/panel/auth/invitations/accept", { token, name: "X", password: "clave-elegida-2" })).body.code, "invalid_token");
+  assert.equal((await browser().post("/api/panel/auth/invitations/accept", { token, name: "X", password: "clave-elegida-2", acceptTerms: true })).body.code, "invalid_token");
   const members = (await s.get("/api/panel/team/members")).body.data;
   assert.equal(members.find((m: { email: string }) => m.email === email).status, "active");
   await loggedIn(email, "clave-elegida-1");
@@ -244,16 +258,22 @@ test("invitación: una cuenta que ya existe confirma con SU clave (no se la camb
   const { token } = await tokenFromEmail(person.email, "/panel/accept-invitation");
   assert.equal((await browser().get(`/api/panel/auth/invitations/${token}`)).body.data.hasAccount, true);
 
-  const wrong = await browser().post("/api/panel/auth/invitations/accept", { token, password: "no-es-su-clave" });
+  const wrong = await browser().post("/api/panel/auth/invitations/accept", { token, password: "no-es-su-clave", acceptTerms: true });
   assert.equal(wrong.status, 400);
   assert.equal(wrong.body.code, "invalid_password");
 
-  const ok = await browser().post("/api/panel/auth/invitations/accept", { token, name: "Otro Nombre", password: person.password });
+  const ok = await browser().post("/api/panel/auth/invitations/accept", { token, name: "Otro Nombre", password: person.password, acceptTerms: true });
   assert.equal(ok.status, 200);
   assert.equal(ok.body.data.business.id, target.businessId);
   assert.equal(ok.body.data.role, "admin");
   assert.deepEqual(ok.body.data.memberships.map((m: { businessName: string }) => m.businessName), ["Su negocio", "Negocio nuevo"]);
   assert.notEqual(ok.body.data.user.name, "Otro Nombre", "una cuenta existente conserva su nombre");
+  // Aceptó los términos para el negocio nuevo (en el suyo nunca los había aceptado).
+  assert.equal(ok.body.data.legal.mustAccept, false);
+  const accepted = await withSystem(db, (tx) =>
+    tx.select().from(legalAcceptances).where(eq(legalAcceptances.userId, person.userId)),
+  );
+  assert.deepEqual(accepted.map((a) => [a.businessId, a.context, a.role]), [[target.businessId, "invitation", "admin"]]);
   await loggedIn(person.email, person.password!); // su clave sigue igual
 });
 
@@ -283,7 +303,7 @@ test("invitación: si desactivan la membresía antes de aceptar, el link deja de
   const { token } = await tokenFromEmail(email, "/panel/accept-invitation");
   assert.equal((await s.patch(`/api/panel/team/members/${invited.body.data.membershipId}`, { active: false })).status, 200);
   assert.equal((await browser().get(`/api/panel/auth/invitations/${token}`)).status, 404);
-  const accept = await browser().post("/api/panel/auth/invitations/accept", { token, name: "X", password: "clave-elegida-1" });
+  const accept = await browser().post("/api/panel/auth/invitations/accept", { token, name: "X", password: "clave-elegida-1", acceptTerms: true });
   assert.equal(accept.body.code, "invalid_token");
   const [user] = await withSystem(db, (tx) => tx.select({ hash: users.passwordHash }).from(users).where(eq(users.email, email)));
   assert.equal(user.hash, null, "no se le fijó clave");

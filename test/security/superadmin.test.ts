@@ -197,7 +197,7 @@ test("superadmin: crea un negocio con su sucursal y horario default, invita al d
   assert.match(mail.subject, /Te invitaron a Clínica Dental Sonrisa/);
   const token = /accept-invitation\?token=([A-Za-z0-9_-]{43})/.exec(mail.text)![1];
   const owner = browser();
-  const accepted = await owner.post("/api/panel/auth/invitations/accept", { token, name: "Dra. Sonrisa", password: "clave-de-la-duena-1" });
+  const accepted = await owner.post("/api/panel/auth/invitations/accept", { token, name: "Dra. Sonrisa", password: "clave-de-la-duena-1", acceptTerms: true });
   assert.equal(accepted.status, 200, JSON.stringify(accepted.body));
   assert.equal(accepted.body.data.role, "owner");
   assert.equal(accepted.body.data.business.id, summary.id);

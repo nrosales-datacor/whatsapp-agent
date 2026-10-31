@@ -11,6 +11,7 @@ import { assertQuota } from "../../platform/plan/planHooks";
 import { getBusinessContext } from "../business";
 import { verifyUserTotp } from "./auth";
 import { guardCredentialAttempt, NewPasswordSchema, normalizeEmail, recordCredentialFailure } from "./identity";
+import { recordLegalAcceptance } from "./legal";
 import { countActiveMembersIn, readMembers, replaceMembershipLocations, type Member } from "./members";
 import { memberships, users, type AuthToken, type User } from "./schema";
 import { consumeToken, findValidToken, INVITATION_TTL_MS, issueAuthToken } from "./tokens";
@@ -23,7 +24,9 @@ import { consumeToken, findValidToken, INVITATION_TTL_MS, issueAuthToken } from 
 // correo encolado: outbox). Mientras no elija su clave, el miembro figura como
 // "invited" y no puede entrar (el login compara contra DUMMY_HASH).
 //
-// Aceptar (con la sesión iniciada al final):
+// Aceptar (con la sesión iniciada al final). En los dos casos la persona acepta los
+// términos y el aviso de privacidad vigentes (`acceptTerms: true`, lo exige la ruta) y queda
+// registrado en `legal_acceptances` en la misma transacción que consume el link:
 //   • cuenta nueva → elige nombre y clave;
 //   • cuenta que ya existe (está en otro negocio) → confirma con SU clave actual (y su
 //     código si tiene 2FA): el link de la invitación nunca sirve para cambiarle la clave
@@ -193,7 +196,12 @@ export async function acceptInvitation(
         .where(and(eq(users.id, user.id), sql`${users.passwordHash} IS NULL`))
         .returning({ sessionEpoch: users.sessionEpoch });
       if (!row) return null;
-      await recordAudit(tx, inv.businessId, "invitation_accepted", userActor(user.id), { newAccount: true });
+      const legal = await recordLegalAcceptance(tx, { businessId: inv.businessId, userId: user.id, role: inv.role, context: "invitation" });
+      await recordAudit(tx, inv.businessId, "invitation_accepted", userActor(user.id), {
+        newAccount: true,
+        termsVersion: legal.termsVersion,
+        privacyVersion: legal.privacyVersion,
+      });
       return row.sessionEpoch;
     });
     if (sessionEpoch === null) throw invalidInvitation(400);
@@ -219,7 +227,12 @@ export async function acceptInvitation(
     if (!(await consumeToken(tx, inv.token.id))) return false;
     // El link llegó a su correo: queda verificado (alta self-service sin confirmar, I6.7).
     if (user.emailVerificationPending) await tx.update(users).set({ emailVerificationPending: false }).where(eq(users.id, user.id));
-    await recordAudit(tx, inv.businessId, "invitation_accepted", userActor(user.id), { newAccount: false });
+    const legal = await recordLegalAcceptance(tx, { businessId: inv.businessId, userId: user.id, role: inv.role, context: "invitation" });
+    await recordAudit(tx, inv.businessId, "invitation_accepted", userActor(user.id), {
+      newAccount: false,
+      termsVersion: legal.termsVersion,
+      privacyVersion: legal.privacyVersion,
+    });
     return true;
   });
   if (!consumed) throw invalidInvitation(400);

@@ -1,3 +1,5 @@
+import { publicBaseUrl } from "../../platform/http/publicUrl";
+import { LEGAL_PATHS } from "../../platform/legal";
 import type { AiRegister } from "./schema";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -13,6 +15,11 @@ import type { AiRegister } from "./schema";
 //      configuración del agente para validar).
 //
 // Los avisos al OPERADOR (push) y las instrucciones al modelo no viven acá.
+//
+// El aviso del primer mensaje (`botNotice`) SIEMPRE termina con la línea de privacidad
+// (`BOT_NOTICE_PRIVACY_LINE`: que responde una IA con proveedores en EE. UU. y el enlace a
+// `<PUBLIC_BASE_URL>/privacidad`). Un override del negocio reemplaza el saludo, nunca esa
+// línea: es la información que la política de privacidad y los términos (A.2) prometen.
 // ─────────────────────────────────────────────────────────────────────────────
 
 type ByRegister = Record<AiRegister, string>;
@@ -20,7 +27,10 @@ type ByRegister = Record<AiRegister, string>;
 const same = (text: string): ByRegister => ({ vos: text, tu: text, usted: text });
 
 export const PIPELINE_TEXTS = {
-  /** Aviso de transparencia del primer mensaje automático. Vars: {negocio}. */
+  /**
+   * Aviso de transparencia del primer mensaje automático. Vars: {negocio}. `pipelineText` le
+   * agrega siempre `BOT_NOTICE_PRIVACY_LINE` (no se puede quitar con un override).
+   */
   botNotice: {
     vos: "👋 ¡Hola! Soy el asistente automatizado de {negocio}. Puedo darte info de servicios, precios y horarios, y agendarte una cita. Escribí *agente* si preferís hablar con una persona.",
     tu: "👋 ¡Hola! Soy el asistente automatizado de {negocio}. Puedo darte info de servicios, precios y horarios, y agendarte una cita. Escribe *agente* si prefieres hablar con una persona.",
@@ -175,6 +185,33 @@ export const PIPELINE_TEXTS = {
 
 export type PipelineTextKey = keyof typeof PIPELINE_TEXTS;
 
+/**
+ * Línea de privacidad que cierra el aviso del primer mensaje (Ley 8968: informar quién trata
+ * los datos, con qué proveedores y dónde está la política): `ai` + `link` (vars:
+ * {privacidad}). Sin PUBLIC_BASE_URL utilizable (p. ej. mal configurada en producción) va
+ * solo `ai`: mejor un aviso sin enlace que dejar al cliente sin respuesta.
+ */
+export const BOT_NOTICE_PRIVACY_LINE: Record<AiRegister, { ai: string; link: string }> = {
+  vos: { ai: "🔒 Te respondo con IA (proveedores en EE. UU.).", link: "Cómo se tratan tus datos: {privacidad}" },
+  tu: { ai: "🔒 Te respondo con IA (proveedores en EE. UU.).", link: "Cómo se tratan tus datos: {privacidad}" },
+  usted: { ai: "🔒 Le respondo con IA (proveedores en EE. UU.).", link: "Cómo se tratan sus datos: {privacidad}" },
+};
+
+/** URL pública de la política de privacidad (null si PUBLIC_BASE_URL no sirve). */
+export function privacyPolicyUrl(): string | null {
+  try {
+    return `${publicBaseUrl()}${LEGAL_PATHS.privacy}`;
+  } catch {
+    return null;
+  }
+}
+
+function privacyLine(register: AiRegister): string {
+  const url = privacyPolicyUrl();
+  const { ai, link } = BOT_NOTICE_PRIVACY_LINE[register];
+  return url ? `${ai} ${interpolate(link, { privacidad: url })}` : ai;
+}
+
 /** Claves válidas del override por negocio (`ai_settings.texts`). */
 export const PIPELINE_TEXT_KEYS = Object.keys(PIPELINE_TEXTS) as PipelineTextKey[];
 
@@ -210,9 +247,13 @@ export interface TextProfile {
   businessName: string;
 }
 
-/** Texto para el cliente final: override del negocio o plantilla de su registro, con las variables puestas. */
+/**
+ * Texto para el cliente final: override del negocio o plantilla de su registro, con las
+ * variables puestas. `botNotice` lleva además, siempre, la línea de privacidad.
+ */
 export function pipelineText(profile: TextProfile, key: PipelineTextKey, vars: Record<string, string | number> = {}): string {
   const raw: unknown = profile.overrides[key];
   const override = typeof raw === "string" ? raw.trim() : "";
-  return interpolate(override || PIPELINE_TEXTS[key][profile.register], { negocio: profile.businessName, ...vars });
+  const text = interpolate(override || PIPELINE_TEXTS[key][profile.register], { negocio: profile.businessName, ...vars });
+  return key === "botNotice" ? `${text}\n${privacyLine(profile.register)}` : text;
 }

@@ -7,6 +7,7 @@ import { PushProvider } from "../push";
 import { useSession } from "../session";
 import BillingBanner from "./BillingBanner";
 import BottomNav from "./BottomNav";
+import LegalBanner from "./LegalBanner";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
 import { UpsellProvider } from "./upsell";
@@ -53,6 +54,7 @@ function Shell() {
       <Sidebar items={items} />
       <div className="app-column">
         <Topbar />
+        <LegalBanner />
         <BillingBanner />
         <main id="main" ref={mainRef} tabIndex={-1} className="app-main">
           <Outlet />

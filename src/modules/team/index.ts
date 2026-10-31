@@ -11,6 +11,9 @@ export { guardCredentialAttempt, NewPasswordSchema, normalizeEmail, recordCreden
 export { createSelfServiceOwner, emailHasAccount, noticeExistingAccount, VERIFY_EMAIL_PATH } from "./verification";
 export type { SelfServiceOwnerInput } from "./verification";
 export { createSessionResolver, type SessionSeenHook } from "./session";
+// Términos y aviso de privacidad (Carril P): aceptación versionada (alta, invitación y el aviso del panel).
+export { getLegalStatus, latestLegalAcceptance, recordLegalAcceptance } from "./legal";
+export type { LegalAcceptanceRecord, LegalStatus } from "./legal";
 // Reportes e Inicio (I5): minutos disponibles por profesional (ocupación) y último día de actividad.
 export { getStaffAvailableMinutes, markMemberActive, type LocationSchedule } from "./availability";
 export { getStaffIdForUser, listStaffOptions, type StaffOption } from "./staffDirectory";
@@ -24,6 +27,8 @@ export type { TimeOffEntry, TimeOffScope } from "./timeOff";
 export type {
   AuthToken,
   AuthTokenKind,
+  LegalAcceptance,
+  LegalAcceptanceContext,
   Membership,
   MembershipLocation,
   MembershipRole,

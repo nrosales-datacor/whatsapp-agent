@@ -265,6 +265,48 @@ export const authTokens = pgTable(
   ],
 ).enableRLS();
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Aceptación de los documentos legales (Carril P, "privacidad y términos"): qué versión de
+// los términos y del aviso de privacidad (src/platform/legal.ts) aceptó cada persona en
+// cada negocio, y cuándo. Una fila por aceptación (append-only: la vigente es la última),
+// así queda la prueba de qué texto aceptó cada quien aunque el texto cambie después.
+//
+//   • `signup`       — la dueña al dar de alta el negocio (acepta también en su nombre).
+//   • `invitation`   — quien entra al equipo al aceptar la invitación.
+//   • `reacceptance` — el aviso del panel cuando sube la versión.
+//
+// `role` es el rol que tenía al aceptar (el de dueño es el que obliga al negocio). Sin IP
+// ni navegador a propósito: el rastro es la fila + su entrada en `audit_log`.
+// ─────────────────────────────────────────────────────────────────────────────
+export const LEGAL_ACCEPTANCE_CONTEXTS = ["signup", "invitation", "reacceptance"] as const;
+export type LegalAcceptanceContext = (typeof LEGAL_ACCEPTANCE_CONTEXTS)[number];
+
+export const legalAcceptances = pgTable(
+  "legal_acceptances",
+  {
+    id: uuidPk(),
+    businessId: businessId(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: text("role").notNull(),
+    context: text("context").notNull(),
+    termsVersion: text("terms_version").notNull(),
+    privacyVersion: text("privacy_version").notNull(),
+    acceptedAt: instant("accepted_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // "¿Qué aceptó por última vez esta persona en este negocio?"
+    index("legal_acceptances_business_user_idx").on(t.businessId, t.userId, t.acceptedAt),
+    index("legal_acceptances_user_idx").on(t.userId),
+    check("legal_acceptances_role_check", oneOf(t.role, MEMBERSHIP_ROLES)),
+    check("legal_acceptances_context_check", oneOf(t.context, LEGAL_ACCEPTANCE_CONTEXTS)),
+    check("legal_acceptances_terms_version_check", sql`${t.termsVersion} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'`),
+    check("legal_acceptances_privacy_version_check", sql`${t.privacyVersion} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'`),
+    tenantPolicy(),
+  ],
+).enableRLS();
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Membership = typeof memberships.$inferSelect;
@@ -279,3 +321,5 @@ export type TimeOff = typeof timeOff.$inferSelect;
 export type NewTimeOff = typeof timeOff.$inferInsert;
 export type AuthToken = typeof authTokens.$inferSelect;
 export type NewAuthToken = typeof authTokens.$inferInsert;
+export type LegalAcceptance = typeof legalAcceptances.$inferSelect;
+export type NewLegalAcceptance = typeof legalAcceptances.$inferInsert;

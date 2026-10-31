@@ -181,6 +181,10 @@ test("invitación a una cuenta nueva y recuperación de clave", async ({ page })
   await page.getByLabel("Tu nombre", { exact: true }).fill("Ana Pérez");
   await page.getByLabel("Clave", { exact: true }).fill("clave-de-ana");
   await page.getByLabel("Repetí la clave", { exact: true }).fill("clave-de-ana");
+  // Sin aceptar los términos y el aviso de privacidad no avanza.
+  await page.getByRole("button", { name: "Aceptar invitación" }).click();
+  await expect(page.getByText("Tenés que aceptar los términos y el aviso de privacidad.")).toBeVisible();
+  await page.getByRole("checkbox", { name: /Acepto los términos/ }).check();
   await page.getByRole("button", { name: "Aceptar invitación" }).click();
   await expect(heading(page, "Mi agenda")).toBeVisible();
 
@@ -200,6 +204,7 @@ test("invitación a una cuenta que ya existe: confirma con su clave y su código
   await page.goto("/panel/accept-invitation?token=cuenta-existente");
   await expect(heading(page, "Sumate a Estética Aurora")).toBeVisible();
   await expect(page.getByLabel("Tu nombre")).toHaveCount(0);
+  await page.getByRole("checkbox", { name: /Acepto los términos/ }).check();
 
   await page.getByLabel("Tu clave actual", { exact: true }).fill("otra-clave");
   await page.getByRole("button", { name: "Aceptar invitación" }).click();

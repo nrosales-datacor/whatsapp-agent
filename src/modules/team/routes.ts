@@ -7,12 +7,14 @@ import { HttpError } from "../../platform/http/errors";
 import { created, noContent, route } from "../../platform/http/router";
 import type { Route } from "../../platform/http/routeTypes";
 import { log } from "../../platform/observability/log";
+import { LEGAL_VERSION_PATTERN } from "../../platform/legal";
 import type { PlanHooks } from "../../platform/plan/planHooks";
 import { getClientIp } from "../../platform/net/clientIp";
 import { getBusinessContext } from "../business";
 import { changePassword, login, logout, switchBusiness } from "./auth";
 import { findUserById, NewPasswordSchema, PasswordInputSchema, TotpCodeSchema } from "./identity";
 import { acceptInvitation, getInvitation, inviteMember } from "./invitations";
+import { acceptCurrentLegal } from "./legal";
 import { buildMe, type Me } from "./me";
 import { assertLocationsOfBusiness, listMembers, updateMember } from "./members";
 import { requestPasswordReset, resetPassword } from "./recovery";
@@ -25,7 +27,8 @@ import { resendEmailVerification, verifyEmail } from "./verification";
 //
 //   /auth/*  login, logout, me, cambio de negocio, recuperación y cambio de clave, 2FA,
 //            invitaciones (ver y aceptar), verificar el correo del alta self-service (y
-//            reenviar el link). Públicas las que se usan sin sesión.
+//            reenviar el link), aceptar los términos vigentes. Públicas las que se usan sin
+//            sesión.
 //   /team/*  invitar y gestionar el equipo del negocio (dueño y admin). Invitar o
 //            reactivar a alguien pasando el cupo de usuarios del plan → 403
 //            `plan_limit_reached` (el plan llega inyectado desde modules/billing).
@@ -68,7 +71,11 @@ const AcceptInvitationBody = z.object({
   password: PasswordInputSchema,
   // Solo si la cuenta ya existe y tiene 2FA.
   totpCode: TotpCodeSchema.optional(),
+  // Términos y aviso de privacidad vigentes (queda en `legal_acceptances`).
+  acceptTerms: z.literal(true, "Tenés que aceptar los términos y el aviso de privacidad."),
 });
+// La versión de los documentos que la persona tuvo a la vista (`me.legal.version`).
+const LegalAcceptBody = z.object({ version: z.string().trim().regex(LEGAL_VERSION_PATTERN, "Versión inválida.") });
 const InviteBody = z.object({
   email: z.email().max(320),
   name: Name.optional(),
@@ -125,6 +132,12 @@ export function teamRoutes({ db, plans, onLogin }: TeamRouteDeps): Route[] {
     }),
 
     route({ method: "GET", path: "/auth/me", auth: "user" }, ({ session }) => buildMe(db, session, plans)),
+
+    // ── Términos y aviso de privacidad (el aviso del panel cuando sube la versión) ──
+    // Cualquier rol: cada persona acepta por sí misma (la del dueño obliga al negocio).
+    route({ method: "POST", path: "/auth/legal/accept", auth: "user", body: LegalAcceptBody }, ({ session, body }) =>
+      acceptCurrentLegal(db, session, body.version),
+    ),
 
     route(
       { method: "POST", path: "/auth/switch-business", auth: "user", body: SwitchBusinessBody },

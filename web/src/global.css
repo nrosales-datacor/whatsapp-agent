@@ -566,6 +566,7 @@ form > .btn { margin-top: var(--space-lg); }
 .billing-banner-warning { background: var(--status-pending-bg); color: var(--status-pending); }
 .billing-banner-text { flex: 1 1 240px; min-width: 0; font-weight: 500; }
 .billing-banner-link { font-weight: 500; color: inherit; text-decoration: underline; min-height: 32px; display: inline-flex; align-items: center; }
+.legal-banner-accept { flex-shrink: 0; }
 .signup-terms { display: flex; align-items: flex-start; gap: var(--space-xs); margin-top: var(--space-sm); font-size: var(--step--1); color: var(--text); line-height: 1.5; cursor: pointer; }
 .signup-terms input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--accent); flex-shrink: 0; cursor: pointer; }
 .auth-resend { margin-top: var(--space-sm); font-size: var(--step--1); color: var(--text-2); }
