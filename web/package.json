@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.sw.json"
   },
   "dependencies": {
+    "@sentry/react": "10.54.0",
     "@tanstack/react-query": "5.100.14",
     "react": "19.2.7",
     "react-dom": "19.2.7",

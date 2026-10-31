@@ -38,6 +38,8 @@ export interface FakeWhatsApp {
   agentResult: AgentTurnResult | ((input: AgentTurnInput) => AgentTurnResult | Promise<AgentTurnResult>);
   /** Si está, el próximo envío falla con este error (y se borra). */
   failNextSend: Error | null;
+  /** Lo que el pipeline mandó a Sentry (`deps.reportError`). */
+  reported: { error: unknown; context: Record<string, unknown> }[];
   transcript: string;
 }
 
@@ -52,6 +54,7 @@ export function fakeWhatsApp(db: Db, overrides: Partial<WhatsAppDeps> = {}): Fak
     uploads: [],
     agentResult: okResult("¡Hola! ¿En qué te ayudo?"),
     failNextSend: null,
+    reported: [],
     transcript: "Quiero una cita para mañana",
   };
   const send = async (msg: SentMessage) => {
@@ -100,6 +103,9 @@ export function fakeWhatsApp(db: Db, overrides: Partial<WhatsAppDeps> = {}): Fak
       fake.pushes.push({ target, payload: JSON.parse(payload) });
     },
     getAiLimits: () => ({ monthlyConversations: null, monthlySpendMicros: null }),
+    reportError: (error, context) => {
+      fake.reported.push({ error, context });
+    },
     ...overrides,
   });
   return fake;

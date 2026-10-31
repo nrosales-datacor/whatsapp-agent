@@ -125,6 +125,18 @@ interface Turn {
 
 const short = (e: unknown) => (e instanceof Error ? e.message : String(e)).slice(0, 300);
 
+/**
+ * Error del turno que ya no se reintenta (no transitorio, último intento o con efectos):
+ * al log y a Sentry. Solo ids y la etapa: ni el teléfono ni el texto del cliente (la
+ * conversación se mira en el panel).
+ */
+function reportTurnError(turn: Turn, stage: "agent" | "reply_send", e: unknown): void {
+  const event = stage === "agent" ? "whatsapp_agent_failed" : "whatsapp_reply_send_failed";
+  const context = { businessId: turn.businessId, conversationId: turn.conversation.id, attempt: turn.ctx.attempt };
+  log.error(event, { ...context, error: short(e) });
+  turn.deps.reportError(e, { module: "whatsapp", stage, ...context, lastAttempt: turn.ctx.isLastAttempt, effects: turn.effects });
+}
+
 /** ¿Relanzar para que la cola reintente? Solo si es transitorio, sin efectos y con intentos. */
 function shouldRetry(turn: Pick<Turn, "ctx" | "effects">, e: unknown): boolean {
   return !turn.effects && !turn.ctx.isLastAttempt && isTransientError(e);
@@ -424,7 +436,7 @@ async function runAgentTurn(turn: Turn, operatorNote: string): Promise<void> {
     });
   } catch (e) {
     if (shouldRetry(turn, e)) throw e;
-    log.error("whatsapp_agent_failed", { businessId: turn.businessId, conversationId: turn.conversation.id, error: short(e) });
+    reportTurnError(turn, "agent", e);
     await sendFixed(turn, "generalError");
     await notify(turn, `⚠️ El bot no pudo responder: ${operatorNote}`);
     return;
@@ -459,7 +471,7 @@ async function runAgentTurn(turn: Turn, operatorNote: string): Promise<void> {
     for (const reply of replies) await sendToClient(turn, reply);
   } catch (e) {
     if (shouldRetry(turn, e)) throw e;
-    log.error("whatsapp_reply_send_failed", { businessId: turn.businessId, conversationId: turn.conversation.id, error: short(e) });
+    reportTurnError(turn, "reply_send", e);
     await notify(turn, `⚠️ El bot no pudo enviar su respuesta: ${operatorNote}`);
     return;
   }

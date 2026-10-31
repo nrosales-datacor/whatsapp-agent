@@ -198,6 +198,9 @@ jobs:
             mv web/dist.nuevo web/dist
             # reload (no restart): PM2 manda SIGINT y el server se apaga ordenado
             # (src/platform/net/shutdown.ts) dentro del kill_timeout de ecosystem.config.cjs.
+            # SENTRY_RELEASE = este commit: cada error en Sentry (servidor y panel) dice qué
+            # versión corría; --update-env se lo pasa al proceso.
+            export SENTRY_RELEASE=${{ github.sha }}
             pm2 startOrReload ecosystem.config.cjs --update-env
           "
 
@@ -321,6 +324,8 @@ jobs:
             tar -xzf ~/panel-rollback.tgz -C web/dist.nuevo && rm -f ~/panel-rollback.tgz
             if [ -d web/dist ]; then mv web/dist web/dist.viejo; fi
             mv web/dist.nuevo web/dist
+            # Sentry: los errores después del rollback quedan con la versión revertida.
+            export SENTRY_RELEASE=$ROLLBACK_SHA
             pm2 startOrReload ecosystem.config.cjs --update-env
           "
 

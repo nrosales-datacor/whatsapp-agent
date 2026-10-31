@@ -1,6 +1,8 @@
 import type { ServerResponse } from "node:http";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { escapeHtml } from "../email/templates";
+import { panelSentryConfig } from "../observability/sentry";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Archivos estáticos del panel: build de Vite (web/dist), fuentes self-hosted, PWA
@@ -9,6 +11,11 @@ import { fileURLToPath } from "node:url";
 // En desarrollo (NODE_ENV distinto de "production") el index y los archivos de la raíz
 // del build se releen en cada request, por si se reconstruyó; igual lo normal en dev es
 // el server de Vite (puerto 5173) con HMR, no este build servido por Node.
+//
+// Al servir el index se le agregan las `<meta name="sentry-*">` con la configuración de
+// Sentry del panel (DSN, release, environment) si el server tiene SENTRY_DSN: el panel
+// activa su reporte de errores con el `.env` del servidor, sin recompilar (ver
+// web/src/lib/errorTracking.ts y panelSentryConfig en observability/sentry.ts).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const IS_DEV = process.env.NODE_ENV !== "production";
@@ -44,6 +51,23 @@ function readIndex(): string | null {
     }
   }
   return cachedIndex;
+}
+
+/** El index con la configuración de Sentry del panel como `<meta>` (sin DSN, tal cual). */
+export function withPanelConfig(index: string, env: Record<string, string | undefined> = process.env): string {
+  const sentry = panelSentryConfig(env);
+  if (!sentry) return index;
+  const metas: [string, string | undefined][] = [
+    ["sentry-dsn", sentry.dsn],
+    ["sentry-environment", sentry.environment],
+    ["sentry-release", sentry.release],
+  ];
+  const tags = metas
+    .filter((m): m is [string, string] => Boolean(m[1]))
+    .map(([name, value]) => `<meta name="${name}" content="${escapeHtml(value)}">`)
+    .join("");
+  const head = index.indexOf("</head>");
+  return head === -1 ? index : `${index.slice(0, head)}${tags}${index.slice(head)}`;
 }
 
 // Assets hasheados del build (/panel/assets/*). Allowlist estricta (un solo segmento,
@@ -168,7 +192,7 @@ export function serveStaticPanel(res: ServerResponse, pathname: string, method: 
       return true;
     }
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    res.end(index);
+    res.end(withPanelConfig(index));
     return true;
   }
   return false;

@@ -161,5 +161,10 @@ export function productionConfigWarnings(env: Env = process.env): string[] {
   } else if (isKnownPlaceholder(env.PANEL_SUPERADMIN_HASH)) {
     warnings.push("PANEL_SUPERADMIN_HASH es el valor de ejemplo de .env.example: nadie puede entrar como superadmin.");
   }
+  // Decisión del usuario: sin DSN NO se frena el arranque (Sentry es opcional), pero en
+  // producción se advierte fuerte: un error del servidor o del panel no le llega a nadie.
+  if (!env.SENTRY_DSN?.trim()) {
+    warnings.push("SENTRY_DSN sin configurar: los errores del servidor y del panel no le llegan a nadie (DEPLOY.md §16).");
+  }
   return warnings;
 }
