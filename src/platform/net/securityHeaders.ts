@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { panelSentryConfig } from "../observability/sentry";
 import type { HttpHandler } from "./http";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -16,7 +17,8 @@ import type { HttpHandler } from "./http";
 // CSP por ruta:
 //   • /panel/* (SPA de React, build de Vite): sin scripts ni estilos inline (el build no
 //     los usa: index.html solo referencia /panel/assets/*), fuentes self-hosted, SW y
-//     manifest propios. `connect-src 'self'`: el panel solo habla con /api/panel/*.
+//     manifest propios. `connect-src 'self'`: el panel solo habla con /api/panel/* (más
+//     el origen del DSN de Sentry si está configurado, para mandar sus errores).
 //     `img-src 'self' data: blob: https:` — data: por los íconos inline del CSS, https:
 //     por las URLs firmadas de Supabase Storage y el logo de marca de cada negocio.
 //     `media-src 'self' blob: https:` — las notas de voz de la bandeja se reproducen desde
@@ -39,8 +41,12 @@ function joinDirectives(directives: Record<string, string>): string {
     .join("; ");
 }
 
-/** CSP del panel (SPA). `admin` suma lo que necesita el SDK de Facebook (Embedded Signup). */
-export function panelCsp(admin = false): string {
+/**
+ * CSP del panel (SPA). `admin` suma lo que necesita el SDK de Facebook (Embedded Signup);
+ * `sentryOrigin`, el origen al que el panel manda sus errores (null = sin Sentry).
+ */
+export function panelCsp(admin = false, sentryOrigin: string | null = panelSentryConfig()?.origin ?? null): string {
+  const connect = ["'self'", ...(admin ? ["https://*.facebook.com", "https://graph.facebook.com"] : []), ...(sentryOrigin ? [sentryOrigin] : [])];
   return joinDirectives({
     "default-src": "'self'",
     "script-src": admin ? "'self' https://connect.facebook.net" : "'self'",
@@ -48,7 +54,7 @@ export function panelCsp(admin = false): string {
     "img-src": "'self' data: blob: https:",
     "media-src": "'self' blob: https:",
     "font-src": "'self'",
-    "connect-src": admin ? "'self' https://*.facebook.com https://graph.facebook.com" : "'self'",
+    "connect-src": connect.join(" "),
     "frame-src": admin ? "https://*.facebook.com" : "'none'",
     "worker-src": "'self'",
     "manifest-src": "'self'",

@@ -587,28 +587,73 @@ tiene — un backfill real sobre una tabla de negocio existente) y **F9** (mover
 así que el código tiene que leer ambos formatos durante la transición). Ambos ítems del ROADMAP
 deberían seguir estos 4 pasos en vez de una migración de un solo tiro.
 
-## 16. Sentry — alertas de errores (ROADMAP B5, OPCIONAL)
+## 16. Sentry — alertas de errores (ROADMAP B5 / Carril P)
 
-Sin esto el bot funciona igual, solo que un error en el server o el worker se pierde en
-`pm2 logs` y nadie se entera hasta que un cliente se queja.
+Sin esto el producto funciona igual, solo que un error en el servidor, el worker o el panel se
+pierde en `pm2 logs` (o en el navegador de alguien) y nadie se entera hasta que un cliente se
+queja. **Antes del primer cliente que pague, hay que activarlo.** En producción sin
+`SENTRY_DSN` el arranque lo advierte (`⚠️ SENTRY_DSN sin configurar…` y el evento
+`sentry_missing_in_production` en el log), pero no frena el proceso.
 
-1. Creá una cuenta gratis en [sentry.io](https://sentry.io) y un proyecto tipo **Node**.
-2. Copiá el DSN que te da (`https://...@...ingest.sentry.io/...`) y agregalo al `.env`
-   del droplet:
+**Un solo proyecto** (plan gratis) para el servidor y el panel: se distinguen por el tag
+`app` (`backend` / `panel`); cada evento lleva `environment` (`NODE_ENV`) y `release` (el SHA
+del commit, lo fija el deploy con `SENTRY_RELEASE`).
+
+1. Creá una cuenta gratis en [sentry.io](https://sentry.io) y un proyecto (plataforma
+   **Node.js**; el panel usa el mismo).
+2. Copiá el DSN (Settings → Client Keys) y agregalo al `.env` del droplet. El DSN no se
+   pega en el repo, en tickets ni en chats.
    ```bash
-   nano .env        # agregá la línea: SENTRY_DSN=https://...
-   pm2 restart whatsapp-bot
+   cd ~/lavacar-whatsapp-bot          # carpeta del proyecto (DEPLOY_DIR del pipeline)
+   nano .env                          # agregá la línea SENTRY_DSN=<el DSN del proyecto>
+   pm2 restart selyon-crm --update-env
    ```
-3. Confirmá en los logs (`pm2 logs whatsapp-bot`) que aparece `Sentry: activo ✅` al
-   arrancar. Sin el DSN dice "no configurado (opcional)" y el bot sigue igual.
-4. En el dashboard de Sentry, activá alertas por email/Slack para "nuevo issue" del
-   proyecto — así te avisa sin tener que entrar a mirar.
+   - Opcional: `SENTRY_PANEL_DSN` con **otra** Client Key del mismo proyecto solo para el
+     panel. El DSN del panel es público (va en el HTML que se sirve en `/panel`): con su
+     propia clave le ponés un tope (Client Keys → Rate Limiting) o la revocás sin tocar la
+     del servidor. Sin ella, el panel usa `SENTRY_DSN`.
+3. Confirmá en los logs (`pm2 logs selyon-crm`) que al arrancar dice
+   `Sentry: activo ✅ (release <sha>)`. Sin el DSN dice "no configurado (opcional, falta
+   SENTRY_DSN)".
+4. **Evento de prueba** (desde la carpeta del proyecto):
+   ```bash
+   node --import tsx scripts/sentryTestEvent.ts
+   ```
+   Tiene que decir `✅ Evento de prueba enviado` y aparecer en Sentry → Issues como
+   "Evento de prueba de Sentry" con `app:backend`. Sin DSN dice que no mandó nada y sale
+   sin error. Para el panel: abrí `/panel` y mirá en el código fuente de la página que
+   esté la `<meta name="sentry-dsn">` (la agrega el servidor; la CSP del panel ya permite
+   el envío a Sentry).
+5. **Reglas de alerta** (Sentry → Alerts → Create Alert → Issues):
+   - «A new issue is created» → email (y Slack si está conectado) — la mínima.
+   - «The issue changes state from resolved to unresolved» (regresión) → mismo destino.
+   - Opcional: «Number of events in an issue is more than 50 in 1h» para picos.
+   Probala con el evento de prueba del paso 4 (resolvé el issue y repetí el script).
+6. **Privacidad y cupo** (Settings del proyecto; los nombres pueden variar un poco según la
+   versión de Sentry):
+   - Security & Privacy: dejá activos **Data Scrubber** y **Use Default Scrubbers**, y
+     activá **Prevent Storing of IP Addresses** (el servidor y el panel ya no las mandan:
+     doble seguro).
+   - General → Client Security → **Allowed Domains**: solo el dominio de producción (frena
+     eventos falsos mandados con el DSN público del panel).
+   - Inbound Filters: activá el filtro de errores de extensiones del navegador.
 
-Qué se reporta: excepciones no atrapadas y rechazos de promesa sin manejar (crashean o
-casi crashean el proceso), más los errores ya atrapados que valen alerta (falla
-persistir un mensaje entrante, un job de la cola agota reintentos, un loop del worker o
-de recordatorios muere). Los reintentos intermedios (backoff normal) NO se reportan
-para no generar ruido.
+Qué se reporta:
+
+- **Servidor:** excepciones no atrapadas y rechazos de promesa sin manejar, los 500 del
+  router, los errores ya atrapados que valen alerta (falla persistir un mensaje entrante, un
+  job de la cola agota reintentos, un loop del worker o de recordatorios muere, cada alerta a
+  la plataforma) y los turnos de WhatsApp que terminan en la disculpa al cliente (el agente
+  falló con un error no transitorio o en el último intento, o no se pudo enviar la
+  respuesta). Los reintentos intermedios (backoff normal) NO se reportan para no generar
+  ruido.
+- **Panel:** errores de render (la pantalla «Algo salió mal» de `AppErrorBoundary`) y
+  errores/promesas sin manejar del navegador.
+
+Qué NO viaja a Sentry (Ley 8968, `src/platform/observability/sentry.ts` y
+`web/src/lib/errorTracking.ts`): IP, cookies, cuerpos de los requests, query strings
+(tokens de invitación, búsquedas), cabeceras fuera de una lista corta, teléfonos (salen
+enmascarados, `506***7777`), textos de clientes (solo su largo) y correos (`a***@dominio`).
 
 ## 17. Uptime monitor — avisa si el bot se cae (ROADMAP B5, OPCIONAL)
 

@@ -3,13 +3,18 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./app/App";
+import AppErrorBoundary from "./app/AppErrorBoundary";
 import { ME_QUERY_KEY } from "./app/session";
 import { ADMIN_ME_QUERY_KEY } from "./modules/admin/adminApi";
 import { onBusinessPaused, onUnauthorized } from "./lib/api";
+import { initErrorTracking } from "./lib/errorTracking";
 import { registerServiceWorker } from "./lib/push";
 import { initTheme } from "./lib/theme";
 import { ToastProvider } from "./ui/Toast";
 import "./global.css";
+
+// Reporte de errores (Sentry) antes de todo: solo si el server mandó el DSN en el index.
+initErrorTracking();
 
 // El tema se aplica antes del primer render para que no parpadee.
 initTheme();
@@ -43,13 +48,16 @@ onBusinessPaused(() => {
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      {/* basename "/panel": el panel se sirve bajo /panel (mismo base que Vite). */}
-      <BrowserRouter basename="/panel">
-        <ToastProvider>
-          <App />
-        </ToastProvider>
-      </BrowserRouter>
-    </QueryClientProvider>
+    {/* Un error de render en cualquier parte muestra "Algo salió mal" y se reporta. */}
+    <AppErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        {/* basename "/panel": el panel se sirve bajo /panel (mismo base que Vite). */}
+        <BrowserRouter basename="/panel">
+          <ToastProvider>
+            <App />
+          </ToastProvider>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </AppErrorBoundary>
   </StrictMode>,
 );

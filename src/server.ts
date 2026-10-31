@@ -8,8 +8,9 @@ import { withSafetyNet } from "./platform/net/http";
 import type { Loop } from "./platform/net/scheduler";
 import { drainTasks, pendingTaskCount } from "./platform/net/shutdown";
 import { configuredAlertChannels } from "./platform/observability/alerts";
+import { log } from "./platform/observability/log";
 import { startMetricsReport } from "./platform/observability/metrics";
-import { captureError, initSentry, isSentryConfigured } from "./platform/observability/sentry";
+import { captureError, currentRelease, initSentry, isSentryConfigured } from "./platform/observability/sentry";
 import { startQueueWorker, type QueueWorker } from "./platform/queue";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -34,6 +35,11 @@ if (secretProblems.length > 0) {
   process.exit(1);
 }
 for (const warning of productionConfigWarnings()) console.warn(`⚠️  ${warning}`);
+// Advertencia fuerte (decisión del usuario: no frena el arranque): en producción sin
+// Sentry, un error del servidor o del panel no le llega a nadie. Evento buscable en los logs.
+if (process.env.NODE_ENV === "production" && !isSentryConfigured()) {
+  log.error("sentry_missing_in_production", { hint: "Cargá SENTRY_DSN en el .env del servidor (DEPLOY.md §16)." });
+}
 
 // La app y los handlers de la cola se cargan recién ahora (import dinámico): así el
 // chequeo de arriba corre antes que cualquier módulo que lea los secretos al importarse
@@ -96,7 +102,8 @@ server.listen(PORT, () => {
   const storage = process.env.DATABASE_URL ? "PostgreSQL" : "PostgreSQL local (PGlite)";
   console.log(`${PRODUCT_NAME} escuchando en http://localhost:${PORT}  ·  Rol: ${ROLE}  ·  Base: ${storage}`);
   if (!SERVES_WEB) console.log("Rol worker: sin landing/panel/API en este proceso (solo /health).");
-  console.log(`Sentry: ${isSentryConfigured() ? "activo ✅" : "no configurado (opcional, falta SENTRY_DSN)"}`);
+  const release = currentRelease();
+  console.log(`Sentry: ${isSentryConfigured() ? `activo ✅${release ? ` (release ${release.slice(0, 12)})` : " (sin SENTRY_RELEASE)"}` : "no configurado (opcional, falta SENTRY_DSN)"}`);
   console.log(`Alertas a la plataforma: ${configuredAlertChannels().join(" + ")}`);
 
   // Trabajo de fondo: con `ROLE=web` este proceso no lo arranca (lo atiende la réplica

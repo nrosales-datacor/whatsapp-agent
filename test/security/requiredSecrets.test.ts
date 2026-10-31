@@ -111,16 +111,20 @@ test("secretos: todo placeholder de secreto en .env.example está en la lista de
   assert.ok(isKnownPlaceholder(envExampleValue("PANEL_SUPERADMIN_HASH") ?? ""));
 });
 
-test("secretos: avisos de producción por PUBLIC_BASE_URL y superadmin sin configurar", () => {
+test("secretos: avisos de producción por PUBLIC_BASE_URL, superadmin y Sentry sin configurar", () => {
   const warnings = productionConfigWarnings({ NODE_ENV: "production" });
   assert.ok(warnings.some((w) => w.includes("PUBLIC_BASE_URL")));
   assert.ok(warnings.some((w) => w.includes("PANEL_SUPERADMIN_USERNAME")));
+  // Sin DSN se advierte, pero NO se frena el arranque (decisión del usuario).
+  assert.ok(warnings.some((w) => w.includes("SENTRY_DSN")));
+  assert.ok(!productionSecretProblems({ NODE_ENV: "production" }).some((p) => p.includes("SENTRY_DSN")));
   assert.deepEqual(
     productionConfigWarnings({
       NODE_ENV: "production",
       PUBLIC_BASE_URL: "https://app.example.test",
       PANEL_SUPERADMIN_USERNAME: "root",
       PANEL_SUPERADMIN_HASH: "a:b",
+      SENTRY_DSN: "https://clavepublica@o0.ingest.sentry.example.test/1",
     }),
     [],
   );

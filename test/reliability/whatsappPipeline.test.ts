@@ -494,10 +494,71 @@ test("error transitorio del agente: relanza para que la cola reintente; en el ú
   };
   await assert.rejects(handleInboundJob(job.payload, ctx(1, false), fake.deps), /OpenAI 503/);
   assert.equal(sentTo(from).length, 0);
+  assert.equal(fake.reported.length, 0, "un intento que se reintenta no se reporta (ruido)");
   await handleInboundJob(job.payload, ctx(2, true), fake.deps);
   assert.match(sentTo(from)[0].text!, /tuvimos un problemita/);
   assert.match(pushesFor(w).at(-1)!.payload.body, /El bot no pudo responder/);
+  // En el último intento ya nadie lo reintenta: se reporta.
+  assert.equal(fake.reported.length, 1);
+  assert.equal(fake.reported[0].context.stage, "agent");
+  assert.equal(fake.reported[0].context.lastAttempt, true);
   await withSystem(db, (tx) => tx.update(jobs).set({ status: "done" }).where(eq(jobs.id, job.id)));
+});
+
+// ── Errores reportados a Sentry ──────────────────────────────────────────────
+
+/** El contexto del reporte no lleva el teléfono ni el texto del cliente, en ningún formato. */
+function assertNoPii(context: Record<string, unknown>, phone: string, text: string): void {
+  const json = JSON.stringify(context);
+  assert.ok(!json.includes(phone), `el reporte lleva el teléfono: ${json}`);
+  assert.ok(!json.includes(phone.slice(-8)), `el reporte lleva el teléfono local: ${json}`);
+  assert.ok(!json.includes(text), `el reporte lleva el texto del cliente: ${json}`);
+  for (const key of ["clientPhone", "phone", "to", "text", "content", "history"]) assert.ok(!(key in context), `campo ${key} en el reporte`);
+}
+
+test("agente que lanza un error NO transitorio: se reporta UNA vez con businessId y sin teléfono; el cliente recibe la disculpa", async () => {
+  const w = await world();
+  const from = newPhone();
+  const text = "Hola, quiero cita el viernes a las 3";
+  const boom = new Error("401 Incorrect API key provided");
+  fake.agentResult = () => {
+    throw boom;
+  };
+  await receive(w, from, { text });
+  await drain();
+  const { conv } = await conversationOf(w, from);
+  assert.equal(fake.reported.length, 1, "un solo reporte (sin reintento: no es transitorio)");
+  const [{ error, context }] = fake.reported;
+  assert.equal(error, boom);
+  assert.equal(context.businessId, w.businessId);
+  assert.equal(context.conversationId, conv.id);
+  assert.equal(context.stage, "agent");
+  assert.equal(context.module, "whatsapp");
+  assertNoPii(context, from, text);
+  assert.match(sentTo(from)[0].text!, /tuvimos un problemita/);
+  assert.match(pushesFor(w).at(-1)!.payload.body, /El bot no pudo responder/);
+});
+
+test("envío de la respuesta que falla sin reintento: se reporta con la etapa reply_send y sin teléfono", async () => {
+  const w = await world();
+  const from = newPhone();
+  const text = "¿Tienen campo mañana?";
+  fake.failNextSend = new GraphError("Graph 400: (#131030) destinatario no permitido", { status: 400, transient: false });
+  await receive(w, from, { text });
+  await drain();
+  assert.equal(fake.reported.length, 1);
+  const [{ context }] = fake.reported;
+  assert.equal(context.stage, "reply_send");
+  assert.equal(context.businessId, w.businessId);
+  assertNoPii(context, from, text);
+  assert.match(pushesFor(w).at(-1)!.payload.body, /El bot no pudo enviar su respuesta/);
+});
+
+test("turno normal: no se reporta nada", async () => {
+  const w = await world();
+  await receive(w, newPhone(), { text: "hola" });
+  await drain();
+  assert.equal(fake.reported.length, 0);
 });
 
 test("envío caído un rato: la cola reintenta el turno y el cliente recibe UNA respuesta", async () => {
