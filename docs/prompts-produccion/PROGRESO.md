@@ -30,3 +30,11 @@ Tres carriles a la vez, cada agente en su worktree; preguntas y merges a `prod/r
 | evals | en curso (carril B) | `prod/evals` | `cabf4a5` | — |
 | privacidad-y-terminos | en curso (carril C) | `prod/privacidad-y-terminos` | `cabf4a5` | — |
 | tests-unitarios | en curso (carril D) | `prod/tests-unitarios` | `bf99b79` | — |
+| error-tracking | en curso (carril E) | `prod/error-tracking` | `a3e04ed` | — |
+| alertas | en curso (carril F) | `prod/alertas` | `a3e04ed` | — |
+| limites-de-tokens | en curso (carril G) | `prod/limites-de-tokens` | `a3e04ed` | — |
+
+## Decisiones ya tomadas para los que siguen en cola
+
+- **multiples-dispositivos** (después de privacidad-y-terminos y tests-unitarios): hasta ~3 min extra de CI por push; sin servicio pago de dispositivos (QA manual del usuario con sus teléfonos, checklist corta; preguntar qué equipos tiene); Firefox no es objetivo (Chromium + WebKit).
+- **accesibilidad** (después de multiples-dispositivos): sí a `@axe-core/playwright` como devDependency (con la política); meta de lanzamiento "sin violaciones serias de axe", WCAG 2.2 AA completo después; si un token de "Banca privada" no da contraste, se oscurece lo mínimo y se muestra antes/después.
