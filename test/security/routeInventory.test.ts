@@ -17,7 +17,8 @@ import { after, before, test } from "node:test";
 // Rutas `user` de escritura SIN `roles` (citas, clave, 2FA, cambio de negocio): el acceso
 // fino lo hace el handler (`accessibleAppointment`/`ownStaffId` en scheduling: el rol
 // `staff` solo toca sus citas; las de /auth/* son de la propia cuenta). Revisado a mano el
-// 2026-10-30 al armar la tabla.
+// 2026-10-30 al armar la tabla; `POST /auth/legal/accept` (2026-10-31) también es de la
+// propia cuenta: registra la aceptación de quien llama en su negocio actual.
 // ─────────────────────────────────────────────────────────────────────────────
 
 process.env.TRUST_PROXY = "loopback";
@@ -177,6 +178,9 @@ const ACCESS_SNAPSHOT: Record<string, Access> = {
   "POST /appointments/:id/payments": { auth: "user", roles: ["owner", "admin", "front_desk"], module: "sales" },
   "POST /appointments/:id/reschedule": { auth: "user" },
   "POST /auth/invitations/accept": { auth: "public" },
+  // Términos y aviso de privacidad vigentes: cada persona acepta por sí misma, cualquier rol
+  // (Carril P, privacidad-y-terminos, 2026-10-31).
+  "POST /auth/legal/accept": { auth: "user" },
   "POST /auth/login": { auth: "public" },
   "POST /auth/logout": { auth: "public" },
   "POST /auth/password/change": { auth: "user" },

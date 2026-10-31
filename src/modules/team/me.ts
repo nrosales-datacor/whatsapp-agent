@@ -5,13 +5,15 @@ import type { Session } from "../../platform/http/routeTypes";
 import type { PlanHooks, PlanSnapshot } from "../../platform/plan/planHooks";
 import { getBusinessContext, type Branding, type Terminology } from "../business";
 import { activeMemberships, findUserById } from "./identity";
+import { getLegalStatus, type LegalStatus } from "./legal";
 import { getStaffIdForUser } from "./staffDirectory";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // `me`: lo que el panel necesita para pintarse después del login (quién soy, en qué
-// negocio, con qué rol, a qué sucursales entro, en qué otros negocios estoy y qué trae el
-// plan: módulos, nivel de clientes, límites y uso). Lo devuelven /auth/me, el login, el
-// cambio de negocio y aceptar una invitación: siempre la misma forma.
+// negocio, con qué rol, a qué sucursales entro, en qué otros negocios estoy, qué trae el
+// plan: módulos, nivel de clientes, límites y uso, y si tengo que aceptar los términos y el
+// aviso de privacidad vigentes). Lo devuelven /auth/me, el login, el cambio de negocio y
+// aceptar una invitación: siempre la misma forma.
 //
 // El plan lo resuelve `modules/billing`, que el núcleo no puede importar: llega inyectado
 // como `PlanHooks.snapshot` (src/platform/plan/planHooks.ts). Si el plan no incluye la
@@ -43,15 +45,18 @@ export interface Me {
   plan: PlanSnapshot;
   /** Profesional vinculado a esta cuenta en el negocio (su carril en "Mi agenda"), o null. */
   staffId: string | null;
+  /** Términos y aviso de privacidad: versión vigente, lo que aceptó y si tiene que aceptar de nuevo. */
+  legal: LegalStatus;
 }
 
 export async function buildMe(db: Executor, session: Session, plans: Pick<PlanHooks, "snapshot">): Promise<Me> {
-  const [user, ctx, others, plan, staffId] = await Promise.all([
+  const [user, ctx, others, plan, staffId, legal] = await Promise.all([
     findUserById(db, session.userId),
     getBusinessContext(db, session.businessId),
     activeMemberships(db, session.userId),
     plans.snapshot(session.businessId),
     getStaffIdForUser(db, session.businessId, session.userId),
+    getLegalStatus(db, session.businessId, session.userId),
   ]);
   // La sesión se validó recién: si falta algo, la cuenta o el negocio se borraron en el medio.
   if (!user || !ctx) throw new HttpError(401, "Tu sesión no es válida o venció. Iniciá sesión de nuevo.", "unauthorized");
@@ -85,5 +90,6 @@ export async function buildMe(db: Executor, session: Session, plans: Pick<PlanHo
     modules: [...plan.modules],
     plan,
     staffId,
+    legal,
   };
 }

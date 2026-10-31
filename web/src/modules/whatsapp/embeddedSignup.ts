@@ -7,6 +7,10 @@
 //
 // El SDK también avisa por `postMessage` (WA_EMBEDDED_SIGNUP) si la persona canceló o hubo
 // un error: con eso se corta antes, con un mensaje claro.
+//
+// Privacidad: el SDK se carga SOLO al tocar "Conectar" (no en el resto del panel) y con
+// `autoLogAppEvents: false`. Lo que hace Meta en su popup (sus cookies, en su dominio) lo
+// rige la política de Meta; la nuestra lo menciona (landing/privacidad.html).
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { SignupConfig } from "./whatsappApi";
@@ -39,7 +43,9 @@ function loadSdk(config: SignupConfig): Promise<FacebookSdk> {
         reject(new EmbeddedSignupError("No se pudo iniciar el SDK de Facebook."));
         return;
       }
-      window.FB.init({ appId: config.appId, autoLogAppEvents: true, xfbml: false, version: config.graphVersion });
+      // autoLogAppEvents: false → el SDK no le manda a Meta eventos de uso del panel (el
+      // Embedded Signup no los necesita; lo declara la política de privacidad, §SDK de Meta).
+      window.FB.init({ appId: config.appId, autoLogAppEvents: false, xfbml: false, version: config.graphVersion });
       resolve(window.FB);
     };
     const script = document.createElement("script");

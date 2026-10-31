@@ -1,5 +1,15 @@
 import { api } from "../../lib/api";
-import type { AcceptInvitationInput, Invitation, LoginInput, LoginResult, Me, SignupConfig, SignupInput, TotpSetup } from "../../lib/contract";
+import type {
+  AcceptInvitationInput,
+  Invitation,
+  LoginInput,
+  LoginResult,
+  Me,
+  MeLegal,
+  SignupConfig,
+  SignupInput,
+  TotpSetup,
+} from "../../lib/contract";
 
 // Endpoints de identidad del panel (contrato de I0.6). La sesión (`/auth/me`, logout y
 // cambio de negocio) está en app/session.tsx.
@@ -17,6 +27,9 @@ export const changePassword = (currentPassword: string, newPassword: string) =>
 export const getInvitation = (token: string) => api.get<Invitation>(`/auth/invitations/${encodeURIComponent(token)}`);
 
 export const acceptInvitation = (input: AcceptInvitationInput) => api.post<Me>("/auth/invitations/accept", input);
+
+/** Acepta la versión vigente de los términos y del aviso de privacidad (la que se mostró). */
+export const acceptLegal = (version: string) => api.post<MeLegal>("/auth/legal/accept", { version });
 
 export const setupTotp = () => api.post<TotpSetup>("/auth/totp/setup");
 

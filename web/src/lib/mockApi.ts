@@ -485,6 +485,16 @@ function staffIdOf(state: MockState, user: MockUser, businessId: string): string
   return (membershipId && setup.staff.find((s) => s.membershipId === membershipId)?.id) || null;
 }
 
+/** Versión de los documentos legales en el mock (en el backend, src/platform/legal.ts). */
+const MOCK_LEGAL_VERSION = "2026-10-31";
+
+/** Las cuentas del mock ya aceptaron la versión vigente (el aviso del panel no aparece). */
+const MOCK_LEGAL = {
+  version: MOCK_LEGAL_VERSION,
+  accepted: { termsVersion: MOCK_LEGAL_VERSION, privacyVersion: MOCK_LEGAL_VERSION, acceptedAt: "2026-10-31T12:00:00.000Z" },
+  mustAccept: false,
+} as const;
+
 function buildMe(user: MockUser, businessId: string, state: MockState): Me {
   const membership = user.memberships.find((m) => m.businessId === businessId) ?? user.memberships[0];
   // Lo que se cambió en Configuración (nombre, terminología, sucursales…) pisa la semilla.
@@ -541,6 +551,7 @@ function buildMe(user: MockUser, businessId: string, state: MockState): Me {
       usage: planUsageOf(state, b, resolved.modules),
     },
     staffId: staffIdOf(state, user, membership.businessId),
+    legal: { ...MOCK_LEGAL, accepted: { ...MOCK_LEGAL.accepted } },
   };
 }
 
@@ -1201,11 +1212,22 @@ function route(req: TransportRequest, state: MockState): TransportResponse {
       return noContent();
     }
 
+    case "POST /auth/legal/accept": {
+      if (!sessionMe()) return unauthorized();
+      if (str(body, "version") !== MOCK_LEGAL_VERSION) {
+        return fail(409, "legal_version_changed", "Los documentos se actualizaron mientras los leías. Recargá la página y volvé a aceptarlos.");
+      }
+      return ok({ ...MOCK_LEGAL, accepted: { ...MOCK_LEGAL.accepted } });
+    }
+
     case "POST /auth/invitations/accept": {
       const token = str(body, "token");
       const password = str(body, "password");
       const invitation = pendingInvitation(state, token);
       if (!invitation) return invalidInvitation(400);
+      if (typeof body !== "object" || body === null || (body as Record<string, unknown>).acceptTerms !== true) {
+        return invalid({ "body.acceptTerms": "Tenés que aceptar los términos y el aviso de privacidad." });
+      }
       const membership: MockMembership = {
         businessId: invitation.businessId,
         role: invitation.role,

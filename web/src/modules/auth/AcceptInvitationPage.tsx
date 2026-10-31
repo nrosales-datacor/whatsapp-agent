@@ -9,6 +9,7 @@ import { FormError, PasswordField, TextField } from "../../ui/Field";
 import FullPageStatus from "../../ui/FullPageStatus";
 import AuthLayout from "./AuthLayout";
 import { acceptInvitation, getInvitation } from "./authApi";
+import TermsConsent, { TERMS_REQUIRED_MESSAGE } from "./TermsConsent";
 import { usePasswordPair } from "./usePasswordPair";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -19,7 +20,9 @@ import { usePasswordPair } from "./usePasswordPair";
 //     código de su app si tiene 2FA (el backend lo pide con 400 `totp_required`). El
 //     enlace nunca sirve para cambiarle la clave a nadie.
 //
-// Al aceptar, la sesión queda abierta en el negocio que invitó.
+// En los dos casos la persona acepta los términos y el aviso de privacidad vigentes (la
+// casilla es obligatoria; el backend guarda la versión y la fecha). Al aceptar, la sesión
+// queda abierta en el negocio que invitó.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Alias viejo `/invite/:token` → `/accept-invitation?token=…`. */
@@ -95,6 +98,8 @@ function useAccept() {
 function NewAccountForm({ token, invitation }: FormProps) {
   const [name, setName] = useState("");
   const [nameMissing, setNameMissing] = useState(false);
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [termsMissing, setTermsMissing] = useState(false);
   const pair = usePasswordPair();
   const mutation = useAccept();
 
@@ -102,16 +107,19 @@ function NewAccountForm({ token, invitation }: FormProps) {
     e.preventDefault();
     const nameOk = name.trim() !== "";
     setNameMissing(!nameOk);
+    setTermsMissing(!acceptTerms);
     const passwordOk = pair.validate();
-    if (mutation.isPending || !nameOk || !passwordOk) return;
-    mutation.mutate({ token, name: name.trim(), password: pair.password });
+    if (mutation.isPending || !nameOk || !passwordOk || !acceptTerms) return;
+    mutation.mutate({ token, name: name.trim(), password: pair.password, acceptTerms: true });
   }
 
   const apiError = isApiError(mutation.error) ? mutation.error : null;
   const nameServerError = apiError?.fieldError("name");
   const passwordServerError = apiError?.fieldError("password");
+  const termsServerError = apiError?.fieldError("acceptTerms");
   const nameError = (nameMissing ? "Escribí tu nombre." : undefined) ?? nameServerError;
-  const formError = mutation.isError && !nameServerError && !passwordServerError ? errorMessage(mutation.error) : null;
+  const termsError = (termsMissing ? TERMS_REQUIRED_MESSAGE : undefined) ?? termsServerError;
+  const formError = mutation.isError && !nameServerError && !passwordServerError && !termsServerError ? errorMessage(mutation.error) : null;
 
   return (
     <AuthLayout
@@ -153,6 +161,14 @@ function NewAccountForm({ token, invitation }: FormProps) {
           error={pair.confirmError}
           onChange={(e) => pair.setConfirm(e.target.value)}
         />
+        <TermsConsent
+          checked={acceptTerms}
+          error={termsError}
+          onChange={(checked) => {
+            setAcceptTerms(checked);
+            setTermsMissing(false);
+          }}
+        />
         <FormError message={formError} />
         <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={mutation.isPending}>
           {mutation.isPending ? "Creando tu cuenta…" : "Aceptar invitación"}
@@ -167,6 +183,8 @@ function ExistingAccountForm({ token, invitation }: FormProps) {
   const [password, setPassword] = useState("");
   const [totpCode, setTotpCode] = useState("");
   const [needsTotp, setNeedsTotp] = useState(false);
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [termsMissing, setTermsMissing] = useState(false);
   const totpRef = useRef<HTMLInputElement>(null);
   const mutation = useAccept();
 
@@ -180,15 +198,18 @@ function ExistingAccountForm({ token, invitation }: FormProps) {
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (mutation.isPending || !password || (needsTotp && totpCode.length < 6)) return;
-    mutation.mutate({ token, password, ...(needsTotp ? { totpCode } : {}) });
+    setTermsMissing(!acceptTerms);
+    if (mutation.isPending || !password || (needsTotp && totpCode.length < 6) || !acceptTerms) return;
+    mutation.mutate({ token, password, acceptTerms: true, ...(needsTotp ? { totpCode } : {}) });
   }
 
   const error = mutation.error;
   const passwordError = isApiError(error, "invalid_password") ? error.message : undefined;
   const codeError = isApiError(error, "invalid_code") ? error.message : undefined;
+  const termsServerError = isApiError(error) ? error.fieldError("acceptTerms") : undefined;
+  const termsError = (termsMissing ? TERMS_REQUIRED_MESSAGE : undefined) ?? termsServerError;
   const formError =
-    mutation.isError && !passwordError && !codeError && !isApiError(error, "totp_required") ? errorMessage(error) : null;
+    mutation.isError && !passwordError && !codeError && !termsServerError && !isApiError(error, "totp_required") ? errorMessage(error) : null;
 
   return (
     <AuthLayout
@@ -231,6 +252,14 @@ function ExistingAccountForm({ token, invitation }: FormProps) {
             onChange={(e) => setTotpCode(onlyDigits(e.target.value))}
           />
         )}
+        <TermsConsent
+          checked={acceptTerms}
+          error={termsError}
+          onChange={(checked) => {
+            setAcceptTerms(checked);
+            setTermsMissing(false);
+          }}
+        />
         <FormError message={formError} />
         <button
           type="submit"

@@ -15,6 +15,8 @@ import { and, eq } from "drizzle-orm";
 //     verifica.
 //   • Un correo que ya tiene cuenta: misma respuesta, nada nuevo, aviso a esa cuenta.
 //   • Tope por IP (429) y validación de lo que se manda.
+//   • La aceptación de términos y privacidad queda guardada con versión y fecha
+//     (`legal_acceptances` + el audit `business_signed_up`) y `me.legal` la refleja.
 // ─────────────────────────────────────────────────────────────────────────────
 
 process.env.TRUST_PROXY = "loopback";
@@ -30,7 +32,8 @@ const { registerJobHandlers } = await import("../../src/jobs");
 const { businesses, locations, locationHours } = await import("../../src/modules/business/schema");
 const { services } = await import("../../src/modules/catalog/schema");
 const { paymentMethods } = await import("../../src/modules/sales/schema");
-const { memberships, users } = await import("../../src/modules/team/schema");
+const { legalAcceptances, memberships, users } = await import("../../src/modules/team/schema");
+const { LEGAL_VERSION } = await import("../../src/platform/legal");
 const { auditLog } = await import("../../src/platform/db/schema");
 const { withSystem } = await import("../../src/platform/db/scope");
 const { clearTestOutbox, getTestOutbox } = await import("../../src/platform/email/email");
@@ -181,6 +184,44 @@ test("alta: el negocio completo en prueba, la dueña sin verificar; el login esp
   assert.equal(ok.body.data.me.role, "owner");
   assert.equal(ok.body.data.me.plan.billingStatus, "trial");
   assert.ok(ok.body.data.me.plan.trialEndsAt);
+  // Aceptó en el alta: el panel no le pide aceptar de nuevo.
+  assert.equal(ok.body.data.me.legal.version, LEGAL_VERSION);
+  assert.equal(ok.body.data.me.legal.mustAccept, false);
+  assert.equal(ok.body.data.me.legal.accepted.termsVersion, LEGAL_VERSION);
+});
+
+test("alta: la aceptación de términos y privacidad queda consultable con versión y fecha", async () => {
+  const body = signupBody();
+  const before = Date.now();
+  assert.equal((await new Browser(app.baseUrl).post(`${API}/auth/signup`, body)).status, 202);
+  const user = await userOf(body.email);
+  const [membership] = await withSystem(db, (tx) => tx.select().from(memberships).where(eq(memberships.userId, user.id)));
+  const businessId = membership.businessId;
+
+  const [rows, [audit]] = await withSystem(db, (tx) =>
+    Promise.all([
+      tx.select().from(legalAcceptances).where(eq(legalAcceptances.businessId, businessId)),
+      tx.select().from(auditLog).where(and(eq(auditLog.businessId, businessId), eq(auditLog.action, "business_signed_up"))),
+    ]),
+  );
+  assert.equal(rows.length, 1, "una aceptación por el alta");
+  const [row] = rows;
+  assert.equal(row.userId, user.id);
+  assert.equal(row.role, "owner");
+  assert.equal(row.context, "signup");
+  assert.equal(row.termsVersion, LEGAL_VERSION);
+  assert.equal(row.privacyVersion, LEGAL_VERSION);
+  assert.ok(row.acceptedAt.getTime() >= before - 1000 && row.acceptedAt.getTime() <= Date.now() + 1000, "fecha de aceptación = el alta");
+
+  // El audit del alta lleva lo mismo (sin datos personales).
+  assert.equal(audit.details.termsVersion, LEGAL_VERSION);
+  assert.equal(audit.details.privacyVersion, LEGAL_VERSION);
+  assert.equal(audit.details.acceptedAt, row.acceptedAt.toISOString());
+  const [legalAudit] = await withSystem(db, (tx) =>
+    tx.select().from(auditLog).where(and(eq(auditLog.businessId, businessId), eq(auditLog.action, "legal_accepted"))),
+  );
+  assert.deepEqual(legalAudit.details, { context: "signup", role: "owner", termsVersion: LEGAL_VERSION, privacyVersion: LEGAL_VERSION });
+  assert.equal(legalAudit.actor, `user:${user.id}`);
 });
 
 test("plan Básico y días de prueba del entorno", async () => {
@@ -268,6 +309,12 @@ test("validación: términos sin aceptar, clave corta, rubro, plan o zona invál
     const res = await b.post(`${API}/auth/signup`, body);
     assert.equal(res.status, 400, JSON.stringify(body));
     if (typeof body.email === "string" && body.email.includes("@")) assert.equal(await userOf(body.email), undefined);
+  }
+  // Sin la casilla (o con cualquier cosa que no sea `true`) no hay alta.
+  for (const acceptTerms of [undefined, "true", 1]) {
+    const res = await b.post(`${API}/auth/signup`, signupBody({ acceptTerms }));
+    assert.equal(res.status, 400);
+    assert.ok(res.body.fields?.["body.acceptTerms"], JSON.stringify(res.body));
   }
 });
 

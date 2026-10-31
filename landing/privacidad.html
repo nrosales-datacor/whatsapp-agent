@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>Política de privacidad — Selyon</title>
-<meta name="description" content="Política de privacidad de la plataforma Selyon: qué datos se tratan cuando escribís a un negocio que usa Selyon, para qué, con qué proveedores y cómo ejercer tus derechos (Ley 8968).">
+<meta name="description" content="Política de privacidad: qué datos trata Selyon CRM (clientes, citas, ventas, equipo y WhatsApp), para qué, con qué proveedores, cookies y cómo ejercer tus derechos (Ley 8968).">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/landing/estilos.css">
@@ -31,109 +31,150 @@
   </div>
 </header>
 
-<!-- BORRADOR: los textos entre [CORCHETES] son datos de la empresa que faltan y NO
-     se deben inventar. Todo el documento está pendiente de revisión por un abogado
-     costarricense (Ley 8968 y su reglamento, Decreto 37554-JP). Debe describir lo que
-     el sistema hace de verdad: si cambia el código (proveedores, retención, campañas),
-     actualizar este texto en el mismo cambio. -->
+<!-- BORRADOR SIN REVISIÓN LEGAL (versión 2026-10-31, LEGAL_VERSION en src/platform/legal.ts).
+     Todo el documento está pendiente de revisión por un abogado costarricense (Ley 8968 y
+     su reglamento, Decreto 37554-JP). Debe describir lo que el sistema hace de verdad: si
+     cambia el código (proveedores, retención, cookies, campañas), actualizar este texto en el
+     mismo cambio y, si el cambio es importante, subir LEGAL_VERSION (el panel pide aceptar
+     de nuevo). No se inventan datos de la empresa: lo que falta va como [PENDIENTE: …].
+     Quitar el aviso de borrador SOLO cuando el usuario confirme la revisión del abogado
+     (test/unit/legalDocuments.test.ts exige que, sin aviso, no quede ningún marcador).
+
+     Marcadores pendientes en este documento (buscar "[PENDIENTE:"):
+       1. [PENDIENTE: razón social]                     (secciones 1 y 14)
+       2. [PENDIENTE: cédula jurídica]                  (sección 1)
+       3. [PENDIENTE: domicilio]                        (sección 1)
+       4. [PENDIENTE: correo de privacidad]             (secciones 10 y 14)
+       5. [PENDIENTE: canal oficial de contacto]        (sección 14; reemplaza el WhatsApp del piloto)
+       6. [PENDIENTE: región de Supabase]               (sección 6)
+       7. [PENDIENTE: región del servidor de DigitalOcean] (sección 6)
+       8. [PENDIENTE: confirmar retención y uso de datos de la API de OpenAI] (sección 6)
+       9. [PENDIENTE: requisitos de la transferencia internacional e inscripción ante la PRODHAB] (sección 6)
+      10. [PENDIENTE: datos de salud en clínicas] (sección 2)
+      11. [PENDIENTE: retención de las copias de seguridad] (sección 8; propuesta 14 días)
+      12. [PENDIENTE: plazo de respuesta a los derechos] (sección 10; propuesta 5 días hábiles)
+      13. [PENDIENTE: plazo de aviso de incidentes] (sección 11; propuesta 5 días hábiles)
+-->
 <main class="legal">
   <div class="contenedor">
     <a class="volver" href="/">← Volver al inicio</a>
-    <p class="aviso-borrador" role="note"><strong>Borrador — pendiente de revisión legal.</strong> Este documento todavía no fue revisado por un abogado y puede cambiar. Los datos entre [corchetes] están pendientes.</p>
+    <p class="aviso-borrador" role="note"><strong>Borrador sin revisión legal.</strong> Este documento todavía no fue revisado por un abogado y puede cambiar. Los datos marcados como <span class="pendiente">[PENDIENTE: …]</span> faltan y se completan antes de su versión final.</p>
     <h1>Política de privacidad</h1>
-    <p class="vigencia">Versión borrador del 1 de octubre de 2026.</p>
+    <p class="vigencia" data-legal-version="2026-10-31">Versión 2026-10-31 (31 de octubre de 2026) · borrador.</p>
 
     <div class="resumen">
-      <p><strong>En corto:</strong> Selyon es un software que los negocios usan para atender su WhatsApp con inteligencia artificial. Si le escribís a un negocio que usa Selyon, <strong>ese negocio es el responsable de tus datos</strong> y Selyon los trata <strong>por encargo suyo</strong>, solo para prestarle el servicio. Tus mensajes se procesan con proveedores en el extranjero (entre ellos OpenAI, en EE. UU.). Solo recibís promociones si aceptaste expresamente, y podés darte de baja escribiendo <strong>BAJA</strong>.</p>
+      <p><strong>En corto:</strong> Selyon CRM es un software que usan negocios con cita (clínicas dentales, estética, uñas, salones y similares) para llevar su agenda, sus clientes, sus cobros y su equipo, y opcionalmente para atender su WhatsApp con inteligencia artificial. Si sos cliente de uno de esos negocios, <strong>el negocio es el responsable de tus datos</strong> y Selyon los trata <strong>por encargo suyo</strong>, solo para prestarle el servicio. Parte del procesamiento ocurre con proveedores fuera de Costa Rica (entre ellos OpenAI, en EE. UU.). No vendemos datos, no los usamos para publicidad y solo recibís promociones si aceptaste; para darte de baja escribí <strong>BAJA</strong>.</p>
     </div>
 
     <h2>1. Quiénes somos y qué papel cumplimos</h2>
     <p>
-      <strong>Selyon</strong> es una plataforma de software operada por <strong>[RAZÓN SOCIAL]</strong>, cédula jurídica
-      <strong>[CÉDULA JURÍDICA]</strong>, con domicilio en <strong>[DOMICILIO]</strong>, Costa Rica (en adelante, “Selyon”).
-      Selyon les presta a negocios (lavacares, talleres, clínicas, salones y similares) un asistente de WhatsApp con
-      inteligencia artificial y un panel web para su equipo.
+      <strong>Selyon CRM</strong> (“Selyon”) es una plataforma de software operada por <span class="pendiente">[PENDIENTE: razón social]</span>,
+      cédula jurídica <span class="pendiente">[PENDIENTE: cédula jurídica]</span>, con domicilio en <span class="pendiente">[PENDIENTE: domicilio]</span>, Costa Rica.
+      Les presta a negocios con cita un panel web de gestión (agenda con varias sucursales, ficha y seguimiento de clientes,
+      ventas y cobros, comisiones del personal, reportes y campañas) y, como módulo, un asistente de WhatsApp con
+      inteligencia artificial que responde, agenda y recuerda citas.
     </p>
     <p>Según la Ley N.° 8968 de Protección de la Persona frente al Tratamiento de sus Datos Personales:</p>
     <ul>
       <li>
-        <strong>Cada negocio que usa Selyon es el responsable de la base de datos</strong> de sus clientes: decide para qué
-        se usan los datos de quienes le escriben, qué servicios ofrece, si envía promociones y a quién.
+        <strong>Cada negocio que usa Selyon es el responsable</strong> de las bases de datos de sus clientes y de su
+        personal: decide qué datos carga, para qué los usa, qué servicios ofrece, si envía promociones y a quién.
       </li>
       <li>
-        <strong>Selyon actúa como encargado del tratamiento</strong>: trata esos datos por cuenta del negocio, siguiendo sus
-        instrucciones y el contrato que firmamos con él, y no los usa para fines propios. No vendemos datos ni los usamos
-        para publicidad de terceros.
+        <strong>Selyon actúa como encargado del tratamiento</strong> de esos datos: los trata por cuenta del negocio,
+        siguiendo sus instrucciones y el <a href="/contrato">contrato y acuerdo de tratamiento de datos</a> que firma con
+        él, y no los usa para fines propios.
       </li>
       <li>
-        Para los datos de los <strong>propios negocios</strong> (cuenta, usuarios del panel, facturación), Selyon es el
-        responsable.
+        Selyon es <strong>responsable</strong> de los datos de las cuentas de los negocios y de las personas que usan el
+        panel (registro, acceso, facturación de la suscripción y seguridad).
       </li>
     </ul>
     <p>
-      El nombre del negocio al que le escribís aparece en el primer mensaje del asistente (“Soy el asistente automatizado
-      de …”). Ese negocio es tu primer punto de contacto para cualquier tema de tus datos.
+      Si le escribís a un negocio por WhatsApp, el nombre del negocio aparece en el primer mensaje del asistente, junto con
+      el enlace a esta política. Ese negocio es tu primer punto de contacto para cualquier tema de tus datos.
     </p>
 
     <h2>2. Qué datos se tratan</h2>
-    <h3>Si le escribís por WhatsApp a un negocio que usa Selyon</h3>
+    <h3>Si sos cliente de un negocio que usa Selyon</h3>
+    <p>Lo que el negocio registra en su panel o lo que llega por sus canales:</p>
     <ul>
-      <li><strong>Tu número de WhatsApp</strong>, que es el identificador de la conversación.</li>
-      <li><strong>El contenido de tus mensajes</strong>: texto; <strong>notas de voz</strong> (se transcriben a texto; el archivo de audio no se guarda); <strong>fotos</strong> (se guardan para que el equipo del negocio las vea y, si se usan para cotizar, se analizan con IA); ubicaciones y contactos que compartas; de los documentos solo se registra que llegaron y su nombre.</li>
-      <li><strong>Datos de tus citas</strong>: el nombre que nos des, servicio, fecha y hora, quién del equipo te atiende, extras elegidos, estado (agendada, confirmada, completada, cancelada, no se presentó) y, cuando aplica, la <strong>placa del vehículo</strong>.</li>
-      <li><strong>Cotizaciones</strong> que te dio el asistente (servicio y monto) y si terminaron en cita.</li>
-      <li><strong>Tu respuesta al seguimiento</strong> después de un servicio (por ejemplo “Todo bien” o “Tuve un problema”).</li>
-      <li><strong>Notas internas</strong> que el equipo del negocio escriba en tu ficha y preferencias (por ejemplo, extras que no quisiste).</li>
-      <li><strong>Tus preferencias de mensajes</strong>: si aceptaste o no recibir promociones (y cuándo), si pediste la baja (y cuándo), y cuándo se te mostró el aviso de que te atiende un asistente automatizado.</li>
-      <li><strong>Registros técnicos</strong> necesarios para operar: identificadores de mensajes de WhatsApp, colas de trabajo, eventos de calidad y contadores de uso.</li>
+      <li><strong>Ficha del cliente (CRM)</strong>: nombre, teléfono, correo, fecha de nacimiento, persona responsable cuando el cliente es menor de edad, notas internas del equipo, etiquetas, campos personalizados que defina el negocio, cómo llegó, sucursal, profesional y canal preferidos, si es cliente VIP y su estado (nuevo, activo, en riesgo, inactivo), calculado con su historial.</li>
+      <li><strong>Citas</strong>: servicios, fecha y hora, sucursal, profesional que atiende, estado (agendada, confirmada, completada, cancelada, no se presentó), extras y campos personalizados de la cita.</li>
+      <li><strong>Ventas y pagos</strong>: montos cobrados, señas, reembolsos, método de pago (por ejemplo efectivo, tarjeta o SINPE, tal como lo registra el negocio) y notas. Selyon no procesa esos pagos ni guarda datos de tarjetas de los clientes del negocio.</li>
+      <li><strong>Historial</strong>: cantidad de visitas, primera y última visita y total gastado, para los reportes del negocio.</li>
+      <li><strong>Preferencias de mensajes</strong>: si aceptaste o no recibir promociones (y cuándo), si pediste la baja (y cuándo).</li>
+      <li>El negocio puede <strong>importar y exportar</strong> su lista de clientes en archivos CSV.</li>
     </ul>
-    <p>No pedimos ni necesitamos datos sensibles (salud, religión, orientación sexual, etc.). Te pedimos no enviarlos por este medio.</p>
+    <p>
+      <strong>Datos sensibles.</strong> Selyon no es un expediente clínico. Los negocios no deben registrar diagnósticos,
+      tratamientos médicos ni otros datos sensibles (salud, religión, orientación sexual, etc.) en notas, etiquetas ni
+      campos personalizados, salvo que cuenten con base legal y tu consentimiento expreso.
+      <span class="pendiente">[PENDIENTE: datos de salud en clínicas — revisar con el abogado qué consentimiento exige la Ley 8968 si una clínica registra datos de salud]</span>
+    </p>
 
-    <h3>Si sos un negocio o parte de su equipo</h3>
+    <h3>Si le escribís por WhatsApp a un negocio que usa el asistente</h3>
     <ul>
-      <li>Datos de la cuenta del negocio: nombre, rubro, ubicación, horarios, servicios y precios, configuración del asistente, identificadores y credenciales de WhatsApp Business (los tokens se guardan cifrados).</li>
-      <li>Usuarios del panel: nombre de usuario, contraseña (solo guardamos un hash, nunca la contraseña), rol y suscripciones a notificaciones del navegador.</li>
-      <li>Datos de facturación del negocio.</li>
+      <li><strong>Tu número de WhatsApp</strong> y el nombre de tu perfil, que identifican la conversación.</li>
+      <li><strong>El contenido de tus mensajes</strong>: texto; <strong>notas de voz</strong> (se guardan en un almacenamiento privado y se transcriben a texto con IA para que el asistente las entienda); <strong>fotos</strong> (se guardan para que el equipo del negocio las vea); ubicaciones y contactos que compartas; de los documentos solo se registra que llegaron.</li>
+      <li><strong>Lo que resulta de la conversación</strong>: citas agendadas, reprogramadas o canceladas, cotizaciones que te dio el asistente, tu respuesta al seguimiento después del servicio y cuándo se te mostró el aviso de que te atiende un asistente automatizado.</li>
+      <li><strong>Registros técnicos</strong> necesarios para operar: identificadores de mensajes de WhatsApp, colas de trabajo y contadores de uso.</li>
+    </ul>
+
+    <h3>Si sos parte del equipo de un negocio</h3>
+    <ul>
+      <li><strong>Cuenta de usuario</strong>: nombre, correo, rol (dueño, administración, recepción, profesional), sucursales a las que entra, contraseña (solo guardamos un hash, nunca la contraseña), segundo factor si lo activás (guardado cifrado) y suscripciones a notificaciones del navegador.</li>
+      <li><strong>Datos laborales que carga el negocio</strong>: horario semanal por sucursal, ausencias (feriados, vacaciones, incapacidades: el motivo es un texto libre y no debe incluir diagnósticos), servicios que atendés, reglas de comisión, comisiones ganadas y sus liquidaciones.</li>
+      <li><strong>Uso del panel</strong>: último día en que entraste a cada negocio y un registro de auditoría de operaciones sensibles (por ejemplo cambios de rol, invitaciones, borrados).</li>
+      <li><strong>Aceptación de estos documentos</strong>: qué versión de los términos y de esta política aceptaste, en qué negocio y cuándo.</li>
+    </ul>
+
+    <h3>Si representás a un negocio (cuenta y facturación)</h3>
+    <ul>
+      <li>Datos del negocio: nombre, rubro, país, moneda, sucursales y horarios, servicios y precios, configuración del asistente y de los mensajes, marca (colores y logo) e identificadores y credenciales de WhatsApp Business (los tokens se guardan cifrados).</li>
+      <li>Datos de la suscripción: plan, estado del cobro, fecha de fin de la prueba gratis y los identificadores de cliente y de suscripción en Stripe. <strong>Los datos de la tarjeta los recibe Stripe directamente en su página de pago</strong>: Selyon no los ve ni los guarda.</li>
     </ul>
 
     <h2>3. Para qué se usan</h2>
     <ul>
-      <li>Responder tus consultas sobre servicios, precios, horarios y ubicación del negocio.</li>
-      <li>Cotizar, incluso a partir de una foto, y agendar, reprogramar o cancelar citas.</li>
-      <li>Enviarte recordatorios de tu cita (el día antes y unas horas antes) con botones para confirmar o reprogramar, y un mensaje de seguimiento después del servicio que puede incluir el enlace para dejar una reseña en Google.</li>
-      <li>Pasar tu conversación a una persona del equipo cuando lo pedís (por ejemplo escribiendo “agente”) o cuando el asistente no puede resolver.</li>
-      <li>Que el equipo del negocio vea el historial, tu ficha y métricas agregadas del negocio en su panel.</li>
+      <li>Prestarle al negocio su panel: agenda y disponibilidad por profesional y sucursal, fichas de clientes, cobros, comisiones, reportes y campañas.</li>
+      <li>Si el negocio usa el asistente de WhatsApp: responder tus consultas sobre servicios, precios, horarios y ubicación; cotizar; agendar, reprogramar o cancelar citas; pasar la conversación a una persona del equipo cuando lo pedís (por ejemplo escribiendo “agente”) o cuando el asistente no puede resolver.</li>
+      <li>Enviarte <strong>recordatorios</strong> de tu cita (por WhatsApp o por correo, según lo que tenga activo el negocio), con opciones para confirmar o cancelar, y un <strong>seguimiento</strong> después del servicio que puede incluir el enlace para dejar una reseña.</li>
       <li>Si pediste un precio y no agendaste, y el negocio tiene activa esa función, enviarte <strong>hasta dos mensajes</strong> de seguimiento sobre esa cotización. Se detienen si escribís BAJA.</li>
-      <li><strong>Promociones</strong>: solo si aceptaste expresamente (ver sección 5).</li>
-      <li>Operar, asegurar y mejorar el funcionamiento técnico del servicio (errores, rendimiento, prevención de abuso).</li>
+      <li><strong>Promociones</strong>: solo si aceptaste expresamente (sección 5).</li>
+      <li><strong>Correos de la plataforma</strong> a las personas del equipo: confirmar el correo al registrarse, invitaciones al equipo, recuperación de la clave y avisos de seguridad de la cuenta.</li>
+      <li>Cobrar la suscripción del negocio, administrar la prueba gratis y pausar o reactivar la cuenta según el estado del pago.</li>
+      <li>Operar, asegurar y mejorar el funcionamiento técnico del servicio (errores, rendimiento, prevención de abuso y fraude) y probar qué aceptó cada cuenta.</li>
     </ul>
     <p>
-      <strong>No</strong> usamos tus datos para entrenar modelos de inteligencia artificial propios ni los compartimos con
-      otros negocios que usan Selyon: cada negocio solo ve a sus propios clientes.
+      <strong>No</strong> usamos los datos de los clientes de los negocios para fines propios, no los vendemos, no los usamos
+      para entrenar modelos de inteligencia artificial propios ni para publicidad, y no los compartimos con otros negocios:
+      cada negocio solo ve a sus propios clientes y a su propio equipo.
     </p>
 
     <h2>4. Consentimiento e inteligencia artificial</h2>
     <p>
-      Al escribirle al negocio aceptás el tratamiento necesario para atender tu consulta y tu cita. En el primer mensaje el
-      asistente se identifica como automatizado. Las respuestas las genera un modelo de inteligencia artificial: pueden
-      contener errores y el negocio confirma lo importante. Ninguna decisión con efectos legales sobre vos se toma de forma
-      automática; podés pedir hablar con una persona en cualquier momento.
+      Al escribirle al negocio por WhatsApp aceptás el tratamiento necesario para atender tu consulta y tu cita. En el primer
+      mensaje el asistente se identifica como automatizado, avisa que responde con IA de proveedores en EE. UU. y enlaza
+      esta política. Las respuestas las genera un modelo de inteligencia artificial: pueden contener errores y el negocio
+      confirma lo importante. Ninguna decisión con efectos legales sobre vos se toma de forma automática; podés pedir hablar
+      con una persona en cualquier momento.
     </p>
     <p>
-      Como varios proveedores están fuera de Costa Rica (sección 6), al usar el servicio también consentís esa
-      transferencia internacional. Podés revocar tu consentimiento en cualquier momento (sección 8); eso puede impedir que
+      Como varios proveedores están fuera de Costa Rica (sección 6), al usar el asistente también consentís esa
+      transferencia internacional. Podés revocar tu consentimiento en cualquier momento (sección 10); eso puede impedir que
       el asistente te siga atendiendo, pero el negocio puede atenderte por otros medios.
     </p>
 
     <h2>5. Promociones: solo con tu permiso, y la baja</h2>
     <ul>
       <li>
-        Escribirle a un negocio <strong>no</strong> te suscribe a promociones. El negocio solo puede enviarte promociones si
-        tocaste <strong>“Sí, avísenme”</strong> en un mensaje que te lo pregunta expresamente. El asistente lo pregunta como
-        máximo una vez, después de una cita en la que respondiste que te fue bien; el negocio también puede preguntártelo
-        desde su panel, pero no más de una vez cada 30 días y nunca si pediste la baja.
+        Escribirle a un negocio o ser su cliente <strong>no</strong> te suscribe a promociones. El negocio solo puede enviarte
+        campañas si aceptaste expresamente: tocando “Sí” en el mensaje de WhatsApp que te lo pregunta (el asistente lo
+        pregunta una sola vez, después de que agendás tu primera cita, y nunca si pediste la baja), o diciéndoselo en
+        persona al negocio, que lo registra en tu ficha (el cambio queda en su registro de auditoría).
       </li>
-      <li>Si tocás “No, gracias” no se te envían promociones.</li>
+      <li>Si respondés “No, gracias” no se te envían promociones ni se te vuelve a preguntar.</li>
       <li>
         <strong>Para darte de baja</strong> escribí <strong>BAJA</strong> en cualquier momento (también funcionan “stop”,
         “cancelar suscripción” o “no me manden más”). Se registra al instante y retira tu permiso.
@@ -141,37 +182,58 @@
       <li>La baja detiene promociones y seguimientos de cotizaciones; los recordatorios de una cita que agendaste siguen llegando, porque son parte del servicio que pediste.</li>
     </ul>
 
-    <h2>6. Con quién se comparten (encargados) y transferencia internacional</h2>
-    <p>Para prestar el servicio, Selyon usa estos proveedores (subencargados), cada uno solo para su función:</p>
+    <h2>6. Con quién se comparten (subencargados) y transferencia internacional</h2>
+    <p>Para prestar el servicio, Selyon usa estos proveedores, cada uno solo para su función:</p>
     <ul>
-      <li><strong>Meta Platforms (WhatsApp Business Platform / Cloud API)</strong> — transporte de los mensajes. Meta es además responsable de WhatsApp según sus propias políticas. Servidores en EE. UU. y otros países.</li>
-      <li><strong>OpenAI (EE. UU.)</strong> — genera las respuestas del asistente a partir del texto de la conversación, transcribe notas de voz y analiza fotos para cotizar. [VERIFICAR con los términos vigentes de la API de OpenAI: por defecto no usa los datos enviados por API para entrenar sus modelos y puede retenerlos hasta 30 días para monitoreo de abuso.]</li>
-      <li><strong>Supabase</strong> — base de datos y almacenamiento privado de fotos. Región: [REGIÓN DE SUPABASE].</li>
-      <li><strong>DigitalOcean</strong> — servidor donde corre la aplicación. Región: [REGIÓN DEL SERVIDOR].</li>
-      <li><strong>Google Calendar</strong> (solo si el negocio lo conecta) — se crea un evento por cita en el calendario del negocio, con tu nombre, número de WhatsApp, servicio, fecha y hora y, si aplica, la placa.</li>
-      <li><strong>Google Places</strong> (solo si el negocio lo configura) — consulta la calificación pública del negocio en Google. No recibe datos tuyos.</li>
-      <li><strong>Servicios de notificaciones del navegador</strong> (por ejemplo Google, Apple o Mozilla, según el dispositivo del equipo del negocio) — avisan al equipo que llegó un mensaje, con tu número y un extracto de hasta 120 caracteres.</li>
-      <li><strong>Sentry</strong> (si está activo) — reportes técnicos de errores, que pueden incluir fragmentos de datos del momento del error.</li>
-      <li><strong>Stripe</strong> (cuando se active el cobro en línea) — solo datos de facturación de los negocios, no de sus clientes.</li>
+      <li><strong>Meta Platforms (WhatsApp Business Platform / Cloud API)</strong> — transporte de los mensajes de WhatsApp. Meta es además responsable de WhatsApp según sus propias políticas. Servidores en EE. UU. y otros países.</li>
+      <li><strong>OpenAI (EE. UU.)</strong> — genera las respuestas del asistente a partir del texto de la conversación y transcribe las notas de voz. <span class="pendiente">[PENDIENTE: confirmar retención y uso de datos de la API de OpenAI — hoy, por defecto, no usa los datos enviados por API para entrenar y puede retenerlos hasta 30 días para monitoreo de abuso]</span></li>
+      <li><strong>Supabase</strong> — base de datos y almacenamiento privado de fotos y notas de voz. Región: <span class="pendiente">[PENDIENTE: región de Supabase]</span>.</li>
+      <li><strong>DigitalOcean</strong> — servidor donde corre la aplicación. Región: <span class="pendiente">[PENDIENTE: región del servidor de DigitalOcean]</span>.</li>
+      <li><strong>Stripe (EE. UU. y otros países)</strong> — cobro en línea de la suscripción del negocio: recibe los datos de facturación del negocio y de su tarjeta. No recibe datos de los clientes del negocio.</li>
+      <li><strong>Resend (EE. UU.)</strong> — envío de los correos de la plataforma (confirmación del correo, invitaciones, recuperación de clave, avisos de la cuenta) y de los recordatorios de cita por correo: recibe la dirección, el asunto y el contenido de cada correo.</li>
+      <li><strong>Servicios de notificaciones del navegador</strong> (por ejemplo Google, Apple o Mozilla, según el dispositivo del equipo del negocio) — avisan al equipo que llegó un mensaje, con el número del cliente y un extracto del mensaje.</li>
+      <li><strong>Sentry</strong> (si está activo) — reportes técnicos de errores. Los registros de la plataforma enmascaran teléfonos y correos y no guardan el contenido de los mensajes.</li>
     </ul>
     <p>
-      Varios de estos proveedores procesan datos <strong>fuera de Costa Rica</strong>, principalmente en EE. UU. Selyon
-      solo trabaja con proveedores que ofrecen compromisos contractuales de seguridad y confidencialidad, y aplica cifrado
-      en tránsito. [PENDIENTE: revisar con el abogado los requisitos de la Ley 8968 y su reglamento para la transferencia
-      internacional y si corresponde inscribir bases de datos ante la PRODHAB.]
+      El enlace para dejar una reseña que algunos negocios incluyen en el seguimiento lleva a Google: si lo abrís, rige la
+      política de Google; Selyon no le envía tus datos.
+    </p>
+    <p>
+      Varios de estos proveedores tratan datos <strong>fuera de Costa Rica</strong>, principalmente en EE. UU. Selyon solo
+      trabaja con proveedores que ofrecen compromisos contractuales de seguridad y confidencialidad, y cifra los datos en
+      tránsito. <span class="pendiente">[PENDIENTE: requisitos de la transferencia internacional e inscripción ante la PRODHAB — revisar con el abogado qué piden la Ley 8968 y su reglamento]</span>
     </p>
     <p>Fuera de esos proveedores, solo se entregan datos si lo exige una autoridad competente conforme a la ley.</p>
 
-    <h2>7. Cuánto tiempo se conservan</h2>
+    <h2>7. Cookies y tecnologías similares</h2>
+    <p>Usamos solo lo <strong>estrictamente necesario</strong> para que el panel funcione. No usamos cookies de publicidad ni de analítica, y por eso no mostramos un aviso de cookies.</p>
     <ul>
-      <li><strong>Conversaciones, citas, fichas y cotizaciones</strong>: mientras el negocio sea cliente de Selyon, salvo que pidas antes su supresión. Cuando el negocio deja el servicio, se le entrega una copia de sus datos y se borran de la plataforma.</li>
-      <li><strong>Copias de seguridad</strong>: se rotan; una copia puede contener datos borrados hasta [14] días después del borrado.</li>
-      <li><strong>Registros técnicos</strong> (colas de trabajo, mensajes que no se pudieron procesar): alrededor de 7 días.</li>
-      <li><strong>Notas de voz</strong>: el audio no se guarda; solo se usa para transcribirlo.</li>
-      <li>Los proveedores pueden conservar datos por los plazos de sus propias políticas (por ejemplo, Meta y OpenAI).</li>
+      <li><strong><code>panel_session</code></strong> — mantiene iniciada la sesión de las personas del equipo en el panel. Se crea al iniciar sesión, no es accesible desde JavaScript (HttpOnly), viaja solo por HTTPS y dura hasta 7 días o hasta que cerrás la sesión.</li>
+      <li><strong><code>panel_admin_session</code></strong> — sesión del personal de Selyon que administra la plataforma. Dura unas horas.</li>
+      <li><strong>Almacenamiento local del navegador</strong> — guarda preferencias del panel en tu dispositivo (por ejemplo, el tema o la sucursal elegida). No se envía a nadie.</li>
+      <li><strong>SDK de Meta</strong> — solo cuando un negocio conecta su número de WhatsApp desde el panel (Configuración de WhatsApp, o la administración de Selyon), el panel carga el SDK de Facebook (<code>connect.facebook.net</code>) para abrir la ventana de Meta, con el registro automático de eventos apagado. Meta puede usar sus propias cookies en su dominio según su política. No se carga en el resto del panel.</li>
+      <li>Este sitio público (la página de inicio y estos documentos) no usa cookies.</li>
     </ul>
 
-    <h2>8. Tus derechos</h2>
+    <h2>8. Cuánto tiempo se conservan</h2>
+    <ul>
+      <li><strong>Datos del negocio, de sus clientes y de su equipo</strong>: mientras el negocio sea cliente de Selyon, salvo que el negocio los borre antes o se pida su supresión. Cuando el negocio deja el servicio, se le entrega una copia de sus datos y se borran de la plataforma, en los plazos del <a href="/contrato">contrato</a>.</li>
+      <li><strong>Copias de seguridad</strong>: se rotan; una copia puede contener datos ya borrados durante un tiempo limitado. <span class="pendiente">[PENDIENTE: retención de las copias de seguridad — propuesta, a confirmar: 14 días, el valor por defecto del sistema]</span></li>
+      <li><strong>Registros técnicos</strong> (colas de trabajo, mensajes que no se pudieron procesar): alrededor de 7 días.</li>
+      <li><strong>Registro de auditoría</strong>: se conserva como rastro de las operaciones sensibles; no guarda datos personales de los clientes (solo identificadores internos y conteos).</li>
+      <li><strong>Aceptación de estos documentos</strong>: mientras exista la cuenta del negocio; el rastro de auditoría de la aceptación se conserva después.</li>
+      <li>Los proveedores pueden conservar datos por los plazos de sus propias políticas (por ejemplo, Meta, OpenAI y Stripe).</li>
+    </ul>
+
+    <h2>9. Si sos un negocio: lo que tenés que hacer con tus clientes</h2>
+    <p>
+      Como responsable, el negocio informa a sus clientes y a su personal cómo trata sus datos (puede enlazar esta
+      política, que describe el tratamiento técnico), tiene base legal para lo que registra, responde las solicitudes de
+      derechos con nuestra asistencia y no carga datos sensibles sin consentimiento. Las obligaciones de cada parte están
+      en el <a href="/contrato">contrato de servicio y acuerdo de tratamiento de datos</a>.
+    </p>
+
+    <h2>10. Tus derechos</h2>
     <p>Según la Ley 8968 tenés derecho a:</p>
     <ul>
       <li><strong>Acceso</strong>: saber qué datos tuyos se tratan y obtener una copia.</li>
@@ -180,34 +242,44 @@
       <li><strong>Revocar tu consentimiento</strong>, incluido el de promociones (escribiendo BAJA).</li>
     </ul>
     <p>
-      <strong>Cómo ejercerlos:</strong> escribile al negocio por el mismo WhatsApp, o escribinos a
-      <strong>[CORREO DE PRIVACIDAD]</strong> indicando tu número de WhatsApp y el nombre del negocio. Si nos escribís a
-      nosotros, le avisamos al negocio (que es el responsable) y lo asistimos para responderte. Hoy la supresión
-      individual la ejecuta el equipo de Selyon a pedido del negocio o tuyo; respondemos dentro del plazo que fija la ley
-      [VERIFICAR plazo con el abogado]. Si no quedás conforme, podés acudir a la
-      <strong>Agencia de Protección de Datos de los Habitantes (PRODHAB)</strong>.
+      <strong>Cómo ejercerlos:</strong> si sos cliente de un negocio, escribile al negocio (por WhatsApp o su canal
+      habitual) o escribinos a <span class="pendiente">[PENDIENTE: correo de privacidad]</span> indicando tu número o correo y
+      el nombre del negocio. Si nos escribís a nosotros, se lo trasladamos al negocio (que es el responsable) y lo asistimos
+      para responderte. El dueño del negocio puede borrar los datos personales de un cliente desde su panel. Si sos parte de
+      un equipo o representás a un negocio, escribinos directamente. Respondemos dentro del plazo que fija la ley:
+      <span class="pendiente">[PENDIENTE: plazo de respuesta a los derechos — propuesta, a confirmar: 5 días hábiles, el plazo de la Ley 8968 para responder solicitudes]</span>.
+      Si no quedás conforme, podés acudir a la <strong>Agencia de Protección de Datos de los Habitantes (PRODHAB)</strong>.
     </p>
 
-    <h2>9. Seguridad</h2>
+    <h2>11. Seguridad</h2>
     <p>
-      Conexiones cifradas (HTTPS), datos de cada negocio aislados entre sí, credenciales de WhatsApp cifradas en la base,
-      contraseñas guardadas como hash, fotos en un almacenamiento privado (o dentro de la propia base de datos) que el
-      panel muestra solo a usuarios autenticados, y acceso al panel con
-      usuario y contraseña por rol. Ningún sistema es infalible: si ocurre un incidente que afecte tus datos, el negocio y
-      Selyon actuarán según la ley.
+      Conexiones cifradas (HTTPS), datos de cada negocio aislados entre sí en la propia base de datos, credenciales de
+      WhatsApp y segundos factores cifrados, contraseñas guardadas como hash, acceso al panel por usuario, rol y sucursal,
+      segundo factor opcional, sesiones que vencen y que se cierran en todos los dispositivos al cambiar la clave o cerrar
+      sesión, fotos y notas de voz en almacenamiento privado visible solo desde el panel autenticado, registros sin datos
+      personales de los clientes y copias de seguridad. Ningún sistema es infalible: si ocurre un incidente que afecte tus
+      datos, Selyon avisa al negocio sin demora y el negocio y Selyon actúan según la ley.
+      <span class="pendiente">[PENDIENTE: plazo de aviso de incidentes — propuesta, a confirmar: 5 días hábiles desde que se detecta, el plazo del reglamento de la Ley 8968 para informar a las personas afectadas]</span>
     </p>
 
-    <h2>10. Menores de edad</h2>
-    <p>El servicio está pensado para personas adultas que contratan servicios de un negocio. Si sos menor de edad, pedile a una persona adulta responsable que se comunique con el negocio.</p>
-
-    <h2>11. Cambios a esta política</h2>
-    <p>Si cambiamos algo importante (por ejemplo, un proveedor nuevo), actualizamos esta página y su fecha.</p>
-
-    <h2>12. Contacto</h2>
+    <h2>12. Menores de edad</h2>
     <p>
-      [RAZÓN SOCIAL] · Privacidad: <strong>[CORREO DE PRIVACIDAD]</strong> · WhatsApp:
-      <a href="https://wa.me/50683658231?text=Hola%2C%20tengo%20una%20consulta%20sobre%20privacidad" target="_blank" rel="noopener">+506 8365 8231</a>
-      <!-- PENDIENTE: confirmar si este número es el canal oficial de Selyon o el del piloto. -->
+      El asistente de WhatsApp está pensado para personas adultas. Si sos menor de edad, pedile a una persona adulta
+      responsable que se comunique con el negocio. Cuando un negocio atiende a menores (por ejemplo, una clínica dental), la
+      ficha del menor queda vinculada a la persona adulta responsable, que es quien da el consentimiento y ejerce sus
+      derechos.
+    </p>
+
+    <h2>13. Cambios a esta política</h2>
+    <p>
+      Si cambiamos algo importante (por ejemplo, un proveedor nuevo o un uso nuevo de los datos), actualizamos esta página y
+      su versión. A las personas que usan el panel se les pide aceptar la versión nueva la próxima vez que entran.
+    </p>
+
+    <h2 id="contacto">14. Contacto</h2>
+    <p>
+      <span class="pendiente">[PENDIENTE: razón social]</span> · Privacidad: <span class="pendiente">[PENDIENTE: correo de privacidad]</span> ·
+      Otros canales: <span class="pendiente">[PENDIENTE: canal oficial de contacto]</span>
     </p>
     <p>Ver también: <a href="/terminos">Términos del servicio</a> · <a href="/contrato">Contrato de servicio y acuerdo de tratamiento de datos (para negocios)</a>.</p>
   </div>
@@ -242,7 +314,7 @@
         <a href="/privacidad">Política de privacidad</a>
         <a href="/terminos">Términos del servicio</a>
         <a href="/contrato">Contrato para negocios</a>
-        <a href="https://wa.me/50683658231?text=Hola%2C%20quiero%20hablar%20de%20Selyon%20para%20mi%20negocio" target="_blank" rel="noopener">Contacto</a>
+        <a href="#contacto">Contacto</a>
       </nav>
     </div>
   </div>

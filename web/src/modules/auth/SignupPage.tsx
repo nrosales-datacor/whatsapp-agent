@@ -10,6 +10,7 @@ import { INDUSTRY_OPTIONS } from "../admin/CreateBusinessForm";
 import { COUNTRY_DEFAULTS, COUNTRY_OPTIONS } from "../settings/regions";
 import AuthLayout from "./AuthLayout";
 import { getSignupConfig, MIN_PASSWORD_LENGTH, resendVerification, signUp, SIGNUP_CONFIG_QUERY_KEY } from "./authApi";
+import TermsConsent, { TERMS_REQUIRED_MESSAGE } from "./TermsConsent";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Alta self-service (I6.7, `POST /auth/signup`): el negocio, su rubro (la plantilla que
@@ -59,7 +60,7 @@ function validate(form: Form): Partial<Record<Field, string>> {
   if (!form.email.trim()) errors.email = "Escribí tu correo.";
   else if (!RE_EMAIL.test(form.email.trim())) errors.email = "Escribí un correo válido.";
   if (form.password.length < MIN_PASSWORD_LENGTH) errors.password = `La clave tiene que tener al menos ${MIN_PASSWORD_LENGTH} caracteres.`;
-  if (!form.acceptTerms) errors.acceptTerms = "Tenés que aceptar los términos y el aviso de privacidad.";
+  if (!form.acceptTerms) errors.acceptTerms = TERMS_REQUIRED_MESSAGE;
   return errors;
 }
 
@@ -181,21 +182,7 @@ export default function SignupPage() {
           error={errorFor("password")}
           onChange={(e) => set("password", e.target.value)}
         />
-        <label className="signup-terms">
-          <input type="checkbox" checked={form.acceptTerms} onChange={(e) => set("acceptTerms", e.target.checked)} aria-invalid={errorFor("acceptTerms") ? true : undefined} />
-          <span>
-            Acepto los{" "}
-            <a href="/terminos" target="_blank" rel="noreferrer" className="link">
-              términos
-            </a>{" "}
-            y el{" "}
-            <a href="/privacidad" target="_blank" rel="noreferrer" className="link">
-              aviso de privacidad
-            </a>
-            .
-          </span>
-        </label>
-        {errorFor("acceptTerms") && <p className="field-error">{errorFor("acceptTerms")}</p>}
+        <TermsConsent checked={form.acceptTerms} onChange={(checked) => set("acceptTerms", checked)} error={errorFor("acceptTerms")} />
         <FormError message={formError} />
         <button type="submit" className="btn btn-primary btn-block btn-lg" disabled={mutation.isPending}>
           {mutation.isPending ? "Creando tu cuenta…" : "Crear mi cuenta"}

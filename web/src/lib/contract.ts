@@ -170,6 +170,18 @@ export interface SignupInput {
   acceptTerms: boolean;
 }
 
+/**
+ * Términos y aviso de privacidad (`me.legal`): versión vigente, lo último que aceptó esta
+ * persona en este negocio y si el panel tiene que pedirle que acepte de nuevo.
+ * `POST /auth/legal/accept` `{ version }` → `MeLegal` (409 `legal_version_changed` si la
+ * versión que vio ya no es la vigente).
+ */
+export interface MeLegal {
+  version: string;
+  accepted: { termsVersion: string; privacyVersion: string; acceptedAt: string } | null;
+  mustAccept: boolean;
+}
+
 /** Sesión del usuario en el negocio activo (`GET /auth/me`). */
 export interface Me {
   user: MeUser;
@@ -185,6 +197,8 @@ export interface Me {
   plan: MePlan;
   /** Profesional vinculado a esta cuenta (su carril en "Mi agenda"), o null. */
   staffId?: string | null;
+  /** Términos y aviso de privacidad (si falta, el panel no muestra el aviso). */
+  legal?: MeLegal;
 }
 
 export type LoginResult = { status: "ok"; me: Me } | { status: "totp_required" };
@@ -218,6 +232,8 @@ export interface AcceptInvitationInput {
   password: string;
   /** Solo cuenta existente con 2FA (si falta, 400 `totp_required`). */
   totpCode?: string;
+  /** Acepta los términos y el aviso de privacidad vigentes (obligatorio). */
+  acceptTerms: true;
 }
 
 // ── Superadmin ──────────────────────────────────────────────────────────────
