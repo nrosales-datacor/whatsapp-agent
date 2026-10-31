@@ -29,3 +29,4 @@ Tres carriles a la vez, cada agente en su worktree; preguntas y merges a `prod/r
 | rotar-llaves | en curso (carril A) | `prod/rotar-llaves` | `cabf4a5` | — |
 | evals | en curso (carril B) | `prod/evals` | `cabf4a5` | — |
 | privacidad-y-terminos | en curso (carril C) | `prod/privacidad-y-terminos` | `cabf4a5` | — |
+| tests-unitarios | en curso (carril D) | `prod/tests-unitarios` | `bf99b79` | — |
