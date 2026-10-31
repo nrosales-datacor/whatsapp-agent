@@ -1,4 +1,4 @@
-import type { IconId } from "../ui/Icons";
+import type { IconId } from "../ui/iconIds";
 import { DEFAULT_TERMINOLOGY, type Me, type Role, type Terminology } from "../lib/contract";
 
 // ─────────────────────────────────────────────────────────────────────────────

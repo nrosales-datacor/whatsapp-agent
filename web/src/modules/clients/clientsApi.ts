@@ -1,5 +1,6 @@
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, API_PREFIX, ApiError, IS_MOCK_API, messageForCode } from "../../lib/api";
+import { api, API_PREFIX, ApiError, messageForCode } from "../../lib/api";
+import { IS_MOCK_API } from "../../lib/mockMode";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Endpoints de clientes (/api/panel/clients*, I1 + CRM del Pro en I3). Tipos escritos a
