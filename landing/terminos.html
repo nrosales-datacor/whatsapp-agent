@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>Términos del servicio — Selyon</title>
-<meta name="description" content="Términos del servicio de la plataforma Selyon (Recepcionista IA): para las personas que escriben a un negocio que la usa y para los negocios.">
+<meta name="description" content="Términos del servicio de Selyon CRM: para las personas que escriben a un negocio que usa el asistente de WhatsApp y para los negocios y equipos que usan el panel.">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/landing/estilos.css">
@@ -31,20 +31,39 @@
   </div>
 </header>
 
-<!-- BORRADOR: textos entre [CORCHETES] = datos pendientes, no inventar. Pendiente de
-     revisión por un abogado costarricense. -->
+<!-- BORRADOR SIN REVISIÓN LEGAL (versión 2026-10-31, LEGAL_VERSION en src/platform/legal.ts).
+     Pendiente de revisión por un abogado costarricense (Ley 8968, Ley 7472, Código de
+     Comercio). Debe describir lo que el sistema hace de verdad. Cambiar algo importante =
+     subir LEGAL_VERSION en el mismo cambio (el panel pide aceptar de nuevo). No se inventan
+     datos de la empresa: lo que falta va como [PENDIENTE: …]. Quitar el aviso de borrador
+     SOLO cuando el usuario confirme la revisión del abogado (test/unit/legalDocuments.test.ts
+     exige que, sin aviso, no quede ningún marcador).
+
+     Marcadores pendientes en este documento (buscar "[PENDIENTE:"):
+       1. [PENDIENTE: razón social]                     (introducción y E)
+       2. [PENDIENTE: cédula jurídica]                  (introducción)
+       3. [PENDIENTE: precios de los planes y si incluyen IVA] (B.4)
+       4. [PENDIENTE: factura electrónica]              (B.4)
+       5. [PENDIENTE: confirmar los días de gracia]     (B.4; hoy el sistema usa 7)
+       6. [PENDIENTE: alcance de la limitación de responsabilidad] (C; Ley 7472)
+       7. [PENDIENTE: jurisdicción o mecanismo de resolución de conflictos] (D)
+       8. [PENDIENTE: correo de soporte]                (E)
+       9. [PENDIENTE: canal oficial de contacto]        (E; reemplaza el WhatsApp del piloto)
+-->
 <main class="legal">
   <div class="contenedor">
     <a class="volver" href="/">← Volver al inicio</a>
-    <p class="aviso-borrador" role="note"><strong>Borrador — pendiente de revisión legal.</strong> Este documento todavía no fue revisado por un abogado y puede cambiar. Los datos entre [corchetes] están pendientes.</p>
+    <p class="aviso-borrador" role="note"><strong>Borrador sin revisión legal.</strong> Este documento todavía no fue revisado por un abogado y puede cambiar. Los datos marcados como <span class="pendiente">[PENDIENTE: …]</span> faltan y se completan antes de su versión final.</p>
     <h1>Términos del servicio</h1>
-    <p class="vigencia">Versión borrador del 1 de octubre de 2026.</p>
+    <p class="vigencia" data-legal-version="2026-10-31">Versión 2026-10-31 (31 de octubre de 2026) · borrador.</p>
 
     <p>
-      <strong>Selyon</strong> es una plataforma de software operada por <strong>[RAZÓN SOCIAL]</strong>, cédula jurídica
-      <strong>[CÉDULA JURÍDICA]</strong> (“Selyon”), que les permite a negocios atender su WhatsApp con un asistente de
-      inteligencia artificial (“Recepcionista IA”) y un panel web para su equipo. Estos términos tienen dos partes:
-      la parte A es para las personas que le escriben a un negocio que usa Selyon; la parte B es para los negocios.
+      <strong>Selyon CRM</strong> (“Selyon”) es una plataforma de software operada por <span class="pendiente">[PENDIENTE: razón social]</span>,
+      cédula jurídica <span class="pendiente">[PENDIENTE: cédula jurídica]</span>, para negocios con cita (clínicas dentales,
+      estética, uñas, salones y similares): agenda con varias sucursales, clientes (CRM), ventas y cobros, comisiones del
+      personal, reportes, campañas y, como módulo, un asistente de WhatsApp con inteligencia artificial. Estos términos
+      tienen dos partes: la <strong>parte A</strong> es para las personas que le escriben a un negocio que usa el asistente;
+      la <strong>parte B</strong>, para los negocios y las personas de su equipo que usan el panel.
     </p>
 
     <h2>A. Si le escribís a un negocio que usa Selyon</h2>
@@ -52,13 +71,13 @@
     <h3>A.1 Quién te presta el servicio</h3>
     <p>
       Las citas, los servicios, los precios, las garantías y la atención los presta y decide <strong>el negocio al que le
-      escribís</strong>, no Selyon. Selyon es el software intermediario que le permite a ese negocio responderte,
-      agendarte y recordarte tu cita. Cualquier reclamo sobre el servicio del negocio se dirige al negocio.
+      escribís</strong>, no Selyon. Selyon es el software que le permite a ese negocio responderte, agendarte, recordarte
+      tu cita y llevar tu ficha. Cualquier reclamo sobre el servicio del negocio se dirige al negocio.
     </p>
 
     <h3>A.2 Te atiende un asistente automatizado</h3>
     <ul>
-      <li>En el primer mensaje el asistente se identifica como automatizado.</li>
+      <li>En el primer mensaje el asistente se identifica como automatizado, avisa que responde con inteligencia artificial de proveedores en EE. UU. y enlaza la <a href="/privacidad">política de privacidad</a>.</li>
       <li>Las respuestas las genera inteligencia artificial a partir de la información que cargó el negocio. Pueden tener errores: ante una duda importante (precio final, disponibilidad, condiciones), confirmala con el negocio.</li>
       <li>Podés pedir hablar con una persona en cualquier momento escribiendo, por ejemplo, “agente”. El asistente también pasa la conversación al equipo cuando no puede resolver.</li>
       <li>Una cita queda confirmada cuando el asistente o el equipo te lo confirman por escrito en el chat.</li>
@@ -66,8 +85,8 @@
 
     <h3>A.3 Mensajes que vas a recibir</h3>
     <ul>
-      <li><strong>Del servicio</strong>: respuestas, confirmaciones, recordatorios de tu cita y un seguimiento después del servicio.</li>
-      <li><strong>Promociones</strong>: solo si aceptaste expresamente tocando “Sí, avísenme”. Para darte de baja escribí <strong>BAJA</strong> (también “stop” o “no me manden más”).</li>
+      <li><strong>Del servicio</strong>: respuestas, confirmaciones, recordatorios de tu cita (por WhatsApp o por correo) y un seguimiento después del servicio.</li>
+      <li><strong>Promociones</strong>: solo si aceptaste expresamente. Para darte de baja escribí <strong>BAJA</strong> (también “stop” o “no me manden más”).</li>
     </ul>
 
     <h3>A.4 Uso adecuado</h3>
@@ -76,39 +95,91 @@
     <h3>A.5 Tus datos</h3>
     <p>Cómo se tratan tus datos, con qué proveedores y cómo ejercer tus derechos está en la <a href="/privacidad">política de privacidad</a>.</p>
 
-    <h2>B. Si sos un negocio que contrata Selyon</h2>
-    <p>
-      La relación entre Selyon y cada negocio se rige por el <a href="/contrato">Contrato de servicio y Acuerdo de
-      tratamiento de datos</a> que se firma al contratar. En resumen:
-    </p>
+    <h2>B. Si usás Selyon en un negocio</h2>
+
+    <h3>B.1 La cuenta del negocio y la aceptación</h3>
     <ul>
-      <li>El negocio es el <strong>responsable</strong> de los datos de sus clientes y Selyon es <strong>encargado</strong>: los trata solo para prestarle el servicio.</li>
-      <li>El negocio es responsable de la información que carga (servicios, precios, horarios, políticas) y de lo que su equipo escribe desde el panel. El asistente responde con esa información.</li>
-      <li>El negocio necesita una cuenta de WhatsApp Business Platform (Meta) a su nombre y debe cumplir las políticas de WhatsApp Business y de mensajes de Meta, incluidas las de plantillas y promociones.</li>
-      <li>Las <strong>campañas</strong> solo se envían a clientes que dieron consentimiento expreso de marketing y no pidieron la baja; el sistema lo hace cumplir y el negocio no debe intentar evadirlo.</li>
-      <li>El número que se conecta pasa a la plataforma de Meta (Cloud API): ese número deja de poder usarse en la app de WhatsApp Business del celular. Se puede usar un número nuevo o migrar el existente.</li>
-      <li>Selyon depende de proveedores externos (Meta, OpenAI, Supabase, Google, entre otros). Sus caídas o cambios de políticas pueden afectar el servicio.</li>
+      <li>Un negocio se da de alta registrándose en el panel (alta en línea) o con el equipo de Selyon. Quien lo registra declara que puede obligar al negocio y, al marcar la casilla de aceptación, acepta en su nombre estos términos, la <a href="/privacidad">política de privacidad</a> y el <a href="/contrato">contrato de servicio y acuerdo de tratamiento de datos</a>.</li>
+      <li>Selyon guarda qué versión de estos documentos aceptó cada persona, en qué negocio y cuándo. La cuenta se activa al confirmar el correo con el enlace que enviamos.</li>
+      <li>El dueño del negocio es quien administra la cuenta: el plan, el pago, los datos del negocio y quién entra al panel.</li>
     </ul>
+
+    <h3>B.2 Las personas del equipo</h3>
+    <ul>
+      <li>El negocio invita a su equipo y le asigna un rol (dueño, administración, recepción o profesional) y las sucursales a las que entra. Cada persona acepta estos términos y la política de privacidad al aceptar la invitación.</li>
+      <li>Las cuentas son personales: no se comparten. Cada persona cuida su clave y puede activar un segundo factor. El negocio desactiva a quien deje de trabajar con él.</li>
+      <li>Lo que cada persona hace desde el panel (agendar, cobrar, escribir a un cliente, enviar una campaña) lo hace en nombre del negocio.</li>
+      <li>Para mantener la sesión iniciada, el panel usa solo una cookie de sesión estrictamente necesaria (<code>panel_session</code>); no usa cookies de publicidad ni de analítica. El detalle está en la <a href="/privacidad">política de privacidad</a> (sección 7).</li>
+    </ul>
+
+    <h3>B.3 Qué incluye</h3>
+    <ul>
+      <li>Según el plan contratado (<strong>Básico</strong>, <strong>Pro</strong> o <strong>Pro sin agente</strong>): agenda con disponibilidad por profesional y sucursal, ficha de clientes y CRM (estados, etiquetas, campos personalizados, importar y exportar), ventas, cobros y señas, comisiones y liquidaciones, reportes, campañas por WhatsApp a clientes con consentimiento, marca propia y el asistente de WhatsApp con IA.</li>
+      <li>Cada plan tiene cupos (sucursales, profesionales, usuarios y conversaciones del asistente por mes). Al llegar al tope de conversaciones, el asistente deja de responder solo ese mes y pasa las conversaciones nuevas al equipo. Los cupos y módulos vigentes se ven en Configuración › Plan.</li>
+      <li>Selyon puede mejorar o cambiar funciones. Si un cambio quita algo importante de lo contratado, lo avisa con anticipación.</li>
+    </ul>
+
+    <h3>B.4 Prueba gratis, precio y cobro</h3>
+    <ul>
+      <li><strong>Prueba gratis</strong>: el alta en línea incluye una prueba gratis por los días que se indican al registrarse, sin pedir tarjeta. Al terminar la prueba sin elegir un plan, la cuenta queda con pago pendiente.</li>
+      <li><strong>Precio</strong>: <span class="pendiente">[PENDIENTE: precios de los planes y si incluyen IVA]</span>. No incluyen los cargos que Meta cobra directamente al negocio por mensajes o plantillas de WhatsApp, cuando apliquen.</li>
+      <li><strong>Cobro</strong>: suscripción mensual con tarjeta, por medio de <strong>Stripe</strong> (página de pago y portal de Stripe para cambiar de plan o de tarjeta, ver facturas o cancelar), o el cobro manual que se acuerde por escrito con Selyon. <span class="pendiente">[PENDIENTE: factura electrónica — definir si Selyon emite factura electrónica y desde cuándo]</span></li>
+      <li><strong>Si un pago no entra</strong> (la prueba venció, la tarjeta fue rechazada o la suscripción se canceló), corre un período de gracia de <strong>7 días</strong> <span class="pendiente">[PENDIENTE: confirmar los días de gracia — hoy el sistema usa 7]</span>; después la cuenta se <strong>pausa</strong>: el asistente deja de responder y el panel solo deja entrar al dueño para pagar. Los datos no se borran por la pausa, y la cuenta se reactiva sola al pagar.</li>
+    </ul>
+
+    <h3>B.5 Uso aceptable</h3>
+    <ul>
+      <li>El negocio es responsable de la información que carga (servicios, precios, horarios, políticas) y de lo que su equipo escribe desde el panel. El asistente responde con esa información.</li>
+      <li>Las <strong>campañas</strong> solo llegan a clientes que dieron consentimiento expreso de marketing y no pidieron la baja; el sistema lo hace cumplir y el negocio no debe intentar evadirlo (por ejemplo, importando listas sin consentimiento y marcándolas como aceptadas).</li>
+      <li>El negocio cumple las políticas de WhatsApp Business y de mensajes de Meta, y la ley costarricense (protección de datos y protección al consumidor).</li>
+      <li>No se registran datos sensibles (por ejemplo diagnósticos o datos de salud) en notas, etiquetas ni campos personalizados sin base legal y consentimiento expreso de la persona.</li>
+      <li>No se usa Selyon para fines ilegales, para enviar mensajes no solicitados, para intentar acceder a datos de otros negocios ni para probar su seguridad sin autorización escrita.</li>
+    </ul>
+
+    <h3>B.6 Los datos del negocio</h3>
+    <ul>
+      <li>El negocio es el <strong>responsable</strong> de los datos de sus clientes y de su personal, y Selyon es <strong>encargado</strong>: los trata solo para prestarle el servicio, según el <a href="/contrato">acuerdo de tratamiento de datos</a>.</li>
+      <li>Los datos y la marca del negocio son del negocio. Puede exportar sus clientes desde el panel y, al terminar el servicio, pedir una copia completa antes del borrado, en los plazos del contrato.</li>
+    </ul>
+
+    <h3>B.7 WhatsApp y otros proveedores</h3>
+    <ul>
+      <li>El negocio necesita una cuenta de WhatsApp Business Platform (Meta) a su nombre. El número que se conecta pasa a la plataforma de Meta (Cloud API) y deja de poder usarse en la app de WhatsApp Business del celular; se puede usar un número nuevo o migrar el existente.</li>
+      <li>Selyon depende de proveedores externos (Meta, OpenAI, Stripe, Supabase, DigitalOcean, el proveedor de correo, entre otros). Sus caídas o cambios de políticas pueden afectar el servicio.</li>
+    </ul>
+
+    <h3>B.8 Suspensión y terminación</h3>
+    <ul>
+      <li>El negocio puede cancelar cuando quiera (desde el portal de Stripe o avisando a Selyon); el servicio sigue hasta el final del período pagado.</li>
+      <li>Selyon puede pausar o terminar la cuenta por falta de pago (B.4) o de inmediato si se usa para fines ilegales, para enviar mensajes no solicitados o en violación de las políticas de WhatsApp.</li>
+    </ul>
+
+    <h3>B.9 Cambios a estos términos</h3>
+    <p>
+      Si cambiamos algo importante, publicamos la versión nueva en esta página y el panel les pide a las personas del equipo
+      que la acepten la próxima vez que entran. Si el negocio no está de acuerdo, puede cancelar antes de que el cambio lo
+      afecte.
+    </p>
 
     <h2>C. Limitación de responsabilidad</h2>
     <p>
-      Selyon hace lo razonable para que el asistente responda correctamente y las citas queden bien agendadas, pero no
-      garantiza que la información generada por inteligencia artificial esté libre de errores ni que el servicio funcione
-      sin interrupciones. En la medida que la ley lo permita, Selyon no responde frente a las personas que escriben al
-      negocio por el servicio que presta el negocio. Nada de esto limita los derechos irrenunciables que la ley
+      Selyon hace lo razonable para que la plataforma funcione, el asistente responda correctamente y las citas queden bien
+      agendadas, pero no garantiza que la información generada por inteligencia artificial esté libre de errores ni que el
+      servicio funcione sin interrupciones. En la medida que la ley lo permita, Selyon no responde frente a las personas que
+      escriben al negocio por el servicio que presta el negocio. Nada de esto limita los derechos irrenunciables que la ley
       costarricense de protección al consumidor le reconoce a las personas.
-      [PENDIENTE: revisar alcance con el abogado, Ley 7472.]
+      <span class="pendiente">[PENDIENTE: alcance de la limitación de responsabilidad — revisar con el abogado frente a la Ley 7472]</span>
     </p>
 
     <h2>D. Ley aplicable</h2>
-    <p>Estos términos se rigen por las leyes de la República de Costa Rica. [PENDIENTE: definir jurisdicción o mecanismo de resolución de conflictos con el abogado.]</p>
+    <p>Estos términos se rigen por las leyes de la República de Costa Rica. <span class="pendiente">[PENDIENTE: jurisdicción o mecanismo de resolución de conflictos]</span></p>
 
-    <h2>E. Contacto</h2>
+    <h2 id="contacto">E. Contacto</h2>
     <p>
-      [RAZÓN SOCIAL] · <strong>[CORREO DE SOPORTE]</strong> · WhatsApp:
-      <a href="https://wa.me/50683658231?text=Hola%2C%20tengo%20una%20consulta%20sobre%20los%20t%C3%A9rminos" target="_blank" rel="noopener">+506 8365 8231</a>
-      <!-- PENDIENTE: confirmar si este número es el canal oficial de Selyon o el del piloto. -->
+      <span class="pendiente">[PENDIENTE: razón social]</span> · Soporte: <span class="pendiente">[PENDIENTE: correo de soporte]</span> ·
+      Otros canales: <span class="pendiente">[PENDIENTE: canal oficial de contacto]</span>
     </p>
+    <p>Ver también: <a href="/privacidad">Política de privacidad</a> · <a href="/contrato">Contrato de servicio y acuerdo de tratamiento de datos (para negocios)</a>.</p>
   </div>
 </main>
 
@@ -141,7 +212,7 @@
         <a href="/privacidad">Política de privacidad</a>
         <a href="/terminos">Términos del servicio</a>
         <a href="/contrato">Contrato para negocios</a>
-        <a href="https://wa.me/50683658231?text=Hola%2C%20quiero%20hablar%20de%20Selyon%20para%20mi%20negocio" target="_blank" rel="noopener">Contacto</a>
+        <a href="#contacto">Contacto</a>
       </nav>
     </div>
   </div>

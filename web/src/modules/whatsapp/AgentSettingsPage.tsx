@@ -22,7 +22,10 @@ const REGISTER_OPTIONS: readonly { value: Register; label: string }[] = [
  * registro del negocio. Las claves guardadas que no estén acá se muestran con su nombre.
  */
 const TEXT_LABELS: Record<string, { label: string; hint?: string }> = {
-  botNotice: { label: "Aviso de asistente automático", hint: "Va antes del primer mensaje automático. Variable: {negocio}." },
+  botNotice: {
+    label: "Aviso de asistente automático",
+    hint: "Va antes del primer mensaje automático. Variable: {negocio}. Al final siempre se agrega la línea de privacidad (respuestas con IA y enlace a la política de privacidad).",
+  },
   handoff: { label: "Al pasar a una persona", hint: "Lo que dice el agente cuando la conversación pasa al equipo." },
   humanRequested: { label: "Cuando piden hablar con una persona" },
   notUnderstood: { label: "Cuando no entiende el mensaje" },

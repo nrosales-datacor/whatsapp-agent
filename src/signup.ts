@@ -16,6 +16,7 @@ import {
   noticeExistingAccount,
   normalizeEmail,
   recordCredentialFailure,
+  recordLegalAcceptance,
 } from "./modules/team";
 import { PROVISIONING_STEPS } from "./provisioning";
 
@@ -39,6 +40,9 @@ import { PROVISIONING_STEPS } from "./provisioning";
 //     billing); nadie lo pausa solo.
 //   • La cuenta dueña nace con su clave y SIN verificar: no entra hasta confirmar el correo
 //     (link de 48 h). Todo en UNA transacción con el correo encolado (outbox).
+//   • `acceptTerms: true` es obligatorio y queda PROBADO: en la misma transacción se guarda
+//     en `legal_acceptances` qué versión de los términos y del aviso de privacidad aceptó la
+//     dueña y cuándo (src/platform/legal.ts), y va también en el audit `business_signed_up`.
 //   • No es un oráculo de cuentas: con un correo que ya tiene cuenta no se crea nada, la
 //     respuesta es idéntica y a esa cuenta le llega un aviso por correo. scrypt corre igual
 //     en los dos casos (mismo tiempo de respuesta).
@@ -133,7 +137,15 @@ export async function signUp(db: Executor, input: SignupInput, options: { ip: st
       name: input.ownerName,
       passwordHash,
     });
-    await recordAudit(tx, business.id, "business_signed_up", userActor(userId), { industry: business.industry, plan: business.plan, trialDays });
+    const legal = await recordLegalAcceptance(tx, { businessId: business.id, userId, role: "owner", context: "signup", at: now });
+    await recordAudit(tx, business.id, "business_signed_up", userActor(userId), {
+      industry: business.industry,
+      plan: business.plan,
+      trialDays,
+      termsVersion: legal.termsVersion,
+      privacyVersion: legal.privacyVersion,
+      acceptedAt: legal.acceptedAt.toISOString(),
+    });
     return business.id;
   });
 }

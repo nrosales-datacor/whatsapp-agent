@@ -13,7 +13,7 @@ process.env.TOKENS_ENCRYPTION_KEY = "e".repeat(64);
 const { isValidSignature, verifySubscription } = await import("../../src/modules/whatsapp/webhook");
 const { classifyWebhookPayload, splitWebhookPayload, storedContent, reminderButtonIds } = await import("../../src/modules/whatsapp/payload");
 const { appointmentReplyOf, directActionOf, isOptOutRequest, requestsHuman } = await import("../../src/modules/whatsapp/commands");
-const { pipelineText, registerFor } = await import("../../src/modules/whatsapp/texts");
+const { BOT_NOTICE_PRIVACY_LINE, pipelineText, registerFor } = await import("../../src/modules/whatsapp/texts");
 const { humanModeExpired, windowState, WINDOW_MS } = await import("../../src/modules/whatsapp/rules");
 const { allowIngest, capStatus, detectLoop, _resetIngestBucketsForTests } = await import("../../src/modules/whatsapp/limits");
 const { createGraphApi, GraphError } = await import("../../src/modules/whatsapp/graph");
@@ -140,6 +140,43 @@ test("textos: registro configurado o del país; override del negocio con variabl
   const profile = { register: "vos" as const, overrides: {}, businessName: "Estética Sol" };
   assert.match(pipelineText(profile, "botNotice"), /Estética Sol.*Escribí \*agente\*/);
   assert.equal(pipelineText({ ...profile, overrides: { optOutAck: "Listo {negocio}" } }, "optOutAck"), "Listo Estética Sol");
+});
+
+test("aviso del primer mensaje: IA con proveedores en EE. UU. y el enlace a /privacidad en los 3 registros", () => {
+  const saved = { base: process.env.PUBLIC_BASE_URL, env: process.env.NODE_ENV };
+  try {
+    process.env.PUBLIC_BASE_URL = "https://app.selyon.test/";
+    for (const register of ["vos", "tu", "usted"] as const) {
+      const notice = pipelineText({ register, overrides: {}, businessName: "Estética Sol" }, "botNotice");
+      const lines = notice.split("\n");
+      assert.equal(lines.length, 2, notice);
+      assert.match(lines[0], /asistente automatizado de Estética Sol/);
+      assert.match(lines[1], /IA \(proveedores en EE\. UU\.\)/, `${register}: menciona IA de terceros en EE. UU.`);
+      assert.ok(lines[1].endsWith("https://app.selyon.test/privacidad"), `${register}: enlaza la política (${lines[1]})`);
+      // Con un nombre largo (120, el máximo del negocio) entra holgado en el cuerpo de un
+      // mensaje con botones de WhatsApp (1024) y deja lugar a la respuesta.
+      const long = pipelineText({ register, overrides: {}, businessName: "N".repeat(120) }, "botNotice");
+      assert.ok(long.length < 500, `${register}: ${long.length} caracteres`);
+    }
+    assert.notEqual(BOT_NOTICE_PRIVACY_LINE.usted.ai, BOT_NOTICE_PRIVACY_LINE.vos.ai, "usted tiene su propio registro");
+
+    // El override del negocio cambia el saludo, nunca la línea de privacidad.
+    const custom = pipelineText({ register: "vos", overrides: { botNotice: "Hola, soy el bot de {negocio}." }, businessName: "Sol" }, "botNotice");
+    assert.equal(custom, "Hola, soy el bot de Sol.\n🔒 Te respondo con IA (proveedores en EE. UU.). Cómo se tratan tus datos: https://app.selyon.test/privacidad");
+
+    // Sin una base pública utilizable en producción: el aviso igual sale (sin enlace).
+    process.env.NODE_ENV = "production";
+    delete process.env.PUBLIC_BASE_URL;
+    const degraded = pipelineText({ register: "tu", overrides: {}, businessName: "Sol" }, "botNotice");
+    assert.ok(degraded.endsWith(BOT_NOTICE_PRIVACY_LINE.tu.ai), degraded);
+    // Los demás textos no llevan la línea.
+    assert.doesNotMatch(pipelineText({ register: "vos", overrides: {}, businessName: "Sol" }, "optOutAck"), /privacidad|EE\. UU\./);
+  } finally {
+    if (saved.base === undefined) delete process.env.PUBLIC_BASE_URL;
+    else process.env.PUBLIC_BASE_URL = saved.base;
+    if (saved.env === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = saved.env;
+  }
 });
 
 test("ventana de 24 h desde el último mensaje del cliente", () => {
