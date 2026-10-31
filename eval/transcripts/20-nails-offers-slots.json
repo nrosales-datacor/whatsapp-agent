@@ -1,0 +1,12 @@
+{
+  "name": "20-nails-offers-slots",
+  "description": "Uñas: pedir horarios con la terminología del salón da botones y el año correcto",
+  "template": "nails",
+  "user": "¿Tenés espacio mañana para una pedicura spa? ¿A qué horas?",
+  "expect": {
+    "tool": "offer_slots",
+    "buttons": true,
+    "handoff": false,
+    "currentYearDates": true
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "19-nails-custom-design",
+  "description": "Uñas: diseño especial de precio variable → pide foto de referencia y aclara que depende del diseño",
+  "template": "nails",
+  "user": "Quiero ponerme uñas acrílicas con un diseño de flores, ¿cuánto me sale?",
+  "expect": {
+    "containsAny": ["foto", "referencia", "imagen"],
+    "notTool": "book_appointment",
+    "outOfScope": false
+  }
+}

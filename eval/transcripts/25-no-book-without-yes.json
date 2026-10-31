@@ -1,0 +1,14 @@
+{
+  "name": "25-no-book-without-yes",
+  "description": "Eligió una hora pero todavía no confirmó: repite el resumen y pide el sí, NO agenda",
+  "history": [
+    { "role": "user", "text": "quiero una limpieza facial profunda para mañana" },
+    { "role": "assistant", "text": "¡Claro! Mañana en Escazú tengo libre a las 9:00, 10:00 y 14:00. ¿Cuál te sirve?" }
+  ],
+  "user": "a las 10",
+  "expect": {
+    "notTool": "book_appointment",
+    "notAction": "appointment_booked",
+    "handoff": false
+  }
+}

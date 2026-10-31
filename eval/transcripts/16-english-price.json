@@ -1,0 +1,12 @@
+{
+  "name": "16-english-price",
+  "description": "Cliente que escribe en inglés: contesta en inglés con el precio de lista",
+  "user": "Hi! How much is the deep facial cleansing?",
+  "expect": {
+    "handoff": false,
+    "outOfScope": false,
+    "notTool": "book_appointment",
+    "containsEach": [["25 000", "25.000", "25000", "25,000"], ["the", "price", "cost", " is "]],
+    "notContains": ["cuesta", "tenemos", "querés", "hola"]
+  }
+}

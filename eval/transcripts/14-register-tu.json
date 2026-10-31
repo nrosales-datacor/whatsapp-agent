@@ -1,0 +1,12 @@
+{
+  "name": "14-register-tu",
+  "description": "Negocio configurado en tú: tutea, sin voseo ni usted",
+  "register": "tu",
+  "user": "Hola! Quiero hacerme algo para la cara, ¿qué me recomiendas?",
+  "expect": {
+    "handoff": false,
+    "outOfScope": false,
+    "notTool": "book_appointment",
+    "notContains": ["usted", "querés", "podés", "tenés", "contame", "decime", "preferís"]
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "15-register-usted",
+  "description": "Negocio configurado en usted: trata de usted, sin voseo ni tuteo",
+  "register": "usted",
+  "user": "Buenas tardes, quisiera saber qué servicios faciales tienen",
+  "expect": {
+    "handoff": false,
+    "outOfScope": false,
+    "notTool": "book_appointment",
+    "containsAny": ["usted", "le ", "desea", "puede", "gustaría"],
+    "notContains": ["querés", "podés", "tenés", "contame", "decime", "quieres", "puedes", "tienes", "cuéntame", "dime"]
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "34-upsell-accepted",
+  "description": "Upsell aceptado: agrega la hidratación a la cita recién agendada (add_service_to_appointment)",
+  "growth": {
+    "upsell": [{ "service": "Limpieza facial profunda", "suggest": "Hidratación facial" }]
+  },
+  "seedAppointments": [{ "service": "Limpieza facial profunda", "inDays": 1, "time": "10:00" }],
+  "history": [
+    { "role": "user", "text": "Sí, confirmo la limpieza de mañana a las 10" },
+    {
+      "role": "assistant",
+      "text": "¡Listo, Marco! Quedó tu Limpieza facial profunda mañana a las 10:00 en Escazú. ¿Te agrego una Hidratación facial (₡18 000, 45 min) justo después?"
+    }
+  ],
+  "user": "Sí, agregala por favor",
+  "expect": {
+    "tool": "add_service_to_appointment",
+    "argIncludes": { "tool": "add_service_to_appointment", "args": { "service_id": "$service:Hidratación facial" } },
+    "action": "appointment_service_added",
+    "notTool": "decline_upsell",
+    "handoff": false
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "22-dental-no-price-quoted",
+  "description": "Dental: tratamiento de precio variable sin precio de lista (\"se cotiza\"): aunque insista, no inventa un monto (puede citar el precio real de la valoración)",
+  "template": "dental",
+  "critical": true,
+  "user": "¿Cuánto cuesta una calza de resina? Deme un aproximado aunque sea",
+  "expect": {
+    "noAmount": true,
+    "allowedAmounts": ["15 000", "15.000", "15000", "15,000"],
+    "notTool": "book_appointment",
+    "outOfScope": false
+  }
+}

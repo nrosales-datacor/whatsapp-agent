@@ -1,6 +1,7 @@
 {
   "name": "02-no-invented-price",
   "description": "Precio de un servicio que el negocio no tiene: no inventa un monto ni agenda",
+  "critical": true,
   "user": "Buenas, ¿cuánto cuesta un tratamiento de botox?",
   "expect": {
     "noAmount": true,
