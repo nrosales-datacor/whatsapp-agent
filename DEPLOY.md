@@ -14,6 +14,10 @@ Tiempo estimado: ~45 min. Está pensada para hacerse por SSH.
 - **Acceso SSH** al Droplet (usuario y clave/llave).
 - El **archivo `.env`** con los valores reales. ⚠️ NO está en el repo (tiene secretos).
   Pediselo a Nathan y copialo tal cual (es el mismo que se usó en las pruebas).
+  > 🔑 **Esto vale SOLO para el sistema viejo (el bot del lavacar).** El stack nuevo (Selyon CRM)
+  > **no reutiliza ningún valor** de ese `.env`: nace con un juego de secretos generado de cero,
+  > propio de cada entorno (§26). Copiar el `.env` viejo heredaría cualquier exposición pasada
+  > (droplet compartido con selyon, `.env` que pasó de mano en mano).
 - Una cuenta gratis en **duckdns.org** (para el dominio con HTTPS, sin costo).
 - La **IP pública** del Droplet (la ves en el panel de DigitalOcean).
 
@@ -92,7 +96,8 @@ npm ci
 
 ## 4. Crear el archivo `.env`
 
-Copiá el `.env` que te pasó Nathan dentro de la carpeta del proyecto:
+Copiá el `.env` que te pasó Nathan dentro de la carpeta del proyecto (⚠️ solo sistema viejo;
+para el stack nuevo el `.env` se arma con valores nuevos siguiendo §26.3 y §26.5):
 
 ```bash
 nano .env        # pegá el contenido, guardá con Ctrl+O, Enter, y salí con Ctrl+X
@@ -422,6 +427,11 @@ vacíos, el área existe pero nadie puede entrar.
 
 Probá en el navegador (PC o celular): **https://wabotlavacar.selyon.app/panel**
 Usuario `lavacar-rosales`; la contraseña **no va en el repo**: pedísela a Nathan (está en el gestor de contraseñas).
+
+> ⚠️ **Ese usuario se desactiva** (§26.1, decisión del 2026-10-31): su contraseña estuvo en texto
+> plano en este repo, que es público, y sigue en el historial de git. En el stack nuevo no existe
+> (el login es por correo).
+
 En el celular: abrí ese link → menú del navegador → **"Agregar a pantalla de inicio"**
 para instalarla como app. Adentro, tocá la 🔔 (arriba a la derecha) para activar las
 notificaciones (te pedirá permiso y te llegará una de prueba).
@@ -434,6 +444,12 @@ todo pasa, se conecta por SSH al droplet y hace exactamente esos mismos pasos, s
 cualquier otra rama, o un PR contra `main`, solo corre el typecheck/build (sin tocar el droplet).
 
 ### Configuración de una sola vez
+
+> 🔑 **Una llave por entorno.** Lo de abajo es cómo se armó la del droplet viejo. El servidor del
+> stack nuevo lleva una llave **nueva** (no se reutiliza `deploy_ci` ni ninguna del droplet viejo)
+> y, ANTES del primer push a `main` del stack nuevo, hay que cambiar `DEPLOY_SSH_KEY`,
+> `DEPLOY_HOST_KEY` y las variables `DEPLOY_HOST`/`DEPLOY_USER`/`DEPLOY_DIR`/`BASE_URL`: sin esas
+> variables el workflow cae a los valores del droplet viejo. Paso a paso en §26.4.
 
 1. **Generar una llave SSH dedicada a CI** (no la personal de Sebastián — así se puede revocar sin
    afectar su acceso):
@@ -720,54 +736,65 @@ Hasta que se reescriba (ROADMAP, Carril P), el chequeo es:
 **No reemplaza** el restore de §19.2 ni confirmar las alertas de Sentry/UptimeRobot en sus
 dashboards: eso sigue siendo manual.
 
-## 20. Cifrado del `access_token` de WhatsApp en reposo (ROADMAP F2)
+## 20. Cifrado en reposo: `TOKENS_ENCRYPTION_KEY` (ROADMAP F2)
 
-El `access_token` de cada negocio se guarda **cifrado** en `wa_tenants` (AES-256-GCM,
-`src/config/secretos.ts`). Necesita una clave maestra en el `.env`:
+En Selyon CRM se guardan **cifrados** (AES-256-GCM, `src/platform/crypto/secrets.ts`) dos
+secretos de terceros:
+
+- `whatsapp_channels.access_token_encrypted`: el token de WhatsApp de cada número de cada negocio
+  (permite mandar mensajes como ese negocio);
+- `users.totp_secret`: el secreto del 2FA de cada persona del equipo que lo activó.
+
+Los dos usan una sola clave maestra del `.env`:
 
 ```
-TOKENS_ENCRYPTION_KEY=...   # 32 bytes en hex (64 caracteres) — obligatoria si hay DATABASE_URL
+TOKENS_ENCRYPTION_KEY=...   # 32 bytes en hex (64 caracteres) — obligatoria en producción
 ```
 
-Generarla (una única vez, igual que `PANEL_SESSION_SECRET`):
+Generarla **una única vez por entorno, ANTES de cargar el primer dato** (staging y producción
+tienen claves distintas; nunca la del sistema viejo):
 
 ```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+openssl rand -hex 32
+# o, sin openssl:  node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-> ⚠️ Sin `TOKENS_ENCRYPTION_KEY` el servidor **NO arranca** si hay `DATABASE_URL` configurada
-> (mismo fail-closed que `PANEL_SESSION_SECRET`). En desarrollo sin base se permite seguir sin
-> ella (se usa una clave aleatoria por corrida, solo para no bloquear el desarrollo local).
+> ⚠️ Sin `TOKENS_ENCRYPTION_KEY` (o con un valor que no es 64 hex, o con un patrón) el servidor
+> **NO arranca** en producción (`src/platform/config/requiredSecrets.ts` y el propio
+> `secrets.ts`). En desarrollo sin base se usa una clave aleatoria por corrida.
 
 > El script que migraba tokens guardados en texto plano era del producto anterior y ya no existe:
 > en Selyon CRM los tokens se guardan cifrados desde el alta.
 
 ### Rotar la clave
 
-Rotar `TOKENS_ENCRYPTION_KEY` significa descifrar todo con la clave vieja y volver a cifrar
-con la nueva — no hay atajo porque el algoritmo es simétrico:
+**Hoy no hay herramienta de rotación** (`secrets.ts` fija la clave al importar y el blob `v1:` no
+dice con qué clave se cifró). Por eso la clave se genera nueva antes de tener datos y, mientras
+no exista el llavero con `kid` (ítem propuesto en el ROADMAP, P1.5), **se rota solo si hay
+sospecha de filtración**. Con datos ya cargados, rotar es descifrar todo con la clave vieja y
+volver a cifrar con la nueva:
 
 1. Generá la clave nueva (comando de arriba) pero **no la reemplaces todavía** en el `.env`.
-2. Con la clave VIEJA aún activa, corré un script puntual (a mano, no versionado) que:
-   - lea cada `wa_tenants.access_token` no nulo,
-   - lo descifre con `descifrar()` (clave vieja),
-   - lo vuelva a cifrar con `cifrar()` pero apuntando `TOKENS_ENCRYPTION_KEY` a la clave NUEVA
-     (podés setear la env var solo para esa corrida: `TOKENS_ENCRYPTION_KEY=nueva node --import tsx ...`),
-   - guarde el resultado.
-3. Recién ahí actualizá `TOKENS_ENCRYPTION_KEY` en el `.env` del droplet con la clave nueva y
-   hacé `pm2 restart whatsapp-bot`.
-4. ⚠️ **Si el paso 2 se corta a la mitad, NO alcanza con repetirlo tal cual.** Quedarían filas
-   cifradas con la clave nueva y otras con la vieja; al reintentar, las que ya están con la
-   nueva **fallan la verificación GCM** al intentar descifrarlas con la vieja, y el script
-   revienta. El script de rotación tiene que **intentar con las dos claves** por fila (probar
-   la vieja, y si la autenticación falla, probar la nueva y dejarla como está). Escribilo así
-   desde el principio: es una línea más y convierte la rotación en reintentable.
+2. Ventana de mantenimiento: frená la app (`pm2 stop` de web y worker) para que nadie conecte un
+   número ni active un 2FA a mitad de la rotación. Backup antes (§19).
+3. Corré un script puntual (a mano, no versionado, con `DATABASE_URL_MIGRATIONS`) que recorra
+   `whatsapp_channels.access_token_encrypted` y `users.totp_secret` no nulos y, por fila,
+   descifre con la clave vieja y cifre con la nueva. **No importes `secrets.ts` dos veces** (la
+   clave queda fija al cargar el módulo): replicá el formato `v1:<iv>:<tag>:<datos>` con
+   `node:crypto` y las dos claves en variables locales del script.
+4. ⚠️ **Hacelo reintentable desde el principio:** si se corta a la mitad quedan filas con la clave
+   nueva y otras con la vieja. Por fila, probá la vieja; si la verificación GCM falla, probá la
+   nueva y dejala como está; si fallan las dos, frená y avisá (dato corrupto).
+5. Recién ahí reemplazá `TOKENS_ENCRYPTION_KEY` en el `.env`, levantá la app y verificá: "Probar"
+   en un número de WhatsApp (`POST /whatsapp/channels/:id/test`) y un login con 2FA.
+6. Guardá la clave nueva en el gestor y borrá la vieja de todos lados (salvo que un backup
+   anterior la necesite: anotá en el gestor qué backups se cifraron con cuál).
 
 > 🔑 **Guardá la clave donde no se pueda perder.** No hay recuperación: si se pierde
-> `TOKENS_ENCRYPTION_KEY`, los `access_token` cifrados quedan **irrecuperables** y hay que
-> reconectar el WhatsApp de **cada negocio** a mano (Embedded Signup o token nuevo desde Meta).
-> Guardala en el gestor de secretos, no solo en el `.env` del droplet — si se pierde el droplet
-> y el backup de la base no trae el `.env`, se pierden los tokens de todos los clientes.
+> `TOKENS_ENCRYPTION_KEY`, los tokens de WhatsApp quedan **irrecuperables** (hay que reconectar el
+> WhatsApp de **cada negocio**) y nadie con 2FA puede entrar hasta que se lo resetee. Va en el
+> gestor de contraseñas (§26), no solo en el `.env` del servidor: si se pierde el servidor y el
+> backup de la base no trae el `.env`, se pierden los tokens de todos los clientes.
 
 ## 21. Separar procesos web/worker (ROADMAP F6, OPCIONAL — escalar más allá de 1 negocio)
 
@@ -995,6 +1022,278 @@ la gracia vuelve a empezar.
 
 **Crecimiento (I6.1–I6.4)** no necesita configuración del servidor: cada negocio lo activa en
 WhatsApp IA › Crecimiento y Campañas, y carga sus plantillas por número (GUIA-META.md §E).
+
+## 26. Secretos: inventario, generación y rotación (Carril P, P1.5)
+
+Qué secreto vive dónde, cómo se genera, cómo se rota y qué hacer si se filtra. **Acá nunca van
+valores**, solo comandos y lugares.
+
+**Reglas:**
+
+- **Gestor elegido: [PENDIENTE].** Hasta que se elija, la regla es la misma: cada secreto tiene su
+  copia en un gestor de contraseñas del equipo (una entrada por entorno: "Selyon CRM — producción",
+  "Selyon CRM — staging"), con la fecha en que se generó. **Quién tiene acceso: [PENDIENTE]** (anotalo
+  acá cuando se decida: es la lista de a quién hay que sacar si alguien se va).
+- **Nunca** en el repo (es público), ni en chats, correos, issues, PRs, capturas o logs. Para pasar
+  un secreto a otra persona, se comparte la entrada del gestor.
+- **Un juego por entorno.** Staging y producción no comparten nada, y el stack nuevo **no reutiliza
+  nada del sistema viejo** (el bot del lavacar): ni el `.env`, ni la deploy key, ni el proyecto de
+  Supabase, ni la key de OpenAI.
+- En el servidor, el `.env` con `chmod 600` y dueño el usuario que corre la app. Mejor un servidor
+  propio para el stack nuevo; si se comparte (el droplet viejo corre también selyon), al menos un
+  usuario Unix propio, para que la otra app no pueda leer este `.env`.
+- Generá los valores en el servidor o en tu máquina, pegalos en el gestor y en el `.env`, y limpiá
+  la terminal. Si un comando lleva un secreto como argumento, poné un espacio adelante (con
+  `HISTCONTROL=ignorespace` no queda en el historial) o usá `read -rs` como en §26.3.
+
+### 26.1 Urgente, sistema viejo (ya, antes de cualquier otra cosa)
+
+Decisiones del usuario (2026-10-31): el usuario del piloto **se desactiva** (no se resetea), **no se
+reescribe el historial de git** (el repo es público: el valor ya se da por comprometido, lo que
+protege es invalidarlo), y del sistema viejo **se rotan ya OpenAI y Meta**; el resto (Supabase
+viejo, etc.) se apaga al cortar (§26.8).
+
+1. **Desactivar `lavacar-rosales`.** La hace: Nathan (o quien tenga el Supabase viejo). Dónde:
+   Supabase **del sistema viejo** → SQL Editor:
+   ```sql
+   -- Desactiva la cuenta, invalida su clave y revoca sus sesiones abiertas.
+   UPDATE wa_usuarios
+      SET activo = false,
+          password_hash = 'desactivado',   -- sin ":" el login nunca valida (aunque alguien la reactive)
+          session_epoch = session_epoch + 1
+    WHERE usuario = 'lavacar-rosales'
+   RETURNING id, usuario, tenant_id, activo, session_epoch;
+
+   -- ¿Quedan otras cuentas activas de ese negocio? (revisalas: ¿también se desactivan?)
+   SELECT usuario, rol, activo FROM wa_usuarios
+    WHERE tenant_id = (SELECT tenant_id FROM wa_usuarios WHERE usuario = 'lavacar-rosales');
+   ```
+   El bot viejo recarga las cuentas cada minuto (`TENANTS_REFRESH_MS`); para que sea al instante:
+   `pm2 restart whatsapp-bot` en el droplet. Una cuenta inactiva no entra, sus sesiones abiertas
+   dejan de valer y deja de recibir push. **Se confirma:** el `RETURNING` muestra `activo = false`;
+   en `https://wabotlavacar.selyon.app/panel` el login con ese usuario da "Usuario o contraseña
+   incorrectos", y un navegador que tenía la sesión abierta vuelve al login al recargar.
+2. **Prohibir la clave filtrada en el repo.** La hace: Nathan. Dónde: GitHub → Settings → Secrets and
+   variables → Actions → `CHECK_SECRETS_DENYLIST` (una cadena por línea; pendiente desde P1.1) y, en
+   local, `.secrets-denylist`. **Se confirma:** el job `verify` sigue verde y
+   `npm run ci:secrets` local pasa (si alguien la vuelve a pegar en el repo, falla).
+3. **Rotar la key de OpenAI del sistema viejo.** La hace: Nathan (dueño de la cuenta) + quien tenga
+   SSH al droplet (hoy Sebastián). Dónde: platform.openai.com → proyecto del bot viejo → API keys.
+   1. Crear una key nueva (si se puede, en un proyecto con **límite de gasto** mensual).
+   2. En el droplet: `nano ~/lavacar-whatsapp-bot/.env` → `OPENAI_API_KEY` = la nueva →
+      `pm2 restart whatsapp-bot`.
+   3. Mandar un WhatsApp al número del piloto y ver que el bot responda (y `pm2 logs whatsapp-bot`
+      sin errores 401 de OpenAI).
+   4. **Revocar la key vieja** en el dashboard. Mirar *Usage* de los últimos meses por consumo raro.
+   **Se confirma:** la key vieja figura revocada y el bot sigue respondiendo.
+4. **Rotar Meta del sistema viejo** (app secret, token y verify token). La hace: Nathan (admin de la
+   app y del Business Manager) + quien tenga SSH. En horario de poco tráfico y de una sola vez: entre
+   el reset y el restart, los webhooks llegan firmados con el secreto nuevo y el bot los rechaza (Meta
+   los reintenta, pero se demoran).
+   1. **App secret:** developers.facebook.com → la app → *Configuración de la app* → *Básica* →
+      *Clave secreta de la app* → **Restablecer**. Copiala.
+   2. **Token de acceso nuevo**, después del reset (resetear el secreto puede invalidar tokens
+      emitidos antes): business.facebook.com → *Configuración del negocio* → *Usuarios del sistema* →
+      el usuario del bot → *Generar nuevo token* (la app, permisos `whatsapp_business_messaging` y
+      `whatsapp_business_management`).
+   3. **Verify token nuevo:** `openssl rand -hex 32`.
+   4. En el droplet: `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN` y, si el bot lo usa ahí,
+      `WHATSAPP_ACCESS_TOKEN` en el `.env`; si el token del negocio se cargó desde `/panel/admin`,
+      reemplazarlo ahí también. `pm2 restart whatsapp-bot`.
+   5. En la app de Meta → *WhatsApp* → *Configuración* → *Webhook* → *Editar*: el verify token nuevo →
+      *Verificar y guardar* (Meta llama al webhook y tiene que contestar bien).
+   6. **Revocar el token viejo** (en *Usuarios del sistema* → *Revocar tokens*, o la opción
+      equivalente).
+   **Se confirma:** un WhatsApp al número del piloto tiene respuesta, `pm2 logs whatsapp-bot` no
+   muestra firmas rechazadas, y la verificación del webhook en Meta quedó en verde.
+
+> **¿La app de Meta del stack nuevo es la misma? [DECISIÓN PENDIENTE].** El app secret es de la app:
+> si el stack nuevo usa la misma app (p. ej. la del Tech Provider del Embedded Signup), comparte por
+> definición `WHATSAPP_APP_SECRET` con el sistema viejo mientras los dos vivan. Opción conservadora:
+> una app propia para el stack nuevo; si se reutiliza la misma, **se restablece el app secret otra vez
+> el día del corte** (§26.8), cuando el `.env` viejo deja de existir.
+
+### 26.2 Inventario del stack nuevo
+
+Todo lo de esta tabla tiene además su copia en el gestor (§26, reglas). "Recargar" = `pm2 reload <app>
+--update-env` (web y worker si están separados, §21).
+
+| Secreto | Qué protege (si se filtra…) | Cómo se genera | Dónde vive | Cómo se rota (y qué pasa) |
+|---|---|---|---|---|
+| `PANEL_SESSION_SECRET` | Firma las sesiones del equipo y del superadmin: con él se **forja la sesión de cualquiera**. | `openssl rand -hex 32` | `.env` | Reemplazar y recargar. Desloguea a **todos** (no hay período de gracia). |
+| `TOKENS_ENCRYPTION_KEY` | Cifra los tokens de WhatsApp de cada negocio y el 2FA de cada persona. Junto con un dump de la base, los entrega en claro. | `openssl rand -hex 32`, **antes de cargar datos** | `.env` + gestor (**copia obligatoria**: perderla no tiene arreglo) | Sin herramienta: §20 (re-cifrado manual con la app frenada). |
+| `PANEL_SUPERADMIN_HASH` (+ `PANEL_SUPERADMIN_USERNAME`, que no es secreto) | La cuenta que crea, pausa y cambia planes de **todos** los negocios. | Clave larga generada en el gestor → `scripts/hashPassword.ts` (§26.3) | `.env` (solo el hash); la clave, solo en el gestor | Clave nueva → hash → reemplazar → recargar, y subir `PANEL_ADMIN_SESSION_VERSION` (echa las sesiones de admin abiertas). |
+| `PANEL_SUPERADMIN_TOTP_SECRET` | Segundo factor del superadmin (obligatorio en producción). | `node --import tsx scripts/generateTotp.ts admin` | `.env` + app autenticadora + gestor | Regenerar, reemplazar, recargar la app autenticadora, recargar y subir `PANEL_ADMIN_SESSION_VERSION`. |
+| `DATABASE_URL` (rol `app_runtime`) | La app en la base, con RLS. | `openssl rand -hex 32` como clave del `ALTER ROLE` de `scripts/rls/01-app-role.sql` (§24) | `.env` | Repetir el `ALTER ROLE` con una clave nueva, actualizar la URL y recargar (las conexiones viejas se caen y el pool reconecta). |
+| `DATABASE_URL_MIGRATIONS`, `BACKUP_DATABASE_URL` (rol `postgres`) | Dueño de la base: lee y borra todo, sin RLS. | La genera Supabase al crear el proyecto **nuevo** (*Project Settings → Database → Reset database password*) | `.env` | Reset en Supabase y actualizar las dos URLs. La app no se corta si ya corre con `app_runtime`; migraciones y backups usan la nueva. |
+| `RESTORE_DATABASE_URL` | Base de prueba del restore (§19.2), con copias de datos reales. | Igual, en ese proyecto separado | `.env` del lugar donde se prueba el restore | Igual. |
+| `WHATSAPP_APP_SECRET` | Firma de los webhooks de Meta (y canje del Embedded Signup): con él se **inyectan mensajes falsos**. | Lo genera Meta (*App → Configuración → Básica*) | `.env` | *Restablecer* en Meta, reemplazar y recargar enseguida (en el medio se rechazan webhooks; Meta reintenta). |
+| `WHATSAPP_VERIFY_TOKEN` | Verificación del webhook (sin él no se puede repuntar el webhook a otro servidor). | `openssl rand -hex 32` | `.env` + configuración del webhook en Meta | Reemplazar, recargar y en Meta → *Webhook* → *Verificar y guardar*. |
+| Tokens de WhatsApp de cada negocio | Mandar mensajes **como el negocio**. | Los da Meta en el Embedded Signup o el alta manual | En la base, cifrados (`whatsapp_channels`) | Reconectar desde el panel (Embedded Signup) o alta manual del superadmin con el mismo `phone_number_id` y token nuevo (`POST /admin/businesses/:id/whatsapp` lo renueva); "Probar" el número; revocar el viejo en Meta. |
+| `WHATSAPP_REGISTER_PIN` | PIN de verificación en dos pasos que el Embedded Signup le pone a cada número que registra. | `node -e "console.log(require('crypto').randomInt(0,1e6).toString().padStart(6,'0'))"` | `.env` + gestor | Reemplazar y recargar: aplica a los números que se registren después; los ya registrados se cambian en WhatsApp Manager. |
+| `OPENAI_API_KEY` | Gasto de LLM a nuestro nombre. | platform.openai.com → **proyecto propio del stack nuevo** (uno por entorno) con límite de gasto → API keys | `.env` | Crear la nueva, reemplazar, recargar, probar una conversación y revocar la vieja. |
+| `STRIPE_SECRET_KEY` | Cobros, reembolsos y datos de clientes. | Stripe → *Developers → API keys* (primero `sk_test_…` en staging; la live, solo en producción) | `.env` | *Roll key* en Stripe (deja viva la vieja el tiempo que elijas), reemplazar, recargar, expirar la vieja. |
+| `STRIPE_WEBHOOK_SECRET` | Firma del webhook de Stripe: con él se **marca como pagado** un negocio que no pagó. | Stripe lo da al crear el endpoint (§25) | `.env` | *Roll secret* del endpoint (la vieja puede seguir valiendo unas horas), reemplazar y recargar. |
+| `RESEND_API_KEY` | Mandar correo **como nuestro dominio** (phishing a clientes con remitente legítimo). | Resend → *API Keys*, permiso *Sending access*, restringida al dominio | `.env` | Crear la nueva, reemplazar, recargar, mandar una invitación de prueba y borrar la vieja. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Acceso total a la API del proyecto (Storage incluido, salteando RLS). | Supabase → *Project Settings → API Keys* del proyecto **nuevo** | `.env` (nunca en el navegador) | Con las API keys nuevas de Supabase: crear otra, reemplazar, recargar, probar una subida y borrar la vieja. Con la `service_role` legacy: solo se rota cambiando el JWT secret del proyecto (rota también la `anon`). |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Firma de las notificaciones push del panel. | `npx web-push generate-vapid-keys` en la carpeta del proyecto (usa el `web-push` 3.6.7 ya instalado; no baja nada) | `.env` (la pública también la ve el navegador: no es secreta) | Reemplazar el par y recargar: las suscripciones viejas dejan de servir y cada persona vuelve a tocar la 🔔. |
+| `SENTRY_DSN` | Mandar eventos basura al proyecto de Sentry (no lee datos). | Sentry → proyecto → *Client Keys (DSN)* | `.env` | Crear una clave nueva, reemplazar, recargar y desactivar la vieja. |
+| `HEALTH_DETAIL_TOKEN` | Ver el detalle de `/health` (incluye errores internos). | `openssl rand -hex 32` | `.env` + el monitor que lo use | Reemplazar en los dos. |
+| `ALERTS_WEBHOOK_URL` | Publicar en el canal de alertas (Slack/Discord). | Lo genera Slack/Discord | `.env` | Regenerar el webhook, reemplazar y borrar el viejo. |
+| Credenciales del destino de `BACKUP_COPY_COMMAND` (p. ej. rclone) | La copia externa de los backups (datos de todos los negocios). | En el proveedor del destino, con permiso solo de escritura a esa carpeta si se puede | Config de rclone del servidor (`chmod 600`) | Credencial nueva en el proveedor, reemplazar y borrar la vieja. |
+| `DEPLOY_SSH_KEY` | **Shell en el servidor** como el usuario del deploy. | `ssh-keygen -t ed25519` **por entorno** (§26.4) | Privada: secret de GitHub. Pública: `authorized_keys` del servidor. | §26.4: alta de la nueva, prueba, baja de la vieja. |
+| `DEPLOY_HOST_KEY` | No es secreto: fija la identidad del servidor (evita un MITM en el deploy). | `ssh-keyscan -t ed25519 <host>`, verificando la huella contra el panel del proveedor (§15, paso 4b) | Secret de GitHub | Cambia solo si se reinstala el servidor. |
+| `CHECK_SECRETS_DENYLIST` | Cadenas prohibidas (las que ya se filtraron) para el guardrail `ci:secrets`. | A mano | Secret de GitHub + `.secrets-denylist` local (gitignoreado) | Agregar cada valor filtrado; nunca se saca. |
+
+**No son secretos pero sirven para cortar accesos:** `PANEL_SESSION_VERSION` (+1 = desloguea a todo el
+equipo de todos los negocios), `PANEL_ADMIN_SESSION_VERSION` (+1 = echa solo al superadmin) y el logout
+de una persona (cierra todas sus sesiones). `META_APP_ID`, `META_ES_CONFIG_ID`, `STRIPE_PRICE_*`,
+`SUPABASE_URL` y `VAPID_SUBJECT` son identificadores públicos. Google (Calendar/Places) vuelve en I6:
+cuando vuelva, con una cuenta de servicio y una API key **nuevas**, propias del stack nuevo.
+
+### 26.3 Generar el juego nuevo (por entorno)
+
+En la carpeta del proyecto, después de `npm ci`. Cada valor va al gestor y al `.env`; nada a un archivo
+suelto ni al chat.
+
+```bash
+# 64 hex al azar: PANEL_SESSION_SECRET, TOKENS_ENCRYPTION_KEY, WHATSAPP_VERIFY_TOKEN,
+# HEALTH_DETAIL_TOKEN y la clave del rol app_runtime (UN valor distinto para cada uno).
+openssl rand -hex 32
+
+# Superadmin: la clave sale del gestor (generada ahí, larga). Se lee sin eco para que no quede
+# en el historial ni en pantalla; se imprime solo el hash (salt:hash) → PANEL_SUPERADMIN_HASH.
+read -rs PW && node --import tsx scripts/hashPassword.ts "$PW"; unset PW
+
+# Segundo factor del superadmin → PANEL_SUPERADMIN_TOTP_SECRET (+ URI para la app autenticadora, §14).
+node --import tsx scripts/generateTotp.ts admin
+
+# Push del panel → VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY.
+npx web-push generate-vapid-keys
+
+# PIN de registro de números → WHATSAPP_REGISTER_PIN.
+node -e "console.log(require('crypto').randomInt(0,1e6).toString().padStart(6,'0'))"
+```
+
+Lo demás lo genera cada proveedor (tabla de §26.2). Al arrancar con `NODE_ENV=production`, el proceso
+se niega a levantar si algún secreto falta, es un placeholder de `.env.example` o tiene poca entropía
+(§23): si arranca, los mínimos están; que sean **nuevos** lo garantiza haberlos generado acá.
+
+### 26.4 Llave SSH de deploy nueva por entorno
+
+Cada servidor tiene su propia llave de CI: no se reutiliza `deploy_ci` del droplet viejo ni ninguna
+llave personal.
+
+1. En tu máquina: `ssh-keygen -t ed25519 -f deploy_selyon_prod -N "" -C "github-actions-deploy-prod"`
+   (`_staging` para staging).
+2. La pública al servidor nuevo, en el usuario que corre la app:
+   `cat deploy_selyon_prod.pub | ssh <usuario>@<servidor> "cat >> ~/.ssh/authorized_keys"`.
+   Opcional y recomendado: en esa línea de `authorized_keys`, anteponer
+   `no-port-forwarding,no-agent-forwarding,no-X11-forwarding ` para que la llave solo sirva para
+   el deploy.
+3. GitHub → *Settings → Secrets and variables → Actions*: `DEPLOY_SSH_KEY` = el contenido de la
+   privada; `DEPLOY_HOST_KEY` = la línea de known_hosts del servidor nuevo (§15, paso 4b); y en
+   *Variables*: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_DIR` y `BASE_URL` del servidor nuevo. ⚠️ **Antes
+   del primer push a `main` del stack nuevo:** sin esas variables el workflow usa los valores del
+   droplet viejo.
+4. `rm deploy_selyon_prod deploy_selyon_prod.pub` (la privada vive solo en GitHub; la pública, en el
+   servidor).
+5. Probar: correr el workflow (deploy o `Run workflow` del rollback con el SHA actual) y ver que el
+   paso de SSH conecte y el smoke pase.
+
+Hoy el workflow tiene un solo juego de secrets de deploy (a nivel repo): el job `deploy` usa el
+environment `produccion` pero el `rollback` no declara environment. Cuando exista staging, cada
+entorno lleva su `DEPLOY_SSH_KEY` como **secret del environment** (*Settings → Environments*) y el
+rollback tiene que declarar el suyo; ese cambio del workflow queda para `staging`. Al reemplazar el
+secret de repo por la llave nueva, el droplet viejo ya no se puede deployar desde CI (es lo buscado:
+`main` pasa a ser el stack nuevo).
+
+**Rotar la llave de deploy:** pasos 1–5 con una llave nueva, y recién con el deploy de prueba verde,
+borrar la línea vieja de `authorized_keys` del servidor.
+
+### 26.5 Checklist del día del alta del entorno nuevo
+
+En orden. Cada paso con quién lo hace y dónde se confirma. "Nathan" = dueño de las cuentas (Supabase,
+OpenAI, Meta, Stripe, Resend, Sentry, GitHub); "operador" = quien tenga SSH al servidor nuevo.
+
+1. **Antes de empezar** (Nathan): gestor elegido y quién tiene acceso (§26, reglas: hoy
+   [PENDIENTE]). Entrada nueva "Selyon CRM — producción".
+2. **Servidor** (operador): servidor propio o usuario Unix propio (§26, reglas). `git clone`, `npm ci`.
+3. **Secretos propios** (operador): §26.3. Al gestor y al `.env` (`chmod 600`). Se confirma: el gestor
+   tiene una entrada por cada fila de §26.2 que aplique, con la fecha.
+4. **Base** (Nathan): proyecto de Supabase **nuevo** (no el viejo) → clave del rol `postgres` en
+   `DATABASE_URL_MIGRATIONS`/`BACKUP_DATABASE_URL`; migraciones; `scripts/rls/01-app-role.sql` con la
+   clave nueva del rol `app_runtime` → `DATABASE_URL` (§24). Se confirma: la verificación del propio
+   SQL (`rolbypassrls = false`) y la conexión del rol desde el servidor.
+5. **OpenAI** (Nathan): proyecto propio, key nueva y límite de gasto. Se confirma: una conversación de
+   prueba responde y el *Usage* aparece en ese proyecto, no en el del bot viejo.
+6. **Meta** (Nathan): según la decisión de §26.1 (app propia o la misma). App secret y verify token
+   nuevos; webhook apuntando al servidor nuevo (*Verificar y guardar* en verde). Se confirma: un
+   mensaje de prueba entra a la bandeja.
+7. **Resend, Stripe (modo test primero), Supabase Storage, Sentry, VAPID** (Nathan + operador): una
+   key por servicio, propia del entorno (§26.2). Se confirma: invitación de prueba que llega, checkout
+   de prueba (§25), subida de una foto, evento de prueba en Sentry, la 🔔 manda la notificación.
+8. **Arranque** (operador): `NODE_ENV=production` y levantar. Se confirma: el proceso arranca (si falta
+   o es débil algún secreto, sale con la lista, §23) y `/health?detail=1&token=…` da OK.
+9. **Deploy key y variables del workflow** (Nathan): §26.4, **antes** del primer push a `main` del
+   stack nuevo. Se confirma: primer deploy con smoke verde en *Actions*.
+10. **Superadmin** (Nathan): login en `/panel/admin` con clave + código de 6 dígitos (§14). Se
+    confirma: entra, y un código ya usado se rechaza.
+11. **Calendario** (Nathan): recordatorios de rotación (§26.6) desde la fecha de hoy, anotados en el
+    gestor.
+
+### 26.6 Rotación periódica
+
+| Cada | Qué | Nota |
+|---|---|---|
+| 90 días | `OPENAI_API_KEY`, `RESEND_API_KEY` | Baratas de rotar y caras si se filtran. |
+| 6 meses | `DEPLOY_SSH_KEY`, claves de la base (`app_runtime` y `postgres`), credenciales de la copia de backups | §26.4 y tabla de §26.2. |
+| 12 meses | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `WHATSAPP_APP_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`, `HEALTH_DETAIL_TOKEN`, `WHATSAPP_VERIFY_TOKEN` | Con *roll* en Stripe no hay corte. |
+| Solo si hay sospecha | `PANEL_SESSION_SECRET` (desloguea a todos), `TOKENS_ENCRYPTION_KEY` (hasta que exista el llavero con `kid`), clave y TOTP del superadmin, VAPID | Rotarlos de rutina cuesta más de lo que protege. |
+| Cuando alguien con acceso se va | **Todo** lo que esa persona pudo ver (según la lista de accesos del gestor) | Más sacarle el acceso al gestor, a GitHub y al servidor. |
+
+Cada rotación se anota en el gestor (fecha y quién).
+
+### 26.7 Si se filtra X, hacé Y
+
+Primero cortar (rotar), después investigar. Si el valor pasó por el repo, además va a
+`CHECK_SECRETS_DENYLIST` (§26.1, paso 2): el historial no se reescribe, el valor se da por perdido.
+
+| Se filtró | Hacé, en este orden |
+|---|---|
+| El `.env` entero del servidor | Todo §26.2 que esté en el `.env`. Primero `PANEL_SESSION_SECRET`, `WHATSAPP_APP_SECRET`, `STRIPE_*`, `OPENAI_API_KEY`, `RESEND_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY` y las claves de la base; si además pudo haber un dump de la base, también `TOKENS_ENCRYPTION_KEY` (§20) y el token de WhatsApp de cada negocio. |
+| Un dump o backup de la base | Las claves de la base (si estaban en el volcado o el lugar del volcado). Los tokens de WhatsApp y los 2FA están cifrados: si `TOKENS_ENCRYPTION_KEY` **no** se filtró, alcanza con eso; si hay duda, §20 + reconectar los números + pedir que reactiven el 2FA. Los datos personales: protocolo de incidentes y avisos que correspondan. |
+| `PANEL_SESSION_SECRET` | Generar uno nuevo y recargar (desloguea a todos). Revisar `audit_log` por acciones raras desde la filtración. |
+| La clave o el TOTP del superadmin | Clave nueva (hash) y TOTP nuevo, recargar, `PANEL_ADMIN_SESSION_VERSION` +1. Revisar en `audit_log` los logins del superadmin (los rechazados por código inválido avisan que la clave ya se usó). |
+| La cookie de una persona del equipo | Que cierre sesión o cambie la clave con la recuperación (las dos cierran todas sus sesiones), o cambiarle el rol o el estado desde Equipo. Si no se sabe de quién: `PANEL_SESSION_VERSION` +1. |
+| `WHATSAPP_APP_SECRET` | *Restablecer* en Meta y recargar enseguida. Revisar la bandeja por mensajes que nadie mandó. |
+| El token de WhatsApp de un negocio | Revocarlo en Meta, reconectar el número (§26.2) y avisar al negocio. |
+| `OPENAI_API_KEY` | Revocar en el dashboard ya (no esperar a tener la nueva: mientras tanto el agente falla y las conversaciones pasan a una persona), key nueva, recargar, revisar *Usage*. |
+| `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | *Roll* con expiración inmediata, recargar, revisar en Stripe pagos, reembolsos y eventos de las últimas horas, y en Configuración › Plan que ningún negocio haya quedado "Al día" sin pagar. |
+| `RESEND_API_KEY` | Borrar la key en Resend, crear otra, recargar; revisar los envíos recientes en Resend. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Rotarla (§26.2) y revisar los logs de Storage/API en Supabase. |
+| `DEPLOY_SSH_KEY` | Borrar su línea de `authorized_keys` del servidor **ya**, generar otra (§26.4) y revisar `~/.ssh/authorized_keys`, `crontab -l`, los procesos y el último login (`last`) por cambios que nadie hizo. |
+| `TOKENS_ENCRYPTION_KEY` sola | Grave solo junto con la base; igual se rota (§20) en la próxima ventana. |
+| Una key de un proveedor que no está en la tabla | Revocarla en el proveedor, crear otra, sumarla a §26.2. |
+
+### 26.8 Al cortar el sistema viejo
+
+Cuando el bot del lavacar se apague (decisión del usuario: el resto del sistema viejo no se rota, se
+apaga). La hace: Nathan + quien tenga SSH al droplet viejo.
+
+1. `pm2 delete whatsapp-bot` en el droplet viejo (sin tocar selyon) y borrar su `.env`
+   (`shred -u ~/lavacar-whatsapp-bot/.env`).
+2. Revocar la key de OpenAI que usaba (o archivar ese proyecto).
+3. Meta: revocar el token del usuario del sistema y, si el stack nuevo usa la **misma** app,
+   restablecer el app secret (y cargar el nuevo en el stack nuevo) — §26.1, decisión pendiente.
+4. Supabase viejo: backup final guardado donde corresponda y pausar/borrar el proyecto.
+5. Sacar la llave de CI vieja (`github-actions-deploy`) del `authorized_keys` de `sebastian` en el
+   droplet viejo, y borrar la deploy key de solo lectura (`~/.ssh/deploy_whatsapp_lavacar` en el
+   droplet y GitHub → *Settings → Deploy keys*).
+6. DNS: borrar o redirigir `wabotlavacar.selyon.app`.
+
+Se confirma: `https://wabotlavacar.selyon.app/panel` deja de responder, el proyecto viejo de Supabase
+figura pausado o borrado, y GitHub no tiene deploy keys ni secrets que apunten al droplet viejo.
 
 ## Mantenimiento rápido
 
