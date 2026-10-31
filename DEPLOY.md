@@ -847,30 +847,89 @@ whatsapp-bot-worker`) y volvé al `pm2 start npm --name whatsapp-bot -- start` d
 `ROL` en el `.env` (o con `ROL=todo` explícito) — es exactamente el comportamiento de siempre,
 la tabla `wa_lideres` queda simplemente sin usar.
 
-## 22. Alertas de "bot mudo" a la plataforma (OPCIONAL, recomendado)
+## 22. Alertas de "bot mudo" a la plataforma (Telegram, recomendado antes del primer cliente)
 
-`/health` solo responde 503 si se cae la base o el caché de tenants. Hay fallas que dejan a
-UN negocio sin bot sin que nada se caiga: worker colgado (cola atascada), mensajes que
-agotan reintentos (DLQ), un token de Meta revocado (HTTP 401 / error Graph 190), un número
-que dejó de recibir webhooks, o el tope del plan agotado. Para eso corre un scheduler de
-vigilancia (`src/observabilidad/vigilancia.ts`, cada `ALERTAS_INTERVALO_MIN`, solo en el
-proceso líder) y el envío a WhatsApp detecta el token inválido al momento.
+`/health` solo responde 503 si se cae la base. Hay fallas que dejan a uno o a todos los
+negocios sin bot sin que nada se caiga: OpenAI caído o sin saldo, Meta rechazando los envíos,
+la cola atascada, un número que dejó de recibir webhooks. Cada detector llama a
+`alertPlatform()` (`src/platform/observability/alerts.ts`), que manda la alerta por **todos**
+los canales configurados a la vez:
 
-1. Creá un Incoming Webhook en Slack (o un webhook de canal en Discord) y pegá la URL en
-   `ALERTAS_WEBHOOK_URL` del `.env`. Sin ella, las alertas igual quedan en `pm2 logs`
-   (`grep alerta_plataforma`) y en Sentry si hay `SENTRY_DSN`.
-2. Ajustá los umbrales si hace falta (`ALERTA_*` en `.env.example`). El de "sin entrantes"
-   cuenta horas **hábiles** según el horario y la zona horaria de cada negocio.
-3. `pm2 restart whatsapp-bot`. Al arrancar se loguea `Alertas a la plataforma: log + …`.
-4. Para ver el estado en vivo (requiere `HEALTH_DETAIL_TOKEN` en el `.env`): `curl -s "https://TU-DOMINIO/health?detail=1&token=$HEALTH_DETAIL_TOKEN" | jq .vigilancia`
-   (sin datos personales: solo ids de negocio, conteos y tiempos). Es informativo: **no**
-   cambia el 200/503 del uptime monitor.
+- **log** estructurado, siempre: `pm2 logs | grep platform_alert` (sin datos personales: id
+  del negocio, conteos y tiempos);
+- **Sentry**, si hay `SENTRY_DSN` (§16);
+- **Telegram**, si están `ALERTS_TELEGRAM_BOT_TOKEN` **y** `ALERTS_TELEGRAM_CHAT_ID` — el
+  canal elegido: llega al teléfono, también de noche;
+- **webhook** Slack/Discord, si hay `ALERTS_WEBHOOK_URL` (POST JSON `{text, content}`).
 
-Con procesos separados (paso 21), la marca de "token inválido" vive en el proceso
-`worker`: mirá su `/health?detail=1` (puerto del worker). La alerta sale igual al momento.
+La misma alerta (tipo + negocio) no se repite antes de `ALERTS_COOLDOWN_MIN` (default 60;
+algunas traen su propio cooldown). Cuando el problema se resuelve, el detector la "olvida" y una
+recaída avisa en el acto. Con `NODE_ENV=production` y solo el log, el arranque **avisa**
+(`⚠️ Alertas a la plataforma solo por log…` y el evento `platform_alerts_unconfigured`) pero
+no frena el proceso.
 
-Para el botón "Mejorar plan" del aviso de cuota del panel, definí
-`PLATAFORMA_CONTACTO_WHATSAPP` (solo dígitos) o `PLATAFORMA_CONTACTO_EMAIL`.
+### 22.1 Crear el bot de Telegram y obtener el chat id
+
+1. En Telegram, abrí **@BotFather** → `/newbot` → nombre (p. ej. "Selyon Alertas") y usuario
+   (tiene que terminar en `bot`). BotFather responde con el **token** del bot
+   (`<números>:<letras>`): es un secreto, va solo en el `.env` del servidor (nunca en el repo,
+   en chats ni en capturas; `npm run ci:secrets` lo detecta si se cuela).
+2. Abrí el chat con tu bot nuevo y mandale cualquier mensaje (p. ej. "hola"): un bot no puede
+   escribirle a quien nunca le habló.
+3. Obtené tu **chat id** desde el servidor (o tu compu), sin dejar el token en el historial:
+   ```bash
+   read -rs TG_TOKEN   # pegá el token y Enter (no se muestra)
+   curl -s "https://api.telegram.org/bot${TG_TOKEN}/getUpdates" | grep -o '"chat":{"id":-\?[0-9]*'
+   unset TG_TOKEN
+   ```
+   El número después de `"id":` es el chat id (un grupo empieza con `-100…`: si querés que lo
+   reciba más de una persona, creá un grupo, agregá el bot, escribí algo en el grupo y repetí).
+4. En el `.env` del servidor:
+   ```
+   ALERTS_TELEGRAM_BOT_TOKEN=<el token de BotFather>
+   ALERTS_TELEGRAM_CHAT_ID=<el chat id>
+   ```
+5. Reiniciá (`pm2 restart whatsapp-bot`, o las dos apps del paso 21). Al arrancar se loguea
+   `Alertas a la plataforma: log + telegram` (más `sentry`/`webhook` si están).
+
+### 22.2 Mandar una alerta de prueba (obligatorio: un canal que nunca se probó no cuenta)
+
+```bash
+cd ~/lavacar-whatsapp-bot && npx tsx scripts/sendTestAlert.ts   # la carpeta de la app (paso 3)
+```
+
+Manda una alerta `test_alert` por todos los canales del `.env` y muestra `✅`/`❌` por canal
+(nunca imprime el token ni la URL). Tiene que llegarte el mensaje
+`⚠️ [selyon-crm/production] test_alert: Alerta de prueba…` a Telegram. Sale con código 1 si
+algún envío falló o si solo está el log. Repetila cada vez que cambies el token o el chat.
+
+### 22.3 Qué se vigila y con qué umbrales
+
+Umbrales iniciales (configurables en el `.env`; todos documentados en `.env.example`):
+
+| Alerta | Severidad | Cuándo salta | Variables (default) |
+|---|---|---|---|
+| `llm_unavailable` | crítica | Turnos del agente que terminan en la disculpa al cliente (OpenAI caído, sin saldo, key revocada, timeout), contando el error transitorio del último intento. Por negocio y global (todos sumados). | `ALERTS_LLM_FAILURES` (5), `ALERTS_LLM_FAILURES_GLOBAL` (10), `ALERTS_LLM_WINDOW_MIN` (10) |
+| `whatsapp_send_failing` | crítica | Respuestas del bot que Meta rechazó por algo que **no** es el token (cuenta o número bloqueado, 403, 368, 131031…). Por negocio y global. | `ALERTS_SEND_FAILURES` (5), `ALERTS_SEND_FAILURES_GLOBAL` (10), `ALERTS_SEND_WINDOW_MIN` (10) |
+| `whatsapp_token_invalid` | crítica | Meta rechazó el token del número (401 / código 190): el negocio tiene que reconectar. Cada 6 h mientras siga. | — |
+| `queue_backlog` | crítica | Jobs listos sin que nadie los reclame hace más de N min (worker caído o saturado). Solo tipos con handler; los postergados por negocio pausado no cuentan. | `ALERTS_QUEUE_BACKLOG_MIN` (15) |
+| `queue_stuck` | crítica | Jobs `running` sin latido hace más de N min: la recuperación de la cola no los libera. Nunca menos que `QUEUE_LOCK_TIMEOUT_MS` + 1 min. | `ALERTS_QUEUE_STUCK_MIN` (10 = 2 × lock) |
+| `queue_jobs_dead` | aviso | 5 jobs de un negocio en el DLQ en 10 min. | — |
+| `whatsapp_inbound_silent` | aviso | Negocio activo, con número conectado y tráfico la última semana, que lleva N horas **hábiles** (horario y zona de sus sucursales) sin mensajes entrantes, cuando con su ritmo se esperaban al menos M. Solo avisa con el negocio abierto (no despierta de madrugada). `0` lo apaga. | `ALERTS_INBOUND_SILENCE_HOURS` (6), `ALERTS_INBOUND_MIN_EXPECTED` (5) |
+| `whatsapp_raw_webhooks_pending` | aviso | 20+ webhooks de Meta que no rutean a ningún número. | — |
+| `whatsapp_conversation_cap` / `whatsapp_ai_spend_cap` | aviso | Un negocio agotó el tope mensual de su plan (conversaciones o gasto de IA). | — |
+| `email_not_configured` / `email_provider_auth_failed` | crítica | Correo de plataforma sin configurar en producción, o el proveedor rechaza la llave. | — |
+
+Los vigilantes periódicos (cola y entrantes) corren cada `ALERTS_CHECK_INTERVAL_MIN` (5) en
+el proceso con trabajo de fondo (`ROLE=all` o `worker`) y, con varias réplicas, en una sola
+(lease de liderazgo). Las cuentas por tasa (`llm_unavailable`, `whatsapp_send_failing`) son
+por proceso: con N réplicas worker, cada una cuenta lo suyo.
+
+Qué hacer con cada una: `llm_unavailable` global → mirar el estado de OpenAI y el saldo de la
+cuenta; por negocio → `pm2 logs | grep whatsapp_agent_failed` con ese id. `whatsapp_send_failing`
+→ Meta Business Manager del negocio (calidad del número, restricciones). `queue_*` →
+`pm2 status` / `pm2 logs` del worker y reiniciarlo. `whatsapp_inbound_silent` → en Meta, que la
+app siga suscrita al WABA del número (webhooks) y que el número siga conectado.
 
 ## 23. Endurecimiento de seguridad (revisión pre-venta 2026-10)
 

@@ -6,6 +6,7 @@ import { handleMediaEraseJob, WHATSAPP_MEDIA_ERASE_JOB } from "./eraser";
 import { handleFollowUpJob, startFollowUpLoop, WHATSAPP_FOLLOW_UP_JOB } from "./followUps";
 import type { GrowthResolver } from "./growth";
 import { handleQuoteTouchJob, startQuoteRecoveryLoop, WHATSAPP_QUOTE_TOUCH_JOB } from "./quotes";
+import { startInboundWatchLoop } from "./inboundWatch";
 import { WHATSAPP_INBOUND_JOB } from "./ingest";
 import { handleInboundJob } from "./pipeline";
 import { startRawWebhookLoop } from "./rawWebhooks";
@@ -80,12 +81,15 @@ export function whatsappJobHandlers(deps: WhatsAppDeps | ((db: Executor) => What
 }
 
 /**
- * Loops del módulo (procesos `ROLE=worker|all`): reproceso y purga de `raw_webhooks` y,
- * con lo de crecimiento del plan (`getGrowth`, I6), los barridos del seguimiento
- * post-servicio y del rescate de cotizaciones.
+ * Loops del módulo (procesos `ROLE=worker|all`): reproceso y purga de `raw_webhooks`, el
+ * vigilante «sin entrantes» (apagable con ALERTS_INBOUND_SILENCE_HOURS=0) y, con lo de
+ * crecimiento del plan (`getGrowth`, I6), los barridos del seguimiento post-servicio y del
+ * rescate de cotizaciones.
  */
 export function startWhatsAppSchedulers(db: Executor, options: { getGrowth?: GrowthResolver } = {}): Loop[] {
   const loops = [startRawWebhookLoop({ db, ingest: reingestRawPayload(db) })];
+  const inboundWatch = startInboundWatchLoop(db);
+  if (inboundWatch) loops.push(inboundWatch);
   if (options.getGrowth) {
     loops.push(startFollowUpLoop({ db, getGrowth: options.getGrowth }), startQuoteRecoveryLoop({ db, getGrowth: options.getGrowth }));
   }

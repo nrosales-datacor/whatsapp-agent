@@ -1,4 +1,4 @@
-import { alertPlatform } from "../observability/alerts";
+import { _resetRateAlertsForTests, rateAlert } from "../observability/rateAlert";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Métricas de la cola POR TIPO de job, en memoria del proceso (mismo criterio que
@@ -9,7 +9,8 @@ import { alertPlatform } from "../observability/alerts";
 // Alerta por DLQ POR NEGOCIO (lección del motor viejo, F11): un evento por cada job que
 // llega a `dead` sería ruido (con 50 negocios, decenas de alertas por un proveedor caído);
 // se alerta cuando UN negocio junta `DEAD_ALERT_THRESHOLD` jobs muertos dentro de la
-// ventana, con el cooldown de alertPlatform para no repetir.
+// ventana, con el cooldown de alertPlatform para no repetir (patrón ventana + umbral de
+// ../observability/rateAlert.ts).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface JobTypeStats {
@@ -59,29 +60,28 @@ export function getQueueStats(): Record<string, JobTypeStats & { avgMs: number }
   return out;
 }
 
+/** Tipo de la alerta de DLQ por negocio. */
+export const QUEUE_JOBS_DEAD_ALERT = "queue_jobs_dead";
+
 const DEAD_ALERT_WINDOW_MS = 10 * 60_000;
 const DEAD_ALERT_THRESHOLD = 5;
 const DEAD_ALERT_COOLDOWN_MS = 15 * 60_000;
-
-const deadByBusiness = new Map<string, number[]>();
 
 /**
  * Registra un job que llegó a `dead` y alerta si su negocio (o el sistema) cruzó el
  * umbral en la ventana. Devuelve true si salió una alerta.
  */
 export function trackDeadJob(businessId: string | null, type: string, now: number = Date.now()): boolean {
-  const key = businessId ?? "system";
-  const recent = (deadByBusiness.get(key) ?? []).filter((t) => now - t < DEAD_ALERT_WINDOW_MS);
-  recent.push(now);
-  deadByBusiness.set(key, recent);
-  if (recent.length < DEAD_ALERT_THRESHOLD) return false;
-  return alertPlatform(
+  const windowMin = DEAD_ALERT_WINDOW_MS / 60_000;
+  return rateAlert(
     {
-      type: "queue_jobs_dead",
+      type: QUEUE_JOBS_DEAD_ALERT,
       tenantId: businessId,
       severity: "warning",
-      message: `${recent.length} job(s) en dead (DLQ) en los últimos ${DEAD_ALERT_WINDOW_MS / 60_000} min (último: ${type})`,
-      data: { count: recent.length, lastJobType: type, windowMin: DEAD_ALERT_WINDOW_MS / 60_000 },
+      threshold: DEAD_ALERT_THRESHOLD,
+      windowMs: DEAD_ALERT_WINDOW_MS,
+      message: (count) => `${count} job(s) en dead (DLQ) en los últimos ${windowMin} min (último: ${type})`,
+      data: { lastJobType: type },
       cooldownMs: DEAD_ALERT_COOLDOWN_MS,
     },
     now,
@@ -91,5 +91,5 @@ export function trackDeadJob(businessId: string | null, type: string, now: numbe
 /** Solo para tests: limpia métricas y ventanas de alerta. */
 export function _resetQueueStatsForTests(): void {
   byType.clear();
-  deadByBusiness.clear();
+  _resetRateAlertsForTests(QUEUE_JOBS_DEAD_ALERT);
 }
