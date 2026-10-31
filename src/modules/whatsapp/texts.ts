@@ -89,6 +89,12 @@ export const PIPELINE_TEXTS = {
     tu: "🎤 Recibí tu nota de voz, pero tuve problemas para escucharla. ¿Puedes contarme por texto en qué te ayudo?",
     usted: "🎤 Recibí su nota de voz, pero tuve problemas para escucharla. ¿Puede contarme por texto en qué le ayudo?",
   },
+  /** Nota de voz más larga que el tope (`AGENT_AUDIO_MAX_SEC`): no se transcribe. Vars: {minutos}. */
+  audioTooLong: {
+    vos: "🎤 Tu audio es muy largo. ¿Me lo resumís en uno más corto (de hasta {minutos} min) o por escrito?",
+    tu: "🎤 Tu audio es muy largo. ¿Me lo resumes en uno más corto (de hasta {minutos} min) o por escrito?",
+    usted: "🎤 Su audio es muy largo. ¿Me lo resume en uno más corto (de hasta {minutos} min) o por escrito?",
+  },
   /** Falló el turno del agente (último intento o error permanente). */
   generalError: {
     vos: "Disculpá, tuvimos un problemita. Probá de nuevo en un momento 🙏",

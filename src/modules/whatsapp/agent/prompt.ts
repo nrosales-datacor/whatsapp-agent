@@ -193,3 +193,110 @@ export function buildTurnContext(ctx: AgentContext, input: TurnContextInput): st
   );
   return lines.join("\n");
 }
+
+// ── Presupuesto del prompt de sistema ───────────────────────────────────────
+//
+// El prompt de sistema se reenvía en CADA paso del turno (hasta `AGENT_MAX_STEPS`), así
+// que su largo se paga varias veces por mensaje. Instrucciones, conocimiento y FAQ ya
+// tienen tope propio (settings.ts), pero sucursales, servicios (con su descripción) y
+// equipo no: el total se mide contra `AGENT_MAX_SYSTEM_PROMPT_CHARS`.
+//   • Al guardar la configuración (settingsRoutes.ts): si el prompt resultante lo pasa,
+//     422 con un mensaje para el dueño (`promptBudgetProblem`).
+//   • En el turno (runner.ts): si igual lo pasa (creció el catálogo después de guardar),
+//     se recorta en este orden: descripciones de los servicios → preguntas frecuentes
+//     (de la última a la primera) → base de conocimiento (del último ítem al primero), y
+//     se loguea (`fitSystemPrompt`). El recorte es determinista: no rompe el caché.
+// Se cuenta en caracteres (en español, ~3,5 caracteres por token): no hace falta un
+// tokenizador para un tope de seguridad.
+
+/** Crecimiento con todas las reglas activas: el peor caso al medir una configuración. */
+const ALL_GROWTH: AgentGrowth = { quoteRecovery: true, upsellRules: [{ serviceId: "-", suggestServiceId: "-" }] };
+
+/** Largo en caracteres del prompt de sistema del negocio (sin crecimiento = el peor caso). */
+export function estimatePromptChars(ctx: AgentContext, growth: AgentGrowth = ALL_GROWTH): number {
+  return buildSystemPrompt(ctx, growth).length;
+}
+
+/**
+ * Mensaje para el panel si la configuración deja el prompt por encima del presupuesto
+ * (null = entra). Se mide con el catálogo y el equipo actuales. `currentChars`: el largo
+ * con la configuración guardada; un cambio que no alarga el prompt nunca se rechaza (si el
+ * catálogo creció, el dueño tiene que poder acortar de a poco).
+ */
+export function promptBudgetProblem(ctx: AgentContext, maxChars: number, currentChars = 0): string | null {
+  const chars = estimatePromptChars(ctx);
+  if (chars <= maxChars || chars <= currentChars) return null;
+  const fmt = (n: number) => n.toLocaleString("es-CR");
+  return (
+    `La configuración del agente quedó demasiado larga: junto con las sucursales, los servicios y el equipo suma ` +
+    `${fmt(chars)} caracteres y el máximo es ${fmt(maxChars)}. Acortá las instrucciones, la base de conocimiento ` +
+    `o las preguntas frecuentes (unos ${fmt(chars - maxChars)} caracteres).`
+  );
+}
+
+/** Lo que se recortó para que el prompt entre, en el orden en que se recorta. */
+export type PromptTrim = "service_descriptions" | "faq" | "knowledge";
+
+export interface FittedPrompt {
+  prompt: string;
+  /** Largo antes de recortar. */
+  originalChars: number;
+  trimmed: PromptTrim[];
+  /** true si ni recortando todo entra (instrucciones, sucursales, servicios y equipo solos lo pasan). */
+  overBudget: boolean;
+}
+
+/** Saca elementos del final hasta haber sacado al menos `overflow` caracteres (estimados). */
+function dropTail<T>(items: readonly T[], size: (item: T) => number, overflow: number): T[] {
+  let n = items.length;
+  let removed = 0;
+  while (n > 0 && removed < overflow) removed += size(items[--n]);
+  return items.slice(0, n);
+}
+
+/** Prompt de sistema dentro del presupuesto (ver la nota de arriba). */
+export function fitSystemPrompt(ctx: AgentContext, growth: AgentGrowth | undefined, maxChars: number): FittedPrompt {
+  let current = ctx;
+  let prompt = buildSystemPrompt(current, growth);
+  const originalChars = prompt.length;
+  const trimmed: PromptTrim[] = [];
+  const rebuild = (next: AgentContext) => {
+    current = next;
+    prompt = buildSystemPrompt(current, growth);
+  };
+
+  // 1. Descripciones de los servicios (el nombre, precio y duración quedan).
+  if (prompt.length > maxChars && current.services.some((s) => s.description)) {
+    rebuild({ ...current, services: current.services.map((s) => ({ ...s, description: null })) });
+    trimmed.push("service_descriptions");
+  }
+
+  // 2. Preguntas frecuentes, de la última a la primera.
+  if (prompt.length > maxChars && current.settings.faq.length > 0) {
+    trimmed.push("faq");
+    let faq = current.settings.faq;
+    while (prompt.length > maxChars && faq.length > 0) {
+      // "- P: …\n  R: …" + el salto de línea que las une.
+      faq = dropTail(faq, (f) => f.question.length + f.answer.length + 12, prompt.length - maxChars);
+      rebuild({ ...current, settings: { ...current.settings, faq } });
+    }
+  }
+
+  // 3. Base de conocimiento, del último ítem al primero.
+  if (prompt.length > maxChars && current.settings.knowledge.some((s) => s.items.length > 0)) {
+    trimmed.push("knowledge");
+    const sections = current.settings.knowledge;
+    let items = sections.flatMap((section, index) => section.items.map((item) => ({ index, item })));
+    while (prompt.length > maxChars && items.length > 0) {
+      // "- …" + el salto de línea.
+      items = dropTail(items, (i) => i.item.length + 3, prompt.length - maxChars);
+      const knowledge = sections.map((section, index) => ({
+        ...section,
+        items: items.filter((i) => i.index === index).map((i) => i.item),
+      }));
+      rebuild({ ...current, settings: { ...current.settings, knowledge } });
+    }
+  }
+
+  return { prompt, originalChars, trimmed, overBudget: prompt.length > maxChars };
+}

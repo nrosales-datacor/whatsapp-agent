@@ -1,15 +1,23 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AgentContext } from "../../src/modules/whatsapp/agent/context";
-import { buildMessages } from "../../src/modules/whatsapp/agent/runner";
-import { buildSystemPrompt, buildTurnContext, hoursText } from "../../src/modules/whatsapp/agent/prompt";
+import { buildMessages, cutToLastSentence, isContextOverflowError } from "../../src/modules/whatsapp/agent/runner";
+import {
+  buildSystemPrompt,
+  buildTurnContext,
+  estimatePromptChars,
+  fitSystemPrompt,
+  hoursText,
+  promptBudgetProblem,
+} from "../../src/modules/whatsapp/agent/prompt";
 import { agentText, isOutOfScopeReply } from "../../src/modules/whatsapp/agent/texts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Prompt del agente (sin base ni OpenAI): identidad, terminología del rubro, registro,
 // sucursales con dirección y horario, precios ("se cotiza" sin inventar), conocimiento y
 // FAQ; y la regla de caché: el prompt del negocio no depende de la hora, del canal ni del
-// cliente (eso va en el mensaje del turno, al final).
+// cliente (eso va en el mensaje del turno, al final). Presupuesto del prompt (medición,
+// mensaje del 422 y recorte en el turno) y los ayudantes de los topes del runner.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ESCAZU = "11111111-1111-4111-8111-111111111111";
@@ -168,4 +176,124 @@ test("buildSystemPrompt: las reglas de crecimiento (I6) aparecen solo si están 
   const upsell = buildSystemPrompt(ctx, { quoteRecovery: false, upsellRules: [{ serviceId: "a", suggestServiceId: "b" }] });
   assert.match(upsell, /`upsell_offer`.*`add_service_to_appointment`.*`decline_upsell`/s);
   assert.match(upsell, /paciente/, "usa la terminología del negocio");
+});
+
+// ── Presupuesto del prompt ──────────────────────────────────────────────────
+
+/** Contexto con descripciones, FAQ y conocimiento largos (para pasar un presupuesto chico). */
+function bulkyContext(): AgentContext {
+  const ctx = dentalContext();
+  return {
+    ...ctx,
+    services: ctx.services.map((s, i) => ({ ...s, description: `Descripción larga ${i} `.repeat(40) })),
+    settings: {
+      ...ctx.settings,
+      faq: Array.from({ length: 10 }, (_, i) => ({ question: `¿Pregunta ${i}?`, answer: `Respuesta ${i} `.repeat(30) })),
+      knowledge: [
+        { id: "a", title: "Sección A", items: Array.from({ length: 10 }, (_, i) => `Dato A${i} `.repeat(20)) },
+        { id: "b", title: "Sección B", items: Array.from({ length: 10 }, (_, i) => `Dato B${i} `.repeat(20)) },
+      ],
+    },
+  };
+}
+
+test("estimatePromptChars: mide el prompt completo (con las reglas de crecimiento: el peor caso)", () => {
+  const ctx = dentalContext();
+  assert.equal(estimatePromptChars(ctx), buildSystemPrompt(ctx, { quoteRecovery: true, upsellRules: [{ serviceId: "-", suggestServiceId: "-" }] }).length);
+  assert.ok(estimatePromptChars(ctx) > buildSystemPrompt(ctx).length);
+  assert.ok(estimatePromptChars(bulkyContext()) > estimatePromptChars(ctx) + 5000, "crece con descripciones, FAQ y conocimiento");
+});
+
+test("promptBudgetProblem: null si entra; si no, un mensaje con los números para el dueño; un cambio que no alarga nunca se rechaza", () => {
+  const ctx = bulkyContext();
+  const chars = estimatePromptChars(ctx);
+  assert.equal(promptBudgetProblem(ctx, chars), null);
+  const problem = promptBudgetProblem(ctx, 8000);
+  assert.ok(problem);
+  assert.match(problem, /demasiado larga/);
+  assert.match(problem, /8\s?000/);
+  assert.match(problem, /instrucciones, la base de conocimiento o las preguntas frecuentes/);
+  assert.equal(promptBudgetProblem(ctx, 8000, chars), null, "igual que lo guardado: no se bloquea al que intenta acortar");
+  assert.equal(promptBudgetProblem(ctx, 8000, chars + 1), null);
+  assert.ok(promptBudgetProblem(ctx, 8000, chars - 1), "más largo que lo guardado: sí");
+});
+
+test("fitSystemPrompt: dentro del presupuesto no toca nada", () => {
+  const ctx = dentalContext();
+  const fitted = fitSystemPrompt(ctx, undefined, 100_000);
+  assert.equal(fitted.prompt, buildSystemPrompt(ctx));
+  assert.deepEqual(fitted.trimmed, []);
+  assert.equal(fitted.overBudget, false);
+});
+
+test("fitSystemPrompt: recorta en orden descripciones → FAQ → conocimiento, lo justo y de forma estable", () => {
+  const ctx = bulkyContext();
+  const full = buildSystemPrompt(ctx);
+  const noDescriptions = buildSystemPrompt({ ...ctx, services: ctx.services.map((s) => ({ ...s, description: null })) });
+
+  // Alcanza con sacar las descripciones.
+  const a = fitSystemPrompt(ctx, undefined, noDescriptions.length);
+  assert.deepEqual(a.trimmed, ["service_descriptions"]);
+  assert.equal(a.prompt, noDescriptions);
+  assert.match(a.prompt, /Pregunta 9/, "la FAQ queda entera");
+
+  // Hace falta sacar parte de la FAQ: se van las últimas y quedan las primeras.
+  const b = fitSystemPrompt(ctx, undefined, noDescriptions.length - 1000);
+  assert.deepEqual(b.trimmed, ["service_descriptions", "faq"]);
+  assert.ok(b.prompt.length <= noDescriptions.length - 1000);
+  assert.match(b.prompt, /Pregunta 0/);
+  assert.doesNotMatch(b.prompt, /Pregunta 9/);
+  assert.match(b.prompt, /Dato B9/, "el conocimiento queda entero");
+  assert.ok(b.prompt.length > noDescriptions.length - 1000 - 400, "saca lo justo (una o dos preguntas de más, no toda la FAQ)");
+
+  // Sin FAQ todavía no entra: se recorta el conocimiento desde el final.
+  const noFaq = buildSystemPrompt({ ...ctx, services: ctx.services.map((s) => ({ ...s, description: null })), settings: { ...ctx.settings, faq: [] } });
+  const c = fitSystemPrompt(ctx, undefined, noFaq.length - 500);
+  assert.deepEqual(c.trimmed, ["service_descriptions", "faq", "knowledge"]);
+  assert.ok(c.prompt.length <= noFaq.length - 500);
+  assert.doesNotMatch(c.prompt, /Preguntas frecuentes/);
+  assert.match(c.prompt, /Dato A0/);
+  assert.doesNotMatch(c.prompt, /Dato B9/);
+  assert.equal(c.overBudget, false);
+  assert.equal(c.originalChars, full.length);
+
+  // Determinista (el prefijo cacheable no cambia entre turnos).
+  assert.equal(fitSystemPrompt(ctx, undefined, noFaq.length - 500).prompt, c.prompt);
+});
+
+test("fitSystemPrompt: si ni recortando todo entra, lo marca (lo que queda: reglas, instrucciones, catálogo y equipo)", () => {
+  const fitted = fitSystemPrompt(bulkyContext(), undefined, 1000);
+  assert.deepEqual(fitted.trimmed, ["service_descriptions", "faq", "knowledge"]);
+  assert.equal(fitted.overBudget, true);
+  assert.match(fitted.prompt, /No atendemos urgencias por WhatsApp/, "las instrucciones del negocio no se recortan");
+  assert.match(fitted.prompt, /Limpieza dental/);
+});
+
+test("buildMessages: usa el prompt ya ajustado si se le pasa", () => {
+  const ctx = dentalContext();
+  const input = { businessId: ctx.businessId, conversationId: "c", clientId: "x", clientPhone: "+1", clientName: null, locationId: null, history: [], now: new Date() };
+  const messages = buildMessages(ctx, input, { maxMessages: 20, maxDays: 30 }, "PROMPT AJUSTADO");
+  assert.equal(messages[0].content, "PROMPT AJUSTADO");
+  assert.equal(buildMessages(ctx, input, { maxMessages: 20, maxDays: 30 })[0].content, buildSystemPrompt(ctx));
+});
+
+// ── Ayudantes de los topes del runner ───────────────────────────────────────
+
+test("cutToLastSentence: hasta la última oración completa; sin ninguna, vacío", () => {
+  assert.equal(cutToLastSentence("Claro, tenemos limpieza. El precio es ₡25.000 y dura una hora. Además te cuento que"), "Claro, tenemos limpieza. El precio es ₡25.000 y dura una hora.");
+  assert.equal(cutToLastSentence("¿Te sirve el jueves? Tengo a las 9:00, a las"), "¿Te sirve el jueves?");
+  assert.equal(cutToLastSentence("Primera línea sin punto\nSegunda línea cortad"), "Primera línea sin punto");
+  assert.equal(cutToLastSentence("Claro, te cuento que el precio de la limpie"), "");
+  assert.equal(cutToLastSentence(""), "");
+  assert.equal(cutToLastSentence("Cuesta ₡25.000"), "", "el punto de miles no es fin de oración");
+});
+
+test("isContextOverflowError: el 400 context_length_exceeded de OpenAI (por código o por mensaje), nada más", () => {
+  assert.equal(isContextOverflowError({ status: 400, code: "context_length_exceeded", message: "x" }), true);
+  assert.equal(isContextOverflowError({ status: 400, error: { code: "context_length_exceeded" }, message: "x" }), true);
+  assert.equal(isContextOverflowError({ status: 400, message: "This model's maximum context length is 128000 tokens." }), true);
+  assert.equal(isContextOverflowError({ status: 400, code: "invalid_request_error", message: "bad tool schema" }), false);
+  assert.equal(isContextOverflowError({ status: 500, message: "maximum context length" }), false);
+  assert.equal(isContextOverflowError(new Error("timeout")), false);
+  assert.equal(isContextOverflowError(null), false);
 });

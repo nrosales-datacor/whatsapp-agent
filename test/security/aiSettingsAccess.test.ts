@@ -6,7 +6,8 @@ import { after, before, test } from "node:test";
 // app real sobre PGlite y el rol de la app (`app_runtime`, sin BYPASSRLS):
 //   • todos los roles leen; solo dueño y administración editan (403 forbidden_role);
 //   • la primera lectura trae los defaults de la plantilla del rubro;
-//   • un negocio no ve ni toca la configuración de otro.
+//   • un negocio no ve ni toca la configuración de otro;
+//   • una configuración cuyo prompt pasa `AGENT_MAX_SYSTEM_PROMPT_CHARS` da 422 y no se guarda.
 // ─────────────────────────────────────────────────────────────────────────────
 
 process.env.TRUST_PROXY = "loopback";
@@ -102,4 +103,39 @@ test("/whatsapp/settings: un negocio no ve la configuración de otro", async () 
   assert.equal(res.status, 200);
   assert.notEqual(res.body.data.instructions, "Solo de A");
   assert.equal(res.body.data.instructions, loadIndustryTemplate("generic").ai.instructions);
+});
+
+test("PATCH /whatsapp/settings: si el prompt resultante pasa el presupuesto → 422 prompt_too_long y no se guarda nada", async () => {
+  const saved = process.env.AGENT_MAX_SYSTEM_PROMPT_CHARS;
+  const setBudget = (n: number) => {
+    process.env.AGENT_MAX_SYSTEM_PROMPT_CHARS = String(n);
+  };
+  try {
+    const businessId = await dentalBusiness();
+    const owner = await loginAs(businessId, "owner");
+    // 24 ítems de 480 caracteres ≈ 11 500: dentro del tope propio del conocimiento (12 000)
+    // pero, con el resto del prompt, por encima de un presupuesto de 8000.
+    const knowledge = [{ title: "Detalle", items: Array.from({ length: 24 }, (_, i) => `${i} ${"dato largo ".repeat(48)}`.slice(0, 480)) }];
+    setBudget(8000);
+    const before = (await owner.get(`${API}/whatsapp/settings`)).body.data;
+    const rejected = await owner.patch(`${API}/whatsapp/settings`, { knowledge });
+    assert.equal(rejected.status, 422, JSON.stringify(rejected.body));
+    assert.equal(rejected.body.code, "prompt_too_long");
+    assert.match(rejected.body.error, /demasiado larga.*8\s?000/);
+    assert.deepEqual((await owner.get(`${API}/whatsapp/settings`)).body.data, before, "la transacción se deshizo");
+
+    // Con presupuesto holgado se guarda; si después el tope baja, un cambio que no alarga el
+    // prompt pasa (el dueño puede acortar) y uno que lo alarga, no.
+    setBudget(200_000);
+    assert.equal((await owner.patch(`${API}/whatsapp/settings`, { knowledge })).status, 200);
+    setBudget(8000);
+    const shorter = await owner.patch(`${API}/whatsapp/settings`, { knowledge: [{ title: "Detalle", items: knowledge[0].items.slice(0, 20) }] });
+    assert.equal(shorter.status, 200, JSON.stringify(shorter.body));
+    const longer = await owner.patch(`${API}/whatsapp/settings`, { faq: [{ question: "¿Parqueo?", answer: "Sí, gratis." }] });
+    assert.equal(longer.status, 422);
+    assert.equal(longer.body.code, "prompt_too_long");
+  } finally {
+    if (saved === undefined) delete process.env.AGENT_MAX_SYSTEM_PROMPT_CHARS;
+    else process.env.AGENT_MAX_SYSTEM_PROMPT_CHARS = saved;
+  }
 });

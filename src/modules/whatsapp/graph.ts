@@ -23,6 +23,13 @@ const GRAPH_TIMEOUT_MS = msFromEnv("GRAPH_TIMEOUT_MS", 15_000);
 const GRAPH_MEDIA_TIMEOUT_MS = msFromEnv("GRAPH_MEDIA_TIMEOUT_MS", 30_000);
 /** Tope de una foto o audio descargado (WhatsApp permite hasta 16 MB de audio). */
 const MEDIA_MAX_BYTES = msFromEnv("WHATSAPP_MEDIA_MAX_BYTES", 16 * 1024 * 1024);
+/**
+ * Tope propio de un AUDIO (`WHATSAPP_AUDIO_MAX_BYTES`, default 3 MB): una nota de voz de
+ * WhatsApp (opus, ~16 kbps) de 2 min pesa ~250 KB y un mp3 de 2 min a 192 kbps ~2,9 MB. Lo
+ * más grande ni se baja (horas de audio que Whisper cobraría por minuto); el tope de
+ * DURACIÓN (`AGENT_AUDIO_MAX_SEC`) se aplica después, en el pipeline (./media.ts).
+ */
+const AUDIO_MAX_BYTES = msFromEnv("WHATSAPP_AUDIO_MAX_BYTES", 3 * 1024 * 1024);
 
 const MAX_SEND_ATTEMPTS = 3;
 const TOKEN_INVALID_CODE = 190;
@@ -93,6 +100,11 @@ export interface MetaSignupApi {
   registerNumber(phoneNumberId: string, token: string): Promise<boolean>;
 }
 
+/** Tope de bytes de un adjunto según su tipo. */
+function maxBytesFor(mimeType: string): number {
+  return mimeType.trim().toLowerCase().startsWith("audio/") ? Math.min(AUDIO_MAX_BYTES, MEDIA_MAX_BYTES) : MEDIA_MAX_BYTES;
+}
+
 /** Error de Graph con la marca de si vale la pena reintentar más tarde. */
 export class GraphError extends Error {
   readonly status: number | undefined;
@@ -109,6 +121,21 @@ export class GraphError extends Error {
     this.transient = options.transient;
     this.code = options.code ?? null;
     this.tokenInvalid = options.status === 401 || options.code === TOKEN_INVALID_CODE;
+  }
+}
+
+/** El adjunto pasa el tope de bytes (el de media o, si es audio, el de audio). No es transitorio. */
+export class MediaTooLargeError extends GraphError {
+  readonly bytes: number;
+  readonly maxBytes: number;
+  readonly mimeType: string;
+
+  constructor(mimeType: string, bytes: number, maxBytes: number) {
+    super(`Graph media: archivo demasiado grande (${bytes} bytes, máximo ${maxBytes})`, { transient: false });
+    this.name = "MediaTooLargeError";
+    this.mimeType = mimeType;
+    this.bytes = bytes;
+    this.maxBytes = maxBytes;
   }
 }
 
@@ -272,14 +299,17 @@ export function createGraphApi(options: GraphApiOptions = {}): WhatsAppApi & Met
         channel,
       );
       if (!meta.url) throw new GraphError("Graph media: sin URL de descarga", { transient: false });
-      if (typeof meta.file_size === "number" && meta.file_size > MEDIA_MAX_BYTES) {
-        throw new GraphError(`Graph media: archivo demasiado grande (${meta.file_size} bytes)`, { transient: false });
+      // Se chequea ANTES de bajar (con el tamaño que declara Meta) y otra vez sobre los bytes.
+      const declaredMime = meta.mime_type ?? "";
+      if (typeof meta.file_size === "number" && meta.file_size > maxBytesFor(declaredMime)) {
+        throw new MediaTooLargeError(declaredMime, meta.file_size, maxBytesFor(declaredMime));
       }
       const res = await call(meta.url, { headers: { Authorization: `Bearer ${channel.accessToken}` } }, GRAPH_MEDIA_TIMEOUT_MS);
       if (!res.ok) throw await failure(res, "descarga de media", channel);
       const buffer = Buffer.from(await res.arrayBuffer());
-      if (buffer.length > MEDIA_MAX_BYTES) throw new GraphError("Graph media: archivo demasiado grande", { transient: false });
-      return { buffer, mimeType: meta.mime_type ?? res.headers.get("content-type") ?? "application/octet-stream" };
+      const mimeType = meta.mime_type ?? res.headers.get("content-type") ?? "application/octet-stream";
+      if (buffer.length > maxBytesFor(mimeType)) throw new MediaTooLargeError(mimeType, buffer.length, maxBytesFor(mimeType));
+      return { buffer, mimeType };
     },
 
     async getPhoneNumber(channel) {

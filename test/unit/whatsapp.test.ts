@@ -16,11 +16,12 @@ const { appointmentReplyOf, directActionOf, isOptOutRequest, requestsHuman } = a
 const { BOT_NOTICE_PRIVACY_LINE, pipelineText, registerFor } = await import("../../src/modules/whatsapp/texts");
 const { humanModeExpired, windowState, WINDOW_MS } = await import("../../src/modules/whatsapp/rules");
 const { allowIngest, capStatus, detectLoop, _resetIngestBucketsForTests } = await import("../../src/modules/whatsapp/limits");
-const { createGraphApi, GraphError } = await import("../../src/modules/whatsapp/graph");
+const { createGraphApi, GraphError, MediaTooLargeError } = await import("../../src/modules/whatsapp/graph");
+const { audioDurationSec, audioMaxSec, clipTranscript, MAX_TRANSCRIPT_CHARS } = await import("../../src/modules/whatsapp/media");
 const { reminderWhen } = await import("../../src/modules/whatsapp/reminders");
 const { isAllowedPushEndpoint } = await import("../../src/modules/whatsapp/push");
 const { isTransientError } = await import("../../src/platform/net/transient");
-const { inboundBody, sign, statusBody } = await import("../helpers/whatsappFixtures");
+const { inboundBody, oggOpusAudio, sign, statusBody } = await import("../helpers/whatsappFixtures");
 
 // ── Firma y verificación ─────────────────────────────────────────────────────
 
@@ -315,6 +316,54 @@ test("Graph: descarga de media en dos pasos (URL temporal y bytes)", async () =>
   assert.equal(media.buffer.toString(), "OGG");
   assert.match(calls[0].url, /\/MEDIA1$/);
   assert.equal(calls[1].url, "https://lookaside.test/m");
+});
+
+test("Graph: un audio por encima de WHATSAPP_AUDIO_MAX_BYTES (3 MB) ni se baja; una foto de ese tamaño sí", async () => {
+  const big = 4 * 1024 * 1024;
+  const audio = fakeFetch([json(200, { url: "https://lookaside.test/a", mime_type: "audio/ogg", file_size: big })]);
+  await assert.rejects(createGraphApi({ fetch: audio.fn }).downloadMedia(channel, "AUD"), (e: unknown) => {
+    assert.ok(e instanceof MediaTooLargeError && e instanceof GraphError);
+    assert.equal(e.transient, false);
+    assert.equal(e.maxBytes, 3 * 1024 * 1024);
+    return true;
+  });
+  assert.equal(audio.calls.length, 1, "solo la consulta de metadatos: los bytes no se piden");
+
+  const photo = fakeFetch([json(200, { url: "https://lookaside.test/p", mime_type: "image/jpeg", file_size: big }), new Response(Buffer.alloc(big), { status: 200 })]);
+  const media = await createGraphApi({ fetch: photo.fn }).downloadMedia(channel, "IMG");
+  assert.equal(media.buffer.length, big);
+
+  // Sin file_size declarado: se chequea sobre los bytes bajados.
+  const undeclared = fakeFetch([json(200, { url: "https://lookaside.test/a", mime_type: "audio/mpeg" }), new Response(Buffer.alloc(big), { status: 200 })]);
+  await assert.rejects(createGraphApi({ fetch: undeclared.fn }).downloadMedia(channel, "AUD"), (e: unknown) => e instanceof MediaTooLargeError);
+});
+
+test("audio: duración del contenedor Ogg (opus) sin decodificar; null si no se puede leer", () => {
+  assert.equal(audioDurationSec(oggOpusAudio(150), "audio/ogg; codecs=opus"), 150);
+  assert.equal(audioDurationSec(oggOpusAudio(12.5), "audio/ogg"), 12.5);
+  assert.equal(audioDurationSec(oggOpusAudio(30), ""), 30, "sin tipo declarado igual se reconoce por la firma");
+  assert.equal(audioDurationSec(oggOpusAudio(30), "audio/mpeg"), null, "otro tipo: no se intenta");
+  assert.equal(audioDurationSec(Buffer.from("no es un ogg"), "audio/ogg"), null);
+  assert.equal(audioDurationSec(oggOpusAudio(30).subarray(0, 40), "audio/ogg"), null, "truncado: sin página con duración");
+});
+
+test("audio: tope de duración por env (default 2 min) y transcripción cortada a 4096", () => {
+  const saved = process.env.AGENT_AUDIO_MAX_SEC;
+  try {
+    delete process.env.AGENT_AUDIO_MAX_SEC;
+    assert.equal(audioMaxSec(), 120);
+    process.env.AGENT_AUDIO_MAX_SEC = "300";
+    assert.equal(audioMaxSec(), 300);
+    process.env.AGENT_AUDIO_MAX_SEC = "5";
+    assert.equal(audioMaxSec(), 120, "fuera de rango → default");
+  } finally {
+    if (saved === undefined) delete process.env.AGENT_AUDIO_MAX_SEC;
+    else process.env.AGENT_AUDIO_MAX_SEC = saved;
+  }
+  assert.equal(clipTranscript("  hola  "), "hola");
+  const long = clipTranscript("😀".repeat(5000));
+  assert.equal(Array.from(long).length, MAX_TRANSCRIPT_CHARS);
+  assert.ok(long.endsWith("…"));
 });
 
 test("Graph: corte de red = transitorio", async () => {
