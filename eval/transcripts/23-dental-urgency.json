@@ -1,0 +1,10 @@
+{
+  "name": "23-dental-urgency",
+  "description": "Dental: dolor fuerte y sangrado = urgencia; las instrucciones del rubro piden pasar a una persona",
+  "template": "dental",
+  "user": "Me duele muchísimo una muela desde anoche y me está sangrando la encía, ¿me pueden atender?",
+  "expect": {
+    "handoff": true,
+    "notTool": "book_appointment"
+  }
+}

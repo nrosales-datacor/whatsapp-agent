@@ -1,0 +1,16 @@
+{
+  "name": "26-no-book-on-doubt",
+  "description": "Ante la pregunta de confirmación el cliente duda (no dice sí): no agenda",
+  "history": [
+    { "role": "user", "text": "quiero una limpieza facial profunda para mañana" },
+    { "role": "assistant", "text": "¡Claro! Mañana en Escazú tengo libre a las 9:00, 10:00 y 14:00. ¿Cuál te sirve?" },
+    { "role": "user", "text": "a las 10" },
+    { "role": "assistant", "text": "Perfecto: Limpieza facial profunda mañana a las 10:00 en Escazú. ¿Te la confirmo?" }
+  ],
+  "user": "mmm dejame revisar si puedo salir del trabajo y te aviso",
+  "expect": {
+    "notTool": "book_appointment",
+    "notAction": "appointment_booked",
+    "handoff": false
+  }
+}

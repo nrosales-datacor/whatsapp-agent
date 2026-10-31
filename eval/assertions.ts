@@ -1,13 +1,16 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { INDUSTRIES, loadIndustryTemplate, type Industry } from "../src/modules/business";
+import { AI_REGISTERS, type AiRegister } from "../src/modules/whatsapp/schema";
 import type { AgentAction, AgentReply } from "../src/modules/whatsapp/agentContract";
+import { TOOL_NAMES } from "../src/modules/whatsapp/agent";
 import { isOutOfScopeReply } from "../src/modules/whatsapp/agent/texts";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos, carga de casos y ASERCIONES de las evals del agente (puerto de
 // legacy/eval/aserciones.ts). Vive aparte de `runEval.ts` a propósito: ese archivo llama a
-// OpenAI real y exige OPENAI_API_KEY; acá está la lógica pura, cubierta por
+// OpenAI real (sin OPENAI_API_KEY se salta); acá está la lógica pura, cubierta por
 // test/unit/evalHarness.test.ts (determinista, corre en `npm test`), para que un bug en
 // las aserciones no se disfrace de "el agente falló".
 // ─────────────────────────────────────────────────────────────────────────────
@@ -37,27 +40,62 @@ export interface Expectation {
   buttons?: boolean;
   /** Debe haber una acción de este tipo en el resultado. */
   action?: AgentAction["type"];
+  /** NO debe haber una acción de este tipo (p. ej. que no quede ninguna cita agendada). */
+  notAction?: AgentAction["type"];
   /** La respuesta debe contener TODOS estos textos (sin distinguir mayúsculas). */
   contains?: string[];
   /** La respuesta debe contener AL MENOS UNO. */
   containsAny?: string[];
+  /** Por CADA grupo, la respuesta contiene al menos uno de sus textos (varios `containsAny` a la vez). */
+  containsEach?: string[][];
   /** La respuesta NO debe contener ninguno. */
   notContains?: string[];
   /** Toda tool con argumento `date` usa el año en curso (no inventa años). */
   currentYearDates?: boolean;
   /** La respuesta no menciona NINGÚN monto (no inventa precios). */
   noAmount?: boolean;
+  /**
+   * Con `noAmount`: montos REALES del catálogo que sí puede mencionar (p. ej. el precio de
+   * la valoración al explicar que el tratamiento se cotiza ahí). Se quitan antes de buscar montos.
+   */
+  allowedAmounts?: string[];
   /** Una llamada a `tool` con estos argumentos (comparados como texto / JSON). */
   argIncludes?: { tool: string; args: Record<string, ExpectedArg> };
+}
+
+/** Regla de upsell de un caso, por NOMBRE de servicio (se resuelve a ids al sembrar). */
+export interface EvalUpsellRule {
+  /** A quien agenda este servicio… */
+  service: string;
+  /** …se le ofrece agregar este. */
+  suggest: string;
 }
 
 export interface EvalCase {
   name: string;
   description?: string;
+  /**
+   * Caso crítico ("no inventa precios", "no agenda fuera de horario"): exige el 100 % de
+   * las repeticiones en verde, no la tasa mínima general (`EVAL_MIN_PASS_RATE`).
+   */
+  critical?: boolean;
+  /**
+   * Plantilla de rubro del negocio. "aesthetics" (default): el negocio demo de `seed:dev`
+   * (dos sucursales, precios y agenda de la semana). Otra: un negocio nuevo de ese rubro
+   * creado como un alta real, con una sola sucursal "Escazú" y precios de demo (eval/world.ts).
+   */
+  template?: Industry;
+  /** Registro del agente (vos / tu / usted). Sin el campo, el de la plantilla. */
+  register?: AiRegister;
+  /** Crecimiento (I6) activo en el turno. Sin el campo: ni cotizaciones ni upsell. */
+  growth?: { quoteRecovery?: boolean; upsell?: EvalUpsellRule[] };
   /** "single" (default): el número atiende Escazú. "all": atiende todas las sucursales. */
   channel?: "single" | "all";
-  /** Turnos previos (de hoy, en orden). */
-  history?: { role: "user" | "assistant"; text: string }[];
+  /**
+   * Turnos previos (de hoy, en orden). `byHuman` en un mensaje del asistente = lo escribió
+   * una persona del equipo desde la bandeja (el agente lo ve con una nota aparte).
+   */
+  history?: { role: "user" | "assistant"; text: string; byHuman?: boolean }[];
   /** Citas del cliente a sembrar antes de correr (sucursal Escazú, cualquier especialista). */
   seedAppointments?: { service: string; inDays: number; time: string }[];
   /** Mensaje del cliente en este turno. */
@@ -126,16 +164,21 @@ export function evaluate(
   if (expect.action && !result.actions.some((a) => a.type === expect.action)) {
     failures.push(`esperaba la acción "${expect.action}"; hubo: ${result.actions.map((a) => a.type).join(", ") || "(ninguna)"}`);
   }
+  if (expect.notAction && result.actions.some((a) => a.type === expect.notAction)) failures.push(`NO esperaba la acción "${expect.notAction}", pero ocurrió`);
 
   for (const s of expect.contains ?? []) if (!lower.includes(s.toLowerCase())) failures.push(`la respuesta no contiene "${s}"`);
   if (expect.containsAny && !expect.containsAny.some((s) => lower.includes(s.toLowerCase()))) {
     failures.push(`la respuesta no menciona ninguno de: ${expect.containsAny.join(", ")}`);
   }
+  for (const group of expect.containsEach ?? []) {
+    if (!group.some((s) => lower.includes(s.toLowerCase()))) failures.push(`la respuesta no menciona ninguno de: ${group.join(", ")}`);
+  }
   for (const s of expect.notContains ?? []) if (lower.includes(s.toLowerCase())) failures.push(`la respuesta no debería contener "${s}"`);
 
   if (expect.noAmount) {
-    const pattern = AMOUNT_PATTERNS.find((p) => p.test(text));
-    if (pattern) failures.push(`la respuesta menciona un monto ("${text.match(pattern)?.[0]?.trim()}") y no debería`);
+    const checked = (expect.allowedAmounts ?? []).reduce((t, amount) => t.split(amount).join(" "), text);
+    const pattern = AMOUNT_PATTERNS.find((p) => p.test(checked));
+    if (pattern) failures.push(`la respuesta menciona un monto ("${checked.match(pattern)?.[0]?.trim()}") y no debería`);
   }
 
   if (expect.argIncludes) {
@@ -177,11 +220,59 @@ export function mentionedTools(expect: Expectation): string[] {
   return [expect.tool, expect.notTool, ...(expect.anyTool ?? []), expect.argIncludes?.tool].filter((n): n is string => typeof n === "string");
 }
 
-/** Servicios que menciona un caso (placeholders y citas sembradas), para validar que existan en el seed. */
+/** Servicios que menciona un caso (placeholders, citas sembradas y upsell), para validar que existan en el seed. */
 export function mentionedServices(c: EvalCase): string[] {
   const fromArgs = Object.values(c.expect.argIncludes?.args ?? {})
     .flatMap((v) => (Array.isArray(v) ? v : [v]))
     .filter((v): v is string => typeof v === "string" && v.startsWith(SERVICE_PLACEHOLDER))
     .map((v) => v.slice(SERVICE_PLACEHOLDER.length));
-  return [...fromArgs, ...(c.seedAppointments ?? []).map((s) => s.service)];
+  const fromUpsell = (c.growth?.upsell ?? []).flatMap((r) => [r.service, r.suggest]);
+  return [...fromArgs, ...(c.seedAppointments ?? []).map((s) => s.service), ...fromUpsell];
+}
+
+/** Plantilla de rubro del caso (default: estética, el negocio de `seed:dev`). */
+export function caseTemplate(c: EvalCase): Industry {
+  return c.template ?? "aesthetics";
+}
+
+const GROWTH_TOOLS: Record<string, "quote" | "upsell"> = { record_quote: "quote", add_service_to_appointment: "upsell", decline_upsell: "upsell" };
+
+/**
+ * Errores de forma de un caso (vacío = válido): nombre y mensaje, plantilla y registro
+ * existentes, tools reales (y las de crecimiento solo con su `growth` activo), servicios de
+ * la plantilla elegida y `byHuman` solo en mensajes del asistente. Lo usan el test del
+ * arnés y `runEval` antes de gastar tokens: un typo no puede leerse como "el agente falló".
+ */
+export function validateCase(c: EvalCase): string[] {
+  const errors: string[] = [];
+  const label = c?.name || "(sin nombre)";
+  if (!c?.name?.trim()) errors.push("el caso no tiene nombre");
+  if (!c?.user?.trim()) errors.push(`${label}: falta el mensaje del cliente ("user")`);
+  if (!c?.expect || typeof c.expect !== "object") return [...errors, `${label}: falta "expect"`];
+  if (c.template !== undefined && !INDUSTRIES.includes(c.template)) errors.push(`${label}: la plantilla "${c.template}" no existe`);
+  if (c.register !== undefined && !AI_REGISTERS.includes(c.register)) errors.push(`${label}: el registro "${c.register}" no existe`);
+  for (const t of mentionedTools(c.expect)) {
+    if (!TOOL_NAMES.includes(t)) errors.push(`${label}: la tool "${t}" no existe`);
+    // Que se espere usar una tool de crecimiento sin activarla haría fallar el caso por el arnés.
+    const kind = GROWTH_TOOLS[t];
+    const required = t === c.expect.tool || t === c.expect.argIncludes?.tool || (c.expect.anyTool ?? []).includes(t);
+    if (required && kind === "quote" && !c.growth?.quoteRecovery) errors.push(`${label}: espera "${t}" sin "growth.quoteRecovery"`);
+    if (required && kind === "upsell" && !c.growth?.upsell?.length) errors.push(`${label}: espera "${t}" sin reglas en "growth.upsell"`);
+  }
+  if (c.template === undefined || INDUSTRIES.includes(c.template)) {
+    const template = caseTemplate(c);
+    const catalog = loadIndustryTemplate(template).catalog.categories.flatMap((cat) => cat.services);
+    for (const name of mentionedServices(c)) {
+      const service = catalog.find((s) => s.name === name);
+      if (!service) errors.push(`${label}: el servicio "${name}" no está en la plantilla "${template}"`);
+      // El agente solo ve lo que se agenda en línea: con otro, ni el mejor modelo pasa el caso.
+      else if (service.onlineBooking === false) errors.push(`${label}: el servicio "${name}" no se agenda en línea (el agente no lo ve)`);
+    }
+  }
+  for (const m of c.history ?? []) {
+    if (m.role !== "user" && m.role !== "assistant") errors.push(`${label}: rol de historial inválido "${String(m.role)}"`);
+    if (m.byHuman && m.role !== "assistant") errors.push(`${label}: "byHuman" solo va en mensajes del asistente`);
+  }
+  if (c.channel === "all" && caseTemplate(c) !== "aesthetics") errors.push(`${label}: "channel: all" solo tiene sentido con el negocio de dos sucursales (estética)`);
+  return errors;
 }

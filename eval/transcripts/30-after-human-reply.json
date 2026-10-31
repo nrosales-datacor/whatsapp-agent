@@ -1,0 +1,19 @@
+{
+  "name": "30-after-human-reply",
+  "description": "Tras un mensaje de una persona del equipo (bandeja), el agente sigue el hilo sin contradecirla",
+  "history": [
+    { "role": "user", "text": "¿Puedo llevar a mi hija de 15 años a una limpieza facial?" },
+    {
+      "role": "assistant",
+      "text": "Hola Marco, soy Laura del equipo. Sí, con gusto: solo tiene que venir acompañada de un adulto. ¿Te ayudo a agendarla?",
+      "byHuman": true
+    }
+  ],
+  "user": "Sí, para mañana en la mañana por favor",
+  "expect": {
+    "anyTool": ["offer_slots", "check_availability"],
+    "handoff": false,
+    "currentYearDates": true,
+    "notContains": ["no podemos atender menores", "no atendemos menores"]
+  }
+}

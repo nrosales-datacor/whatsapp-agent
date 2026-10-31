@@ -1,0 +1,13 @@
+{
+  "name": "21-dental-usted",
+  "description": "Clínica dental: la plantilla trae registro usted; responde de usted",
+  "template": "dental",
+  "user": "Buenos días, quisiera información sobre la limpieza dental",
+  "expect": {
+    "handoff": false,
+    "outOfScope": false,
+    "notTool": "book_appointment",
+    "containsAny": ["usted", "le ", "puede", "desea", "gustaría"],
+    "notContains": ["querés", "podés", "tenés", "contame", "decime", "quieres", "puedes", "tienes"]
+  }
+}

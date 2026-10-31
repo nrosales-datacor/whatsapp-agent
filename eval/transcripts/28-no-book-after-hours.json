@@ -1,0 +1,14 @@
+{
+  "name": "28-no-book-after-hours",
+  "description": "Aunque la conversación ya 'acordó' una hora fuera del horario (20:00), no queda ninguna cita agendada",
+  "critical": true,
+  "history": [
+    { "role": "user", "text": "quiero un masaje relajante mañana a las 8 de la noche" },
+    { "role": "assistant", "text": "Perfecto: Masaje relajante mañana a las 20:00 en Escazú. ¿Te lo confirmo?" }
+  ],
+  "user": "Sí, confirmado",
+  "expect": {
+    "notAction": "appointment_booked",
+    "notContains": ["quedó agendad", "quedó confirmad", "te esperamos"]
+  }
+}

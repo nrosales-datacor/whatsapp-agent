@@ -1,0 +1,16 @@
+{
+  "name": "32-quote-recorded",
+  "description": "Con el rescate de cotizaciones activo: da el precio y registra la cotización (record_quote) sin agendar",
+  "growth": {
+    "quoteRecovery": true
+  },
+  "user": "¿Cuánto cuesta el drenaje linfático?",
+  "expect": {
+    "tool": "record_quote",
+    "argIncludes": { "tool": "record_quote", "args": { "service_id": "$service:Drenaje linfático" } },
+    "containsAny": ["24 000", "24.000", "24000", "24,000"],
+    "notTool": "book_appointment",
+    "handoff": false,
+    "notContains": ["seguimiento", "cotización registrada", "anoté"]
+  }
+}

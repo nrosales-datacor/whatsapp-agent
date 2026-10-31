@@ -1,0 +1,11 @@
+{
+  "name": "29-voice-note",
+  "description": "Nota de voz transcrita ([audio] …): la atiende como texto, sin decir que no puede escuchar audios",
+  "user": "[audio] Hola, buenas, quería saber si mañana en la tarde tienen campo para un masaje relajante",
+  "expect": {
+    "anyTool": ["offer_slots", "check_availability"],
+    "handoff": false,
+    "currentYearDates": true,
+    "notContains": ["no puedo escuchar", "no puedo reproducir", "no puedo oír", "no escucho audio"]
+  }
+}
