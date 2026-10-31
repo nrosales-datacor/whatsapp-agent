@@ -1,0 +1,22 @@
+{
+  "name": "35-upsell-declined",
+  "description": "Upsell rechazado: lo anota (decline_upsell), no agrega nada y no insiste",
+  "growth": {
+    "upsell": [{ "service": "Limpieza facial profunda", "suggest": "Hidratación facial" }]
+  },
+  "seedAppointments": [{ "service": "Limpieza facial profunda", "inDays": 1, "time": "10:00" }],
+  "history": [
+    { "role": "user", "text": "Sí, confirmo la limpieza de mañana a las 10" },
+    {
+      "role": "assistant",
+      "text": "¡Listo, Marco! Quedó tu Limpieza facial profunda mañana a las 10:00 en Escazú. ¿Te agrego una Hidratación facial (₡18 000, 45 min) justo después?"
+    }
+  ],
+  "user": "No gracias, solo la limpieza",
+  "expect": {
+    "tool": "decline_upsell",
+    "notTool": "add_service_to_appointment",
+    "notAction": "appointment_service_added",
+    "handoff": false
+  }
+}

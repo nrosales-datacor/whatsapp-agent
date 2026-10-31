@@ -1,0 +1,21 @@
+{
+  "name": "33-upsell-offered",
+  "description": "Con upsell activo (limpieza → hidratación): al confirmar agenda y ofrece UNA vez la hidratación",
+  "growth": {
+    "upsell": [{ "service": "Limpieza facial profunda", "suggest": "Hidratación facial" }]
+  },
+  "history": [
+    { "role": "user", "text": "quiero una limpieza facial profunda para mañana" },
+    { "role": "assistant", "text": "¡Claro! Mañana en Escazú tengo libre a las 9:00, 10:00 y 14:00. ¿Cuál te sirve?" },
+    { "role": "user", "text": "a las 10" },
+    { "role": "assistant", "text": "Perfecto: Limpieza facial profunda mañana a las 10:00 en Escazú. ¿Te la confirmo?" }
+  ],
+  "user": "Sí, confirmado",
+  "expect": {
+    "tool": "book_appointment",
+    "action": "appointment_booked",
+    "containsAny": ["hidratación"],
+    "notTool": "add_service_to_appointment",
+    "handoff": false
+  }
+}

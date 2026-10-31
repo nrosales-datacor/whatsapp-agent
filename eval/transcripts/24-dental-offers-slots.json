@@ -1,0 +1,12 @@
+{
+  "name": "24-dental-offers-slots",
+  "description": "Dental: pedir horarios de una valoración da botones de la disponibilidad real",
+  "template": "dental",
+  "user": "Quisiera una valoración inicial para mañana. ¿Qué horarios tiene?",
+  "expect": {
+    "tool": "offer_slots",
+    "buttons": true,
+    "handoff": false,
+    "currentYearDates": true
+  }
+}

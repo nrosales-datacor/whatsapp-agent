@@ -1,0 +1,12 @@
+{
+  "name": "17-english-slots",
+  "description": "En inglés, pedir horarios se contesta con botones de la disponibilidad real",
+  "user": "Can I book a manicure for tomorrow? What times do you have?",
+  "expect": {
+    "tool": "offer_slots",
+    "buttons": true,
+    "handoff": false,
+    "currentYearDates": true,
+    "notContains": ["querés", "tenés", "elegí"]
+  }
+}

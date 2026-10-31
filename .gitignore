@@ -40,3 +40,7 @@ docs/ux-review/**/*.png
 
 # Worktrees temporales de agentes en paralelo (Agent tool, isolation: "worktree")
 .claude/worktrees/
+
+# Resultados de cada corrida de evals (`npm run eval`). La línea base que se versiona es
+# eval/baseline.json (fuera de esta carpeta).
+eval/results/

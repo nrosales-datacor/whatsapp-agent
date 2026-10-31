@@ -1,0 +1,11 @@
+{
+  "name": "18-nails-catalog-price",
+  "description": "Salón de uñas (otra plantilla): precio de lista del catálogo de uñas, sin agendar",
+  "template": "nails",
+  "user": "Hola, ¿cuánto sale la manicura semipermanente?",
+  "expect": {
+    "containsAny": ["12 000", "12.000", "12000", "12,000"],
+    "notTool": "book_appointment",
+    "handoff": false
+  }
+}

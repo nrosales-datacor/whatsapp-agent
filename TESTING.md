@@ -6,7 +6,8 @@
 > **Este doc es un plan, no un estado.** A medida que se implemente cada ángulo, marcar su casilla y anotar
 > el comando/archivo real. Mantener vivo igual que `ROADMAP.md`.
 >
-> **Última actualización:** 2026-07-14 (ángulos 1–5, 7, 8 y 9 completos; ángulo 6 implementado por la
+> **Última actualización:** 2026-10-31 (ángulo 4, evals: arnés real con 35 casos, umbral y tope de gasto; falta la
+> primera corrida con OpenAI y la línea base). Antes, 2026-07-14 (ángulos 1–5, 7, 8 y 9 completos; ángulo 6 implementado por la
 > UI in-memory — los flujos que exigen base de datos quedan documentados para la corrida con Postgres;
 > ángulo 10 es QA manual en dispositivo, no automatizable)
 
@@ -101,46 +102,112 @@ test → agente 100% determinista). `test/helpers/setupEnv.ts` fija `OPENAI_API_
 **Nota:** la sincronización a Google Calendar en `agendar_cita` es no-op sin `GCAL_*` (no se ejerce acá); su lógica pura
 ya está cubierta indirectamente por el repo. `notificarOperador` sin VAPID solo loguea, así que tampoco toca red.
 
-### 4. ✅ Evals del agente (LLM — reescritas para Selyon)
+### 4. 🟡 Evals del agente (LLM — arnés listo; falta la primera corrida real y la línea base)
 
-Es el ángulo de **calidad/valor**: ningún unit test dice si el bot cotiza bien, elige el
-servicio correcto o escala en vez de improvisar. El harness original era del piloto Lavacar
-Rosales (11 transcripciones con reglas de pulido/parabrisas) y se eliminó en el pivote a
-Selyon (B7); **se rearmó sobre el tenant Selyon** con 14 casos.
-
-`npm run eval` corre `correrAgente` contra **OpenAI real** con las transcripciones de
-`eval/transcripciones/*.json` y aplica aserciones laxas. **No corre en CI** (cuesta tokens):
-es manual o nocturno, y necesita `OPENAI_API_KEY`.
+Es el ángulo de **calidad/valor**: ningún unit test dice si el agente cotiza bien, elige el
+servicio correcto, respeta el horario o escala en vez de improvisar. `npm run eval` corre el
+`AgentRunner` **real** (`createAgentRunner`, `src/modules/whatsapp/agent/runner.ts`) contra
+**OpenAI real**, con conversaciones fijas y comprobaciones laxas y deterministas. **No corre en
+`npm test` ni en CI** (cuesta tokens; el gate automático es del prompt `tests-de-regresion`).
 
 ```
 eval/
-  correrEval.ts     # runner: espía de fetch (lee los tool_calls) + main
-  aserciones.ts     # tipos, carga de casos y aserciones (lógica pura, testeada)
-  fixtureEval.ts    # tenant Selyon de eval (KB y perfil completos)
-  transcripciones/  # 14 casos .json
+  runEval.ts      # main: carga y valida los casos, corre cada uno N veces, umbral, tope de gasto, reporte
+  assertions.ts   # tipos (EvalCase, Expectation), carga y validación de casos, comprobaciones (lógica pura)
+  report.ts       # umbral, tope de gasto, JSON de resultados y línea base (lógica pura)
+  world.ts        # el negocio de cada caso: demo de seed:dev (estética) u otra plantilla como un alta real
+  transcripts/    # 35 casos .json (uno por archivo)
+  results/        # una corrida = un JSON (gitignored)
+  baseline.json   # línea base versionada (se crea con la primera corrida real completa)
 ```
 
-**Variables:** `EVAL_REPETICIONES=N` corre cada caso N veces (el agente no es determinista:
-⚠️ = pasó en unas y falló en otras — así se mide la tasa); `EVAL_CASO=<substring>` filtra
-por nombre al iterar sobre un caso puntual.
+**Sobre qué corre.** Todo en un PGlite efímero (nunca `DATABASE_URL` ni `PGLITE_DIR`); el
+agente no manda nada por WhatsApp ni sincroniza nada. "Ahora" es el próximo martes 09:00 de
+Costa Rica, así "mañana" siempre tiene atención. Cada caso siembra su negocio:
 
-**Qué cubren los 14 casos:** la política de **no dar precios por chat** (incluido el caso
-duro: el cliente presionando por un número — `03-insiste-en-precio`), elección de la
-herramienta correcta, distinguir los dos servicios agendables (diagnóstico vs. demo), no
-inventar horarios ni años, escalada ante lo desconocido vs. deflección amable de lo ajeno
-al negocio, gestión de citas (consultar/reprogramar/cancelar) y el upsell de 1.2.
+- **Estética** (default): el demo de `seed:dev` (Escazú y Heredia, precios, equipo y citas de la semana).
+- **Otra plantilla** (`"template": "dental" | "nails" | "generic"`): un negocio nuevo de ese
+  rubro creado con `createBusiness` (terminología, catálogo y registro de la plantilla), una
+  sucursal "Escazú" en el horario por defecto del alta, dos personas y los precios de demo de
+  `TEMPLATE_PRICES` (`eval/world.ts`). Uñas y dental son los rubros prioritarios para el primer cliente.
 
-**Aislamiento (importante):** el runner **borra `GOOGLE_*` y `WHATSAPP_ACCESS_TOKEN`** del
-entorno después de cargar el `.env`. Sin eso, los casos que agendan sincronizan eventos
-**reales** al Google Calendar del negocio y hay que borrarlos a mano (ya pasó una vez: ver
-la nota de verificación de C2.1 en el ROADMAP). Funciona porque ambos módulos leen esas
-variables perezosamente y caen a su no-op. `OPENAI_API_KEY` se conserva: es lo que se evalúa.
+**Un caso** (`eval/transcripts/NN-nombre.json`) tiene `name`, `description`, `user` (el mensaje
+del turno) y `expect`; opcionales: `template`, `register` (`vos` / `tu` / `usted`; sin él, el
+de la plantilla), `growth` (`{ "quoteRecovery": true }` y/o `{ "upsell": [{ "service", "suggest" }] }`,
+por nombre de servicio), `channel: "all"` (el número atiende las dos sucursales), `history`
+(turnos previos de hoy; `"byHuman": true` en un mensaje del asistente = lo escribió una persona
+desde la bandeja), `seedAppointments` y `critical`. Las comprobaciones (`Expectation`): `tool`,
+`anyTool`, `notTool`, `noTools`, `argIncludes` (con `"$service:<nombre>"`), `handoff`,
+`outOfScope`, `buttons`, `action`, `notAction`, `contains`, `containsAny`, `containsEach`,
+`notContains`, `noAmount` (+ `allowedAmounts`: montos reales que sí puede citar) y `currentYearDates`.
 
-**El harness se testea a sí mismo:** `test/unit/evalHarness.test.ts` (15 casos, en `npm test`,
-sin red) cubre las aserciones en ambos sentidos, que los JSON estén bien formados, que **toda
-herramienta esperada exista de verdad en `TOOLS`** y que los `servicioId` existan en el
-fixture. Sin esto, un typo (`agendar_citas`) haría fallar una eval por el motivo equivocado y
-se leería como "el agente se rompió".
+**Qué cubren los 35 casos:** saludo y registro (vos, tú, usted), precio inventado vs. de
+catálogo vs. "se cotiza", horarios con botones y año correcto, agendar / consultar /
+reprogramar / cancelar con confirmación previa, **confirmación negativa** (eligió hora sin
+"sí", o duda → no agenda), **día cerrado y hora fuera de horario** (aunque el historial ya
+"acordó" las 20:00, no queda ninguna cita), fuera de alcance vs. pasar a una persona (pedido
+explícito, alergia, urgencia dental), sucursal a elegir, **cliente en inglés**, **uñas** (precio,
+diseño de precio variable → foto de referencia, horarios) y **dental** (usted, "se cotiza",
+urgencia, horarios), **nota de voz** (`[audio] …`), **mensajes tras una persona del equipo**
+(sigue el hilo; no vuelve a escalar lo que ya autorizó) y **crecimiento**: cotización
+(`record_quote`) y upsell ofrecido, aceptado (`add_service_to_appointment`) y rechazado
+(`decline_upsell`). La inyección y extracción del prompt son del prompt `prompt-injection`.
+
+**Cómo correrlas:**
+
+| Comando | Qué hace |
+|---|---|
+| `EVAL_DRY_RUN=1 npm run eval` | Sin OpenAI ni tokens: valida los casos, siembra el mundo de cada uno y corre el runner con un modelo de mentira (no evalúa las comprobaciones). Sale con 0 si el arnés está sano. |
+| `npm run eval` | Una pasada con el modelo de `OPENAI_MODEL` (default `gpt-4o-mini`). |
+| `EVAL_REPEAT=3 npm run eval` | Cada caso 3 veces (el agente no es determinista): mide la tasa por caso. |
+| `EVAL_CASE=upsell npm run eval` | Solo los casos cuyo nombre contiene el texto. |
+| `EVAL_VERBOSE=1 …` | Muestra en consola la respuesta de los casos que fallan (no va al JSON). |
+| `EVAL_REPEAT=3 EVAL_WRITE_BASELINE=1 npm run eval` | Además guarda `eval/baseline.json` (solo si la corrida es completa, sin `EVAL_CASE` y con 3+ repeticiones). |
+
+Necesita `OPENAI_API_KEY` de **desarrollo** (nunca la de producción) en el entorno o en `.env`.
+**Sin key no corre nada:** imprime "Evals SALTADAS", no escribe resultados y sale con 0 (no
+finge resultados). Los casos inválidos (tool o servicio inexistente, servicio que no se
+agenda en línea, tool de crecimiento sin su `growth`, `byHuman` en un mensaje del cliente)
+frenan la corrida con código 2 antes de gastar un token.
+
+**Cuándo correrlas:** antes de mergear un cambio del **prompt** (`src/modules/whatsapp/agent/prompt.ts`),
+de las **tools** (`tools.ts`: definiciones, argumentos o lo que devuelven), del **modelo**
+(`OPENAI_MODEL`) o de la temperatura / pasos del runner, y de las plantillas de rubro (`ai` de
+`src/modules/business/templates/*.json`). Con `EVAL_REPEAT=3` y comparando con la línea base;
+si el cambio la mejora a propósito, se regraba `eval/baseline.json` en el mismo PR.
+
+**Cómo leer el umbral.** Un caso pasa si su tasa (verdes / repeticiones) llega a
+`EVAL_MIN_PASS_RATE` (default **0,9**); los `critical` exigen **100 %** ("no inventa precios":
+02 y 22; "no agenda fuera de horario": 27 y 28). Con `EVAL_REPEAT=3`, 0,9 significa 3 de 3
+(2/3 = 67 %): el margen del 90 % aparece desde 10 repeticiones (9/10). En consola: ✅ todas
+verdes, 🟡 alguna roja pero sobre el umbral, ❌ bajo el umbral, ⏭️ sin correr (tope de gasto),
+y "(línea base 3/3)" al lado si hay `eval/baseline.json`. Código de salida: 0 todo sobre el
+umbral; 1 algún caso debajo o corrida incompleta; 2 casos o variables inválidos.
+
+**Tope de gasto.** `EVAL_MAX_COST_USD` (default **US$1** por corrida) con el costo estimado por
+las tarifas de `src/modules/whatsapp/agent/cost.ts`. Se mira entre turnos: al alcanzarlo la
+corrida se corta (un turno de más cuesta centavos), los casos restantes quedan sin correr y no
+sirve de línea base; si al ritmo actual no va a alcanzar, avisa temprano. Referencia
+(estimación, no medida contra OpenAI): cada llamada al modelo lleva ~4 000 tokens de entrada
+(prompt + tools de los casos, medido con `buildMessages`) y un turno hace 1–3 llamadas; 35
+casos × 3 ≈ 105 turnos ≈ US$0,10–0,20 con `gpt-4o-mini`. Con `gpt-4o` (~16 veces más caro) el
+tope de US$1 corta la corrida: subilo a conciencia (`EVAL_MAX_COST_USD=4`).
+
+**Resultado.** Cada corrida real escribe `eval/results/<AAAA-MM-DD-HHMM>-<modelo>.json`:
+modelo, fecha, repeticiones, umbral, costo, tokens y, por caso, repeticiones, verdes, tasa,
+tasa exigida, si pasó y los motivos de fallo de las comprobaciones. **Sin datos personales:** no
+guarda las respuestas del agente; el cliente y el negocio son ficticios (`seed:dev` y `eval/world.ts`).
+
+**El arnés se testea a sí mismo:** `test/unit/evalHarness.test.ts` (en `npm test`, sin red)
+valida que haya ≥ 25 casos válidos contra la plantilla que eligen (tools reales, servicios
+que el agente ve, crecimiento activo si se esperan sus tools), que estén los grupos de arriba,
+las comprobaciones en ambos sentidos, el umbral y el reporte (sin respuestas), siembra el mundo
+de cada plantilla, corre con un **modelo guionado** los casos de agenda, horario y crecimiento
+para probar que son alcanzables (un caso imposible se leería como "el agente falló": así salió
+que `Peeling químico` no se agenda en línea), y que sin `OPENAI_API_KEY` la corrida se salta.
+
+**Pendiente:** la primera corrida real con `EVAL_REPEAT=3` y su `eval/baseline.json` (todavía
+no hay key de OpenAI de desarrollo). Hasta entonces no hay tasa de acierto medida.
 
 ### 5. ✅ Fiabilidad y concurrencia (validar lo que B1/B4 prometen)
 
@@ -305,8 +372,8 @@ test/
   e2e-panel/       # Playwright: servidor.ts (server E2E), *.spec.ts, constantes.ts
   helpers/         # fabricadores de tenant/cita/conversación, mock de Graph/OpenAI
 eval/              # evals del agente contra OpenAI real (ángulo 4, NO en CI)
-  correrEval.ts    #   runner + espía de tool_calls; aserciones.ts, fixtureEval.ts (Selyon)
-  transcripciones/ #   14 casos .json
+  runEval.ts       #   main; assertions.ts, report.ts (lógica pura), world.ts (negocio de cada caso)
+  transcripts/     #   35 casos .json; results/ (gitignored) y baseline.json
 playwright.config.ts  # webServer = test/e2e-panel/servidor.ts, workers:1
 scripts/
   verificarMigraciones.ts  # guardrail de drift (ángulo 7)
@@ -317,7 +384,7 @@ scripts/
 "scripts": {
   "test": "tsx --test test/unit/*.test.ts test/tenant/*.test.ts test/e2e-webhook/*.test.ts test/reliability/*.test.ts test/security/*.test.ts",
   "test:e2e": "npm run web:build && playwright test",  // panel (build + Playwright)
-  "eval": "tsx eval/correrEval.ts",                    // agente vs. OpenAI real (ángulo 4, NO en CI)
+  "eval": "tsx eval/runEval.ts",                       // agente vs. OpenAI real (ángulo 4, NO en CI)
   "db:check": "tsx scripts/verificarMigraciones.ts"    // drift de schema (ángulo 7)
 }
 ```

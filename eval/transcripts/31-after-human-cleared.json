@@ -1,0 +1,20 @@
+{
+  "name": "31-after-human-cleared",
+  "description": "Una persona del equipo ya autorizó el caso de salud: el agente no vuelve a escalar y busca horario",
+  "history": [
+    { "role": "user", "text": "Quiero una limpieza facial pero hace un mes tuve una reacción con una crema" },
+    { "role": "assistant", "text": "Dejame consultarlo con el equipo y te escriben en un momento." },
+    {
+      "role": "assistant",
+      "text": "Hola Marco, soy Ana, especialista. Ya revisé tu caso: sí podés hacerte la limpieza facial profunda, usamos productos hipoalergénicos. Agendala cuando gustés.",
+      "byHuman": true
+    }
+  ],
+  "user": "Genial, gracias. Entonces quiero una para mañana, ¿qué horas hay?",
+  "expect": {
+    "tool": "offer_slots",
+    "buttons": true,
+    "handoff": false,
+    "currentYearDates": true
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "27-no-book-closed-day",
+  "description": "Pide un día en que la sucursal está cerrada (domingo): no agenda y ofrece otro día",
+  "critical": true,
+  "user": "Quiero una limpieza facial profunda este domingo a las 10 de la mañana",
+  "expect": {
+    "notTool": "book_appointment",
+    "notAction": "appointment_booked",
+    "handoff": false
+  }
+}
