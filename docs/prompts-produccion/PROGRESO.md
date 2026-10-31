@@ -46,11 +46,11 @@ Tres carriles a la vez, cada agente en su worktree; preguntas y merges a `prod/r
 | smoke-tests | hecho (`0137348`, mergeado) | `prod/smoke-tests` | `0296c2b` | Con el servidor nuevo: ver en Actions el primer "Smoke post-deploy" (5 ✅) y probar una vez el rollback manual. Confirmar que nginx/Caddy reenvían `Host` (si no, el login falso da 403). Avisar que un `invalid_credentials` de `smoke-test@selyon-smoke.invalid` por deploy es esperable. Primer push: job `e2e` en verde con el arranque sembrado. |
 | rotar-llaves | listo, espera merge (`cc896de`, solo docs: DEPLOY.md §26) | `prod/rotar-llaves` | `cabf4a5` | URGENTE (DEPLOY.md §26.1): desactivar `lavacar-rosales` por SQL en el Supabase viejo y reiniciar; cargar `CHECK_SECRETS_DENYLIST`; rotar la key de OpenAI y los secretos de Meta del sistema viejo. Elegir gestor de contraseñas (recomendado: Bitwarden). Decidir si el stack nuevo usa app de Meta propia. **Antes del primer push a `main` del stack nuevo: configurar `DEPLOY_HOST`/`DEPLOY_USER`/`DEPLOY_DIR`/`BASE_URL` y una deploy key nueva — hoy el CI apunta por defecto al droplet viejo** (§26.4). Validar el calendario de rotación propuesto. |
 | evals | listo, espera merge (`957f46c`) | `prod/evals` | `cabf4a5` | Conseguir `OPENAI_API_KEY` de desarrollo y correr `EVAL_REPEAT=3 EVAL_WRITE_BASELINE=1 npm run eval` (tope US$1, ~US$0,10–0,20 con `gpt-4o-mini`); revisar rojos; commitear `eval/baseline.json` y marcar P1.16 ✅ + quitar el "Falta" de I2. Nota: con muchos agentes en paralelo, `test/reliability/agent.test.ts` cancela 4 tests por carga (pasa 21/21 sin carga; mismo comportamiento en la base). |
-| privacidad-y-terminos | en curso (carril C; respaldo en `wip/privacidad-y-terminos`) | `prod/privacidad-y-terminos` | `cabf4a5` | — |
-| tests-unitarios | en curso (carril D; respaldo en `wip/tests-unitarios`) | `prod/tests-unitarios` | `bf99b79` | — |
-| error-tracking | en curso (carril E; respaldo en `wip/error-tracking`) | `prod/error-tracking` | `a3e04ed` | — |
-| alertas | en curso (carril F; respaldo en `wip/alertas`) | `prod/alertas` | `a3e04ed` | — |
-| limites-de-tokens | en curso (carril G; respaldo en `wip/limites-de-tokens`) | `prod/limites-de-tokens` | `a3e04ed` | — |
+| privacidad-y-terminos | commiteado (`87bf4ca`), falta revisión del orquestador y merge | `prod/privacidad-y-terminos` | `cabf4a5` | (se completa al revisar) |
+| tests-unitarios | commiteado (`c5e5cbd`), falta revisión del orquestador y merge | `prod/tests-unitarios` | `bf99b79` | (se completa al revisar) |
+| error-tracking | en curso (carril E, relanzado tras reinicio; respaldo en `wip/error-tracking`) | `prod/error-tracking` | `a3e04ed` | — |
+| alertas | en curso (carril F, relanzado tras reinicio; respaldo en `wip/alertas`) | `prod/alertas` | `a3e04ed` | — |
+| limites-de-tokens | en curso (carril G, relanzado tras reinicio; respaldo en `wip/limites-de-tokens`) | `prod/limites-de-tokens` | `a3e04ed` | — |
 
 ## Decisiones ya tomadas para los que siguen en cola
 
