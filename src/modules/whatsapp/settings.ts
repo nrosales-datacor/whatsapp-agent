@@ -217,8 +217,22 @@ function withSectionIds(sections: AiSettingsPatchInput["knowledge"] & object): K
   });
 }
 
+export interface UpdateAiSettingsOptions {
+  /**
+   * Revisa cómo QUEDARÍA la configuración (lo guardado + el cambio) antes de confirmar la
+   * transacción; si lanza, no se guarda nada. La ruta lo usa para el presupuesto del prompt
+   * del agente (./settingsRoutes.ts), que este archivo no puede medir sin depender del agente.
+   */
+  validate?: (view: AiSettingsView) => void;
+}
+
 /** Cambia la configuración del agente (los permisos los aplica la ruta). Devuelve cómo quedó. */
-export async function updateAiSettings(executor: Executor, actor: AiSettingsActor, patch: AiSettingsPatchInput): Promise<AiSettingsView> {
+export async function updateAiSettings(
+  executor: Executor,
+  actor: AiSettingsActor,
+  patch: AiSettingsPatchInput,
+  options: UpdateAiSettingsOptions = {},
+): Promise<AiSettingsView> {
   const { businessId } = actor;
   const defaults = await defaultsFor(executor, businessId);
   const row = await withTenant(executor, businessId, async (tx) => {
@@ -233,6 +247,7 @@ export async function updateAiSettings(executor: Executor, actor: AiSettingsActo
     if (patch.faq !== undefined) changes.faq = patch.faq.map((f) => ({ question: f.question, answer: f.answer }));
     if (patch.texts !== undefined) changes.texts = patch.texts;
     const [updated] = await tx.update(aiSettings).set(changes).where(eq(aiSettings.businessId, businessId)).returning();
+    options.validate?.(toView(updated, defaults));
     await recordConfigChange(tx, {
       businessId,
       entity: "ai_settings",

@@ -53,3 +53,34 @@ export function historyMaxDays(): number {
 export function maxUpcomingAppointments(): number {
   return intFromEnv("AGENT_MAX_UPCOMING_APPOINTMENTS", 3, 1, 50);
 }
+
+// ── Topes de tokens (ver runner.ts y prompt.ts) ─────────────────────────────
+
+/**
+ * Tope de tokens de SALIDA de cada llamada al modelo (`AGENT_MAX_OUTPUT_TOKENS`, 100-4000,
+ * default 600 ≈ 2000 caracteres: varias veces una respuesta de WhatsApp). Va como
+ * `max_completion_tokens`: una respuesta desbocada no cuesta ni tarda más que esto.
+ */
+export function agentMaxOutputTokens(): number {
+  return intFromEnv("AGENT_MAX_OUTPUT_TOKENS", 600, 100, 4000);
+}
+
+/**
+ * Margen EXTRA de salida para los modelos de razonamiento (gpt-5, o1/o3/o4), que gastan
+ * tokens "pensando" antes de escribir y los cuentan dentro de `max_completion_tokens`
+ * (`AGENT_REASONING_EXTRA_TOKENS`, 0-30000, default 3000). Sin margen, el razonamiento se
+ * come el tope y la respuesta sale vacía.
+ */
+export function agentReasoningExtraTokens(): number {
+  return intFromEnv("AGENT_REASONING_EXTRA_TOKENS", 3000, 0, 30_000);
+}
+
+/**
+ * Presupuesto del prompt de sistema en caracteres (`AGENT_MAX_SYSTEM_PROMPT_CHARS`,
+ * 8000-200000, default 32 000 ≈ 9000 tokens). Se reenvía en cada paso del turno (hasta
+ * `AGENT_MAX_STEPS`): al guardar la configuración se rechaza lo que lo pasa (422) y, en el
+ * turno, si igual lo pasa (creció el catálogo) se recorta.
+ */
+export function maxSystemPromptChars(): number {
+  return intFromEnv("AGENT_MAX_SYSTEM_PROMPT_CHARS", 32_000, 8000, 200_000);
+}
