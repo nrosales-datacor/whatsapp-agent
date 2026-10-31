@@ -1,5 +1,5 @@
 import { lazy, Suspense, useLayoutEffect, type ReactNode } from "react";
-import { IS_MOCK_API } from "../../lib/api";
+import { IS_MOCK_API } from "../../lib/mockMode";
 import { documentTitle, PRODUCT_NAME } from "../../lib/branding";
 
 // La ayuda con las cuentas de prueba solo existe en modo mock (la rama se elimina del

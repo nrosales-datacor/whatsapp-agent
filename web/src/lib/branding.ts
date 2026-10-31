@@ -113,10 +113,21 @@ export function resetBranding(): void {
   for (const property of BRAND_PROPERTIES) root.removeProperty(property);
 }
 
+/** Origen ficticio para resolver una ruta relativa y ver si se queda en el mismo origen. */
+const SAME_ORIGIN_PROBE = "https://same-origin.invalid";
+
 /** Logo utilizable: solo http(s) o una ruta del mismo origen (nunca `javascript:` ni data). */
 export function safeLogoUrl(url: string | undefined): string | null {
   if (!url) return null;
-  if (url.startsWith("/") && !url.startsWith("//")) return url;
+  if (url.startsWith("/")) {
+    // Ruta del mismo origen. Se resuelve como la resolvería el navegador: "//host",
+    // "/\host" o "/<tab>/host" apuntan a OTRO host aunque empiecen con una sola "/".
+    try {
+      return new URL(url, SAME_ORIGIN_PROBE).origin === SAME_ORIGIN_PROBE ? url : null;
+    } catch {
+      return null;
+    }
+  }
   try {
     const parsed = new URL(url);
     return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.href : null;

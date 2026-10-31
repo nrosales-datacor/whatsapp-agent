@@ -5,11 +5,18 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./app/App";
 import { ME_QUERY_KEY } from "./app/session";
 import { ADMIN_ME_QUERY_KEY } from "./modules/admin/adminApi";
-import { onBusinessPaused, onUnauthorized } from "./lib/api";
+import { onBusinessPaused, onUnauthorized, setTransport } from "./lib/api";
+import { IS_MOCK_API } from "./lib/mockMode";
 import { registerServiceWorker } from "./lib/push";
 import { initTheme } from "./lib/theme";
 import { ToastProvider } from "./ui/Toast";
 import "./global.css";
+
+// Modo mock (VITE_MOCK_API=1): la API responde con lib/mockApi.ts, sin red. En el build
+// normal `IS_MOCK_API` es `false` en compilación y el mock no viaja en el bundle.
+if (IS_MOCK_API) {
+  setTransport(async (req) => (await import("./lib/mockApi")).mockTransport(req));
+}
 
 // El tema se aplica antes del primer render para que no parpadee.
 initTheme();
