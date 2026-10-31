@@ -12,14 +12,15 @@
 //     código (p. ej. `invalid_credentials` del login) es un error normal del formulario.
 //   • 403 `business_paused` (el superadmin pausó el negocio) → avisa a `onBusinessPaused`,
 //     que vuelve a pedir la sesión y la app muestra "Cuenta pausada".
-//   • Modo mock (`VITE_MOCK_API=1`): las respuestas salen de ./mockApi.ts con la misma
-//     forma del contrato, sin red. En el build normal esa rama se elimina (la variable se
-//     reemplaza en compilación) y el mock no viaja en el bundle.
+//   • Transporte: por defecto, `fetch` a /api/panel. En modo mock (`VITE_MOCK_API=1`,
+//     lib/mockMode.ts) main.tsx inyecta con `setTransport` el de ./mockApi.ts, con la misma
+//     forma del contrato y sin red. Este archivo no lee `import.meta.env`: se puede
+//     importar en Node (tests con tsx). En el build normal la rama del mock se elimina (la
+//     variable se reemplaza en compilación) y el mock no viaja en el bundle.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const API_PREFIX = "/api/panel";
 export const LOCATION_HEADER = "X-Location-Id";
-export const IS_MOCK_API = import.meta.env.VITE_MOCK_API === "1";
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -178,12 +179,16 @@ async function httpTransport(req: TransportRequest): Promise<TransportResponse> 
   return { status: res.status, payload };
 }
 
-async function transport(req: TransportRequest): Promise<TransportResponse> {
-  if (IS_MOCK_API) {
-    const { mockTransport } = await import("./mockApi");
-    return mockTransport(req);
-  }
-  return httpTransport(req);
+export type Transport = (req: TransportRequest) => Promise<TransportResponse>;
+
+let transport: Transport = httpTransport;
+
+/**
+ * Reemplaza el transporte de la API: main.tsx pone el del mock en modo mock y los tests
+ * pueden poner uno propio. `null` vuelve al de red.
+ */
+export function setTransport(next: Transport | null): void {
+  transport = next ?? httpTransport;
 }
 
 interface ErrorEnvelope {
@@ -264,13 +269,13 @@ export function saveBlob(blob: Blob, filename: string): void {
 
 /**
  * GET de un archivo de la API (misma sesión y sucursal que el resto) y lo descarga. Un
- * error vuelve como `ApiError` con el mismo sobre que los JSON. En modo mock, el mock
- * responde `{ ok: true, data: { content, filename, contentType } }`.
+ * error vuelve como `ApiError` con el mismo sobre que los JSON. Con otro transporte (el
+ * mock) el archivo viaja por él como `{ ok: true, data: { content, filename, contentType } }`.
  */
 export async function apiDownload(path: string, fallbackName: string): Promise<string> {
   const headers: Record<string, string> = { Accept: "text/csv, application/json" };
   if (activeLocationId) headers[LOCATION_HEADER] = activeLocationId;
-  if (IS_MOCK_API) {
+  if (transport !== httpTransport) {
     const data = await apiRequest<{ content: string; filename: string; contentType: string }>("GET", path);
     saveBlob(new Blob([data.content], { type: data.contentType }), data.filename || fallbackName);
     return data.filename || fallbackName;

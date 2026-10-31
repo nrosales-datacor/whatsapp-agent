@@ -4,14 +4,9 @@
 // accesible lo pone siempre el botón o el enlace que los contiene.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type IconId =
-  | "home" | "calendar" | "users" | "receipt" | "chart" | "chat" | "megaphone" | "gear"
-  | "grid" | "plus" | "x" | "check" | "chevronDown" | "chevronLeft" | "chevronsUpDown"
-  | "lock" | "key" | "shield" | "logout" | "sun" | "moon" | "mapPin" | "building"
-  | "user" | "mail" | "eye" | "eyeOff" | "alert" | "cloudOff" | "refresh" | "sparkles"
-  | "search" | "clock" | "chevronUp" | "trash" | "pencil" | "chevronRight" | "bell" | "bellOff"
-  | "send" | "bot" | "image" | "mic" | "phone" | "checkCheck" | "hand" | "book"
-  | "star" | "upload" | "download" | "filter";
+import type { IconId } from "./iconIds";
+
+export type { IconId } from "./iconIds";
 
 // Literales hardcodeados en este módulo: nunca llevan datos del usuario.
 const PATHS: Record<IconId, string> = {
