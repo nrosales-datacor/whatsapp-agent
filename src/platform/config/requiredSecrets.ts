@@ -28,6 +28,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { decodeBase32 } from "../auth/totp";
+import { alertChannelsWarning } from "../observability/alerts";
 
 type Env = Record<string, string | undefined>;
 
@@ -166,5 +167,8 @@ export function productionConfigWarnings(env: Env = process.env): string[] {
   if (!env.SENTRY_DSN?.trim()) {
     warnings.push("SENTRY_DSN sin configurar: los errores del servidor y del panel no le llegan a nadie (DEPLOY.md §16).");
   }
+  // Alertas que no le llegan a nadie (solo log, o Telegram a medias): avisa, no frena.
+  const alerts = alertChannelsWarning(env);
+  if (alerts) warnings.push(alerts);
   return warnings;
 }

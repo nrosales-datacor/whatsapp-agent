@@ -35,6 +35,7 @@ const KEYS: Array<[string, string]> = [
   ["llave privada PEM", "-----BEGIN RSA " + "PRIVATE KEY-----"],
   ["llave de OpenAI", "sk" + "-proj-" + alnum(40)],
   ["token de GitHub", "gh" + "p_" + alnum(36)],
+  ["token de bot de Telegram", "1234567890" + ":A" + "A" + alnum(33)],
   ["JWT completo", "ey" + "J" + alnum(20) + ".ey" + "J" + alnum(20) + "." + alnum(30)],
   ["URL de Postgres con clave", "postgres" + "ql://postgres:" + alnum(18) + "@db.abcdefgh.supabase.co:5432/postgres"],
 ];

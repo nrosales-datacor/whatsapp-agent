@@ -16,6 +16,7 @@ import {
   localDate,
 } from "../scheduling";
 import type { AgentGrowth, AgentHistoryMessage, AgentReply, AgentTurnResult } from "./agentContract";
+import { trackAgentFailure, trackReplySendFailure } from "./alerts";
 import { credentialsOf, getChannelRow } from "./channels";
 import { appointmentReplyOf, followUpReplyOf, marketingConsentReplyOf, requestsHuman } from "./commands";
 import {
@@ -452,6 +453,7 @@ async function runAgentTurn(turn: Turn, operatorNote: string): Promise<void> {
   } catch (e) {
     if (shouldRetry(turn, e)) throw e;
     reportTurnError(turn, "agent", e);
+    trackAgentFailure(turn.businessId, turn.deps.now().getTime()); // tasa → alerta `llm_unavailable` (./alerts.ts)
     await sendFixed(turn, "generalError");
     await notify(turn, `⚠️ El bot no pudo responder: ${operatorNote}`);
     return;
@@ -487,6 +489,7 @@ async function runAgentTurn(turn: Turn, operatorNote: string): Promise<void> {
   } catch (e) {
     if (shouldRetry(turn, e)) throw e;
     reportTurnError(turn, "reply_send", e);
+    trackReplySendFailure(turn.businessId, e, turn.deps.now().getTime()); // tasa → `whatsapp_send_failing` (no token)
     await notify(turn, `⚠️ El bot no pudo enviar su respuesta: ${operatorNote}`);
     return;
   }

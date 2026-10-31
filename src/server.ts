@@ -7,11 +7,11 @@ import { getDb, startLocalDb } from "./platform/db/client";
 import { withSafetyNet } from "./platform/net/http";
 import type { Loop } from "./platform/net/scheduler";
 import { drainTasks, pendingTaskCount } from "./platform/net/shutdown";
-import { configuredAlertChannels } from "./platform/observability/alerts";
+import { alertChannelsWarning, configuredAlertChannels } from "./platform/observability/alerts";
 import { log } from "./platform/observability/log";
 import { startMetricsReport } from "./platform/observability/metrics";
 import { captureError, currentRelease, initSentry, isSentryConfigured } from "./platform/observability/sentry";
-import { startQueueWorker, type QueueWorker } from "./platform/queue";
+import { startQueueMonitor, startQueueWorker, type QueueWorker } from "./platform/queue";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Arranque del proceso (node:http, sin framework). Siempre sobre Postgres: con
@@ -105,6 +105,8 @@ server.listen(PORT, () => {
   const release = currentRelease();
   console.log(`Sentry: ${isSentryConfigured() ? `activo ✅${release ? ` (release ${release.slice(0, 12)})` : " (sin SENTRY_RELEASE)"}` : "no configurado (opcional, falta SENTRY_DSN)"}`);
   console.log(`Alertas a la plataforma: ${configuredAlertChannels().join(" + ")}`);
+  // Producción sin canal que llegue a una persona: además del aviso de arriba, un error en el log estructurado.
+  if (alertChannelsWarning()) log.error("platform_alerts_unconfigured", { channels: configuredAlertChannels() });
 
   // Trabajo de fondo: con `ROLE=web` este proceso no lo arranca (lo atiende la réplica
   // worker, o este mismo proceso con `ROLE=all`). El worker de la cola corre los handlers
@@ -115,6 +117,7 @@ server.listen(PORT, () => {
     // Un negocio pausado (cobro manual) no procesa trabajo nuevo: la cola lo posterga (salvo
     // completar lo que ya entró por WhatsApp, sin responder).
     queueWorker = startQueueWorker({ db, canRunJob: createJobGate(db, plans) });
+    loops.push(startQueueMonitor(db)); // alertas `queue_backlog` / `queue_stuck` (src/platform/queue/monitor.ts)
     loops.push(...startModuleSchedulers(db, plans));
   }
 });

@@ -5,6 +5,7 @@
 //   • registerJobHandler(type, handler, { concurrency?, timeoutMs?, backoff? })
 //   • startQueueWorker({ db, concurrency?, pollMs?, … }) → { stop() }
 //   • Operación: listDeadJobs, retryJob, purgeFinishedJobs, countJobs, getQueueStats
+//   • Vigilancia: startQueueMonitor (alertas `queue_backlog` / `queue_stuck`, ./monitor.ts)
 //   • Errores: PermanentJobError (directo a dead); los transitorios se marcan con
 //     `transient: true` (src/platform/net/transient.ts).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -21,6 +22,7 @@ export {
   type JobErrorKind,
 } from "./errors";
 export { hasNewerGroupJob, type NewerGroupJobQuery } from "./groups";
+export { checkQueueHealth, QUEUE_BACKLOG_ALERT, QUEUE_STUCK_ALERT, startQueueMonitor, type QueueHealth } from "./monitor";
 export { registerJobHandler, type JobContext, type JobHandler, type JobHandlerOptions } from "./handlers";
 // La tabla `jobs` no se exporta: los módulos usan estas funciones, no la leen directo.
 export { JOB_STATUSES, type JobStatus } from "./schema";

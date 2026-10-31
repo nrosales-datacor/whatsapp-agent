@@ -125,9 +125,20 @@ test("secretos: avisos de producción por PUBLIC_BASE_URL, superadmin y Sentry s
       PANEL_SUPERADMIN_USERNAME: "root",
       PANEL_SUPERADMIN_HASH: "a:b",
       SENTRY_DSN: "https://clavepublica@o0.ingest.sentry.example.test/1",
+      ALERTS_TELEGRAM_BOT_TOKEN: "x",
+      ALERTS_TELEGRAM_CHAT_ID: "1",
     }),
     [],
   );
+});
+
+test("secretos: producción con alertas solo por log (o Telegram a medias) → aviso, no problema que frene", () => {
+  const ok = { NODE_ENV: "production", PUBLIC_BASE_URL: "https://app.example.test", PANEL_SUPERADMIN_USERNAME: "root", PANEL_SUPERADMIN_HASH: "a:b" };
+  assert.ok(productionConfigWarnings(ok).some((w) => /solo por log/.test(w) && w.includes("ALERTS_TELEGRAM_BOT_TOKEN")));
+  assert.ok(productionConfigWarnings({ ...ok, ALERTS_TELEGRAM_BOT_TOKEN: "x" }).some((w) => /medio configurar/.test(w)));
+  // Con un canal de alertas (y Sentry, que tiene su propio aviso) no queda ningún aviso.
+  assert.deepEqual(productionConfigWarnings({ ...ok, ALERTS_WEBHOOK_URL: "https://hooks.example.test/x", SENTRY_DSN: "https://clavepublica@o0.ingest.sentry.example.test/1" }), []);
+  assert.deepEqual(prod({}), [], "no es un secreto obligatorio: el arranque sigue");
 });
 
 // Secreto TOTP base32 de 160 bits con pinta de aleatorio (como el de scripts/generateTotp.ts; no es de ningún sistema real).
