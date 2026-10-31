@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, afterEach, before, test } from "node:test";
-import { APIConnectionError } from "openai";
+import { APIConnectionError, BadRequestError } from "openai";
 import type { ChatCompletion, ChatCompletionCreateParamsNonStreaming } from "openai/resources/chat/completions";
 import { listLocations } from "../../src/modules/business";
 import { getServices } from "../../src/modules/catalog";
@@ -30,7 +30,10 @@ import { createEphemeralDb } from "../helpers/pgliteDb";
 //   • los errores internos no llegan al modelo; solo se tocan las citas del cliente;
 //   • el bucle: respuesta final, botones, acciones, límite de pasos, traspaso, uso y
 //     costo, reintento ante un error transitorio, timeout y confirmación fija si OpenAI
-//     falla después de agendar.
+//     falla después de agendar;
+//   • topes de tokens: `max_completion_tokens` en todo request, respuesta cortada
+//     (`finish_reason: "length"`), desborde de contexto (400 `context_length_exceeded`) y
+//     prompt de sistema dentro del presupuesto.
 //
 // Seed (ver scripts/seedDev.ts), "ahora" = miércoles 21/10/2026 09:00 en Costa Rica:
 //   Escazú lun–vie 9–13 y 14–19, sáb 9–15 · Heredia mar–sáb 10–18.
@@ -447,13 +450,20 @@ test("runner: cada llamada tiene timeout (y el timeout cuenta como transitorio)"
       signal?.addEventListener("abort", () => reject(signal.reason));
     });
   const clientId = await newClient();
-  await assert.rejects(
-    createAgentRunner({ ...runnerDeps, openai: scripted([hang]), timeoutMs: 50, retries: 0 })(db, turn(clientId)),
-    (e: Error) => e.name === "TimeoutError",
-  );
-  const recovered = scripted([hang, say("Perdón la demora")]);
-  const result = await createAgentRunner({ ...runnerDeps, openai: recovered, timeoutMs: 50, retries: 1 })(db, turn(clientId));
-  assert.deepEqual(result.replies, [{ text: "Perdón la demora" }]);
+  // El timer de AbortSignal.timeout no retiene el event loop: sin este, a veces el runner de
+  // tests ve el loop vacío mientras el doble "cuelga" y cancela este test y los siguientes.
+  const keepAlive = setInterval(() => {}, 1000);
+  try {
+    await assert.rejects(
+      createAgentRunner({ ...runnerDeps, openai: scripted([hang]), timeoutMs: 50, retries: 0 })(db, turn(clientId)),
+      (e: Error) => e.name === "TimeoutError",
+    );
+    const recovered = scripted([hang, say("Perdón la demora")]);
+    const result = await createAgentRunner({ ...runnerDeps, openai: recovered, timeoutMs: 50, retries: 1 })(db, turn(clientId));
+    assert.deepEqual(result.replies, [{ text: "Perdón la demora" }]);
+  } finally {
+    clearInterval(keepAlive);
+  }
 });
 
 test("runner: un error interno de una tool no se filtra al siguiente request del modelo", async () => {
@@ -506,4 +516,110 @@ test("runner: historial acotado y con fechas en el request", async () => {
   assert.equal(contents.filter((c) => c.startsWith("viejo")).length, 5);
   assert.ok(contents.some((c) => /Mensajes del miércoles 14 de octubre \(hace 7 días\)/.test(c)));
   assert.equal(contents.at(-1), "¿tienen campo mañana?");
+});
+
+// ── Topes de tokens ─────────────────────────────────────────────────────────
+
+/** Respuesta cortada por el tope de salida (`finish_reason: "length"`). */
+function truncated(content: string | null): ChatCompletion {
+  const c = say(content ?? "");
+  c.choices[0].finish_reason = "length";
+  c.choices[0].message.content = content;
+  return c;
+}
+
+const contextOverflow = () =>
+  new BadRequestError(
+    400,
+    { code: "context_length_exceeded", message: "This model's maximum context length is 128000 tokens.", type: "invalid_request_error" },
+    "This model's maximum context length is 128000 tokens.",
+    new Headers(),
+  );
+
+test("runner: TODO request lleva max_completion_tokens (y los modelos de razonamiento, el margen extra sin temperature)", async () => {
+  const clientId = await newClient();
+  const openai = scripted([call("list_locations", {}), say("Tenemos Escazú.")]);
+  await createAgentRunner({ ...runnerDeps, openai })(db, turn(clientId));
+  assert.equal(openai.bodies.length, 2);
+  for (const body of openai.bodies) assert.equal(body.max_completion_tokens, 600, "default AGENT_MAX_OUTPUT_TOKENS");
+
+  const custom = scripted([say("ok")]);
+  await createAgentRunner({ ...runnerDeps, openai: custom, maxOutputTokens: 250 })(db, turn(clientId));
+  assert.equal(custom.bodies[0].max_completion_tokens, 250);
+
+  const saved = process.env.AGENT_MAX_OUTPUT_TOKENS;
+  process.env.AGENT_MAX_OUTPUT_TOKENS = "400";
+  try {
+    const reasoning = scripted([say("ok")]);
+    await createAgentRunner({ ...runnerDeps, model: "gpt-5-mini", openai: reasoning })(db, turn(clientId));
+    assert.equal(reasoning.bodies[0].max_completion_tokens, 400 + 3000, "AGENT_MAX_OUTPUT_TOKENS + AGENT_REASONING_EXTRA_TOKENS");
+    assert.equal(reasoning.bodies[0].temperature, undefined);
+  } finally {
+    if (saved === undefined) delete process.env.AGENT_MAX_OUTPUT_TOKENS;
+    else process.env.AGENT_MAX_OUTPUT_TOKENS = saved;
+  }
+});
+
+test("runner: respuesta cortada con texto → se manda hasta la última oración completa, sin reintentar", async () => {
+  const openai = scripted([truncated("¡Claro! La limpieza facial dura una hora. Cuesta ₡25.000 e incluye además una mascarilla de")]);
+  const result = await createAgentRunner({ ...runnerDeps, openai })(db, turn(await newClient()));
+  assert.deepEqual(result.replies, [{ text: "¡Claro! La limpieza facial dura una hora." }]);
+  assert.equal(openai.bodies.length, 1);
+  assert.deepEqual(result.actions, []);
+});
+
+test("runner: respuesta cortada sin texto → UNA vez se le pide que responda más corto", async () => {
+  const openai = scripted([truncated(null), say("Sí, tenemos espacio el jueves.")]);
+  const result = await createAgentRunner({ ...runnerDeps, openai })(db, turn(await newClient()));
+  assert.deepEqual(result.replies, [{ text: "Sí, tenemos espacio el jueves." }]);
+  assert.equal(openai.bodies.length, 2);
+  const last = openai.bodies[1].messages.at(-1);
+  assert.equal(last?.role, "system");
+  assert.match(String(last?.content), /MUY corto/);
+  assert.equal(result.usage.inputTokens, 2000, "se cuentan los dos pasos");
+});
+
+test("runner: cortada dos veces sin texto → pasa a una persona (no un error que se repetiría)", async () => {
+  const openai = scripted([truncated(null), truncated("")]);
+  const result = await createAgentRunner({ ...runnerDeps, openai })(db, turn(await newClient()));
+  assert.equal(openai.bodies.length, 2, "un solo reintento");
+  assert.equal(result.actions.length, 1);
+  assert.equal(result.actions[0].type, "handoff");
+  assert.match(result.replies[0].text, /^Dejame consultarlo con una persona del equipo/);
+});
+
+test("runner: context_length_exceeded → reintenta con la mitad del historial; si vuelve a pasar, a una persona", async () => {
+  const history = [
+    ...Array.from({ length: 12 }, (_, i) => ({ role: (i % 2 ? "assistant" : "user") as "user" | "assistant", text: `previo ${i}`, at: NOW })),
+    { role: "user" as const, text: "¿y para el sábado?", at: NOW },
+  ];
+  const recovers = scripted([contextOverflow(), say("El sábado tengo espacio a las 10:00.")]);
+  const ok = await createAgentRunner({ ...runnerDeps, openai: recovers })(db, turn(await newClient(), { history }));
+  assert.deepEqual(ok.replies, [{ text: "El sábado tengo espacio a las 10:00." }]);
+  const count = (i: number) => recovers.bodies[i].messages.filter((m) => String(m.content).startsWith("previo")).length;
+  assert.equal(count(0), 12);
+  assert.equal(count(1), 5, "la mitad del historial (13 → 6, con el mensaje nuevo siempre adentro)");
+  assert.equal(recovers.bodies[1].messages.at(-1)?.content, "¿y para el sábado?");
+
+  const fails = scripted([contextOverflow(), contextOverflow()]);
+  const handed = await createAgentRunner({ ...runnerDeps, openai: fails })(db, turn(await newClient(), { history }));
+  assert.equal(fails.bodies.length, 2, "un solo reintento");
+  assert.equal(handed.actions[0].type, "handoff");
+  assert.match((handed.actions[0] as { reason: string }).reason, /demasiado larga/);
+  assert.match(handed.replies[0].text, /^Dejame consultarlo/);
+});
+
+test("runner: el prompt de sistema del request entra en el presupuesto (se recorta si el catálogo lo pasa)", async () => {
+  const openai = scripted([say("ok")]);
+  await createAgentRunner({ ...runnerDeps, openai })(db, turn(await newClient()));
+  const full = String(openai.bodies[0].messages[0].content);
+
+  // El negocio demo no tiene FAQ ni conocimiento: lo recortable son las descripciones.
+  const small = scripted([say("ok")]);
+  const budget = full.length - 10;
+  await createAgentRunner({ ...runnerDeps, openai: small, maxSystemPromptChars: budget })(db, turn(await newClient()));
+  const fitted = String(small.bodies[0].messages[0].content);
+  assert.ok(fitted.length <= budget, `${fitted.length} > ${budget}`);
+  assert.match(fitted, /# REGLAS ESTRICTAS/, "las reglas no se recortan");
+  assert.match(fitted, /Limpieza facial profunda/, "los servicios quedan (sin su descripción)");
 });

@@ -33,11 +33,11 @@ import {
 } from "./conversations";
 import { loadTextProfile, notifyTeam, type WhatsAppDeps } from "./deps";
 import { recordFollowUpAnswer } from "./followUps";
-import type { ChannelCredentials, ReplyButton } from "./graph";
+import { MediaTooLargeError, type ChannelCredentials, type ReplyButton } from "./graph";
 import { readGrowthConfig } from "./growthSettings";
 import type { InboundJobPayload } from "./ingest";
 import { capStatus, CLIENT_LIMIT_NOTICE_PREFIX, clientTurnsPerHour, detectLoop, loopRepeats, loopWindowMin, type AiLimits } from "./limits";
-import { mediaObjectPath } from "./media";
+import { audioDurationSec, audioMaxSec, clipTranscript, mediaObjectPath } from "./media";
 import { marketingConsentButtonIds } from "./payload";
 import { humanModeExpired } from "./rules";
 import type { Conversation, Message } from "./schema";
@@ -64,7 +64,8 @@ import { getAiUsage, incrementAiUsage, whisperCostMicros } from "./usage";
 //   6. Adjuntos que el bot no lee (documento, contacto, sticker) → texto fijo + aviso.
 //   7. Frenos por cliente (bucle con otro bot, turnos por hora) y topes mensuales del plan
 //      (conversaciones, gasto de LLM): sin llamar al LLM.
-//   8. Audio → transcripción (Whisper). 9. Agente con el historial hasta este mensaje.
+//   8. Audio → tope de tamaño y duración (./media.ts) y transcripción (Whisper).
+//   9. Agente con el historial hasta este mensaje.
 //   10. Si mientras pensaba una persona tomó la conversación, se descarta la respuesta.
 //   11. Acciones (`handoff` → modo humano + push), envío de respuestas (texto o botones),
 //       salientes guardados, aviso de bot la primera vez y uso del mes. Tras la primera
@@ -121,6 +122,8 @@ interface Turn {
   now: Date;
   /** Algo ya le llegó al cliente o cambió datos: un reintento lo duplicaría. */
   effects: boolean;
+  /** El adjunto pasó el tope de bytes y no se bajó (./graph.ts). */
+  mediaTooLarge?: boolean;
 }
 
 const short = (e: unknown) => (e instanceof Error ? e.message : String(e)).slice(0, 300);
@@ -365,6 +368,7 @@ async function fetchMedia(turn: Turn): Promise<{ buffer: Buffer; mimeType: strin
     media = await turn.deps.api.downloadMedia(turn.credentials, turn.payload.mediaId);
   } catch (e) {
     if (shouldRetry(turn, e)) throw e;
+    if (e instanceof MediaTooLargeError) turn.mediaTooLarge = true;
     log.warn("whatsapp_media_download_failed", { businessId: turn.businessId, conversationId: turn.conversation.id, error: short(e) });
     return null;
   }
@@ -380,6 +384,17 @@ async function fetchMedia(turn: Turn): Promise<{ buffer: Buffer; mimeType: strin
     }
   }
   return media;
+}
+
+/**
+ * Nota de voz por encima del tope (bytes o `AGENT_AUDIO_MAX_SEC`, ver ./media.ts): no va al
+ * agente. El cliente recibe el aviso en el registro del negocio y el equipo, la nota.
+ */
+async function rejectLongAudio(turn: Turn, maxSec: number, durationSec: number | null): Promise<void> {
+  log.info("whatsapp_audio_too_long", { businessId: turn.businessId, conversationId: turn.conversation.id, durationSec, maxSec });
+  const minutes = (maxSec / 60).toLocaleString("es-CR", { maximumFractionDigits: 1 });
+  await sendFixed(turn, "audioTooLong", { minutos: minutes });
+  await notify(turn, `🎤 Llegó una nota de voz de más de ${minutes} min: no se transcribió${turn.message.mediaPath ? " (escuchala en la bandeja)" : ""}.`);
 }
 
 const HUMAN_MODE_NOTE: Record<string, string> = {
@@ -578,21 +593,30 @@ export async function handleInboundJob(rawPayload: unknown, ctx: JobContext, dep
   // 8. Audio → texto.
   let operatorNote = turn.message.content;
   if (payload.kind === "audio") {
+    const maxSec = audioMaxSec();
     if (!media) {
+      if (turn.mediaTooLarge) return rejectLongAudio(turn, maxSec, null);
       await sendFixed(turn, "audioFailed");
       await notify(turn, "🎤 Llegó una nota de voz que no se pudo descargar.");
       return;
     }
+    // Duración del contenedor (notas de voz opus) ANTES de pagar Whisper.
+    const declaredSec = audioDurationSec(media.buffer, media.mimeType);
+    if (declaredSec !== null && declaredSec > maxSec) return rejectLongAudio(turn, maxSec, declaredSec);
     let transcript: string;
+    let durationSec = 0;
     try {
       const result = await deps.transcribe(media.buffer, media.mimeType);
-      transcript = result.text;
+      transcript = clipTranscript(result.text);
+      durationSec = result.durationSec;
       await incrementAiUsage(db, businessId, { costMicros: whisperCostMicros(result.durationSec) }, now);
     } catch (e) {
       if (shouldRetry(turn, e)) throw e;
       log.warn("whatsapp_transcription_failed", { businessId, conversationId: conversation.id, error: short(e) });
       transcript = "";
     }
+    // Otros formatos: la duración recién la da Whisper (ya se pagó, pero no va al agente).
+    if (durationSec > maxSec) return rejectLongAudio(turn, maxSec, durationSec);
     if (!transcript) {
       await sendFixed(turn, "audioFailed");
       await notify(turn, "🎤 Llegó una nota de voz que no se pudo transcribir.");

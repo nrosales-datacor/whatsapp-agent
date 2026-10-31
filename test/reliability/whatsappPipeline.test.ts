@@ -24,7 +24,7 @@ const { WHATSAPP_INBOUND_JOB } = await import("../../src/modules/whatsapp/ingest
 const { processWebhookBody } = await import("../../src/modules/whatsapp/webhook");
 const { handleInboundJob } = await import("../../src/modules/whatsapp/pipeline");
 const { handoffAgentRunner } = await import("../../src/modules/whatsapp/deps");
-const { GraphError } = await import("../../src/modules/whatsapp/graph");
+const { GraphError, MediaTooLargeError } = await import("../../src/modules/whatsapp/graph");
 const { reminderButtonIds } = await import("../../src/modules/whatsapp/payload");
 const { getAiUsage, incrementAiUsage } = await import("../../src/modules/whatsapp/usage");
 const { _resetChannelStateForTests } = await import("../../src/modules/whatsapp/channels");
@@ -41,7 +41,7 @@ const { createEphemeralDb } = await import("../helpers/pgliteDb");
 const { allJobs, silenceConsole, waitFor } = await import("../helpers/queue");
 const { createTestMember } = await import("../helpers/identityFixtures");
 const { createSchedulingWorld, crAt, crDay } = await import("../helpers/schedulingFixtures");
-const { createChannel, fakeWhatsApp, inboundBody, okResult } = await import("../helpers/whatsappFixtures");
+const { createChannel, fakeWhatsApp, inboundBody, oggOpusAudio, okResult } = await import("../helpers/whatsappFixtures");
 
 type Fake = ReturnType<typeof fakeWhatsApp>;
 
@@ -386,6 +386,88 @@ test("audio que pide una persona → traspaso sin pasar por el agente", async ()
   await drain();
   assert.equal(fake.agentCalls.length, 0);
   assert.equal((await conversationOf(w, from)).conv.mode, "human");
+});
+
+/** Rearma el doble con una descarga y una transcripción propias; cuenta las transcripciones. */
+function audioFake(media: () => Promise<{ buffer: Buffer; mimeType: string }>, transcription: { text: string; durationSec: number }) {
+  _resetJobHandlersForTests();
+  const calls = { transcribe: 0 };
+  fake = fakeWhatsApp(db, {
+    transcribe: async () => {
+      calls.transcribe++;
+      return transcription;
+    },
+  });
+  fake.deps.api.downloadMedia = media;
+  registerJobHandlers({ whatsapp: fake.deps });
+  return calls;
+}
+
+test("audio de más de 2 min (duración del ogg): ni se transcribe ni va al agente; aviso al cliente y al equipo", async () => {
+  const calls = audioFake(async () => ({ buffer: oggOpusAudio(150), mimeType: "audio/ogg; codecs=opus" }), { text: "no debería", durationSec: 150 });
+  const w = await world();
+  const from = newPhone();
+  await receive(w, from, { type: "audio", message: { audio: { id: "AUDL1", mime_type: "audio/ogg; codecs=opus", voice: true } } });
+  await drain();
+  assert.equal(calls.transcribe, 0, "Whisper no se paga");
+  assert.equal(fake.agentCalls.length, 0);
+  assert.match(sentTo(from).at(-1)!.text!, /Tu audio es muy largo\. ¿Me lo resumís en uno más corto \(de hasta 2 min\) o por escrito\?/);
+  assert.match(pushesFor(w).at(-1)!.payload.body, /nota de voz de más de 2 min: no se transcribió \(escuchala en la bandeja\)/);
+  assert.equal((await getAiUsage(db, w.businessId)).costMicros, 0);
+  assert.equal(fake.uploads.length, 1, "el audio igual queda guardado para el equipo");
+});
+
+test("audio dentro del tope (ogg de 90 s): se transcribe como siempre", async () => {
+  const calls = audioFake(async () => ({ buffer: oggOpusAudio(90), mimeType: "audio/ogg" }), { text: "Quiero una cita", durationSec: 90 });
+  const w = await world();
+  const from = newPhone();
+  await receive(w, from, { type: "audio", message: { audio: { id: "AUDL2", mime_type: "audio/ogg" } } });
+  await drain();
+  assert.equal(calls.transcribe, 1);
+  assert.equal(fake.agentCalls.length, 1);
+});
+
+test("audio por encima del tope de bytes (no se bajó): mismo aviso, sin transcribir", async () => {
+  const calls = audioFake(
+    async () => {
+      throw new MediaTooLargeError("audio/mpeg", 9_000_000, 3 * 1024 * 1024);
+    },
+    { text: "no debería", durationSec: 0 },
+  );
+  const w = await world();
+  const from = newPhone();
+  await receive(w, from, { type: "audio", message: { audio: { id: "AUDL3", mime_type: "audio/mpeg" } } });
+  await drain();
+  assert.equal(calls.transcribe, 0);
+  assert.equal(fake.agentCalls.length, 0);
+  assert.match(sentTo(from).at(-1)!.text!, /Tu audio es muy largo/);
+  assert.match(pushesFor(w).at(-1)!.payload.body, /no se transcribió\.$/, "sin adjunto guardado no se invita a escucharlo");
+});
+
+test("audio sin duración legible (mp3) que Whisper mide en más de 2 min: se cobra pero no va al agente", async () => {
+  const calls = audioFake(async () => ({ buffer: Buffer.from("ID3 mp3 de mentira"), mimeType: "audio/mpeg" }), { text: "un monólogo larguísimo", durationSec: 400 });
+  const w = await world();
+  const from = newPhone();
+  await receive(w, from, { type: "audio", message: { audio: { id: "AUDL4", mime_type: "audio/mpeg" } } });
+  await drain();
+  assert.equal(calls.transcribe, 1);
+  assert.equal(fake.agentCalls.length, 0);
+  assert.match(sentTo(from).at(-1)!.text!, /Tu audio es muy largo/);
+  assert.ok((await getAiUsage(db, w.businessId)).costMicros > 0, "lo que cobró Whisper se cuenta");
+});
+
+test("audio: la transcripción guardada (y la que lee el agente) se corta a 4096 caracteres", async () => {
+  audioFake(async () => ({ buffer: oggOpusAudio(100), mimeType: "audio/ogg" }), { text: "palabra ".repeat(1000), durationSec: 100 });
+  const w = await world();
+  const from = newPhone();
+  await receive(w, from, { type: "audio", message: { audio: { id: "AUDL5", mime_type: "audio/ogg" } } });
+  await drain();
+  assert.equal(fake.agentCalls.length, 1);
+  const { conv } = await conversationOf(w, from);
+  const [msg] = await withTenant(db, w.businessId, (tx) => tx.select().from(messages).where(and(eq(messages.conversationId, conv.id), eq(messages.role, "user"))));
+  assert.ok(msg.content.startsWith("[audio] palabra"));
+  assert.equal(Array.from(msg.content).length, "[audio] ".length + 4096);
+  assert.ok(msg.content.endsWith("…"));
 });
 
 test("documento o sticker: texto fijo al cliente y aviso al equipo, sin agente", async () => {

@@ -63,6 +63,70 @@ export interface Transcription {
 
 export type AudioTranscriber = (audio: Buffer, mimeType: string) => Promise<Transcription>;
 
+// ── Topes de audio ───────────────────────────────────────────────────────────
+//
+// Una nota de voz demasiado larga no se transcribe ni va al agente: el cliente recibe el
+// texto fijo `audioTooLong` y el equipo, un aviso. Tres barreras, de la más barata a la
+// más cara:
+//   1. Bytes, en la descarga (`WHATSAPP_AUDIO_MAX_BYTES`, ./graph.ts): ni se baja.
+//   2. Duración leída del contenedor Ogg (opus/vorbis: así manda WhatsApp las notas de voz)
+//      ANTES de Whisper (`audioDurationSec`): no se paga la transcripción.
+//   3. Duración que devuelve Whisper (otros formatos): ya se pagó, pero no va al agente.
+// La transcripción que se guarda (y que lee el agente) se corta a `MAX_TRANSCRIPT_CHARS`.
+
+/** Duración máxima de una nota de voz que se transcribe (`AGENT_AUDIO_MAX_SEC`, 10-1800, default 120 = 2 min). */
+export function audioMaxSec(): number {
+  const raw = process.env.AGENT_AUDIO_MAX_SEC;
+  const n = raw !== undefined && raw.trim() !== "" ? Number(raw) : NaN;
+  return Number.isInteger(n) && n >= 10 && n <= 1800 ? n : 120;
+}
+
+/** Largo máximo de la transcripción guardada (como un texto entrante, ver payload.ts). */
+export const MAX_TRANSCRIPT_CHARS = 4096;
+
+/** Corta la transcripción a `MAX_TRANSCRIPT_CHARS` (por caracteres, sin partir un emoji). */
+export function clipTranscript(text: string): string {
+  const chars = Array.from(text.trim());
+  return chars.length <= MAX_TRANSCRIPT_CHARS ? chars.join("") : `${chars.slice(0, MAX_TRANSCRIPT_CHARS - 1).join("")}…`;
+}
+
+const OGG_CAPTURE = Buffer.from("OggS");
+const OGG_HEADER_BYTES = 27;
+
+/**
+ * Duración en segundos de un audio Ogg (Opus o Vorbis) leída del contenedor, sin decodificar:
+ * la posición de granulado de la última página (muestras a 48 kHz en Opus, menos el
+ * pre-skip; a la tasa del encabezado en Vorbis). null si no es Ogg o no se puede leer (la
+ * barrera de Whisper queda de respaldo).
+ */
+export function audioDurationSec(audio: Buffer, mimeType: string): number | null {
+  const mime = baseMime(mimeType);
+  if (mime && mime !== "audio/ogg" && mime !== "audio/opus" && mime !== "application/ogg") return null;
+  if (audio.length < OGG_HEADER_BYTES + 1 || !audio.subarray(0, 4).equals(OGG_CAPTURE)) return null;
+  const firstPacket = OGG_HEADER_BYTES + audio[26];
+  let rate: number;
+  let preSkip = 0;
+  if (audio.toString("latin1", firstPacket, firstPacket + 8) === "OpusHead" && audio.length >= firstPacket + 12) {
+    rate = 48_000;
+    preSkip = audio.readUInt16LE(firstPacket + 10);
+  } else if (audio.toString("latin1", firstPacket, firstPacket + 7) === "\x01vorbis" && audio.length >= firstPacket + 16) {
+    rate = audio.readUInt32LE(firstPacket + 12);
+  } else {
+    return null;
+  }
+  if (!(rate > 0)) return null;
+  // Última página del mismo flujo (número de serie) con granulado válido (-1 = ningún paquete
+  // termina en esa página). El serial evita tomar por página un "OggS" suelto en los datos.
+  const serial = audio.readUInt32LE(14);
+  for (let at = audio.lastIndexOf(OGG_CAPTURE); at > 0; at = audio.lastIndexOf(OGG_CAPTURE, at - 1)) {
+    if (at + OGG_HEADER_BYTES > audio.length || audio[at + 4] !== 0 || audio.readUInt32LE(at + 14) !== serial) continue;
+    const granule = audio.readBigInt64LE(at + 6);
+    if (granule < 0n) continue;
+    return Math.max(0, Number(granule) - preSkip) / rate;
+  }
+  return null;
+}
+
 const OPENAI_AUDIO_TIMEOUT_MS = msFromEnv("OPENAI_AUDIO_TIMEOUT_MS", 60_000);
 let openai: OpenAI | null = null;
 
